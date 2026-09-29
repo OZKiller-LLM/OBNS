@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Builds the upstream RouteManager2 sources for Android. Upstream is not modified. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>RouteManager2</RootNamespace>
+    <AssemblyName>RouteManager2</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)RouteManager2\**\*.cs" LinkBase="RouteManager2" />
+    <Compile Remove="$(UpstreamSource)RouteManager2\Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
+    <ProjectReference Include="..\LibRender2.Android\LibRender2.Android.csproj" />
+    <ProjectReference Include="..\SoundManager.Android\SoundManager.Android.csproj" />
+  </ItemGroup>
+
+</Project>

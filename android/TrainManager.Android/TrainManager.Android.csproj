@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Builds the upstream TrainManager sources for Android. Upstream is not modified. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>TrainManager</RootNamespace>
+    <AssemblyName>TrainManager</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="AndroidInternals.cs" />
+    <Compile Include="$(UpstreamSource)TrainManager\**\*.cs" LinkBase="TrainManager" />
+    <Compile Remove="$(UpstreamSource)TrainManager\Properties\AssemblyInfo.cs" />
+    <!--
+      The out-of-process proxy for 32-bit Win32 ATS plugins: it talks WCF to a Windows .exe that
+      loads x86 machine code, so it can never run on Android. Trains relying on such a plugin
+      fall back to the built-in safety systems.
+    -->
+    <Compile Remove="$(UpstreamSource)TrainManager\SafetySystems\Plugin\ProxyPlugin.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
+    <ProjectReference Include="..\OpenBve.OpenAL\OpenBve.OpenAL.csproj" />
+    <ProjectReference Include="..\LibRender2.Android\LibRender2.Android.csproj" />
+    <ProjectReference Include="..\SoundManager.Android\SoundManager.Android.csproj" />
+    <ProjectReference Include="..\RouteManager2.Android\RouteManager2.Android.csproj" />
+    <ProjectReference Include="..\Formats.Msts.Android\Formats.Msts.Android.csproj" />
+  </ItemGroup>
+
+</Project>

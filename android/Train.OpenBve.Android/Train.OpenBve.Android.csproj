@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Builds the upstream Plugins\Train.OpenBve sources for Android. Upstream is not modified. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Train.OpenBve</RootNamespace>
+    <AssemblyName>Train.OpenBve</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)Plugins\Train.OpenBve\**\*.cs" LinkBase="Train.OpenBve" />
+    <Compile Remove="$(UpstreamSource)Plugins\Train.OpenBve\Properties\AssemblyInfo.cs" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Formats.OpenBve.Android\Formats.OpenBve.Android.csproj" />
+    <ProjectReference Include="..\LibRender2.Android\LibRender2.Android.csproj" />
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
+    <ProjectReference Include="..\OpenBve.OpenAL\OpenBve.OpenAL.csproj" />
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+    <ProjectReference Include="..\SoundManager.Android\SoundManager.Android.csproj" />
+    <ProjectReference Include="..\TrainManager.Android\TrainManager.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+
+  </ItemGroup>
+
+</Project>

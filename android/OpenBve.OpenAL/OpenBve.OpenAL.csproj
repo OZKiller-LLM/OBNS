@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The OpenTK 3 OpenAL API surface OpenBVE is written against, bound to OpenAL Soft.
+    The native libopenal.so comes from MonoGame.Library.OpenAL, referenced by the app project.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>OpenBve.OpenAL</RootNamespace>
+    <AssemblyName>OpenBve.OpenAL</AssemblyName>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+</Project>

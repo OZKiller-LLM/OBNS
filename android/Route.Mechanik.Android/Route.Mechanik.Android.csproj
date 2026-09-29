@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Builds the upstream Plugins\Route.Mechanik sources for Android. Upstream is not modified. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Route.Mechanik</RootNamespace>
+    <AssemblyName>Route.Mechanik</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)Plugins\Route.Mechanik\**\*.cs" LinkBase="Route.Mechanik" />
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Mechanik\Properties\AssemblyInfo.cs" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+    <ProjectReference Include="..\RouteManager2.Android\RouteManager2.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+
+  </ItemGroup>
+
+</Project>

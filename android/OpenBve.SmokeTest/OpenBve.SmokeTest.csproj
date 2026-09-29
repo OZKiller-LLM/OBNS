@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Proves the compatibility layer and OpenBveApi actually run on a device,
+    not just that they compile. Results go to logcat under the tag OPENBVE_SMOKE
+    and are also drawn on screen.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>disable</Nullable>
+    <RootNamespace>OpenBve.SmokeTest</RootNamespace>
+    <AssemblyName>OpenBve.SmokeTest</AssemblyName>
+    <ApplicationId>net.openbve.smoketest</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
+    <ProjectReference Include="..\LibRender2.Android\LibRender2.Android.csproj" />
+    <ProjectReference Include="..\OpenBve.OpenAL\OpenBve.OpenAL.csproj" />
+    <ProjectReference Include="..\SoundManager.Android\SoundManager.Android.csproj" />
+    <ProjectReference Include="..\RouteManager2.Android\RouteManager2.Android.csproj" />
+    <ProjectReference Include="..\TrainManager.Android\TrainManager.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Android has no system OpenAL; this package supplies OpenAL Soft for all four ABIs. -->
+    <PackageReference Include="MonoGame.Library.OpenAL" Version="1.25.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The upstream shaders, shipped unmodified and translated to GLSL ES at upload time. -->
+    <AndroidAsset Include="$(UpstreamSource)..\assets\Shaders\*.vert" Link="Assets\Shaders\%(Filename)%(Extension)" />
+    <AndroidAsset Include="$(UpstreamSource)..\assets\Shaders\*.frag" Link="Assets\Shaders\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

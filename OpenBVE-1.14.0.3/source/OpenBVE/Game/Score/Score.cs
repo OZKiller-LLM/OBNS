@@ -1,0 +1,393 @@
+﻿using OpenBveApi;
+using OpenBveApi.Colors;
+using OpenBveApi.Hosts;
+using OpenBveApi.Interface;
+using OpenBveApi.Runtime;
+using OpenBveApi.Trains;
+using System;
+using System.Globalization;
+
+namespace OpenBve
+{
+	internal static partial class Game
+	{
+		/// <summary>The current in-game score</summary>
+		internal static Score CurrentScore = new Score();
+
+		/// <summary>The score class</summary>
+		internal class Score
+		{
+			/// <summary>The current total score</summary>
+			internal int CurrentValue;
+			/// <summary>The maximum available score</summary>
+			internal int Maximum;
+			/// <summary>The number of times the doors have been opened incorrectly</summary>
+			internal double OpenedDoorsCounter;
+			/// <summary>The number of times the speed limit has been exceeded</summary>
+			internal double OverspeedCounter;
+			/// <summary>The number of times the train has toppled due to excessive speed in curves</summary>
+			internal double TopplingCounter;
+			/// <summary>The number of times a signal has been passed at danger</summary>
+			internal bool RedSignal;
+			/// <summary>The number of times the train has been derailed</summary>
+			internal bool Derailed;
+			internal int ArrivalStation;
+			internal int DepartureStation;
+			internal double PassengerTimer;
+
+			/// <summary>This method should be called once a frame to update the player's score</summary>
+			/// <param name="TimeElapsed">The time elapsed since this function was last called</param>
+			internal void Update(double TimeElapsed)
+			{
+				if (TrainManager.PlayerTrain == null)
+				{
+					return;
+				}
+				// doors
+				bool leftopen = false;
+				bool rightopen = false;
+				for (int j = 0; j < TrainManager.PlayerTrain.Cars.Length; j++)
+				{
+					for (int k = 0; k < TrainManager.PlayerTrain.Cars[j].Doors.Length; k++)
+					{
+						if (TrainManager.PlayerTrain.Cars[j].Doors[k].State != 0.0)
+						{
+							if (TrainManager.PlayerTrain.Cars[j].Doors[k].Direction == -1)
+							{
+								leftopen = true;
+							}
+							else if (TrainManager.PlayerTrain.Cars[j].Doors[k].Direction == 1)
+							{
+								rightopen = true;
+							}
+						}
+					}
+				}
+				bool bad;
+				if (leftopen | rightopen)
+				{
+					bad = true;
+					int j = TrainManager.PlayerTrain.Station;
+					if (j >= 0)
+					{
+						if (Program.CurrentRoute.Stations[j].GetStopIndex(TrainManager.PlayerTrain) >= 0)
+						{
+							if (Math.Abs(TrainManager.PlayerTrain.CurrentSpeed) < 0.1)
+							{
+								if (leftopen == Program.CurrentRoute.Stations[j].OpenLeftDoors & rightopen == Program.CurrentRoute.Stations[j].OpenRightDoors)
+								{
+									bad = false;
+								}
+							}
+						}
+					}
+				}
+				else
+				{
+					bad = false;
+				}
+				if (bad)
+				{
+					OpenedDoorsCounter += (Math.Abs(TrainManager.PlayerTrain.CurrentSpeed) + 0.25) * TimeElapsed;
+				}
+				else if (OpenedDoorsCounter != 0.0)
+				{
+					int x = (int)Math.Ceiling(ScoreFactorOpenedDoors * OpenedDoorsCounter);
+					CurrentValue += x;
+					if (x != 0)
+					{
+						AddScore(x, ScoreTextToken.DoorsOpened, 5.0);
+					}
+					OpenedDoorsCounter = 0.0;
+				}
+				// overspeed
+				double n = Math.Min(TrainManager.PlayerTrain.CurrentRouteLimit, TrainManager.PlayerTrain.CurrentSectionLimit);
+				double a = Math.Abs(TrainManager.PlayerTrain.CurrentSpeed) - 0.277777777777778;
+				if (a > n)
+				{
+					OverspeedCounter += (a - n) * TimeElapsed;
+				}
+				else if (OverspeedCounter != 0.0)
+				{
+					int x = (int)Math.Ceiling(ScoreFactorOverspeed * OverspeedCounter);
+					CurrentValue += x;
+					if (x != 0)
+					{
+						AddScore(x, ScoreTextToken.Overspeed, 5.0);
+					}
+					OverspeedCounter = 0.0;
+				}
+				// toppling
+				{
+					bool q = false;
+					for (int j = 0; j < TrainManager.PlayerTrain.Cars.Length; j++)
+					{
+						if (TrainManager.PlayerTrain.Cars[j].Topples)
+						{
+							q = true;
+							break;
+						}
+					}
+					if (q)
+					{
+						TopplingCounter += TimeElapsed;
+					}
+					else if (TopplingCounter != 0.0)
+					{
+						int x = (int)Math.Ceiling(ScoreFactorToppling * TopplingCounter);
+						CurrentValue += x;
+						if (x != 0)
+						{
+							AddScore(x, ScoreTextToken.Toppling, 5.0);
+						}
+						TopplingCounter = 0.0;
+					}
+				}
+				// derailment
+				if (!Derailed)
+				{
+					for (int j = 0; j < TrainManager.PlayerTrain.Cars.Length; j++)
+					{
+						if (TrainManager.PlayerTrain.Cars[j].Derailed)
+						{
+							int x = ScoreValueDerailment;
+							if (CurrentValue > 0) x -= CurrentValue;
+							CurrentValue += x;
+							if (x != 0)
+							{
+								AddScore(x, ScoreTextToken.Derailed, 5.0);
+							}
+							Derailed = true;
+							break;
+						}
+					}
+				}
+				// red signal
+				if (TrainManager.PlayerTrain.CurrentSectionLimit == 0.0)
+				{
+					if (!RedSignal)
+					{
+						CurrentValue += ScoreValueRedSignal;
+						AddScore(ScoreValueRedSignal, ScoreTextToken.PassedRedSignal, 5.0);
+						RedSignal = true;
+					}
+				}
+				else
+				{
+					RedSignal = false;
+				}
+				// arrival
+				{
+					int j = TrainManager.PlayerTrain.Station;
+					if (j >= 0 & j < Program.CurrentRoute.Stations.Length)
+					{
+						if (j >= ArrivalStation & TrainManager.PlayerTrain.StationState == TrainStopState.Boarding)
+						{
+							if (j == 0 || Program.CurrentRoute.Stations[j - 1].Type != StationType.ChangeEnds && Program.CurrentRoute.Stations[j - 1].Type != StationType.Jump)
+							{
+								// arrival
+								CurrentValue += ScoreValueStationArrival;
+								AddScore(ScoreValueStationArrival, ScoreTextToken.ArrivedAtStation, 10.0);
+								// early/late
+								int xb;
+								if (Program.CurrentRoute.Stations[j].ArrivalTime >= 0)
+								{
+									double d = Program.CurrentRoute.SecondsSinceMidnight - Program.CurrentRoute.Stations[j].ArrivalTime;
+									if (d >= -5.0 & d <= 0.0)
+									{
+										xb = ScoreValueStationPerfectTime;
+										CurrentValue += xb;
+										AddScore(xb, ScoreTextToken.PerfectTimeBonus, 10.0);
+									}
+									else if (d > 0.0)
+									{
+										xb = (int)Math.Ceiling(ScoreFactorStationLate * (d - 1.0));
+										CurrentValue += xb;
+										if (xb != 0)
+										{
+											AddScore(xb, ScoreTextToken.Late, 10.0);
+										}
+									}
+									else
+									{
+										xb = 0;
+									}
+								}
+								else
+								{
+									xb = 0;
+								}
+								// position
+								int xc;
+								int p = Program.CurrentRoute.Stations[j].GetStopIndex(TrainManager.PlayerTrain);
+								if (p >= 0)
+								{
+									double d = TrainManager.PlayerTrain.StationDistanceToStopPoint;
+									double r;
+									if (d >= 0)
+									{
+										double t = Program.CurrentRoute.Stations[j].Stops[p].BackwardTolerance;
+										r = (Math.Sqrt(d * d + 1.0) - 1.0) / (Math.Sqrt(t * t + 1.0) - 1.0);
+									}
+									else
+									{
+										double t = Program.CurrentRoute.Stations[j].Stops[p].ForwardTolerance;
+										r = (Math.Sqrt(d * d + 1.0) - 1.0) / (Math.Sqrt(t * t + 1.0) - 1.0);
+									}
+									if (r < 0.01)
+									{
+										xc = ScoreValueStationPerfectStop;
+										CurrentValue += xc;
+										AddScore(xc, ScoreTextToken.PerfectStopBonus, 10.0);
+									}
+									else
+									{
+										if (r > 1.0) r = 1.0;
+										r = (r - 0.01) * 1.01010101010101;
+										xc = (int)Math.Ceiling(ScoreFactorStationStop * r);
+										CurrentValue += xc;
+										if (xc != 0)
+										{
+											AddScore(xc, ScoreTextToken.Stop, 10.0);
+										}
+									}
+								}
+								else
+								{
+									xc = 0;
+								}
+								// sum
+								if (Interface.CurrentOptions.GameMode == GameMode.Arcade)
+								{
+									int xs = ScoreValueStationArrival + xb + xc;
+									AddScore("", 10.0);
+									AddScore(xs, ScoreTextToken.Total, 10.0, false);
+									AddScore(" ", 10.0);
+								}
+								// evaluation
+								if (Interface.CurrentOptions.GameMode == GameMode.Arcade)
+								{
+									if (Program.CurrentRoute.Stations[j].Type == StationType.Terminal)
+									{
+										double y = CurrentValue / (double)Maximum;
+										if (y < 0.0) y = 0.0;
+										if (y > 1.0) y = 1.0;
+										int k = (int)Math.Floor(y * Translations.RatingsCount);
+										if (k >= Translations.RatingsCount) k = Translations.RatingsCount - 1;
+										AddScore(Translations.GetInterfaceString(HostApplication.OpenBve, new[] {"score","rating"}), 20.0);
+										AddScore(Translations.GetInterfaceString(HostApplication.OpenBve, new[] {"rating" , k.ToString(CultureInfo.InvariantCulture) }) + " (" + (100.0 * y).ToString("0.00", CultureInfo.InvariantCulture) + "%)", 20.0);
+									}
+								}
+							}
+							// finalize
+							DepartureStation = j;
+							ArrivalStation = j + 1;
+						}
+					}
+				}
+				// departure
+				if (TrainManager.PlayerTrain.Station >= 0 & TrainManager.PlayerTrain.Station < Program.CurrentRoute.Stations.Length & TrainManager.PlayerTrain.Station == DepartureStation)
+				{
+					bool q;
+					if (Program.CurrentRoute.Stations[TrainManager.PlayerTrain.Station].OpenLeftDoors | Program.CurrentRoute.Stations[TrainManager.PlayerTrain.Station].OpenRightDoors)
+					{
+						q = TrainManager.PlayerTrain.StationState == TrainStopState.Completed;
+					}
+					else
+					{
+						q = TrainManager.PlayerTrain.StationState != TrainStopState.Pending & (TrainManager.PlayerTrain.CurrentSpeed < -1.5 | TrainManager.PlayerTrain.CurrentSpeed > 1.5);
+					}
+					if (q)
+					{
+						double r = TrainManager.PlayerTrain.StationDepartureTime - Program.CurrentRoute.SecondsSinceMidnight;
+						if (r > 0.0)
+						{
+							int x = (int)Math.Ceiling(ScoreFactorStationDeparture * r);
+							CurrentValue += x;
+							if (x != 0)
+							{
+								AddScore(x, ScoreTextToken.PrematureDeparture, 5.0);
+							}
+						}
+						DepartureStation = -1;
+					}
+				}
+				// passengers
+				bool fallenOver = false;
+				for (int i = 0; i < TrainManager.PlayerTrain.Cars.Length; i++)
+				{
+					/*
+					 * NOTE: This should currently break on the first car.
+					 * When other cargo types are implemented, it may not
+					 */
+
+					if (TrainManager.PlayerTrain.Cars[i].Cargo.Damaged)
+					{
+						fallenOver = true;
+						break;
+					}
+				}
+				if (fallenOver & PassengerTimer == 0.0)
+				{
+					CurrentValue += ScoreValuePassengerDiscomfort;
+					AddScore(ScoreValuePassengerDiscomfort, ScoreTextToken.PassengerDiscomfort, 5.0);
+					PassengerTimer = 5.0;
+				}
+				else
+				{
+					PassengerTimer -= TimeElapsed;
+					if (PassengerTimer <= 0.0)
+					{
+						PassengerTimer = fallenOver ? 5.0 : 0.0;
+					}
+				}
+			}
+
+			/// <summary>Is called by the update function to add a new score event to the log</summary>
+			/// <param name="Value">The value of the score event</param>
+			/// <param name="TextToken">The token type which caused the score event</param>
+			/// <param name="Duration">The duration of the score event (e.g. overspeed)</param>
+			/// <param name="Count">Whether this should be counted as a unique event (NOTE: Scheduled stops are the only case which are not)</param>
+			private void AddScore(int Value, ScoreTextToken TextToken, double Duration, bool Count = true)
+			{
+				if (Interface.CurrentOptions.GameMode == GameMode.Arcade)
+				{
+					ScoreMessages.Add(new ScoreMessage(Value, TextToken, Duration));
+				}
+				if (Value != 0 & Count)
+				{
+					ScoreLogs.Add(new ScoreLog(Program.CurrentRoute.SecondsSinceMidnight, TrainManager.PlayerTrain.Cars[0].TrackPosition, Value, TextToken));
+				}
+			}
+
+			/// <summary>Is called by the update function to add a new score event to the log</summary>
+			/// <param name="Text">The log text for this score event</param>
+			/// <param name="Duration">The duration of the score event (e.g. overspeed)</param>
+			private void AddScore(string Text, double Duration)
+			{
+				if (Interface.CurrentOptions.GameMode != GameMode.Arcade)
+				{
+					return;
+				}
+				ScoreMessages.Add(new ScoreMessage(0, Text, MessageColor.White, Duration));
+			}
+		}
+
+		/// <summary>Updates all score messages displayed by the renderer</summary>
+		internal static void UpdateScoreMessages(double timeElapsed)
+		{
+			if (Interface.CurrentOptions.GameMode != GameMode.Arcade)
+			{
+				return;
+			}
+			for (int i = ScoreMessages.Count - 1; i > 0; i--)
+			{
+				ScoreMessages[i].Timeout -= timeElapsed;
+				if (ScoreMessages[i].Timeout <= 0 & ScoreMessages[i].RendererAlpha == 0.0)
+				{
+					ScoreMessages.RemoveAt(i);
+				}
+			}
+		}
+	}
+}

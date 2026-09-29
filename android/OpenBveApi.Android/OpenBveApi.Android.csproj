@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Builds the upstream OpenBveApi sources for Android.
+    The upstream files are compiled in place; nothing under ..\..\OpenBVE-1.14.0.3 is modified.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>OpenBveApi</RootNamespace>
+    <AssemblyName>OpenBveApi</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <!-- This library has no Android resources, and the generated designer class would
+         collide with OpenBveApi.Resource. -->
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)OpenBveApi\**\*.cs" LinkBase="OpenBveApi" />
+
+    <!-- Duplicated by the SDK's generated assembly info. -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Properties\AssemblyInfo.cs" />
+    <!-- WinForms .resx designer output (icons/colours); unused by the simulation. -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Resource.Designer.cs" />
+    <!-- CS-Script runtime compilation is unavailable on Android (no JIT in release builds). -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\FunctionScripts\CSAnimationScript.cs" />
+    <!-- Dead files: present in the tree but not built by the upstream project. Their stale
+         OpenBveApi.Texture / OpenBveApi.Sound namespaces shadow the real Texture and Sound types. -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Texture.cs" />
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Sound.cs" />
+    <!-- WCF service contracts for the 32-bit Win32 ATS plugin proxy: Windows-only by definition. -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\System\Interop.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Android replacement for the WinForms .resx resource class. -->
+    <Compile Include="Resource.Android.cs" />
+    <!-- Replaces the CS-Script backed animation script, which cannot run under AOT. -->
+    <Compile Include="CSAnimationScript.Android.cs" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)..\..\OpenBVE-1.14.0.3\assets\Languages\en-US.xlf"
+                      LogicalName="OpenBveApi.Resources.en-US.xlf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharpCompress" Version="0.50.*" />
+    <PackageReference Include="Ude.NetStandard" Version="1.2.*" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.*" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,330 @@
+<openBVE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <RoutePatches>
+  <!-- 737 Test Flight -->
+	<Patch>
+		<Hash>FBF4399E04B769BDD416CEB6CC3D3C5EC4803E158997D5D75A76C423B6DA45ED</Hash>
+		<FileName>Arrive Night.csv</FileName>
+		<Derailments>false</Derailments>
+		<CylinderHack>true</CylinderHack>
+	</Patch>
+	<Patch>
+		<Hash>49630A77BE1AB513BD58962795DC38846451A3E44C4E6770DF78EE71C5EF226E</Hash>
+		<FileName>Arrive.csv</FileName>
+		<Derailments>false</Derailments>
+		<CylinderHack>true</CylinderHack>
+	</Patch>
+	<!-- Iiyama 2060 -->
+	<Patch>
+		<Hash>471C1CC06E55D1B40E7B992028FA25200E480A37778E51B1B0F36BE475B250AF</Hash>
+		<FileName>9001.csv</FileName>
+		<XParser>NewXParser</XParser>
+	</Patch>
+	<Patch>
+		<Hash>5E976BA173F3267271746FB161730FFC205FAC85A38DB369BDC2FB25297B05E1</Hash>
+		<FileName>spaceroute1.csv</FileName>
+		<Toppling>false</Toppling>
+		<Derailments>false</Derailments>
+		<AdhesionHack>true</AdhesionHack>
+	</Patch>
+	<Patch>
+		<Hash>EDB673ED7BC2B4B5F80F48AE11ED75A604E92C6BFCDF3C177B19DB4791C6A9B4</Hash>
+		<FileName>montserrat.rw</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<!-- Some Sanford Mace demo stuff -->
+	<Patch>
+		<Hash>449E92E323EE340FF740E392C12FF81DB483E58533FFDC78AE286899D987CBF1</Hash>
+		<FileName>Circulator-csv.csv</FileName>
+		<AccurateObjectDisposal>false</AccurateObjectDisposal>
+		<!-- Ignore the distance in the comment, designed for BVE2 renderer -->
+		<ViewingDistance>500</ViewingDistance>
+	</Patch>
+	<Patch>
+		<Hash>11B53D67BACB601E575597B46365AFFA93595E5E7AD760536B5D05680441A616</Hash>
+		<FileName>Dogbone_BVE2-BVE4-Lo.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>3D2AC5D22E424A279A956CB94E2DB6182814451DD9AF7755A0E2AE53A625CAD2</Hash>
+		<FileName>Dogbone_BVE4-Hi.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>5958EAE5DA2E2AB569EF1BAC12844FF90D1876A96C22B12561F9B1AF2DFD06A3</Hash>
+		<FileName>Great circle.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>9C03EE03E6C0B8749092E999C21B9881E4D5725691F695FF1F982DD2A95B7C3F</Hash>
+		<FileName>Loop back.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>E486A420A35FAC1EA2D7CF9AFA5C5D5913850483F342E0FE4AB83E5F7C6CA605</Hash>
+		<FileName>Straigt circle.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>CDAD46F4AACD69E143BC36A409952A630D173913E8FD728197B68013EB0AE339</Hash>
+		<FileName>Figure-8-basic.rw</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Crossing the player track is not supported by OpenBVE.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>D7FF7DF534138E800028D3CCDFD5835E4D86E4085EF38805E44A39D59B6EC669</Hash>
+		<FileName>Figure-8-w-scenery.rw</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Crossing the player track is not supported by OpenBVE.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>58F3691118C684ED7C13C7746A66D1C7E0EB39FA5D8BB932A009C449F3E3EA1A</Hash>
+		<FileName>test curve.rw</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Crossing the player track is not supported by OpenBVE.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>79BCA08160F0D4DCB7C52CEF4B8DF8251261FA88A2E6A42738A73E487EF6931F</Hash>
+		<FileName>tight curve.rw</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Crossing the player track is not supported by OpenBVE.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>24AD4D7DF787E74A879304C986C37E535F032589C33E18D8A0FF38410FB123D4</Hash>
+		<FileName>tightcurve-csv.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Crossing the player track is not supported by OpenBVE.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>4A66BDAF081C1FA9C14E2DCA6154E50CA5EDC33B31C90E973388F6A803F0F9C0</Hash>
+		<FileName>BVE_4_Xmas.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>525F7EC422A01881DF8004B479A825CF1EB9C9A884D64324CF0558B9310ECAA4</Hash>
+		<FileName>BVE_4_Xmas_2006.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>79564316DBFDA62452EDA9E7C09681BB6495A7C38C07CE62211D5F5A93865BB5</Hash>
+		<FileName>BVE_4_Xmas_2006_crr8.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>42A59A109D5E95F699C652323FC5B39F8E5E464BC0FDF1895509544644F9CFC4</Hash>
+		<FileName>Xmas_2005.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>D7C31DF8033F4C69309B9A3A00184CF3351CC600746A77CF09C11D92B79E6260</Hash>
+		<FileName>Xmas_2006.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>672007628752E3B793A4EA47D16A340FD06E4DA30A6592CD222F3E8EDEF93079</Hash>
+		<FileName>Xmasmonorail.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<Patch>
+		<Hash>F4D2A78CC77960F5AE05B63001E82284FE62FFCCD7F0875FAE8FA38019401173</Hash>
+		<FileName>Xmasmonorail_2006.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Repeating circular routefiles are not supported.</LogMessage>
+	</Patch>
+	<!-- Fun Coaster Night -->
+	<Patch>
+		<Hash>B3141D4CC1880C635F04413F54EA66D8B32DA308F9F9484AD2BB5FD642C5959B</Hash>
+		<FileName>FCN.csv</FileName>
+		<Incompatible>true</Incompatible>
+		<LogMessage>Ground and rail transformations are broken, due to excessive gradients.</LogMessage>
+	</Patch>
+	<!-- Sanford Mace again, variable gauge demo thing -->
+	<!-- 3 Foot -->
+	<Patch>
+		<Hash>E8F10B550A664B576009F2B68DDA9314483DED361CD6E8DCD4482F97C7416927</Hash>
+		<FileName>Inbound Main.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>B6603F8DC487AA5CE92CA4B7CA8D4C1AE8739083C89447C79BDFBA19704AF650</Hash>
+		<FileName>Inbound Tram.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>520D7B846402BEA052BED85795F834CFEF8228AD4D356DA7597856866897EF7C</Hash>
+		<FileName>Outbound Main.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>4CB7740CFE8CF22359597B2DDFA915CFF14440C3A9C1520F2E946F96ED2AB607</Hash>
+		<FileName>Outbound Tram.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<!-- 2 Foot -->
+	<Patch>
+		<Hash>F08FB9B9E31CBD155DA212192F626AA56F3DBC6DE6F60B7E48C9AF739CCF9EB2</Hash>
+		<FileName>Inbound Main.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>E5DC20166FDA9865CDB465DCD37CD09230BA44FAD1FB5B76F49A260C788EBCCC</Hash>
+		<FileName>Inbound Tram.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>3CD04B26B65F34470B704E4E957F5213F4C267C03A17D12041A7F5842E6938F2</Hash>
+		<FileName>Outbound Main.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>A0473B53E604E275F6B7C7B6B63016678124094279330F4A234AEEB5F3D57D77</Hash>
+		<FileName>Outbound Tram.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<!-- 1 Foot -->
+	<Patch>
+		<Hash>247568CAD5D7A02B64BF1B05099E969E43EEDEE69C0A94BDCAF6764985AF8DF7</Hash>
+		<FileName>Inbound Main.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>95599333BDC728AF7D8A7DE33C0D6FBB7F22DCE7EA88360D3FE4108F340012A1</Hash>
+		<FileName>Inbound Tram.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>CCF7B10DD6F949805E9CF44A0653D499A8CDA5B6A2D77E8ABBD069F0787F3BEA</Hash>
+		<FileName>Outbound Main.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>B7517EA13218FCC09ECC487F32B39A003D02C6A3492DD067B7B0934FAD9AB078</Hash>
+		<FileName>Outbound Tram.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<!-- NE Tram -->
+	<!-- NOTE: This route uses the block animation trick for some people on the track.	-->
+	<!-- 	   However remove this, as otherwise we've got a *lot* of glitchy scenery.-->
+	<Patch>
+		<Hash>75D8D828DE031D4977C841DB95D9A7D4B23B45120E9C426713C83AADE326E227</Hash>
+		<FileName>NETram-Day(Car).rw</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<Expression Number="637"></Expression>
+	</Patch>
+	<Patch>
+		<Hash>C1E320D90149F2DFEABAAA792B9CCE059956E6C3EAFE9DE49E9E24435A4824F5</Hash>
+		<FileName>NETram-Day.rw</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<Expression Number="637"></Expression>
+	</Patch>
+	<Patch>
+		<Hash>82D6D4DFA10648CA3D8789A7FC534224D7FF25775F47B745ED10C7C2F944A34F</Hash>
+		<FileName>NETram-EarlyMorning.rw</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<Expression Number="637"></Expression>
+	</Patch>
+	<Patch>
+		<Hash>6CC3DD85EC7B8C4328C912A7EA264823AEEBAD0BC5B5004B273BAC5FEBD112C4</Hash>
+		<FileName>NETram-Evening.rw</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<Expression Number="638"></Expression>
+	</Patch>
+	<!-- Lartigue Monorail -->
+	<!-- Another Sanford Mace little demo thing -->
+	<Patch>
+		<Hash>3855027ADA4E116C9A58983E17285E5B800DE3494F2D319EE95E53E73EFB4D5D</Hash>
+		<FileName>1 TODAY 1-TURNBABLE 2.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>0C923F5FD308292F147953EFCCAB80EC688765B6AD6B7EB987EC5F3A52573B68</Hash>
+		<FileName>2 TURNTABLE 2 - REVERSE 3.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>F576A1346CCA34A49773CBB12163266FAEE8AB1245E0FF31C81F612161294547</Hash>
+		<FileName>3 TODAY 3 - TURNTABLE 1.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>DACF7658EB38673D54F0DE71A6A327E37F35316019631F7346A0ABAE8B4931E6</Hash>
+		<FileName>4 TODAY TURNTABLE 1 - REVERSE 2.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>90CB94DF66EACC9856FAD8EE353C831336239FAE3EC1C28DDC724FB55B678E0A</Hash>
+		<FileName>5 TODAY 1 - TRAIN SHED.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+		<Patch>
+		<Hash>9769BBB646422C9104BE7DCE89B6AB47B95DEC28F13FC1B93B3900070E0B536F</Hash>
+		<FileName>OLD 1-2.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>EE3E2766DAEC9BD7D7CF0DEAC5EBBE7E805D0B053C89A00902D184C1284194A7</Hash>
+		<FileName>OLD 2-1.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>545B254A1F39684F9AE926B0EB9533DE408A3121CA12F4EB65C27B9CE8A76D9C</Hash>
+		<FileName>1 TO 3.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>19F006E106C6688CB8FAB15CD87D6306F480458F72799054C5D0B10BFC315030</Hash>
+		<FileName>3 TO 2.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<!-- Mars route-->
+	<Patch>
+		<Hash>0A7808AE6C6CB7602B7113DE31046808D32EE9554FA602E64DD71AD3E9200E2A</Hash>
+		<FileName>mars3.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<CylinderHack>true</CylinderHack>
+	</Patch>
+	<!-- Maglev -->
+	<Patch>
+		<Hash>70A845ECCF96A73A329E04A1DCDB79AD4FF6EB920AFCE731E2CC85EA31AA49FB</Hash>
+		<FileName>maglev.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+  </RoutePatches>
+</openBVE>

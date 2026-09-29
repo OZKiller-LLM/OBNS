@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Builds the upstream LibRender2 sources against the GLES shim.
+    Nothing under ..\..\OpenBVE-1.14.0.3 is modified.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>LibRender2</RootNamespace>
+    <AssemblyName>LibRender2</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)LibRender2\**\*.cs" LinkBase="LibRender2" />
+    <Compile Remove="$(UpstreamSource)LibRender2\Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Upstream loads shaders from embedded resources named LibRender2.<name>.<ext>
+      (AbstractShader, isFromStream: true), not from disk. The logical names must match exactly.
+    -->
+    <EmbeddedResource Include="$(UpstreamSource)..\assets\Shaders\*.vert" LogicalName="LibRender2.%(Filename).vert" />
+    <EmbeddedResource Include="$(UpstreamSource)..\assets\Shaders\*.frag" LogicalName="LibRender2.%(Filename).frag" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
+  </ItemGroup>
+
+</Project>

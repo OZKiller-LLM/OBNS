@@ -1,0 +1,800 @@
+//Simplified BSD License (BSD-2-Clause)
+//
+//Copyright (c) 2025, Christopher Lees, The OpenBVE Project
+//
+//Redistribution and use in source and binary forms, with or without
+//modification, are permitted provided that the following conditions are met:
+//
+//1. Redistributions of source code must retain the above copyright notice, this
+//   list of conditions and the following disclaimer.
+//2. Redistributions in binary form must reproduce the above copyright notice,
+//   this list of conditions and the following disclaimer in the documentation
+//   and/or other materials provided with the distribution.
+//
+//THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+//ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+//WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+//DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+//ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+//(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+//LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+//ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+//(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+//SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+using LibRender2.Trains;
+using OpenBve.Formats.MsTs;
+using OpenBveApi.Colors;
+using OpenBveApi.FunctionScripting;
+using OpenBveApi.Interface;
+using OpenBveApi.Math;
+using OpenBveApi.Textures;
+using System;
+using System.Globalization;
+using System.IO;
+using TrainManager.Car;
+
+namespace Train.MsTs
+{
+	internal class CabComponent
+	{
+		private CabComponentType Type = CabComponentType.None;
+		private Texture DaytimeTexture;
+		private Texture NightTimeTexture;
+		private PanelSubject panelSubject;
+		private Units Units;
+		private Vector2 Position = new Vector2(0, 0);
+		private Vector2 Size = new Vector2(0, 0);
+		private Vector2 AreaPosition = new Vector2(0, 0);
+		private Vector2 AreaSize = new Vector2(0, 0);
+		private double PivotPoint;
+		private double InitialAngle;
+		private double LastAngle;
+		private double Maximum;
+		private double Minimum;
+		private int TotalFrames;
+		private int HorizontalFrames;
+		private int VerticalFrames;
+		private bool MouseControl;
+		private bool DirIncrease;
+		private int LeadingZeros;
+		private FrameMapping[] FrameMappings = Array.Empty<FrameMapping>();
+		private readonly Vector3 PanelPosition;
+		private CabComponentStyle Style;
+		private Tuple<double, Color24>[] PositiveColors;
+		private Tuple<double, Color24>[] NegativeColors;
+		private Color24 ControlColor;
+		private int Accuracy;
+		private int Orientation;
+
+		internal void Parse()
+		{
+			if (!Enum.TryParse(myBlock.Token.ToString(), true, out Type))
+			{
+				Plugin.CurrentHost.AddMessage(MessageType.Error, false, "MSTS CVF Parser: Unrecognised CabViewComponent type.");
+				return;
+			}
+
+			while (myBlock.Position() < myBlock.Length() - 2)
+			{
+				//Components in CVF files are considerably less structured, so read *any* valid block
+				try
+				{
+					Block newBlock = myBlock.ReadSubBlock();
+					ReadSubBlock(newBlock);
+				}
+				catch
+				{
+					break;
+				}
+
+			}
+		}
+
+		internal void Create(ref CarBase currentCar, int componentLayer)
+		{
+			if (DaytimeTexture == null && Type != CabComponentType.Digital && Type != CabComponentType.DigitalClock)
+			{
+				return;
+			}
+			if (FrameMappings.Length < 2 && TotalFrames > 1)
+			{
+				// e.g. Acela power handle has 25 frames for total power value of 100% but no mappings specified
+				FrameMappings = new FrameMapping[TotalFrames];
+				// frame 0 is always mapping value 0
+				for (int i = 1; i < TotalFrames; i++)
+				{
+					FrameMappings[i].MappingValue = (i + 1.0) / TotalFrames;
+					FrameMappings[i].FrameKey = i;
+				}
+			}
+
+			if (FrameMappings.Length == 3)
+			{
+				if (FrameMappings[0].FrameKey == 0 && FrameMappings[1].FrameKey == 0 && FrameMappings[2].FrameKey == 0)
+				{
+					// An air-brake handle may have 3 mapping values with key of zero, so we need to create manually
+					FrameMappings = new FrameMapping[TotalFrames];
+					// frame 0 is always mapping value 0
+					for (int i = 1; i < TotalFrames; i++)
+					{
+						FrameMappings[i].MappingValue = (i + 1.0) / TotalFrames;
+						FrameMappings[i].FrameKey = i;
+					}
+				}
+			}
+
+			//Create element
+			const double rW = 1024.0 / 640.0;
+			const double rH = 768.0 / 480.0;
+			int elementIndex;
+			string f;
+			CultureInfo culture = CultureInfo.InvariantCulture;
+			switch (Type)
+			{
+				case CabComponentType.Dial:
+					// correct angle position if appropriate
+					if (!DirIncrease && InitialAngle > LastAngle)
+					{
+						InitialAngle = -(365 - InitialAngle);
+					}
+
+					//Get final position from the 640px panel (Yuck...)
+					Position.X *= rW;
+					Position.Y *= rH;
+					Size.X *= rW;
+					Size.Y *= rH;
+					PivotPoint *= rH;
+					elementIndex = CabviewFileParser.CreateElement(ref currentCar.CarSections[CarSectionType.Interior].Groups[0], Position, Size, new Vector2((0.5 * Size.X) / (DaytimeTexture.Width * rW), PivotPoint / (DaytimeTexture.Height * rH)), componentLayer * CabviewFileParser.StackDistance, PanelPosition, DaytimeTexture, NightTimeTexture, Color32.White);
+					currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].RotateZDirection = new Vector3(0.0, 0.0, -1.0);
+					currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].RotateXDirection = DirIncrease ? new Vector3(1.0, 0.0, 0.0) : new Vector3(-1.0, 0.0, 0.0);
+					currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].RotateYDirection = Vector3.Cross(currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].RotateZDirection, currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].RotateXDirection);
+					f = CabviewFileParser.GetStackLanguageFromSubject(currentCar, panelSubject, Units);
+					InitialAngle = InitialAngle.ToRadians();
+					LastAngle = LastAngle.ToRadians();
+					double a0 = (InitialAngle * Maximum - LastAngle * Minimum) / (Maximum - Minimum);
+					double a1 = (LastAngle - InitialAngle) / (Maximum - Minimum);
+					f += " " + a1.ToString(culture) + " * " + a0.ToString(culture) + " +";
+					currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].RotateZFunction = new FunctionScript(Plugin.CurrentHost, f, false);
+					// backstop by default e.g. ammeter when using dynamic brakes
+					currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].RotateZFunction.Minimum = InitialAngle;
+					currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].RotateZFunction.Maximum = LastAngle;
+					break;
+				case CabComponentType.Lever:
+					/*
+					 * TODO:
+					 * Need to revisit the actual position versus frame with MSTS content.
+					 *
+					 * How this works is that MSTS *only* has percentage based handles
+					 * However, it's entirely possible to assign a notch set in the ENG file
+					 *
+					 * Our displayed notch value is >= the appropriate percentage
+					 * For a lot of stuff, notched is 'better' but similarly, percentage based is
+					 * 'better' for other stuff
+					 *
+					 * Need to figure out if there's a way to determine which to use.
+					 * Check ORTS too...
+					 *
+					 */
+					Position.X *= rW;
+					Position.Y *= rH;
+					Size.X *= rW;
+					Size.Y *= rH;
+					if (DaytimeTexture.Width > 0 && DaytimeTexture.Height > 0)
+					{
+						Texture[] dayTextures = new Texture[TotalFrames];
+						Texture[] nightTextures = new Texture[TotalFrames];
+						int row = 0;
+						int column = 0;
+						int frameWidth = DaytimeTexture.Width / HorizontalFrames;
+						int frameHeight = DaytimeTexture.Height / VerticalFrames;
+						for (int k = 0; k < TotalFrames; k++)
+						{
+							dayTextures[k] = TryGetTexture(Type, false, DaytimeTexture, frameWidth, frameHeight, column, row);
+							nightTextures[k] = TryGetTexture(Type, false, NightTimeTexture, frameWidth, frameHeight, column, row);
+							if (column < HorizontalFrames - 1)
+							{
+								column++;
+							}
+							else
+							{
+								column = 0;
+								row++;
+							}
+						}
+
+						elementIndex = -1;
+						for (int k = 0; k < dayTextures.Length; k++)
+						{
+								
+							int l = CabviewFileParser.CreateElement(ref currentCar.CarSections[CarSectionType.Interior].Groups[0], Position, Size, new Vector2(0.5, 0.5), componentLayer * CabviewFileParser.StackDistance, PanelPosition, dayTextures[k], nightTextures[k], Color32.White, k != 0);
+							if (k == 0) elementIndex = l;
+						}
+
+						switch (panelSubject)
+						{
+							case PanelSubject.Engine_Brake:
+							case PanelSubject.Throttle:
+							case PanelSubject.Train_Brake:
+							case PanelSubject.Gears:
+							case PanelSubject.Blower:
+							case PanelSubject.Cutoff:
+							case PanelSubject.Regulator:
+							case PanelSubject.Firehole:
+							case PanelSubject.Whistle:
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].StateFunction = new CvfAnimation(Plugin.CurrentHost, panelSubject, FrameMappings);
+								break;
+							default:
+								f = CabviewFileParser.GetStackLanguageFromSubject(currentCar, panelSubject, Units);
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].StateFunction = new FunctionScript(Plugin.CurrentHost, f, false);
+								break;
+						}
+
+					}
+					break;
+				case CabComponentType.TriState:
+				case CabComponentType.TwoState:
+				case CabComponentType.MultiStateDisplay:
+				case CabComponentType.CombinedControl:
+					Position.X *= rW;
+					Position.Y *= rH;
+					Size.X *= rW;
+					Size.Y *= rH;
+					if (DaytimeTexture.Width > 0 && DaytimeTexture.Height > 0)
+					{
+						Texture[] dayTextures = new Texture[TotalFrames];
+						Texture[] nightTextures = new Texture[TotalFrames];
+						int row = 0;
+						int column = 0;
+						int frameWidth = DaytimeTexture.Width / HorizontalFrames;
+						int frameHeight = DaytimeTexture.Height / VerticalFrames;
+						for (int k = 0; k < TotalFrames; k++)
+						{
+							dayTextures[k] = TryGetTexture(Type, false, DaytimeTexture, frameWidth, frameHeight, column, row);
+							nightTextures[k] = TryGetTexture(Type, false, NightTimeTexture, frameWidth, frameHeight, column, row);
+
+							if (column < HorizontalFrames - 1)
+							{
+								column++;
+							}
+							else
+							{
+								column = 0;
+								row++;
+							}
+						}
+
+						elementIndex = -1;
+						for (int k = 0; k < dayTextures.Length; k++)
+						{
+							int l = CabviewFileParser.CreateElement(ref currentCar.CarSections[CarSectionType.Interior].Groups[0], Position, Size, new Vector2(0.5, 0.5), componentLayer * CabviewFileParser.StackDistance, PanelPosition, dayTextures[k], nightTextures[k], Color32.White, k != 0);
+							if (k == 0) elementIndex = l;
+						}
+
+						switch (panelSubject)
+						{
+							case PanelSubject.Direction:
+							case PanelSubject.Direction_Display:
+							case PanelSubject.Overspeed:
+							case PanelSubject.Sanders:
+							case PanelSubject.Sanding:
+							case PanelSubject.Wheelslip:
+							case PanelSubject.Alerter_Display:
+							case PanelSubject.Penalty_App:
+							case PanelSubject.Throttle_Display:
+							case PanelSubject.CP_Handle:
+							case PanelSubject.CPH_Display:
+							case PanelSubject.Friction_Braking:
+							case PanelSubject.Cyl_Cocks:
+							case PanelSubject.Blower:
+							case PanelSubject.Steam_Inj1:
+							case PanelSubject.Water_Injector1:
+							case PanelSubject.Steam_Inj2:
+							case PanelSubject.Water_Injector2:
+							case PanelSubject.Dynamic_Brake_Display:
+							case PanelSubject.Dynamic_Brake:
+							case PanelSubject.Doors_Display:
+							case PanelSubject.Whistle:
+							case PanelSubject.Reset:
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].StateFunction = new CvfAnimation(Plugin.CurrentHost, panelSubject, FrameMappings);
+								break;
+							default:
+								f = CabviewFileParser.GetStackLanguageFromSubject(currentCar, panelSubject, Units);
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].StateFunction = new FunctionScript(Plugin.CurrentHost, f, false);
+								break;
+						}
+
+
+					}
+					break;
+				case CabComponentType.Digital:
+					Position.X *= rW;
+					Position.Y *= rH;
+
+					Color24 textColor = PositiveColors[0].Item2;
+
+					Texture[] frameTextures = new Texture[11];
+					string texturePath = OpenBveApi.Path.CombineFile(OpenBveApi.Path.CombineDirectory(Plugin.FileSystem.DataFolder, "Compatibility"), "numbers.png"); // arial 9.5pt
+
+					for (int i = 0; i < 10; i++)
+					{
+						Plugin.CurrentHost.RegisterTexture(texturePath, new TextureParameters(new TextureClipRegion(0, i * 24, 16, 24), null), out frameTextures[i], true);
+					}
+
+					Plugin.CurrentHost.RegisterTexture(texturePath, new TextureParameters(new TextureClipRegion(0, 0, 16, 24), null), out frameTextures[10], true); // repeated zero [check vice MSTS]
+
+					int numMaxDigits = (int)Math.Floor(Math.Log10(Maximum) + 1);
+					int numMinDigits = (int)Math.Floor(Math.Log10(Minimum) + 1);
+
+					int totalDigits = Math.Max(numMinDigits, numMaxDigits) + LeadingZeros;
+					elementIndex = -1;
+					double digitWidth = Size.X / totalDigits;
+					for (int currentDigit = 0; currentDigit < totalDigits; currentDigit++)
+					{
+						for (int k = 0; k < frameTextures.Length; k++)
+						{
+							int l = CabviewFileParser.CreateElement(ref currentCar.CarSections[CarSectionType.Interior].Groups[0], new Vector2(Position.X + Size.X - (digitWidth * (currentDigit + 1)), Position.Y), new Vector2(digitWidth * rW, Size.Y * rH), new Vector2(0.5, 0.5), componentLayer * CabviewFileParser.StackDistance, PanelPosition, frameTextures[k], null, textColor, k != 0);
+							if (k == 0) elementIndex = l;
+						}
+
+						// build color arrays and mappings
+						currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].Colors = new Color24[NegativeColors.Length + PositiveColors.Length];
+						FrameMappings = new FrameMapping[PositiveColors.Length + NegativeColors.Length];
+						int mappingIndex = 0;
+
+						for (int i = 0; i < NegativeColors.Length; i++)
+						{
+							if (NegativeColors[i] != null)
+							{
+								FrameMappings[mappingIndex].MappingValue = NegativeColors[i].Item1;
+								FrameMappings[mappingIndex].FrameKey = i;
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].Colors[i] = NegativeColors[i].Item2;
+								mappingIndex++;
+							}
+						}
+
+						
+						for (int i = 0; i < PositiveColors.Length; i++)
+						{
+							if (PositiveColors[i] != null)
+							{
+								FrameMappings[i + NegativeColors.Length].MappingValue = PositiveColors[i].Item1;
+								FrameMappings[i + NegativeColors.Length].FrameKey = i + NegativeColors.Length;
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].Colors[i + NegativeColors.Length] = PositiveColors[i].Item2;
+							}
+						}
+
+						Array.Resize(ref FrameMappings, mappingIndex + 1);
+
+						// create color and digit functions
+						currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].StateFunction = new CvfAnimation(Plugin.CurrentHost, panelSubject, Units, currentDigit);
+						currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].ColorFunction = new CvfAnimation(Plugin.CurrentHost, panelSubject, Units, FrameMappings);
+					}
+					break;
+				case CabComponentType.CabSignalDisplay:
+					TotalFrames = 8;
+					HorizontalFrames = 4;
+					VerticalFrames = 2;
+					Position.X *= rW;
+					Position.Y *= rH;
+					Size.X *= rW;
+					Size.Y *= rH;
+					if (DaytimeTexture.Width > 0 && DaytimeTexture.Height > 0)
+					{
+						Texture[] dayTextures = new Texture[8];
+						Texture[] nightTextures = new Texture[8];
+						// 4 h-frames, 2 v-frames
+						int row = 0;
+						int column = 0;
+						int frameWidth = DaytimeTexture.Width / HorizontalFrames;
+						int frameHeight = DaytimeTexture.Height / VerticalFrames;
+						for (int k = 0; k < TotalFrames; k++)
+						{
+							dayTextures[k] = TryGetTexture(Type, false, DaytimeTexture, frameWidth, frameHeight, column, row);
+							nightTextures[k] = TryGetTexture(Type, false, NightTimeTexture, frameWidth, frameHeight, column, row);
+
+							if (column < HorizontalFrames - 1)
+							{
+								column++;
+							}
+							else
+							{
+								column = 0;
+								row++;
+							}
+						}
+
+						elementIndex = -1;
+						for (int k = 0; k < dayTextures.Length; k++)
+						{
+							int l = CabviewFileParser.CreateElement(ref currentCar.CarSections[CarSectionType.Interior].Groups[0], Position, Size, new Vector2(0.5, 0.5), componentLayer * CabviewFileParser.StackDistance, PanelPosition, dayTextures[k], nightTextures[k], Color32.White, k != 0);
+							if (k == 0) elementIndex = l;
+						}
+
+						currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].StateFunction = new CvfAnimation(Plugin.CurrentHost, panelSubject);
+					}
+					break;
+				case CabComponentType.DigitalClock:
+					Position.X *= rW;
+					Position.Y *= rH;
+					totalDigits = Accuracy == 1 ? 8 : 5; // with or without secs
+					elementIndex = -1;
+					digitWidth = Size.X / totalDigits;
+					textColor = ControlColor;
+
+					frameTextures = new Texture[12];
+					texturePath = OpenBveApi.Path.CombineFile(OpenBveApi.Path.CombineDirectory(Plugin.FileSystem.DataFolder, "Compatibility"), "numbers.png"); // arial 9.5pt
+
+					for (int i = 0; i < 10; i++)
+					{
+						Plugin.CurrentHost.RegisterTexture(texturePath, new TextureParameters(new TextureClipRegion(0, i * 24, 16, 24), null), out frameTextures[i], true);
+					}
+					Plugin.CurrentHost.RegisterTexture(texturePath, new TextureParameters(new TextureClipRegion(0, 240, 16, 16), null), out frameTextures[11], true);
+
+					for (int currentDigit = 0; currentDigit < totalDigits; currentDigit++)
+					{
+						for (int k = 0; k < frameTextures.Length; k++)
+						{
+							int l = CabviewFileParser.CreateElement(ref currentCar.CarSections[CarSectionType.Interior].Groups[0], new Vector2(Position.X + Size.X - (digitWidth * (currentDigit + 1)), Position.Y), new Vector2(digitWidth * rW, Size.Y * rH), new Vector2(0.5, 0.5), componentLayer * CabviewFileParser.StackDistance, PanelPosition, frameTextures[k], null, textColor, k != 0);
+							if (k == 0) elementIndex = l;
+						}
+
+						// create digit functions
+						currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[elementIndex].StateFunction = new CvfAnimation(Plugin.CurrentHost, panelSubject, Style, Accuracy == 1 ? currentDigit : currentDigit + 3);
+					}
+					break;
+				case CabComponentType.Gauge:
+					Position.X *= rW;
+					Position.Y *= rH;
+					Size.X *= rW;
+					Size.Y *= rH;
+					/*
+					 * POSITION: Top left of gauge
+					 * SIZE: Area covered, relative to POSITION
+					 * AREA POSITION: *wrong* Relative position of the pointer start within size bounds (at max)
+					 *                *  ?? * Ignored- often appears to duplicate Position
+					 * AREA SIZE: Relative size of the pointer
+					 *
+					 */
+					if (Style == CabComponentStyle.Pointer && AreaSize == Vector2.Null)
+					{
+						Plugin.CurrentHost.AddMessage(MessageType.Error, false, "MSTS CVF Parser: Gauge pointer cannot be of zero size.");
+						break;
+					}
+					
+
+					double worldWidth, worldHeight;
+					if (Plugin.Renderer.Screen.Width >= Plugin.Renderer.Screen.Height)
+					{
+						worldWidth = 2.0 * Math.Tan(0.5 * Plugin.Renderer.Camera.HorizontalViewingAngle) * 1.0;
+						worldHeight = worldWidth / Plugin.Renderer.Screen.AspectRatio;
+					}
+					else
+					{
+						worldHeight = 2.0 * Math.Tan(0.5 * Plugin.Renderer.Camera.VerticalViewingAngle) * 1.0 / Plugin.Renderer.Screen.AspectRatio;
+						worldWidth = worldHeight * Plugin.Renderer.Screen.AspectRatio;
+					}
+					if (Orientation == 1)
+					{
+						
+						AreaSize.Y = Math.Max(1, AreaSize.Y); // minimum 1px size for scaling to work
+						// vertical
+						double y0 = (Position.Y / 240) - 0.5 * worldHeight; // half of reference 480px panel height...
+						double y1 = ((Position.Y + Size.Y) / 240) - 0.5 * worldHeight;
+						double translationTotal = (y1 - y0) * 0.2; // FIXME: why do we need this??
+						double minSizeMultiplier = 1.0;
+						double maxSizeMultiplier = (Size.Y / AreaSize.Y) * 0.9;
+						
+						switch(Style)
+						{
+							case CabComponentStyle.Pointer:
+								int e = CabviewFileParser.CreateElement(ref currentCar.CarSections[CarSectionType.Interior].Groups[0], new Vector2(Position.X, Position.Y - AreaSize.Y), AreaSize, Vector2.Null, (componentLayer + 200) * CabviewFileParser.StackDistance, PanelPosition, DaytimeTexture, NightTimeTexture, Color32.White);
+								f = CabviewFileParser.GetStackLanguageFromSubject(currentCar, panelSubject, Units);
+								double t0 = (0 * Maximum - translationTotal * Minimum) / (Maximum - Minimum);
+								double t1 = (translationTotal - 0) / (Maximum - Minimum);
+
+								if (DirIncrease)
+								{
+									(t0, t1) = (t1, t0);
+								}
+								f += " " + t1.ToString(culture) + " * " + t0.ToString(culture) + " +"; 
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[e].TranslateYFunction = new FunctionScript(Plugin.CurrentHost, f, false);
+								// FIXME: Panel overall direction seems to be slightly off from vertical (so element 'drops' under the panel on down translation if we don't pull forwards)
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[e].TranslateYDirection = new Vector3(0, 1, 0.1);
+								break;                       
+							case CabComponentStyle.Solid:
+								Vector2 v = new Vector2(Position);
+								// ignore area position for the minute, move Y
+								v.Y += Size.Y - AreaSize.Y;
+								e = CabviewFileParser.CreateScalableYElement(ref currentCar.CarSections[CarSectionType.Interior].Groups[0], v, Size, AreaSize, (componentLayer + 200) * CabviewFileParser.StackDistance, PanelPosition, DaytimeTexture, NightTimeTexture, Color32.White, DirIncrease);
+								f = CabviewFileParser.GetStackLanguageFromSubject(currentCar, panelSubject, Units);
+								double s0 = (minSizeMultiplier * Maximum - maxSizeMultiplier * Minimum) / (Maximum - Minimum);
+								double s1 = (maxSizeMultiplier - minSizeMultiplier) / (Maximum - Minimum);
+								f += " " + s1.ToString(culture) + " * " + s0.ToString(culture) + " +";
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[e].ScaleYFunction = new FunctionScript(Plugin.CurrentHost, f, false);
+								break;
+						}
+						
+					}
+					else
+					{
+						// horizontal
+						double x0 = (Position.X / 320 - 0.5) * worldWidth; // half of reference 640px panel width...
+						double x1 = ((Position.X + Size.Y) / 320 - 0.5) * worldWidth;
+						double translationTotal = x1 - x0;
+						switch (Style)
+						{
+							case CabComponentStyle.Pointer:
+								int e = CabviewFileParser.CreateElement(ref currentCar.CarSections[CarSectionType.Interior].Groups[0], Position + AreaPosition, AreaSize, Vector2.Null, componentLayer * CabviewFileParser.StackDistance, PanelPosition, DaytimeTexture, NightTimeTexture, Color32.White);
+								f = CabviewFileParser.GetStackLanguageFromSubject(currentCar, panelSubject, Units);
+								f += " " + translationTotal.ToString(culture) + " * 0.5 *";
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[e].TranslateXFunction = new FunctionScript(Plugin.CurrentHost, f, false);
+								currentCar.CarSections[CarSectionType.Interior].Groups[0].Elements[e].TranslateXDirection = new Vector3(1, 0, 0);
+								break;
+						}
+					}
+
+					break;
+			}
+		}
+
+		private void ReadSubBlock(Block block)
+		{
+			switch (block.Token)
+			{
+				case KujuTokenID.Pivot:
+					PivotPoint = block.ReadSingle();
+					break;
+				case KujuTokenID.Units:
+					Units = block.ReadEnumValue(default(Units));
+					break;
+				case KujuTokenID.ScalePos:
+					InitialAngle = block.ReadSingle();
+					LastAngle = block.ReadSingle();
+					break;
+				case KujuTokenID.ScaleRange:
+					Minimum = block.ReadSingle();
+					Maximum = block.ReadSingle();
+					break;
+				case KujuTokenID.States:
+					//Contains sub-blocks with Style and SwitchVal types
+					TotalFrames = block.ReadInt16();
+					HorizontalFrames = block.ReadInt16();
+					VerticalFrames = block.ReadInt16();
+					FrameMappings = new FrameMapping[TotalFrames];
+					for (int i = 0; i < TotalFrames; i++)
+					{
+						FrameMappings[i].FrameKey = i;
+						Block stateBlock = block.ReadSubBlock(KujuTokenID.State);
+						while (stateBlock.Length() - stateBlock.Position() > 3)
+						{
+							Block subBlock = stateBlock.ReadSubBlock(new[] { KujuTokenID.Style, KujuTokenID.SwitchVal });
+							if (subBlock.Token == KujuTokenID.SwitchVal)
+							{
+								FrameMappings[i].MappingValue = subBlock.ReadSingle();
+								break;
+							}
+						}
+						
+
+					}
+					break;
+				case KujuTokenID.DirIncrease:
+					// rotates Clockwise (0) or AntiClockwise (1)
+					DirIncrease = block.ReadBool();
+					break;
+				case KujuTokenID.Orientation:
+					// Horizontal movement (0) or Vertical (1)
+					Orientation = block.ReadInt16();
+					break;
+				case KujuTokenID.NumValues:
+				case KujuTokenID.NumPositions:
+					int numValues = block.ReadInt16();
+					if (FrameMappings.Length < numValues)
+					{
+						Array.Resize(ref FrameMappings, numValues);
+					}
+
+					for (int i = 0; i < numValues; i++)
+					{
+						if (block.Token == KujuTokenID.NumValues)
+						{
+							FrameMappings[i].MappingValue = block.ReadSingle();
+						}
+						else
+						{
+							FrameMappings[i].FrameKey = block.ReadInt16();
+						}
+					}
+
+					break;
+				case KujuTokenID.NumFrames:
+					TotalFrames = block.ReadInt16();
+					HorizontalFrames = block.ReadInt16();
+					VerticalFrames = block.ReadInt16();
+					break;
+				case KujuTokenID.MouseControl:
+					MouseControl = block.ReadBool();
+					break;
+				case KujuTokenID.Style:
+					Style = block.ReadEnumValue(default(CabComponentStyle));
+					break;
+				case KujuTokenID.Graphic:
+					string s = block.ReadString();
+					if (!string.IsNullOrEmpty(s))
+					{
+						string texturePath = string.Empty;
+						try
+						{
+							texturePath = OpenBveApi.Path.CombineFile(CabviewFileParser.CurrentFolder, s);
+						}
+						catch
+						{
+							Plugin.CurrentHost.AddMessage(MessageType.Error, true, "MSTS CVF Parser: The texture path contains invalid characters in CabComponent " + Type);
+						}
+
+						if (!File.Exists(texturePath))
+						{
+							Plugin.CurrentHost.AddMessage(MessageType.Error, true, "MSTS CVF Parser: The texture file " + s + " was not found in CabComponent " + Type);
+						}
+						else
+						{
+							Plugin.CurrentHost.RegisterTexture(texturePath, new TextureParameters(null, null), out DaytimeTexture, true);
+						}
+
+						try
+						{
+							string fileName = Path.GetFileName(texturePath);
+							string textureDirectory = Path.GetDirectoryName(texturePath);
+							textureDirectory = OpenBveApi.Path.CombineDirectory(textureDirectory, "NIGHT");
+							texturePath = OpenBveApi.Path.CombineFile(textureDirectory, fileName);
+							if (File.Exists(texturePath))
+							{
+								Plugin.CurrentHost.RegisterTexture(texturePath, new TextureParameters(null, null), out NightTimeTexture, true);
+							}
+						}
+						catch
+						{
+							// ignored
+						}
+					}
+					else
+					{
+						Plugin.CurrentHost.AddMessage(MessageType.Error, true, "MSTS CVF Parser: A texture file was not specified in CabComponent " + Type);
+					}
+					break;
+				case KujuTokenID.Position:
+					Position.X = block.ReadSingle();
+					Position.Y = block.ReadSingle();
+					Size.X = block.ReadSingle();
+					Size.Y = block.ReadSingle();
+					break;
+				case KujuTokenID.Type:
+					panelSubject = block.ReadEnumValue(default(PanelSubject));
+					break;
+				case KujuTokenID.LeadingZeros:
+					LeadingZeros = block.ReadInt16();
+					break;
+				case KujuTokenID.PositiveColour:
+					int numColors = block.ReadInt16();
+					if (numColors == 0)
+					{
+						PositiveColors = new[]
+						{
+							new Tuple<double, Color24>(0, Color24.White)
+
+						};
+						if (block.Length() - block.Position() > 3)
+						{
+							Block subBlock = block.ReadSubBlock(KujuTokenID.ControlColour);
+							PositiveColors[0] = new Tuple<double, Color24>(0, new Color24((byte)subBlock.ReadInt16(), (byte)subBlock.ReadInt16(), (byte)subBlock.ReadInt16()));
+						}
+					}
+					else
+					{
+						PositiveColors = new Tuple<double, Color24>[numColors];
+						double value = 0;
+						for (int i = 0; i < numColors; i++)
+						{
+							if (block.Length() - block.Position() > 3)
+							{
+								Block subBlock = block.ReadSubBlock(new[] { KujuTokenID.ControlColour, KujuTokenID.SwitchVal });
+								if (subBlock.Token == KujuTokenID.ControlColour)
+								{
+									Color24 color = new Color24((byte)subBlock.ReadInt16(), (byte)subBlock.ReadInt16(),
+										(byte)subBlock.ReadInt16());
+									PositiveColors[i] = new Tuple<double, Color24>(value, color);
+								}
+								else
+								{
+									i--;
+									value = subBlock.ReadSingle();
+								}
+							}
+						}
+					}
+
+					break;
+				case KujuTokenID.NegativeColour:
+					numColors = block.ReadInt16();
+					if (numColors == 0)
+					{
+						NegativeColors = new[]
+						{
+							new Tuple<double, Color24>(double.NegativeInfinity, Color24.White)
+
+						};
+						if (block.Length() - block.Position() > 3)
+						{
+							Block subBlock = block.ReadSubBlock(KujuTokenID.ControlColour);
+							NegativeColors[0] = new Tuple<double, Color24>(double.NegativeInfinity, new Color24((byte)subBlock.ReadInt16(), (byte)subBlock.ReadInt16(), (byte)subBlock.ReadInt16()));
+						}
+					}
+					else
+					{
+						NegativeColors = new Tuple<double, Color24>[numColors];
+						double value = double.NegativeInfinity;
+						for (int i = 0; i < numColors; i++)
+						{
+							if (block.Length() - block.Position() > 3)
+							{
+								Block subBlock = block.ReadSubBlock(new[] { KujuTokenID.ControlColour, KujuTokenID.SwitchVal });
+								if (subBlock.Token == KujuTokenID.ControlColour)
+								{
+									Color24 color = new Color24((byte)subBlock.ReadInt16(), (byte)subBlock.ReadInt16(),
+										(byte)subBlock.ReadInt16());
+									NegativeColors[i] = new Tuple<double, Color24>(value, color);
+								}
+								else
+								{
+									i--;
+									value = subBlock.ReadSingle();
+								}
+							}
+						}
+					}
+					break;
+				case KujuTokenID.ControlColour:
+					ControlColor = new Color24((byte)block.ReadInt16(), (byte)block.ReadInt16(), (byte)block.ReadInt16());
+					break;
+				case KujuTokenID.Accuracy:
+					Accuracy = block.ReadInt16();
+					break;
+				case KujuTokenID.Area:
+					AreaPosition.X = block.ReadInt16();
+					AreaPosition.Y = block.ReadInt16();
+					AreaSize.X = block.ReadInt16();
+					AreaSize.Y = block.ReadInt16();
+					break;
+			}
+		}
+
+		private Texture TryGetTexture(CabComponentType component, bool nightTime, Texture baseTexture, int frameWidth, int frameHeight, int column, int row)
+		{
+			if (baseTexture == null)
+			{
+				return null;
+			}
+
+			Texture t = null;
+			if (column * frameWidth + frameWidth <= baseTexture.Width && row * frameHeight + frameHeight <= baseTexture.Height)
+			{
+				Plugin.CurrentHost.RegisterTexture(baseTexture, new TextureParameters(new TextureClipRegion(column * frameWidth, row * frameHeight, frameWidth, frameHeight), null), out t);
+			}
+			else
+			{
+				Plugin.CurrentHost.AddMessage(MessageType.Error, false, "MSTS CVF Parser: Frame was outside the bounds of the " +  (nightTime ? "NightTimeTexture" : "DaytimeTexture") + " for " + component);
+			}
+
+			return t;
+		}
+
+		internal CabComponent(Block block, Vector3 panelPosition)
+		{
+			myBlock = block;
+			PanelPosition = panelPosition;
+		}
+
+		private readonly Block myBlock;
+	}
+}

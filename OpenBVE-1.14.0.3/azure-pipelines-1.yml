@@ -1,0 +1,86 @@
+# The final YAML runs PR trigger builds
+trigger:
+  branches:
+    exclude:
+     - master
+pr:
+  branches:
+    include:
+      - master
+    exclude:
+      - release
+
+### Test on latest Windows and .Net version
+
+jobs:
+- job: WindowsBuild
+  displayName: 'Build on Windows (sln)'
+  pool:
+    vmImage: 'windows-2022'
+
+  variables:
+    solution: 'OpenBVE.sln'
+    buildPlatform: 'Any CPU'
+    buildConfiguration: 'Release'
+    
+  steps:
+  - task: ChocolateyCommand@0
+    inputs:
+      command: 'install'
+      installPackageId: 'dotnet4.6-targetpack'
+
+  - task: ChocolateyCommand@0
+    inputs:
+      command: 'install'
+      installPackageId: 'netfx-4.6.1-devpack'
+      
+  - task: ChocolateyCommand@0
+    inputs:
+      command: 'install'
+      installPackageId: 'netfx-4.6.2-devpack'
+      
+  - task: NuGetToolInstaller@1
+
+  - task: NuGetCommand@2
+    inputs:
+      restoreSolution: '$(solution)'
+
+  - task: VSBuild@1
+    inputs:
+      solution: '$(solution)'
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
+
+- job: AppleMakeBuild
+  displayName: 'Build on Apple OS-X (makefile)'
+  pool:
+    vmImage: 'macos-14'
+
+  variables:
+    solution: 'OpenBVE.sln'
+    buildPlatform: 'Any CPU'
+    buildConfiguration: 'Release'
+
+  steps:
+  - script: |
+          echo killing...; sudo pkill -9 XProtect >/dev/null || true;
+          echo waiting...; while pgrep XProtect; do sleep 3; done;
+  - task: NuGetToolInstaller@1
+  - script: make publish 
+
+### Linux makefile build
+### This runs on the latest Mono version installed
+
+- job: LinuxMakeBuild
+  displayName: 'Build on Linux (makefile)'
+  pool:
+    vmImage: 'ubuntu-22.04'
+
+  variables:
+    solution: 'OpenBVE.sln'
+    buildPlatform: 'Any CPU'
+    buildConfiguration: 'Release'
+
+  steps:
+  - task: NuGetToolInstaller@1
+  - script: make publish

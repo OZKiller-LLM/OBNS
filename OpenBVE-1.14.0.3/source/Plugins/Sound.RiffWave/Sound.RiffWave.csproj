@@ -1,0 +1,121 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{67418D38-1E2E-4944-A1B0-09E00FC2D055}</ProjectGuid>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Plugin</RootNamespace>
+    <AssemblyName>Sound.RiffWave</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
+    <NoStdLib>False</NoStdLib>
+    <WarningLevel>4</WarningLevel>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <TargetFrameworkProfile>
+    </TargetFrameworkProfile>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Platform)' == 'x86' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <RegisterForComInterop>False</RegisterForComInterop>
+    <GenerateSerializationAssemblies>Auto</GenerateSerializationAssemblies>
+    <BaseAddress>4194304</BaseAddress>
+    <FileAlignment>4096</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <OutputPath>bin\Debug\Data\Plugins\</OutputPath>
+    <DebugSymbols>True</DebugSymbols>
+    <DebugType>Full</DebugType>
+    <Optimize>False</Optimize>
+    <CheckForOverflowUnderflow>True</CheckForOverflowUnderflow>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <OutputPath>bin\Release\Data\Plugins\</OutputPath>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>None</DebugType>
+    <Optimize>True</Optimize>
+    <CheckForOverflowUnderflow>False</CheckForOverflowUnderflow>
+    <DefineConstants>TRACE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
+    <OutputPath>..\..\..\bin_debug\</OutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7</LangVersion>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x86'">
+    <OutputPath>..\..\..\bin_release\</OutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7</LangVersion>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'GLMenu|x86'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\x86\GLMenu\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
+    <FileAlignment>4096</FileAlignment>
+    <DebugType>Full</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7</LangVersion>
+  </PropertyGroup>
+  <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
+  <ItemGroup>
+    <Reference Include="NAudio, Version=1.10.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\NAudio.1.10.0\lib\net35\NAudio.dll</HintPath>
+    </Reference>
+    <Reference Include="NLayer, Version=1.12.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\NLayer.1.12.0\lib\net35\NLayer.dll</HintPath>
+    </Reference>
+    <Reference Include="NLayer.NAudioSupport, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\NLayer.NAudioSupport.1.0.0\lib\net35\NLayer.NAudioSupport.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="ChunkID.cs" />
+    <Compile Include="Chunks\Chunk.cs" />
+    <Compile Include="Chunks\CuePoint.cs" />
+    <Compile Include="Chunks\DataChunk.cs" />
+    <Compile Include="Chunks\SilentChunk.cs" />
+    <Compile Include="Formats\WaveFormatAdPcm.cs" />
+    <Compile Include="Formats\WaveFormatEx.cs" />
+    <Compile Include="Formats\WaveFormatExtensible.cs" />
+    <Compile Include="Formats\WaveFormatMp3.cs" />
+    <Compile Include="Formats\WaveFormatPcm.cs" />
+    <Compile Include="Formats\WFormatTag.cs" />
+    <Compile Include="Plugin.Parser.cs">
+      <DependentUpon>Plugin.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Plugin.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\OpenBveApi\OpenBveApi.csproj">
+      <Project>{27134980-4415-4375-A564-40A9014DFA5F}</Project>
+      <Name>OpenBveApi</Name>
+      <Private>True</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.config" />
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup />
+  <Target Name="AfterBuild">
+    <ItemGroup>
+      <OutputFiles Include="$(TargetDir)$(TargetName).*" />
+    </ItemGroup>
+    <Move SourceFiles="@(OutputFiles)" DestinationFolder="$(TargetDir)Data\Plugins\" />
+  </Target>
+  <Import Project="..\..\..\packages\Microsoft.NETFramework.ReferenceAssemblies.net48.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net48.targets" Condition="Exists('..\..\..\packages\Microsoft.NETFramework.ReferenceAssemblies.net48.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net48.targets')" />
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Enable NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105.The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\..\..\packages\Microsoft.NETFramework.ReferenceAssemblies.net48.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net48.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\packages\Microsoft.NETFramework.ReferenceAssemblies.net48.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net48.targets'))" />
+  </Target>
+</Project>

@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Builds the upstream Plugins\Object.Animated sources for Android. Upstream is not modified. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Object.Animated</RootNamespace>
+    <AssemblyName>Object.Animated</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)Plugins\Object.Animated\**\*.cs" LinkBase="Object.Animated" />
+    <Compile Remove="$(UpstreamSource)Plugins\Object.Animated\Properties\AssemblyInfo.cs" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Formats.OpenBve.Android\Formats.OpenBve.Android.csproj" />
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+
+  </ItemGroup>
+
+</Project>

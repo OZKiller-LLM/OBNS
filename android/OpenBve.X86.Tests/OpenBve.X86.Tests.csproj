@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Desktop harness for the x86 emulator: loads a real BVE plugin and drives it as OpenBVE would. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBve.X86\OpenBve.X86.csproj" />
+  </ItemGroup>
+
+</Project>

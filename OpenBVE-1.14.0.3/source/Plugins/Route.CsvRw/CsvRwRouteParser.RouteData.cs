@@ -1,0 +1,250 @@
+﻿using System.Collections.Generic;
+using System.Linq;
+using OpenBveApi.Math;
+using OpenBveApi.Routes;
+using OpenBveApi.Textures;
+using RouteManager2.SignalManager;
+
+namespace CsvRwRouteParser
+{
+	internal partial class Parser
+	{
+		private class RouteData
+		{
+			internal double TrackPosition;
+			internal double BlockInterval;
+			/// <summary>OpenBVE runs internally in meters per second
+			/// This value is used to convert between the speed set by Options.UnitsOfSpeed and m/s
+			/// </summary>
+			internal double UnitOfSpeed;
+			internal bool SignedCant;
+			internal bool FogTransitionMode;
+			internal readonly StructureData Structure;
+			internal readonly SignalDictionary Signals;
+			internal CompatibilitySignalObject[] CompatibilitySignals;
+			internal Texture[] TimetableDaytime;
+			internal Texture[] TimetableNighttime;
+			internal BackgroundDictionary Backgrounds;
+			internal double[] SignalSpeeds;
+			internal readonly List<Block> Blocks;
+			internal readonly List<Marker> Markers;
+			internal readonly List<StopRequest> RequestStops;
+			internal int FirstUsedBlock;
+			internal bool IgnorePitchRoll;
+			internal bool LineEndingFix;
+			internal bool ValueBasedSections = false;
+			internal bool TurnUsed = false;
+			internal bool SwitchUsed = false;
+			internal Vector2 StartingDirection = Vector2.Down;
+
+			internal readonly Dictionary<int, NewPatternObj> PatternObjects;
+
+			internal bool IsHmmsim = false;
+
+			internal readonly List<string> ScriptedTrainFiles;
+
+			internal void SetHmmsimProperties()
+			{
+				IsHmmsim = true;
+				Plugin.CurrentOptions.ObjectDisposalMode = ObjectDisposalMode.Accurate;
+				Plugin.CurrentOptions.ObjectOptimizationBasicThreshold = 2000;
+				// from observation
+				if (BlockInterval == 25)
+				{
+					// only set block interval if it's the default- I'm sure someone has probably
+					// mixed the BlockInterval command and Hmmsim properties....
+					// Note that Hmmsim doesn't really use the BlockInterval (only for railtypes)
+					BlockInterval = 5;
+				}
+				
+			}
+			/*
+			 * HMMSIM
+			 */
+			internal readonly Dictionary<string, int> RailKeys = new Dictionary<string, int>();
+
+			internal RouteData(bool previewOnly)
+			{
+				BlockInterval = 25.0;
+				FirstUsedBlock = -1;
+				Blocks = new List<Block>();
+				Markers = new List<Marker>();
+				RequestStops = new List<StopRequest>();
+				ScriptedTrainFiles = new List<string>();
+				Signals = new SignalDictionary();
+				Structure = new StructureData();
+				IsHmmsim = false;
+				Blocks.Add(new Block(previewOnly));
+				Blocks[0].Rails.Add(0, new Rail(2.0, 1.0) { RailStarted = true });
+				Blocks[0].Rails.Add(-1, new Rail(0, 0) { RailStarted = true });
+				Blocks[0].RailType = new[] { 0 };
+				Blocks[0].CurrentTrackState = new TrackElement(0.0);
+				Blocks[0].RailCycles = new RailCycle[1];
+				Blocks[0].RailCycles[0].RailCycleIndex = -1;
+				PatternObjects = new Dictionary<int, NewPatternObj>();
+			}
+
+			/// <summary>Creates any missing blocks</summary>
+			/// <param name="ToIndex">The block index to process until</param>
+			/// <param name="PreviewOnly">Whether this is a preview only</param>
+			internal void CreateMissingBlocks(int ToIndex, bool PreviewOnly)
+			{
+				if (ToIndex >= Blocks.Count)
+				{
+					for (int i = Blocks.Count; i <= ToIndex; i++)
+					{
+						Blocks.Add(new Block(PreviewOnly));
+						if (!PreviewOnly)
+						{
+							Blocks[i].Background = -1;
+							Blocks[i].Fog = Blocks[i - 1].Fog;
+							Blocks[i].FogDefined = false;
+							Blocks[i].Cycle = Blocks[i - 1].Cycle;
+							Blocks[i].Height = double.NaN;
+							Blocks[i].SnowIntensity = Blocks[i - 1].SnowIntensity;
+							Blocks[i].RainIntensity = Blocks[i - 1].RainIntensity;
+							Blocks[i].WeatherObject = Blocks[i - 1].WeatherObject;
+							Blocks[i].LightDefinition = Blocks[i - 1].LightDefinition;
+							Blocks[i].DynamicLightDefinition = Blocks[i -1].DynamicLightDefinition;
+							Blocks[i].Switches = new Switch[] { };
+						}
+						Blocks[i].RailCycles = Blocks[i - 1].RailCycles;
+						Blocks[i].RailType = new int[Blocks[i - 1].RailType.Length];
+						if (!PreviewOnly)
+						{
+							for (int j = 0; j < Blocks[i].RailType.Length; j++)
+							{
+								int rc = -1;
+								if (Blocks[i].RailCycles.Length > j)
+								{
+									rc = Blocks[i].RailCycles[j].RailCycleIndex;
+								}
+								if (rc != -1 && Structure.RailCycles.Length > rc && Structure.RailCycles[rc].Length > 1)
+								{
+									int cc = Blocks[i].RailCycles[j].CurrentCycle;
+									if (cc == Structure.RailCycles[rc].Length - 1)
+									{
+										Blocks[i].RailType[j] = Structure.RailCycles[rc][0];
+										Blocks[i].RailCycles[j].CurrentCycle = 0;
+									}
+									else
+									{
+										cc++;
+										Blocks[i].RailType[j] = Structure.RailCycles[rc][cc];
+										Blocks[i].RailCycles[j].CurrentCycle++;
+									}
+								}
+								else
+								{
+									Blocks[i].RailType[j] = Blocks[i - 1].RailType[j];
+								}
+							}
+						}
+						
+						for (int j = 0; j < Blocks[i - 1].Rails.Count; j++)
+						{
+							int key = Blocks[i - 1].Rails.ElementAt(j).Key;
+							Rail rail = new Rail(Blocks[i - 1].Rails[key].Accuracy,Blocks[i - 1].Rails[key].AdhesionMultiplier)
+							{
+								RailStarted = Blocks[i -1].Rails[key].RailStarted,
+								RailStart = new Vector2(Blocks[i -1].Rails[key].RailStart),
+								RailStartRefreshed = false,
+								RailEnded = false,
+								RailEnd = new Vector2(Blocks[i - 1].Rails[key].RailStart),
+								IsDriveable = Blocks[i - 1].Rails[key].IsDriveable,
+								PowerSupplies = new Dictionary<PowerSupplyTypes, PowerSupply>(Blocks[i -1].Rails[key].PowerSupplies)
+							};
+							Blocks[i].Rails.Add(key, rail);
+						}
+						if (!PreviewOnly)
+						{
+							Blocks[i].RailWall = new Dictionary<int, WallDike>();
+							for (int j = 0; j < Blocks[i - 1].RailWall.Count; j++)
+							{
+								int key = Blocks[i - 1].RailWall.ElementAt(j).Key;
+								if (Blocks[i - 1].RailWall[key] == null || !Blocks[i - 1].RailWall[key].Exists)
+								{
+									continue;
+								}
+								Blocks[i].RailWall.Add(key, Blocks[i - 1].RailWall[key].Clone());
+							}
+							Blocks[i].RailDike = new Dictionary<int, WallDike>();
+							for (int j = 0; j < Blocks[i - 1].RailDike.Count; j++)
+							{
+								int key = Blocks[i - 1].RailDike.ElementAt(j).Key;
+								if (Blocks[i - 1].RailDike[key] == null || !Blocks[i - 1].RailDike[key].Exists)
+								{
+									continue;
+								}
+								Blocks[i].RailDike.Add(key, Blocks[i - 1].RailDike[key].Clone());
+							}
+							Blocks[i].RailPole = new Pole[Blocks[i - 1].RailPole.Length];
+							for (int j = 0; j < Blocks[i].RailPole.Length; j++)
+							{
+								Blocks[i].RailPole[j] = Blocks[i - 1].RailPole[j];
+							}
+						}
+						Blocks[i].Pitch = Blocks[i - 1].Pitch;
+						Blocks[i].CurrentTrackState = Blocks[i - 1].CurrentTrackState;
+						Blocks[i].Turn = 0.0;
+					}
+				}
+			}
+
+			/// <summary>Sets the brightness value for the specified track position</summary>
+			/// <param name="trackPosition">The track position to get the brightness value for</param>
+			/// <returns>The brightness value</returns>
+			internal double GetBrightness(double trackPosition)
+			{
+				double tMin = double.PositiveInfinity;
+				double tMax = double.NegativeInfinity;
+				double bMin = 1.0, bMax = 1.0;
+				for (int i = 0; i < Blocks.Count; i++)
+				{
+					for (int j = 0; j < Blocks[i].BrightnessChanges.Length; j++)
+					{
+						if (Blocks[i].BrightnessChanges[j].TrackPosition <= trackPosition)
+						{
+							tMin = Blocks[i].BrightnessChanges[j].TrackPosition;
+							bMin = Blocks[i].BrightnessChanges[j].Value;
+						}
+					}
+				}
+				for (int i = Blocks.Count - 1; i >= 0; i--)
+				{
+					for (int j = Blocks[i].BrightnessChanges.Length - 1; j >= 0; j--)
+					{
+						if (Blocks[i].BrightnessChanges[j].TrackPosition >= trackPosition)
+						{
+							tMax = Blocks[i].BrightnessChanges[j].TrackPosition;
+							bMax = Blocks[i].BrightnessChanges[j].Value;
+						}
+					}
+				}
+				if (tMin == double.PositiveInfinity && tMax == double.NegativeInfinity)
+				{
+					return 1.0;
+				}
+
+				if (tMin == double.PositiveInfinity)
+				{
+					return (bMax - 1.0) * trackPosition / tMax + 1.0;
+				}
+
+				if (tMax == double.NegativeInfinity)
+				{
+					return bMin;
+				}
+
+				if (tMin == tMax)
+				{
+					return 0.5 * (bMin + bMax);
+				}
+
+				double n = (trackPosition - tMin) / (tMax - tMin);
+				return (1.0 - n) * bMin + n * bMax;
+			}
+		}
+		
+	}
+}

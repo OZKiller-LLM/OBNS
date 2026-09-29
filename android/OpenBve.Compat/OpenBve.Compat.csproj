@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Compatibility shims that let the upstream OpenBVE sources compile on Android
+    without editing them.
+
+      System.Drawing.*        -> backed by SkiaSharp (Bitmap/Graphics/Font/...)
+      System.Windows.Forms.*  -> minimal no-op / logging replacements
+
+    System.Drawing.Primitives (Color, Point, Size, Rectangle, ...) ships with the
+    Android BCL, so only the System.Drawing.Common types are re-implemented here.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>OpenBve.Compat</RootNamespace>
+    <AssemblyName>OpenBve.Compat</AssemblyName>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="3.*" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Android" Version="3.*" />
+  </ItemGroup>
+
+</Project>

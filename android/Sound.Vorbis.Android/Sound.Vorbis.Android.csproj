@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Builds the upstream Plugins\Sound.Vorbis sources for Android. Upstream is not modified. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Sound.Vorbis</RootNamespace>
+    <AssemblyName>Sound.Vorbis</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)Plugins\Sound.Vorbis\**\*.cs" LinkBase="Sound.Vorbis" />
+    <Compile Remove="$(UpstreamSource)Plugins\Sound.Vorbis\Properties\AssemblyInfo.cs" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio.Vorbis" Version="1.2.0" />
+    <PackageReference Include="NAudio" Version="1.10.0" />
+    <PackageReference Include="NVorbis" Version="0.10.1" />
+  </ItemGroup>
+
+</Project>

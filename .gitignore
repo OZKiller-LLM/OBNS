@@ -1,0 +1,19 @@
+# Build outputs
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# Release packages (android/release.ps1) - published separately, not source
+dist/
+
+# Third-party routes and trains used for testing: their authors' terms forbid redistribution
+/content/
+
+# Upstream's own source archive (the tree is in OpenBVE-1.14.0.3/)
+/src-1.14.0.3.zip
+
+# Signing keys never belong in the repository
+*.jks
+*.keystore

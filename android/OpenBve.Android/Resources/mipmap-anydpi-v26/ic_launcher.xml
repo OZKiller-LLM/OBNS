@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher icon from Android 8: the classic OpenBVE logo's artwork as one full-bleed layer,
+  which the launcher cuts to its own shape (see android/artwork/make_icons.ps1). The foreground
+  is empty: the artwork is a single picture, with nothing to lift off it.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+	<background android:drawable="@mipmap/ic_launcher_background" />
+	<foreground android:drawable="@android:color/transparent" />
+</adaptive-icon>

@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Builds the upstream Plugins\OpenBveAts sources for Android. Upstream is not modified. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>OpenBveAts</RootNamespace>
+    <AssemblyName>OpenBveAts</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)Plugins\OpenBveAts\**\*.cs" LinkBase="OpenBveAts" />
+    <Compile Remove="$(UpstreamSource)Plugins\OpenBveAts\Properties\AssemblyInfo.cs" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+
+  </ItemGroup>
+
+</Project>

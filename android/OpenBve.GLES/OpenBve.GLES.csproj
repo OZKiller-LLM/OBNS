@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The OpenTK 3 API surface OpenBVE is written against, bound to OpenGL ES 3 on Android.
+    See PORTING.md for why this is hand-written rather than taken from a NuGet package.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>OpenBve.GLES</RootNamespace>
+    <AssemblyName>OpenBve.GLES</AssemblyName>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+</Project>

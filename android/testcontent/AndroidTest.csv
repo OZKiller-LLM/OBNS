@@ -1,0 +1,16 @@
+Options.UnitOfLength 1
+
+With Route
+.Comment Android port test route
+.Gauge 1435
+.Timetable Android
+
+With Track
+0, .Height 0
+250, .Curve 300
+750, .Curve 0
+1000, .Height 5
+1500, .Curve -400
+2000, .Curve 0
+2500, .Height 0
+3000,

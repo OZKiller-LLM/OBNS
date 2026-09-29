@@ -1,0 +1,408 @@
+//Simplified BSD License (BSD-2-Clause)
+//
+//Copyright (c) 2020, Christopher Lees, The OpenBVE Project
+//
+//Redistribution and use in source and binary forms, with or without
+//modification, are permitted provided that the following conditions are met:
+//
+//1. Redistributions of source code must retain the above copyright notice, this
+//   list of conditions and the following disclaimer.
+//2. Redistributions in binary form must reproduce the above copyright notice,
+//   this list of conditions and the following disclaimer in the documentation
+//   and/or other materials provided with the distribution.
+//
+//THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+//ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+//WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+//DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+//ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+//(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+//LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+//ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+//(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+//SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Xml;
+using OpenBveApi.Colors;
+using OpenBveApi.Math;
+using OpenBveApi.Interface;
+using OpenBveApi.Objects;
+
+namespace Plugin
+{
+	/// <summary>Parses a Loksim3D xml format object</summary>
+	internal static class Ls3DObjectParser
+	{
+		/// <summary>Loads a Loksim3D object from a file.</summary>
+		/// <param name="FileName">The text file to load the animated object from. Must be an absolute file name.</param>
+		/// <param name="Rotation">The rotation to be applied</param>
+		/// <param name="autoRotate">Whether auto-rotation (billboarding) is to be applied</param>
+		/// <returns>The object loaded.</returns>
+		internal static StaticObject ReadObject(string FileName, Vector3 Rotation, ref bool autoRotate)
+		{
+			string BaseDir = Path.GetDirectoryName(FileName);
+			XmlDocument currentXML = new XmlDocument();
+			//Initialise the object
+			StaticObject Object = new StaticObject(Plugin.currentHost);
+			MeshBuilder Builder = new MeshBuilder(Plugin.currentHost);
+			bool PropertiesFound = false;
+
+			List<VertexTemplate> tempVertices = new List<VertexTemplate>();
+			List<Vector3> tempNormals = new List<Vector3>();
+			Color24 transparentColor = new Color24();
+			string tday = null;
+			string tnight = null;
+			string transtex = null;
+			bool TransparencyUsed = false;
+			bool TransparentTypSet = false;
+			bool FirstPxTransparent = false;
+			Color24 FirstPxColor = new Color24();
+			bool Face2 = false;
+			int TextureWidth = 0;
+			int TextureHeight = 0;
+			if (File.Exists(FileName))
+			{
+				try
+				{
+					currentXML.SanitizeAndLoadXml(FileName);
+				}
+				catch
+				{
+					return null;
+				}
+			}
+			else
+			{
+				Plugin.currentHost.AddMessage(MessageType.Error, false, "Loksim3D object " + FileName + " does not exist.");
+				return null;
+			}
+			//Check for null
+			if (currentXML.DocumentElement != null)
+			{
+				XmlNodeList DocumentNodes = currentXML.DocumentElement.SelectNodes("/OBJECT");
+				//Check this file actually contains Loksim3D object nodes
+				if (DocumentNodes != null)
+				{
+					foreach (XmlNode outerNode in DocumentNodes)
+					{
+						if (outerNode.ChildNodes.OfType<XmlElement>().Any())
+						{
+							foreach (XmlNode node in outerNode.ChildNodes)
+							{
+								//I think there should only be one properties node??
+								//Need better format documentation
+								if (node.Name == "Props" && PropertiesFound == false)
+								{
+									if (node.Attributes != null)
+									{
+										//Our node has child nodes, therefore this properties node should be valid
+										//Needs better validation
+										PropertiesFound = true;
+										foreach (XmlAttribute attribute in node.Attributes)
+										{
+											switch (attribute.Name)
+											{
+												//Sets the texture
+												//Loksim3D objects only support daytime textures
+												case "Texture":
+													tday = OpenBveApi.Path.Loksim3D.CombineFile(BaseDir, attribute.Value, Plugin.LoksimPackageFolder);
+													if (!File.Exists(tday))
+													{
+														Plugin.currentHost.AddMessage(MessageType.Warning, true, "Ls3d Texture file " + attribute.Value + " not found.");
+														break;
+													}
+													try
+													{
+														using (Bitmap TextureInformation = new Bitmap(tday))
+														{
+															TextureWidth = TextureInformation.Width;
+															TextureHeight = TextureInformation.Height;
+															Color color = TextureInformation.GetPixel(0, 0);
+															FirstPxColor = new Color24(color.R, color.G, color.B);
+														}
+													}
+													catch
+													{
+														Plugin.currentHost.AddMessage(MessageType.Error, true,
+															"An error occured loading daytime texture " + tday +
+															" in file " + FileName);
+														tday = null;
+													}
+													break;
+												//Defines whether the texture uses transparency
+												//May be omitted
+												case "Transparent":
+													if (TransparentTypSet)
+													{
+														//Appears to be ignored with TransparentTyp set
+														continue;
+													}
+													if (attribute.Value == "TRUE")
+													{
+														TransparencyUsed = true;
+														transparentColor = Color24.Black;
+													}
+													break;
+												case "TransTexture":
+													if (string.IsNullOrEmpty(attribute.Value))
+													{
+														//Empty....
+														continue;
+													}
+													transtex = OpenBveApi.Path.Loksim3D.CombineFile(BaseDir, attribute.Value, Plugin.LoksimPackageFolder);
+													if (!File.Exists(transtex))
+													{
+														Plugin.currentHost.AddMessage(MessageType.Error, true, "AlphaTexture " + attribute.Value + " could not be found in file " + FileName);
+														transtex = null;
+													}												
+													break;
+												//Sets the transparency type
+												case "TransparentTyp":
+													TransparentTypSet = true;
+													switch (attribute.Value)
+													{
+														case "0":
+															//Transparency is disabled
+															TransparencyUsed = false;
+															break;
+														case "1":
+															//Transparency is solid black
+															TransparencyUsed = true;
+															transparentColor = Color24.Black;
+															FirstPxTransparent = false;
+															break;
+														case "2":
+															//Transparency is the color at Pixel 1,1
+															TransparencyUsed = true;
+															FirstPxTransparent = true;
+															break;
+														case "3":
+														case "4":
+															//This is used when transparency is used with an alpha bitmap
+															TransparencyUsed = false;
+															FirstPxTransparent = false;
+															break;
+														case "5":
+															//Use the alpha channel from the image, so we don't need to do anything fancy
+															//TODO: (Low priority) Check what happens in Loksim itself when an image uses the Alpha channel, but doesn't actually specify type 5
+															break;
+														default:
+															Plugin.currentHost.AddMessage(MessageType.Error, false, "Unrecognised transparency type " + attribute.Value + " detected in " + attribute.Name + " in Loksim3D object file " + FileName);
+															break;
+													}
+													break;
+												//Sets whether the rears of the faces are to be drawn
+												case "Drawrueckseiten":
+													if (attribute.Value == "TRUE" || string.IsNullOrEmpty(attribute.Value))
+													{
+														Face2 = true;
+													}
+													else
+													{
+														Face2 = false;
+													}
+													break;
+												case "AutoRotate":
+													if (attribute.Value == "TRUE")
+													{
+														autoRotate = true;
+													}
+													break;
+												/*
+												 * MISSING PROPERTIES:
+												 * Beleuchtet- Translates as illuminated. Presume something to do with lighting? - What emissive color?
+												 * FileAuthor
+												 * FileInfo
+												 * FilePicture
+												 */
+											}
+										}
+									}
+								}
+								//The point command is eqivilant to a vertex
+								else if (node.Name == "Point" && node.ChildNodes.OfType<XmlElement>().Any())
+								{
+									foreach (XmlNode childNode in node.ChildNodes)
+									{
+										if (childNode.Name == "Props" && childNode.Attributes != null)
+										{
+											//Vertex
+											Vector3 v = new Vector3();
+											bool vF = false;
+											//Normals
+											Vector3 n = new Vector3();
+											foreach (XmlAttribute attribute in childNode.Attributes)
+											{
+												switch (attribute.Name)
+												{
+													//Sets the vertex normals
+													case "Normal":
+														if (!Vector3.TryParse(attribute.Value, ';', out n))
+														{
+															Plugin.currentHost.AddMessage(MessageType.Warning, true, "Invalid vertex normal vector " + attribute.Value + " supplied in Ls3d object file.");
+														}
+														break;
+													//Sets the vertex 3D co-ordinates
+													case "Vekt":
+														if (!Vector3.TryParse(attribute.Value, ';', out v))
+														{
+															Plugin.currentHost.AddMessage(MessageType.Warning, true, "Invalid vertex coordinate vector " + attribute.Value + " supplied in Ls3d object file.");
+														}
+														vF = true;
+														break;
+												}
+											}
+											
+											//Add vertex and normals to temp array
+											if (vF == false)
+											{
+												Plugin.currentHost.AddMessage(MessageType.Warning, true, "Vertex with no co-ordinates supplied encountered in Ls3d object file.");
+												continue;
+											}
+											tempVertices.Add(new Vertex(v));
+											tempNormals.Add(new Vector3(n));
+											tempNormals[tempNormals.Count - 1].Normalize();
+											Builder.Vertices.Add(new Vertex(new Vector3(v)));
+										}
+									}
+								}
+								//The Flaeche command creates a face
+								else if (node.Name == "Flaeche" && node.ChildNodes.OfType<XmlElement>().Any())
+								{
+									foreach (XmlNode childNode in node.ChildNodes)
+									{
+										if (childNode.Name == "Props" && childNode.Attributes != null)
+										{
+											//Defines the verticies in this face
+											//**NOTE**: A vertex may appear in multiple faces with different texture co-ordinates
+											if (childNode.Attributes["Points"] != null && !string.IsNullOrEmpty(childNode.Attributes["Points"].Value))
+											{
+												string[] Verticies = childNode.Attributes["Points"].Value.Split(';');
+												//Add 1 to the length of the face array
+												MeshFace f = new MeshFace(Verticies.Length);
+												//Run through the vertices list and grab from the temp array
+
+												int smallestX = TextureWidth;
+												int smallestY = TextureHeight;
+												for (int j = 0; j < Verticies.Length; j++)
+												{
+													//This is the position of the vertex in the temp array
+													if (!int.TryParse(Verticies[j], out int currentVertex))
+													{
+														Plugin.currentHost.AddMessage(MessageType.Error, false, Verticies[j] + " does not parse to a valid Vertex in " + node.Name + " in Loksim3D object file " + FileName);
+														continue;
+													}
+													//Add one to the actual vertex array
+													//Set coordinates
+													Builder.Vertices.Add(new Vertex(tempVertices[currentVertex].Coordinates));
+													//Set the vertex index
+													f.Vertices[j].Index = Builder.Vertices.Count - 1;
+													//Set the normals
+													f.Vertices[j].Normal = tempNormals[currentVertex];
+													//Now deal with the texture
+													//Texture mapping points are in pixels X,Y and are relative to the face in question rather than the vertex
+													if (childNode.Attributes["Texture"] != null)
+													{
+														string[] TextureCoords = childNode.Attributes["Texture"].Value.Split(';');
+														Vector2 currentCoords;
+														string[] splitCoords = TextureCoords[j].Split(',');
+														if (!float.TryParse(splitCoords[0], out float OpenBVEWidth))
+														{
+															Plugin.currentHost.AddMessage(MessageType.Error, false, "Invalid texture width specified in " + node.Name + " in Loksim3D object file " + FileName);
+															continue;
+														}
+														if (!float.TryParse(splitCoords[1], out float OpenBVEHeight))
+														{
+															Plugin.currentHost.AddMessage(MessageType.Error, false, "Invalid texture height specified in " + node.Name + " in Loksim3D object file " + FileName);
+															continue;
+														}
+														if (OpenBVEWidth <= smallestX && OpenBVEHeight <= smallestY)
+														{
+															//Clamp texture width and height
+															smallestX = (int)OpenBVEWidth;
+															smallestY = (int)OpenBVEHeight;
+														}
+														if (TextureWidth != 0 && TextureHeight != 0)
+														{
+															//Calculate openBVE co-ords
+															currentCoords.X = (OpenBVEWidth / TextureWidth);
+															currentCoords.Y = (OpenBVEHeight / TextureHeight);
+														}
+														else
+														{
+															//Invalid, so just return zero
+															currentCoords.X = 0;
+															currentCoords.Y = 0;
+														}
+														Builder.Vertices[Builder.Vertices.Count - 1].TextureCoordinates = currentCoords;
+													}
+												}
+												if (Face2)
+												{
+													//Add face2 flag if required
+													f.Flags = FaceFlags.Face2Mask;
+												}
+												Builder.Faces.Add(f);
+											}
+
+										}
+									}
+								}
+
+							}
+						}
+					}
+				}
+
+				//Apply rotation
+				if (Rotation.X != 0.0)
+				{
+					Rotation.X = Rotation.X.ToRadians();
+					//Apply rotation
+					Builder.ApplyRotation(Vector3.Down, Rotation.X);
+				}
+				if (Rotation.Y != 0.0)
+				{
+					Rotation.Y = Rotation.Y.ToRadians();
+					//Apply rotation
+					Builder.ApplyRotation(Vector3.Forward, Rotation.Y);
+				}
+
+				if (Rotation.Z != 0.0)
+				{
+					Rotation.Z = Rotation.Z.ToRadians();
+					//Apply rotation
+					Builder.ApplyRotation(Vector3.Right, Rotation.Z);
+				}
+
+				//These files appear to only have one texture defined
+				//Therefore import later- May have to change
+				if (File.Exists(tday))
+				{
+					for (int j = 0; j < Builder.Materials.Length; j++)
+					{
+						Builder.Materials[j].DaytimeTexture = tday;
+						Builder.Materials[j].NighttimeTexture = tnight;
+						Builder.Materials[j].TransparencyTexture = transtex;
+					}
+				}
+				if (TransparencyUsed)
+				{
+					for (int j = 0; j < Builder.Materials.Length; j++)
+					{
+						Builder.Materials[j].TransparentColor = FirstPxTransparent ? FirstPxColor : transparentColor;
+						Builder.Materials[j].Flags |= MaterialFlags.TransparentColor;
+					}
+				}
+
+			}
+			Builder.Apply(ref Object);
+			Object.Mesh.CreateNormals();
+			return Object;
+		}
+	}
+}

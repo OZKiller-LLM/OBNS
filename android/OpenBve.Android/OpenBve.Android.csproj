@@ -1,0 +1,209 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Android front end: activity, GL surface and render loop driving LibRender2. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>disable</Nullable>
+    <RootNamespace>OpenBve.Android</RootNamespace>
+    <AssemblyName>OpenBve.Android</AssemblyName>
+    <ApplicationId>net.openbve</ApplicationId>
+    <!--
+      Numbering: the upstream version the port is built from, and PortRelease, counting this port's
+      releases of it (android/release.ps1 passes it; bump it for each release). The version code
+      Android compares for updates is the upstream version's digits times 100 plus PortRelease -
+      1.14.0.3 release 1 is 1140301 - so it rises with either; the name reads 1.14.0.3-android.1.
+    -->
+    <UpstreamVersion>1.14.0.3</UpstreamVersion>
+    <PortRelease Condition="'$(PortRelease)' == ''">1</PortRelease>
+    <ApplicationVersion>$([MSBuild]::Add($([MSBuild]::Multiply($(UpstreamVersion.Replace('.', '')), 100)), $(PortRelease)))</ApplicationVersion>
+    <ApplicationDisplayVersion>$(UpstreamVersion)-android.$(PortRelease)</ApplicationDisplayVersion>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+  </PropertyGroup>
+
+  <!--
+    The beta testers' build: -p:BetaLog=true adds the data log (BetaLog.cs), written to
+    Documents/OpenBVE on the device. Without it the log compiles to nothing.
+  -->
+  <PropertyGroup Condition="'$(BetaLog)' == 'true'">
+    <DefineConstants>$(DefineConstants);BETA_LOG</DefineConstants>
+    <ApplicationDisplayVersion>$(ApplicationDisplayVersion)-beta</ApplicationDisplayVersion>
+  </PropertyGroup>
+
+  <!--
+    Release signing, when a keystore is given (-p:OpenBveKeyStore=path; android/release.ps1 does
+    this). The passwords come from the environment, never from a file in the tree. Without a
+    keystore the SDK signs with its debug key, which suits development only: Android refuses to
+    update an app over one signed with another key, so every published build must use the same
+    release key.
+  -->
+  <PropertyGroup Condition="'$(OpenBveKeyStore)' != ''">
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>$(OpenBveKeyStore)</AndroidSigningKeyStore>
+    <AndroidSigningKeyAlias Condition="'$(OpenBveKeyAlias)' != ''">$(OpenBveKeyAlias)</AndroidSigningKeyAlias>
+    <AndroidSigningKeyAlias Condition="'$(OpenBveKeyAlias)' == ''">openbve</AndroidSigningKeyAlias>
+    <AndroidSigningStorePass>env:OPENBVE_KEYSTORE_PASS</AndroidSigningStorePass>
+    <AndroidSigningKeyPass>env:OPENBVE_KEY_PASS</AndroidSigningKeyPass>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Desktop application files compiled unchanged, against the facade in UpstreamFacade.cs.
+      FunctionScripts.cs is the evaluator for every animation function (doors, needles, cab
+      displays, signals): the API hands evaluation to the host, whose base does nothing.
+    -->
+    <Compile Include="$(UpstreamSource)OpenBVE\Game\ObjectManager\AnimatedObjects\FunctionScripts.cs" Link="Upstream\FunctionScripts.cs" />
+    <!--
+      The AI drivers: SimpleHumanDriverAI drives preceding trains (Train.RunInterval, and
+      RunInterval track following objects) and BogusPretrainAI moves the invisible .PreTrain train.
+    -->
+    <Compile Include="$(UpstreamSource)OpenBVE\Game\AI\AI.cs" Link="Upstream\AI.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Game\AI\AI.SimpleHuman.cs" Link="Upstream\AI.SimpleHuman.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Game\AI\AI.PreTrain.cs" Link="Upstream\AI.PreTrain.cs" />
+    <!--
+      The in-game overlays: the HUD and its layout (Data/In-game/<folder>/interface.cfg), game
+      and score messages, the score itself, the timetable, the route map and gradient overlay and
+      the safety-system lamps. Upstream's Overlays.Debug.cs is stubbed in UpstreamFacade.cs.
+    -->
+    <Compile Include="$(UpstreamSource)OpenBVE\Graphics\HUD\*.cs" LinkBase="Upstream\HUD" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.cs" Link="Upstream\Overlays\Overlays.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.ATS.cs" Link="Upstream\Overlays\Overlays.ATS.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.GameMessages.cs" Link="Upstream\Overlays\Overlays.GameMessages.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.HUD.cs" Link="Upstream\Overlays\Overlays.HUD.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.Lamp.cs" Link="Upstream\Overlays\Overlays.Lamp.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.ScoreMessages.cs" Link="Upstream\Overlays\Overlays.ScoreMessages.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Game\MessageManager.cs" Link="Upstream\MessageManager.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Game\MessageManager.TextualMessages.cs" Link="Upstream\MessageManager.TextualMessages.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Game\Score\*.cs" LinkBase="Upstream\Score" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Game\Timetable.cs" Link="Upstream\Timetable.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\Game\RouteInfoOverlay.cs" Link="Upstream\RouteInfoOverlay.cs" />
+    <Compile Include="$(UpstreamSource)OpenBVE\System\Logging\Score.cs" Link="Upstream\ScoreLogging.cs" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!--
+      Release: every assembly compiled ahead of time, not just the startup path. Loading a route
+      is long, CPU-bound managed code (parsing, geometry, texture decoding); under the JIT it runs
+      cold every time, and AOT is what makes it phone-speed.
+    -->
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+    <!--
+      Trim only the framework, never the app's own assemblies: the content plugins are found by
+      assembly name and their types by reflection (AndroidPlugins), the package database is read
+      with XmlSerializer, and upstream is full of such reflection besides.
+    -->
+    <TrimMode>partial</TrimMode>
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <!--
+    NAudio 1.10 ships only a .NET Framework build, whose WinForms-based playback classes reference
+    the real System.Windows.Forms; the AOT compiler cannot load those methods and fails the build.
+    The plugins only use its WAV/MP3 readers, so NAudio is left to the JIT, which only ever meets
+    the methods actually called. (_AndroidAotInputs is the SDK's own item list of assemblies to AOT.)
+  -->
+  <Target Name="OpenBveExcludeFromAot" AfterTargets="_AndroidAotInputs">
+    <ItemGroup>
+      <_AndroidAotInputs Remove="@(_AndroidAotInputs)" Condition="'%(Filename)' == 'NAudio'" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
+    <ProjectReference Include="..\OpenBve.X86\OpenBve.X86.csproj" />
+    <ProjectReference Include="..\OpenBve.OpenAL\OpenBve.OpenAL.csproj" />
+    <ProjectReference Include="..\LibRender2.Android\LibRender2.Android.csproj" />
+    <ProjectReference Include="..\SoundManager.Android\SoundManager.Android.csproj" />
+    <ProjectReference Include="..\RouteManager2.Android\RouteManager2.Android.csproj" />
+    <ProjectReference Include="..\TrainManager.Android\TrainManager.Android.csproj" />
+    <!-- The XML reader behind track following object files. -->
+    <ProjectReference Include="..\Formats.OpenBve.Android\Formats.OpenBve.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Content plugins. Nothing references these statically: they are discovered by assembly name
+      at startup (AndroidPlugins), the way upstream discovers DLLs in its Plugins folder. The extern
+      alias keeps their root namespaces (Texture.*, Sound.*, ...) out of the global namespace, where
+      "Texture" would otherwise hide OpenBveApi's Texture type in the linked desktop files.
+    -->
+    <ProjectReference Include="..\Route.CsvRw.Android\Route.CsvRw.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Route.Bve5.Android\Route.Bve5.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Route.Mechanik.Android\Route.Mechanik.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Object.CsvB3d.Android\Object.CsvB3d.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Object.Animated.Android\Object.Animated.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Object.DirectX.Android\Object.DirectX.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Object.Wavefront.Android\Object.Wavefront.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Object.LokSim.Android\Object.LokSim.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Object.Msts.Android\Object.Msts.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Texture.BmpGifJpegPngTiff.Android\Texture.BmpGifJpegPngTiff.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Texture.Tga.Android\Texture.Tga.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Texture.Dds.Android\Texture.Dds.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Texture.Ace.Android\Texture.Ace.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Sound.RiffWave.Android\Sound.RiffWave.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Sound.Vorbis.Android\Sound.Vorbis.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Sound.MP3.Android\Sound.MP3.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Sound.Flac.Android\Sound.Flac.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Train.OpenBve.Android\Train.OpenBve.Android.csproj" Aliases="ContentPlugins" />
+    <ProjectReference Include="..\Train.MsTs.Android\Train.MsTs.Android.csproj" Aliases="ContentPlugins" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      OpenBVE's default safety-system plugin. Upstream loads it by file path from
+      Data/Plugins/OpenBveAts.dll (TrainBase.LoadDefaultPlugin), so it is built here only to be
+      shipped as a data asset at that path, not referenced: ReferenceOutputAssembly=false keeps it
+      out of the app's own assembly list while still guaranteeing it is built first.
+    -->
+    <ProjectReference Include="..\OpenBveAts.Android\OpenBveAts.Android.csproj" ReferenceOutputAssembly="false" />
+    <AndroidAsset Include="..\OpenBveAts.Android\bin\$(Configuration)\$(AndroidTfm)\OpenBveAts.dll" Link="Assets\Data\Plugins\OpenBveAts.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Android has no system OpenAL; this supplies libopenal.so for every ABI. -->
+    <PackageReference Include="MonoGame.Library.OpenAL" Version="1.25.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Licence notices for OpenBVE, this port and every library built into the app, shown under
+      About → Licences. BSD-2 and the libraries' own licences require binaries to carry them.
+    -->
+    <AndroidAsset Include="Licenses\*.txt" Link="Assets\Licenses\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!--
+    ANGLE (OpenGL ES on Vulkan) for the Vulkan graphics backend is not shipped in the APK. On first
+    use the app copies the device's own system ANGLE (Android 14 and later) into its private files
+    folder and loads it from there (OpenBve.GLES: GraphicsLibraries.EnsurePrivateCopy). A build that
+    wants to bundle an ANGLE built from source can still add it as AndroidNativeLibrary items: the
+    bare library name is tried first.
+  -->
+
+  <ItemGroup>
+    <!--
+      The data OpenBVE reads at runtime (about 11 MB): compatibility signals and objects, in-game
+      textures, menu art, cursors, control defaults and translations. Extracted to the app's files
+      directory on first run, which then acts as the data folder. Not packaged: Shaders (LibRender2
+      embeds those in its own assembly), and the RouteViewer, TrainEditor2 and Plugins folders,
+      which belong to desktop tools.
+    -->
+    <AndroidAsset Include="$(UpstreamSource)..\assets\Compatibility\**\*" Link="Assets\Data\Compatibility\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="$(UpstreamSource)..\assets\Controls\**\*" Link="Assets\Data\Controls\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="$(UpstreamSource)..\assets\Cursors\**\*" Link="Assets\Data\Cursors\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="$(UpstreamSource)..\assets\Flags\**\*" Link="Assets\Data\Flags\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="$(UpstreamSource)..\assets\In-game\**\*" Link="Assets\Data\In-game\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="$(UpstreamSource)..\assets\Languages\**\*" Link="Assets\Data\Languages\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="$(UpstreamSource)..\assets\Menu\**\*" Link="Assets\Data\Menu\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- The port's own labels in other languages (AndroidStrings), beside upstream's .xlf files. -->
+    <AndroidAsset Include="Languages\*.txt" Link="Assets\Data\Languages\android\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Builds the upstream Plugins\Route.Bve5 sources for Android. Upstream is not modified. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Route.Bve5</RootNamespace>
+    <AssemblyName>Route.Bve5</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)Plugins\Route.Bve5\**\*.cs" LinkBase="Route.Bve5" />
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\Properties\AssemblyInfo.cs" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LibRender2.Android\LibRender2.Android.csproj" />
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
+    <ProjectReference Include="..\OpenBve.OpenAL\OpenBve.OpenAL.csproj" />
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+    <ProjectReference Include="..\RouteManager2.Android\RouteManager2.Android.csproj" />
+    <ProjectReference Include="..\SoundManager.Android\SoundManager.Android.csproj" />
+    <ProjectReference Include="..\TrainManager.Android\TrainManager.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Antlr4.Runtime" Version="4.6.6" />
+    <PackageReference Include="Bve5_Parsing.OpenBVE" Version="1.2.2" />
+    <PackageReference Include="Ude.NetStandard" Version="1.2.0" />
+  </ItemGroup>
+
+</Project>

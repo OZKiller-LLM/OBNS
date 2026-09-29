@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Builds the upstream Plugins\Sound.MP3 sources for Android. Upstream is not modified. -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Sound.MP3</RootNamespace>
+    <AssemblyName>Sound.MP3</AssemblyName>
+    <DefineConstants>$(DefineConstants);OPENBVE_ANDROID</DefineConstants>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UpstreamSource)Plugins\Sound.MP3\**\*.cs" LinkBase="Sound.MP3" />
+    <Compile Remove="$(UpstreamSource)Plugins\Sound.MP3\Properties\AssemblyInfo.cs" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
+    <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="1.10.0" />
+    <PackageReference Include="NLayer.NAudioSupport" Version="1.0.0" />
+    <PackageReference Include="NLayer" Version="1.12.0" />
+  </ItemGroup>
+
+</Project>

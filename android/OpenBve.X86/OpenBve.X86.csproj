@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    An x86 (IA-32) interpreter with a PE loader and a small Win32 / C runtime environment, for
+    running 32-bit Windows BVE ATS plugins on Android. Platform independent: the same library is
+    exercised on the PC by OpenBve.X86.Tests. Nothing here executes native code; the plugin's
+    instructions are interpreted, and its only access to the outside world is through the
+    functions in Win32Environment.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>OpenBve.X86</RootNamespace>
+    <AssemblyName>OpenBve.X86</AssemblyName>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>

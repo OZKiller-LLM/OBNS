@@ -1,0 +1,102 @@
+<openBVE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <RoutePatches>
+  <!-- NYCT-L -->
+	<Patch>
+		<Hash>B97E93C1A21B43CCDA2C504F254E6F8FF099FD51E502E2EE875E6B05FBDE5326</Hash>
+		<FileName>NYCT-L.csv</FileName>
+		<Toppling>false</Toppling>
+		<Derailments>false</Derailments>
+		<!-- Glitches in vegetation / passing trains -->
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>984EDE99A0F1ABDBB347560624D3EACF4CF2DDB5E21239349384BE4F63D252EB</Hash>
+		<FileName>Rocky Mountains Express.rw</FileName>
+		<AggressiveRwBrackets>true</AggressiveRwBrackets>
+	</Patch>
+	<!-- NYCT-G -->
+	<Patch>
+		<Hash>A51795AFD86C669EA2293F631B467706A463383C6865EB2EE2D1D99D0E1CB069</Hash>
+		<FileName>NYCT-G(OPTO).csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>36C2A662EF6C655681C8FBD4915AAD396E1843F3933C0220C29E5AE26519CC4B</Hash>
+		<FileName>NYCT-G(to Court Sq).csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>FD54579089025A05B8E42F043430D8651564E61AEEA7AF2C0983EFD13284B9B5</Hash>
+		<FileName>NYCT-G(to71stAve).csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<!-- LIRR Hempstead Branch -->
+	<Patch>
+		<Hash>A96AB1355851B79AD8791FC44FA13C5DFA9D4BC0B730E59D5559867010E1B048</Hash>
+		<FileName>Hempstead to Jamaica Day.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>2B35C9A4823C5C91A16365DB5BF419E85157A5280EC00C586F69A5384F930A06</Hash>
+		<FileName>Jamaica to Atlantic Terminal Day.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>26EDF45F3D244E4CDE7FA4DCAED96B23E29A6872548FE05067EA1BFF888993B4</Hash>
+		<FileName>Jamaica to Penn Station Day.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>CF59C2F089E601AFA903551E06590C24B2769CD7549CD220E49067CC0B3E85A4</Hash>
+		<FileName>Penn Station to West Side Yard Day.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>D17B813EA3D491C7152E21D5E9336DE052FF15D28A1C6CDDF549F0944A5DE04B</Hash>
+		<FileName>Hempstead to Jamaica Night.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>C77307C421CA232B31A2CFD524B1AD31BC444F4988E27F1C23EAA2F2747E3A75</Hash>
+		<FileName>Jamaica to Atlantic Terminal Night.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>B3E8BA219EE011437D0C4F0C1A66924213A7F4C7BDBAA7172C5FB8B936A8584C</Hash>
+		<FileName>Jamaica to Penn Station Night.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>6578D689EDF0842C3A0FCCFAB4472550BFB3275EF2F771B5460E8B407F6F6553</Hash>
+		<FileName>Penn Station to West Side Yard Night.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>DF136CBEB37095503932D068941A9AC54D4F5F4CF96033EAB7533C2CE67EFE6C</Hash>
+		<FileName>SF&amp;C South.rw</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<!-- NYCT-M v1.5 -->
+	<!-- built for OpenBVE c. 2014, but various visbility glitches -->
+	<Patch>
+		<Hash>178C2EEEBFC02A4EF4297A7494A5C36C31F3A7C9384BC535BAD8357F5695B965</Hash>
+		<FileName>NYCT-M [Shuttle].csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>96F0ACBF6F892431623344FF4D1AF98981071BBE467C11A2069DD5E44F49E6F3</Hash>
+		<FileName>NYCT-M [To Broad St] Nassau St Exp.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>01F87B7562BF3594CA6B8D7153542F2C4AA996EC4C29AABACECF13870EE0EF23</Hash>
+		<FileName>NYCT-M [To Broad St] Nassau St LCL.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>566F47EAED0E71FA9632E5F5CCA7FA9F58601A25B172EDD3A2C68348DC1E6989</Hash>
+		<FileName>NYCT-M [To Essex St] Nassau St LCL.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+  </RoutePatches>
+</openBVE>

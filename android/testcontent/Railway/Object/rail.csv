@@ -1,0 +1,10 @@
+; A minimal rail object for the Android port test route.
+; One grey quad, 25 m long, laid along the track. AddFace2 makes it double-sided,
+; so it is visible whichever way its winding happens to face.
+CreateMeshBuilder
+AddVertex, -1.2, 0, 0
+AddVertex, 1.2, 0, 0
+AddVertex, 1.2, 0, 25
+AddVertex, -1.2, 0, 25
+AddFace2, 0, 1, 2, 3
+SetColor, 150, 150, 150, 255

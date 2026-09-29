@@ -1,0 +1,71 @@
+using OpenBveApi.Math;
+using OpenBveApi.World;
+
+namespace OpenBveApi.Objects
+{
+	/// <summary>A unified object is the abstract class encompassing all object types within the sim</summary>
+	public abstract class UnifiedObject
+	{
+		/// <summary>Creates the object within the worldspace without using track based transforms</summary>
+		/// <param name="Position">The world position</param>
+		/// <param name="Parameters">The parameters to use when creating the object</param>
+		public void CreateObject(Vector3 Position, ObjectCreationParameters Parameters)
+		{
+			CreateObject(Position, Transformation.NullTransformation, Transformation.NullTransformation, Parameters);
+		}
+
+		/// <summary>Creates the object within the worldspace using a single track based transforms</summary>
+		/// <param name="Position">The world position</param>
+		/// <param name="WorldTransformation">The world transformation to apply (e.g. ground, rail)</param>
+		/// <param name="Parameters">The parameters to use when creating the object</param>
+		public void CreateObject(Vector3 Position, Transformation WorldTransformation, ObjectCreationParameters Parameters)
+		{
+			CreateObject(Position, WorldTransformation, Transformation.NullTransformation, Parameters);
+		}
+
+		/// <summary>Creates the object within the world</summary>
+		/// <param name="Position">The world position</param>
+		/// <param name="WorldTransformation">The world transformation to apply (e.g. ground, rail)</param>
+		/// <param name="LocalTransformation">The local transformation to apply in order to rotate the model</param>
+		/// <param name="Parameters">The parameters to use when creating the object</param>
+		public abstract void CreateObject(Vector3 Position, Transformation WorldTransformation, Transformation LocalTransformation, ObjectCreationParameters Parameters);
+
+		/// <summary>Call this method to optimize the object</summary>
+		/// <param name="PreserveVerticies">Whether duplicate vertices are to be preserved (Takes less time)</param>
+		/// <param name="Threshold">The face size threshold for optimization</param>
+		/// <param name="VertexCulling">Whether vertex culling is performed</param>
+		public abstract void OptimizeObject(bool PreserveVerticies, int Threshold, bool VertexCulling);
+
+		/// <summary>Creates a clone of this object</summary>
+		/// <returns>The cloned object</returns>
+		public abstract UnifiedObject Clone();
+
+		/// <summary>Creates a mirrored clone of this object</summary>
+		/// <returns>The mirrored clone</returns>
+		public abstract UnifiedObject Mirror();
+
+		/// <summary>Creates a transformed clone of this object</summary>
+		/// <param name="NearDistance">The object's width at the start of the block</param>
+		/// <param name="FarDistance">The object's width at the end of the block</param>
+		/// <returns>The transformed clone</returns>
+		public abstract UnifiedObject Transform(double NearDistance, double FarDistance);
+
+		/// <summary>Creates a left-handed transformed clone of this object</summary>
+		/// <param name="NearDistance">The object's width at the start of the block</param>
+		/// <param name="FarDistance">The object's width at the end of the block</param>
+		/// <returns>The transformed clone</returns>
+		public abstract UnifiedObject TransformLeft(double NearDistance, double FarDistance);
+
+		/// <summary>Creates a right-handed transformed clone of this object</summary>
+		/// <param name="NearDistance">The object's width at the start of the block</param>
+		/// <param name="FarDistance">The object's width at the end of the block</param>
+		/// <returns>The transformed clone</returns>
+		public abstract UnifiedObject TransformRight(double NearDistance, double FarDistance);
+
+		/// <summary>Applies translation</summary>
+		/// <param name="translationVector">The translation vector</param>
+		/// <param name="absoluteTranslation">Whether the translation is applied relative to the root matrix, or as an absolute</param>
+		public abstract void ApplyTranslation(Vector3 translationVector, bool absoluteTranslation = false);
+
+	}
+}

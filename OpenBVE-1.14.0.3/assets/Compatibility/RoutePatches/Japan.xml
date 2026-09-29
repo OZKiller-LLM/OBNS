@@ -1,0 +1,264 @@
+<openBVE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <RoutePatches>
+	<Patch>
+		<Hash>DDBE5CFDE20F0AD7D03AFC187F70B1B6044B637109758B392B9EBA61FA169F69</Hash>
+		<FileName>目蒲線普.csv</FileName>
+		<Expression Number="596">.rail 1;7.5;0</Expression>
+		<Expression Number="600">.rail 1;5.5;0</Expression>
+	</Patch>
+	<Patch>
+		<Hash>CCF88CCB0C1345746406F7E98798D8924FDA93888788E596601C55E3C7C35C8A</Hash>
+		<FileName>B1649ﾃｼiﾄ・ﾄｺJﾃｼﾄ佚架・ｹﾃ嘉ｼj.csv</FileName>
+		<Expression Number="1441">.curve 1000;20</Expression>
+	</Patch>
+	<Patch>
+		<Hash>99CE7D39513ECA681D9A8E6D23647FB161DAE50BF9E7540C2395596547A4ACE5</Hash>
+		<FileName>all2000.csv</FileName>
+		<Expression Number="376">.freeobj 2;17;1.6;0;0</Expression>
+		<Expression Number="396">.freeobj 2;17;1.6;0;0</Expression>
+		<Expression Number="415">.freeobj 0;15;2;0;0</Expression>
+		<DummyRailTypes>1</DummyRailTypes>
+		<DummyGroundTypes>16</DummyGroundTypes>
+	</Patch>
+	<Patch>
+		<Hash>678CD94DC50B919ABF581D875032D74049D429D787FA0433D4F0343765566AB6</Hash>
+		<FileName>KT Nara.csv</FileName>
+		<XParser>NewXParser</XParser>
+		<SplitLineHack>true</SplitLineHack>
+	</Patch>
+	<!-- JR Kobe & Kyoto Line -->
+	<Patch>
+		<Hash>012CE199398687018EE6552D194B8EA51EC41D36A62AEB49B52EB042A1448B5B</Hash>
+		<FileName>3828M(1st part).csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>CEA82B3812B2854157EC82D29E5A737755A3624F77CF334B72CE97AF734DE44B</Hash>
+		<FileName>3828M(2nd part - sparse graphics).csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>3ED47E66AC54E1018ACC44FD274E52A5B5CCFED35560685D9F5AE2D5287453B5</Hash>
+		<FileName>3828M(2nd part).csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>6E54479FE79D45E632954227FBAF15780DCF1487F1977452676B45B2E5DA9F35</Hash>
+		<FileName>3828M.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>94B3668DA703C844D66E9C819714E1F7491C1CF71E4804198EFCD4768B6279C5</Hash>
+		<FileName>moha5250-Train.csv</FileName>
+		<XParser>NewXParser</XParser>
+	</Patch>
+	<Patch>
+		<Hash>90C6412E4E4A51E8176E2C6C486A0E9DE91A9B1CF945A417557112ACCC7E92A5</Hash>
+		<FileName>2001.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<!-- Hakone- Tozan Railway -->
+	<!-- Viewing distance is required to stop terrain re-appearing on sharp curves -->
+	<!-- NOTE: Couple of glitches due to the ObjectVisibility setting, however do not enable this as it causes others -->
+	<!-- https://github.com/leezer3/OpenBVE/issues/907 -->
+	<!-- v0.6-->
+	<Patch>
+		<Hash>3404C2FA1D32366C0B5FEEAFCEF9EA842AECE937F469CBCD82D6E2424418176D</Hash>
+		<FileName>1.csv</FileName>
+		<Expression Number="745">.Sta 出山信号場(着);;C;0;0;0;0;;;0;</Expression>
+		<Expression Number="1098">.Sta 大平台(着);;C;0;1;1;0;;25;50;</Expression>
+		<Expression Number="1288">.Sta 上大平台信号場(着);;C;0;0;0;0;;;0;</Expression>
+		<ViewingDistance>250</ViewingDistance>
+	</Patch>
+		<Patch>
+		<Hash>FFB7C95BF529BCAB0CB33D56151012267A9DA7519381F214E2F13C499A7584F6</Hash>
+		<FileName>2.csv</FileName>
+		<Expression Number="747">.Sta 出山信号場(着);;C;0;0;0;0;;;0; </Expression>
+		<Expression Number="1098">.Sta 大平台(着);;C;0;1;1;0;;25;50;</Expression>
+		<Expression Number="1292">.Sta 上大平台信号場(着);;C;0;0;0;0;;;0;</Expression>
+		<ViewingDistance>250</ViewingDistance>
+	</Patch>
+	<!-- v0.6b-->
+	<Patch>
+		<Hash>6BB6E15B46CA9E46E6235C764A7FF5D1EA13AED145130BA8D96DA40529AA333F</Hash>
+		<FileName>1.csv</FileName>
+		<Expression Number="748">.Sta 出山信号場(着);;C;0;0;0;0;;;0;</Expression>
+		<Expression Number="1099">.Sta 大平台(着);;C;0;1;1;0;;25;50;</Expression>
+		<Expression Number="1293">.Sta 上大平台信号場(着);;C;0;0;0;0;;;0;</Expression>
+		<ViewingDistance>250</ViewingDistance>
+	</Patch>
+	<!-- cyber_blue_liner -->
+	<!-- BVE2 routefiles -->
+	<Patch>
+		<Hash>C15805011CDB796A82490177DB2C27B9B283B5D233F526193C56D98CC31CFAC3</Hash>
+		<FileName>3828M.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>5AECCC4F118C85EE087F1A13817CBC9CDACD1113084AAF610CDEDA5CC77DAA4C</Hash>
+		<FileName>4005M繝ｻSol・ｦ5Zc繝ｻ.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>AAC52B524BF32173968009AEAE5A7431842BDCA3CAEE8172F07C7BAC4C0EE3F2</Hash>
+		<FileName>501M・S榮R1Zc・.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>0B1F524C8F04F057824D365B8611861F5C14BF396EAD785AB480F19B57AC3937</Hash>
+		<FileName>3828M(琮) - Copy.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>1AEBA61D24D9A4A1FAEF463D41363C5EDE524D1EEE27B259190B31011D1579FE</Hash>
+		<FileName>3828M(琮).csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>0353DB5FB20E74B282D832F54A2B6CE7BE57046E60A7C34580332BCD77EF827A</Hash>
+		<FileName>3828M(琮鮻菇).csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>612046D34367B302FC911A870FC679723A78BD9DF50A13E99072F39378985613</Hash>
+		<FileName>3828M(LO).csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>0FC0A2681F480D842E69F10D119E427593D55BF5F3A3A0B6BC64FBE3C0BFBF36</Hash>
+		<FileName>3828M(LO).csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<!-- BVE4 routefiles -->
+		<Patch>
+		<Hash>4FD1D5328A90C0E508047D19DEFA91F51FE6D906A90A7BFC4E02525982175D60</Hash>
+		<FileName>3828M(ﾉV・LC魵oｯZ]Z匀+).csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>0D5A5CDED6C1BCC2384DDE28282A1D3CE356EC362013161AEF6D1D254E2FE1BD</Hash>
+		<FileName>4003M・禝糜秬・穉・禀3Zc・.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<Patch>
+		<Hash>5A7E23851B3621FA24FFBAC20AEBD04D89431EDE9CB03F6644B356BF26E2FE92</Hash>
+		<FileName>4005M繝ｻSol・ｦ5Zc繝ｻ.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<!-- Tokyo Monorail Haneda Line -->
+	<!-- BVE2 routefiles -->
+	<Patch>
+		<Hash>CB439820AB9669B13957E103A3ABE14CD32A81A179A48C77D4C4CD15CBDFF22F</Hash>
+		<FileName>F1407.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>06A63505848716C9D943FA7884DC2B4667348E62B3BC4DF701F5DDE9ADFDB1C2</Hash>
+		<FileName>G1617.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>53BDBE8A11CB8296AFAD06C324DCF4CFC2BA54469A85B8C97371DEE24210D374</Hash>
+		<FileName>1327H.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<!-- BVE4 routefiles -->
+	<Patch>
+		<Hash>F9E332C908A8BDAAB73B5D3ED246CAF4BFF04EB3308AB80ABC9FE1C0860C5D50</Hash>
+		<FileName>F1407.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>8A761C18EE3B3041FFDAC68267FECEF55A80BADD8007C8B839EEE992EDEBEC90</Hash>
+		<FileName>G1617.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<Patch>
+		<Hash>C292164821AA50539466F8C5F2C460B09F105E6085AC68D9D2B27CB65A6E4779</Hash>
+		<FileName>1327H.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<!-- Hanzomon Subway-->
+	<!-- BVE2 routefiles -->
+	<Patch>
+		<Hash>96E3396698FFFBAE517A7A7C01B8FF6F719B7A3B2BD1E4E2315ABF486E132A2F</Hash>
+		<FileName>1131K（押上→渋谷）.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<Expression Number="249">.FormCR(1) hanzomon\sta\sui\suiFormCR.csv</Expression>
+		<Expression Number="251">.FormCL(1) hanzomon\sta\sui\suiFormCL.csv</Expression>
+	</Patch>
+	<Patch>
+		<Hash>991EBB29F9474E0B14D7B2B12771DBBA624A01CE42504EFEF313EB9935B8218F</Hash>
+		<FileName>1367S（曳舟→渋谷）.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<Expression Number="290">.FormCR(1) hanzomon\sta\sui\suiFormCR.csv</Expression>
+		<Expression Number="292">.FormCL(1) hanzomon\sta\sui\suiFormCL.csv</Expression>
+	</Patch>
+	<Patch>
+		<Hash>677F13A00476BC959E1694548816ACFD405E90310C59F4CF7C7E48D4D84C9642</Hash>
+		<FileName>1765S（押上→渋谷）.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+		<Expression Number="249">.FormCR(1) hanzomon\sta\sui\suiFormCR.csv</Expression>
+		<Expression Number="251">.FormCL(1) hanzomon\sta\sui\suiFormCL.csv</Expression>
+	</Patch>
+	<!-- BVE4 routefiles -->
+	<Patch>
+		<Hash>83AB681C3E1CEC75940FB7DCCBDC0DD41F5B3A0CAB7407D57522EE0ADC07D22E</Hash>
+		<FileName>1367S（曳舟→渋谷）bve4.csv</FileName>
+		<ReducedColorTransparency>true</ReducedColorTransparency>
+	</Patch>
+	<!-- Tangumi -->
+	<!-- NOTE: Cannot use AccurateObjectDisposal due to crossing light animation -->
+	<Patch>
+		<Hash>DF28B51375CD2E1ECB1A894876A18398BBDCB42D1F3F09D6BA0EBE26EDA6E60E</Hash>
+		<FileName>l-ﾃｴSlJoﾃｩﾃ嘘.csv</FileName>
+		<Expression Number="38">Texture.Background(1) gaku2\Back_Mt1.bmp</Expression>
+	</Patch>
+	<!-- Minobu -->
+	<Patch>
+		<Hash>EE1F5FED84EE4EBD0469883BAEB7C8991486DE29557D93AE76530D0EAE2D84B6</Hash>
+		<FileName>115.csv</FileName>
+		<InsufficientWallDikeArguments>true</InsufficientWallDikeArguments>
+	</Patch>
+	<Patch>
+		<Hash>E9DBF9DB29E5D6D5DF7ED3CCDE425EDA9DFC725FF723501C8AAA5D1B4516D78E</Hash>
+		<FileName>165.csv</FileName>
+		<InsufficientWallDikeArguments>true</InsufficientWallDikeArguments>
+	</Patch>
+	<Patch>
+		<Hash>9ADFE0AE6AF1B0B525FA6C818D8865DEBC77AB8BD8FF8EAFC4D01B18B478D938</Hash>
+		<FileName>窶敖青～ﾂ新ﾅ邃｢ﾂ・凪價.csv</FileName>
+		<AccurateObjectDisposal>true</AccurateObjectDisposal>
+	</Patch>
+	<!-- Nemuro -->
+	<Patch>
+		<Hash>0E9A0595DA71B35B8794338F57CCADF1D264B3A8F9769323972E9825ACE05A89</Hash>
+		<FileName>JRnemuro2544D.csv</FileName>
+		<IgnorePitchRoll>true</IgnorePitchRoll>
+	</Patch>
+	<Patch>
+		<Hash>40171CC36CF66F5C36629A7A11536AEB9EEEA426563A16908FAE1F39D2D00AB7</Hash>
+		<FileName>JRnemuro2576D.csv</FileName>
+		<IgnorePitchRoll>true</IgnorePitchRoll>
+	</Patch>
+	<Patch>
+		<Hash>AA138FBD8D1526F4F653853FD1F3BC3557ECE204984C01EEFBCD357D61DCB601</Hash>
+		<FileName>JRnemuro4002D.csv</FileName>
+		<IgnorePitchRoll>true</IgnorePitchRoll>
+	</Patch>
+	<Patch>
+		<Hash>31488B129B240BB21971872F09BFA42C7395DBAB5D075B42189D67000D6A9349</Hash>
+		<FileName>JRnemuro9324.csv</FileName>
+		<IgnorePitchRoll>true</IgnorePitchRoll>
+	</Patch>
+	
+  </RoutePatches>
+</openBVE>
