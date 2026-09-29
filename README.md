@@ -1,4 +1,17 @@
-This repo is a port of leezer3/OpenBVE, and aims to create a faithful port of OpenBVE to Android devices without sacrificing functionality in the process.
+OBNS (OpenBVE for aNdroid deviceS)
+=========
+Introduction
+------------
+Welcome.
+
+
+This repo ports [leezer3/OpenBVE](https://github.com/leezer3/OpenBVE/) and aims to faithfully port OpenBVE to Android devices without sacrificing functionality.
 Please refer to Porting.md and RELEASE_NOTES.md for further information.
 
-This fork follows the licensing terms of the original OpenBVE project, with all coding falling under BSD-2 licensing.
+Disclaimer
+----------
+This project is a port only. All of the original code remains the property of leezer3; the OpenBVE source code is provided here for convenient building ONLY.
+
+Licensing terms
+---------
+This fork follows the licensing terms of the original OpenBVE project, with all code falling under BSD-2 licensing.
