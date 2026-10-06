@@ -138,6 +138,7 @@ namespace OpenBve.Android
 			return false;
 		}
 
+
 		/// <inheritdoc />
 		public override bool LoadTexture(string path, TextureParameters parameters, out ApiTexture texture)
 		{
@@ -176,10 +177,23 @@ namespace OpenBve.Android
 						continue;
 					}
 
-					if (plugin.Texture.LoadTexture(path, out texture))
+					// Large images halved while still native (System.Drawing.Bitmap.DecodeMaxSize).
+					System.Drawing.Bitmap.DecodeMaxSize = parameters?.ClipRegion is null ? TextureSizeLimit.MaxSize : 0;
+					System.Drawing.Bitmap.DecodeNearest = parameters?.TransparentColor != null;
+					bool decoded;
+					try
+					{
+						decoded = plugin.Texture.LoadTexture(path, out texture);
+					}
+					finally
+					{
+						System.Drawing.Bitmap.DecodeMaxSize = 0;
+					}
+
+					if (decoded)
 					{
 						texture.CompatibleTransparencyMode = Options.OldTransparencyMode;
-						texture = texture.ApplyParameters(parameters);
+						texture = TextureSizeLimit.Apply(texture.ApplyParameters(parameters));
 						return true;
 					}
 
@@ -200,12 +214,57 @@ namespace OpenBve.Android
 
 		// --- objects ---
 
+		/*
+		 * Upstream's object caches (plain dictionaries on HostInterface), behind a lock: scripted
+		 * trains load on several threads (ScriptedTrainLoader), and each asks for its objects.
+		 * Only the lookups and insertions are locked; parsing and copying happen outside.
+		 */
+		private readonly object objectCacheLock = new object();
+
+		private bool TryCachedStatic(ValueTuple<string, bool, DateTime> key, out StaticObject cached)
+		{
+			lock (objectCacheLock)
+			{
+				return StaticObjectCache.TryGetValue(key, out cached);
+			}
+		}
+
+		private void CacheStatic(ValueTuple<string, bool, DateTime> key, StaticObject value)
+		{
+			lock (objectCacheLock)
+			{
+				StaticObjectCache[key] = value;
+			}
+		}
+
+		private bool TryCachedCollection(string key, out AnimatedObjectCollection cached)
+		{
+			lock (objectCacheLock)
+			{
+				return AnimatedObjectCollectionCache.TryGetValue(key, out cached);
+			}
+		}
+
+		private void CacheCollection(string key, AnimatedObjectCollection value)
+		{
+			lock (objectCacheLock)
+			{
+				AnimatedObjectCollectionCache[key] = value;
+			}
+		}
+
 		/// <inheritdoc />
 		public override bool LoadStaticObject(string path, Encoding encoding, bool preserveVertices, out StaticObject staticObject)
 		{
-			using LoadProfile.Scope profile = LoadProfile.Enter("object load");
-			if (base.LoadStaticObject(path, encoding, preserveVertices, out staticObject))
+			using LoadProfile.Scope profile = LoadProfile.Enter("object load", path);
+			// Upstream's cache lookup (HostInterface.LoadStaticObject), with the file date remembered while loading.
+			if (TryCachedStatic(ValueTuple.Create(path.ToLowerInvariant(), preserveVertices, OpenBveApi.Path.LastWriteTime(path)), out StaticObject cached))
 			{
+				using (LoadProfile.Enter("object load: cached copy"))
+				{
+					staticObject = (StaticObject)cached.Clone();
+				}
+
 				return true;
 			}
 
@@ -214,6 +273,15 @@ namespace OpenBve.Android
 				ReportProblem(ProblemType.PathNotFound, path);
 				staticObject = null;
 				return false;
+			}
+
+			// Parsed ahead on another core (ObjectPrefetch): carry on from the plugin's result.
+			if (ObjectPrefetch.Take(path, encoding, ObjectPrefetch.Culls(preserveVertices, Options.ObjectOptimizationVertexCulling)) is StaticObject prefetched)
+			{
+				prefetched.OptimizeObject(preserveVertices, Options.ObjectOptimizationBasicThreshold, Options.ObjectOptimizationVertexCulling); // already done: returns at once
+				staticObject = prefetched;
+				CacheStatic(ValueTuple.Create(path.ToLowerInvariant(), preserveVertices, OpenBveApi.Path.LastWriteTime(path)), prefetched);
+				return true;
 			}
 
 			encoding = TextEncoding.GetSystemEncodingFromFile(path, encoding);
@@ -235,9 +303,13 @@ namespace OpenBve.Android
 					{
 						if (unified is StaticObject loaded)
 						{
-							loaded.OptimizeObject(preserveVertices, Options.ObjectOptimizationBasicThreshold, Options.ObjectOptimizationVertexCulling);
+							using (LoadProfile.Enter("object optimise"))
+							{
+								loaded.OptimizeObject(preserveVertices, Options.ObjectOptimizationBasicThreshold, Options.ObjectOptimizationVertexCulling);
+							}
+
 							staticObject = loaded;
-							StaticObjectCache[ValueTuple.Create(path.ToLowerInvariant(), preserveVertices, File.GetLastWriteTime(path))] = loaded;
+							CacheStatic(ValueTuple.Create(path.ToLowerInvariant(), preserveVertices, OpenBveApi.Path.LastWriteTime(path)), loaded);
 							return true;
 						}
 
@@ -257,12 +329,54 @@ namespace OpenBve.Android
 			return false;
 		}
 
+		/// <summary>
+		/// For ObjectPrefetch, on a worker thread: the object plugin's parse of a file, optimised as
+		/// LoadObject optimises it (no caching - LoadObject does that when the file is asked for).
+		/// Null if no plugin loads it; the loading thread then tries again, and reports.
+		/// </summary>
+		internal UnifiedObject ParseObjectForPrefetch(string path, Encoding encoding)
+		{
+			foreach (ContentLoadingPlugin plugin in LoadedPlugins)
+			{
+				try
+				{
+					if (plugin.Object != null && plugin.Object.CanLoadObject(path) && plugin.Object.LoadObject(path, encoding, out UnifiedObject loaded) && loaded != null)
+					{
+						loaded.OptimizeObject(false, Options.ObjectOptimizationBasicThreshold, true);
+						return loaded;
+					}
+				}
+				catch (Exception)
+				{
+					return null;
+				}
+			}
+
+			return null;
+		}
+
 		/// <inheritdoc />
 		public override bool LoadObject(string path, Encoding encoding, out UnifiedObject unifiedObject)
 		{
-			using LoadProfile.Scope profile = LoadProfile.Enter("object load");
-			if (base.LoadObject(path, encoding, out unifiedObject))
+			using LoadProfile.Scope profile = LoadProfile.Enter("object load", path);
+			// Upstream's cache lookup (HostInterface.LoadObject), with the file date remembered while loading.
+			if (TryCachedStatic(ValueTuple.Create(path.ToLowerInvariant(), false, OpenBveApi.Path.LastWriteTime(path)), out StaticObject cachedStatic))
 			{
+				using (LoadProfile.Enter("object load: cached copy"))
+				{
+					unifiedObject = cachedStatic.Clone();
+				}
+
+				return true;
+			}
+
+			if (TryCachedCollection(path.ToLowerInvariant(), out AnimatedObjectCollection cachedCollection))
+			{
+				using (LoadProfile.Enter("object load: cached copy"))
+				{
+					unifiedObject = cachedCollection.Clone();
+				}
+
 				return true;
 			}
 
@@ -271,6 +385,23 @@ namespace OpenBve.Android
 				ReportProblem(ProblemType.PathNotFound, path);
 				unifiedObject = null;
 				return false;
+			}
+
+			// Parsed ahead on another core (ObjectPrefetch): carry on from the plugin's result.
+			if (ObjectPrefetch.Take(path, encoding, ObjectPrefetch.Culls(false, true)) is UnifiedObject prefetched)
+			{
+				prefetched.OptimizeObject(false, Options.ObjectOptimizationBasicThreshold, true); // already done: returns at once
+				unifiedObject = prefetched;
+				if (prefetched is StaticObject prefetchedStatic)
+				{
+					CacheStatic(ValueTuple.Create(path.ToLowerInvariant(), false, OpenBveApi.Path.LastWriteTime(path)), prefetchedStatic);
+				}
+				else if (prefetched is AnimatedObjectCollection prefetchedCollection)
+				{
+					CacheCollection(path.ToLowerInvariant(), prefetchedCollection);
+				}
+
+				return true;
 			}
 
 			encoding = TextEncoding.GetSystemEncodingFromFile(path, encoding);
@@ -290,16 +421,20 @@ namespace OpenBve.Android
 
 					if (plugin.Object.LoadObject(path, encoding, out UnifiedObject loaded) && loaded != null)
 					{
-						loaded.OptimizeObject(false, Options.ObjectOptimizationBasicThreshold, true);
+						using (LoadProfile.Enter("object optimise"))
+						{
+							loaded.OptimizeObject(false, Options.ObjectOptimizationBasicThreshold, true);
+						}
+
 						unifiedObject = loaded;
 
 						if (loaded is StaticObject staticObject)
 						{
-							StaticObjectCache[ValueTuple.Create(path.ToLowerInvariant(), false, File.GetLastWriteTime(path))] = staticObject;
+							CacheStatic(ValueTuple.Create(path.ToLowerInvariant(), false, OpenBveApi.Path.LastWriteTime(path)), staticObject);
 						}
 						else if (loaded is AnimatedObjectCollection collection)
 						{
-							AnimatedObjectCollectionCache[path.ToLowerInvariant()] = collection;
+							CacheCollection(path.ToLowerInvariant(), collection);
 						}
 
 						return true;
@@ -347,20 +482,33 @@ namespace OpenBve.Android
 		public override void CreateDynamicObject(ref ObjectState internalObject)
 		{
 			using LoadProfile.Scope profile = LoadProfile.Enter("object create");
-			Renderer.CreateDynamicObject(ref internalObject);
+			// Scripted trains create theirs on several threads (ScriptedTrainLoader).
+			lock (Renderer.DynamicObjectStates)
+			{
+				Renderer.CreateDynamicObject(ref internalObject);
+			}
 		}
 
 		/// <inheritdoc />
 		public override void ShowObject(ObjectState objectToShow, ObjectType objectType)
 		{
-			Renderer.VisibleObjects.ShowObject(objectToShow, objectType);
+			// Locked: scripted trains' cars are set up on several threads (ScriptedTrainLoader).
+			lock (visibilityLock)
+			{
+				Renderer.VisibleObjects.ShowObject(objectToShow, objectType);
+			}
 		}
 
 		/// <inheritdoc />
 		public override void HideObject(ObjectState objectToHide)
 		{
-			Renderer.VisibleObjects.HideObject(objectToHide);
+			lock (visibilityLock)
+			{
+				Renderer.VisibleObjects.HideObject(objectToHide);
+			}
 		}
+
+		private readonly object visibilityLock = new object();
 
 		/// <summary>Reports a failure for a file only the first time it happens, as upstream does.</summary>
 		private void ReportOnce(List<string> failures, string path, string message)

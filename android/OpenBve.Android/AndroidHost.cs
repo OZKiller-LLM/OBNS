@@ -25,6 +25,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Android.Util;
 using LibRender2;
@@ -61,7 +62,9 @@ namespace OpenBve.Android
 		}
 
 		/// <summary>The number of messages reported as errors so far.</summary>
-		public int ErrorCount { get; private set; }
+		public int ErrorCount => errorCount;
+
+		private int errorCount;
 
 		/// <summary>
 		/// The renderer, set once it exists. Texture loading routes through its texture manager,
@@ -83,16 +86,31 @@ namespace OpenBve.Android
 				return false;
 			}
 
-			if (StreamTextures && !(Renderer is AndroidRenderer { DrawingCab: true }) &&
-			    texture != null && texture.OpenGlTextures != null && !texture.OpenGlTextures[(int)wrapMode].Valid &&
-			    !texture.MultipleFrames && !texture.Ignore && texture.Origin is PathOrigin origin)
+			// Content textures (from files) at 16 bits on phones short of memory; fonts and the like as they are.
+			OpenTK.Graphics.OpenGL.GL.Texture16Bit = Textures16Bit && texture?.Origin is PathOrigin;
+			try
 			{
-				return StreamTexture(ref texture, wrapMode, origin);
-			}
+				if (StreamTextures && !(Renderer is AndroidRenderer { DrawingCab: true }) &&
+				    texture != null && texture.OpenGlTextures != null && !texture.OpenGlTextures[(int)wrapMode].Valid &&
+				    !texture.MultipleFrames && !texture.Ignore && texture.Origin is PathOrigin origin)
+				{
+					return StreamTexture(ref texture, wrapMode, origin);
+				}
 
-			return Renderer.TextureManager.LoadTexture(ref texture, wrapMode, CPreciseTimer.GetClockTicks(),
-				Options.Interpolation, Options.AnisotropicFilteringLevel);
+				return Renderer.TextureManager.LoadTexture(ref texture, wrapMode, CPreciseTimer.GetClockTicks(),
+					Options.Interpolation, Options.AnisotropicFilteringLevel);
+			}
+			finally
+			{
+				OpenTK.Graphics.OpenGL.GL.Texture16Bit = false;
+			}
 		}
+
+		/// <summary>
+		/// Whether content textures are uploaded at 16 bits per pixel (OpenBve.GLES GL.Texture16Bit):
+		/// half the GPU memory, at some cost in colour depth. Set from the phone's RAM (AndroidSettings).
+		/// </summary>
+		public static bool Textures16Bit { get; set; }
 
 		// --- texture streaming ---
 
@@ -113,6 +131,28 @@ namespace OpenBve.Android
 		 * start decoding on a later frame.
 		 */
 		private const int MaxOutstandingDecodes = 16;
+
+		/*
+		 * How many of those decode at the same time. A texture is decoded at full size before the
+		 * texture size limit shrinks it, and copied on the way (parameters, the limit, RGB): a
+		 * 2048 px image is ~30-50 MB of short-lived arrays. Sixteen at once lifted a 4 GB Galaxy
+		 * A05s's heap from ~660 to ~1,010 MB in the first seconds of driving the Tuen Ma Line, and
+		 * the low-memory killer ended the game. On phones of 4.5 GB or less (those with the
+		 * automatic texture limit) two decode at once; the rest wait their turn, holding nothing.
+		 * Set from the phone's RAM (AndroidSettings.ApplyTo); unlimited elsewhere, as before.
+		 */
+		public static int ParallelDecodes
+		{
+			get => parallelDecodes;
+			set
+			{
+				parallelDecodes = Math.Max(1, value);
+				decodeSlots = parallelDecodes == int.MaxValue ? null : new System.Threading.SemaphoreSlim(parallelDecodes);
+			}
+		}
+
+		private static int parallelDecodes = int.MaxValue;
+		private static System.Threading.SemaphoreSlim decodeSlots;
 
 		/*
 		 * Upstream decodes an image the first time a face needs it, on the render thread, and
@@ -152,7 +192,27 @@ namespace OpenBve.Android
 		/// which uploads the same pixels as-is: upstream sets the unpack alignment explicitly in
 		/// both branches, so the result on the GPU is identical.
 		/// </remarks>
-		private static ApiTexture DecodeForUpload(PathOrigin origin)
+		private static async Task<ApiTexture> DecodeForUpload(PathOrigin origin)
+		{
+			System.Threading.SemaphoreSlim slots = decodeSlots;
+			if (slots == null)
+			{
+				return DecodeForUploadNow(origin);
+			}
+
+			// Waiting holds no thread: the decode starts on a pool thread when a slot frees.
+			await slots.WaitAsync().ConfigureAwait(false);
+			try
+			{
+				return DecodeForUploadNow(origin);
+			}
+			finally
+			{
+				slots.Release();
+			}
+		}
+
+		private static ApiTexture DecodeForUploadNow(PathOrigin origin)
 		{
 			if (!origin.GetTexture(out ApiTexture decoded) || decoded == null)
 			{
@@ -299,10 +359,69 @@ namespace OpenBve.Android
 			}
 		}
 
+		/*
+		 * Upstream's TextureManager.RegisterTexture(path) looks for an existing registration by
+		 * walking every texture registered so far, comparing paths culture-aware and
+		 * case-insensitively: the Tuen Ma Line registers ~10,000 textures, so late registrations
+		 * compare against thousands each (~32 s of a Galaxy A05s's load, under the lock above that
+		 * the prefetch workers share). The same search through an index instead: upstream's array,
+		 * indexed by path as it grows (rebuilt whenever upstream replaces or shrinks it), matched with
+		 * upstream's comparison and in its order; registration is then upstream's own steps. Its
+		 * other steps - the existence check (PathExists, above) and dropping stray nulls from the
+		 * array's end (a workaround for an upstream threading bug) - are not needed here.
+		 * Called under the registeredTextures lock.
+		 */
+		private readonly Dictionary<string, List<ApiTexture>> upstreamRegistrations = new Dictionary<string, List<ApiTexture>>(StringComparer.InvariantCultureIgnoreCase);
+		private ApiTexture[] indexedArray;
+		private int indexedCount;
+
+		private ApiTexture RegisterWithoutSearch(string path, TextureParameters parameters)
+		{
+			ApiTexture[] array = LibRender2.Textures.TextureManager.RegisteredTextures;
+			int count = Math.Min(Renderer.TextureManager.RegisteredTexturesCount, array.Length);
+			if (!ReferenceEquals(array, indexedArray) || count < indexedCount)
+			{
+				upstreamRegistrations.Clear();
+				indexedArray = array;
+				indexedCount = 0;
+			}
+
+			for (; indexedCount < count; indexedCount++)
+			{
+				if (array[indexedCount]?.Origin is PathOrigin origin && origin.Path != null)
+				{
+					if (!upstreamRegistrations.TryGetValue(origin.Path, out List<ApiTexture> same))
+					{
+						same = new List<ApiTexture>(1);
+						upstreamRegistrations[origin.Path] = same;
+					}
+
+					same.Add(array[indexedCount]);
+				}
+			}
+
+			if (upstreamRegistrations.TryGetValue(path, out List<ApiTexture> candidates))
+			{
+				foreach (ApiTexture candidate in candidates)
+				{
+					if (candidate.Origin is PathOrigin origin && origin.Parameters == parameters)
+					{
+						return candidate;
+					}
+				}
+			}
+
+			int index = Renderer.TextureManager.GetNextFreeTexture();
+			ApiTexture texture = new ApiTexture(path, parameters, this);
+			LibRender2.Textures.TextureManager.RegisteredTextures[index] = texture;
+			Renderer.TextureManager.RegisteredTexturesCount++;
+			return texture;
+		}
+
 		/// <inheritdoc />
 		public override bool RegisterTexture(string path, TextureParameters parameters, out ApiTexture handle, bool loadTexture = false, int timeout = 1000)
 		{
-			using LoadProfile.Scope profile = LoadProfile.Enter("texture register");
+			using LoadProfile.Scope profile = LoadProfile.Enter("texture register", path);
 			handle = null;
 			if (Renderer == null || !PathExists(path))
 			{
@@ -326,20 +445,14 @@ namespace OpenBve.Android
 
 				if (data == null)
 				{
-					bool registered;
 					probingFormat = true;
 					try
 					{
-						registered = Renderer.TextureManager.RegisterTexture(path, parameters, out data);
+						data = RegisterWithoutSearch(path, parameters);
 					}
 					finally
 					{
 						probingFormat = false;
-					}
-
-					if (!registered)
-					{
-						return false;
 					}
 
 					if (!registeredTextures.TryGetValue(path, out known))
@@ -382,7 +495,7 @@ namespace OpenBve.Android
 			{
 				case MessageType.Critical:
 				case MessageType.Error:
-					ErrorCount++;
+					Interlocked.Increment(ref errorCount);
 					Log.Error(Tag, text);
 					break;
 				case MessageType.Warning:
@@ -468,7 +581,7 @@ namespace OpenBve.Android
 		/// <inheritdoc />
 		public override void ReportProblem(ProblemType type, string text)
 		{
-			ErrorCount++;
+			Interlocked.Increment(ref errorCount);
 			Log.Error(Tag, type + ": " + text);
 		}
 
@@ -492,7 +605,8 @@ namespace OpenBve.Android
 
 			try
 			{
-				return TrackFollowingObjectParser.Parse(this, objectPath, tfoFile);
+				// The train itself loads on another core (ScriptedTrainLoader).
+				return ScriptedTrainLoader.Load(this, objectPath, tfoFile);
 			}
 			catch (Exception ex)
 			{

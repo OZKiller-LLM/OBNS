@@ -92,6 +92,12 @@
     <RunAOTCompilation>true</RunAOTCompilation>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <!--
+      LLVM compiles that code with real optimisation (Mono's own AOT backend barely optimises).
+      Measured on East Rail, exterior view: A73 17-18 -> 22 fps, Nokia C31 3.5 -> 4.3 fps; the
+      per-car train updates 40% faster, the C31's load 135 -> 108 s. The build takes ~10 minutes.
+    -->
+    <EnableLLVM>true</EnableLLVM>
+    <!--
       Trim only the framework, never the app's own assemblies: the content plugins are found by
       assembly name and their types by reflection (AndroidPlugins), the package database is read
       with XmlSerializer, and upstream is full of such reflection besides.
@@ -100,6 +106,25 @@
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
+
+  <!--
+    .NET train plugins (and other content plugins) built for .NET Framework reference mscorlib,
+    System and System.Core; on .NET those are facades whose type forwards lead to the real
+    assemblies. Trimming the framework drops the forwards - and the members - the app itself does
+    not use, so such a plugin failed to load ("Could not resolve type ... CultureInfo in assembly
+    mscorlib": the Barcelona Metro trains' FCMB.dll). These are kept whole: the facades and the
+    assemblies they forward the common types to, since a plugin may call anything in them.
+  -->
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <TrimmerRootAssembly Include="mscorlib" RootMode="All" />
+    <TrimmerRootAssembly Include="System" RootMode="All" />
+    <TrimmerRootAssembly Include="System.Core" RootMode="All" />
+    <TrimmerRootAssembly Include="netstandard" RootMode="All" />
+    <TrimmerRootAssembly Include="System.Private.CoreLib" RootMode="All" />
+    <TrimmerRootAssembly Include="System.Runtime" RootMode="All" />
+    <TrimmerRootAssembly Include="System.Collections" RootMode="All" />
+    <TrimmerRootAssembly Include="System.Linq" RootMode="All" />
+  </ItemGroup>
 
   <!--
     NAudio 1.10 ships only a .NET Framework build, whose WinForms-based playback classes reference

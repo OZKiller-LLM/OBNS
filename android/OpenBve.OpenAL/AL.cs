@@ -114,6 +114,13 @@ namespace OpenTK.Audio.OpenAL
 			alDeleteSources(1, new[] { source });
 		}
 
+		/*
+		 * NoSource: 0 is never an OpenAL source. A call on it is a caller's bug (a sound driven
+		 * before it was given a source), and OpenAL answers each with an error that OpenAL Soft
+		 * also writes to Android's log - thousands a second at worst. The calls below that take
+		 * a source skip 0, and reading from it gives 0.
+		 */
+
 		/// <summary>Whether the name is a source.</summary>
 		public static bool IsSource(int source)
 		{
@@ -123,30 +130,56 @@ namespace OpenTK.Audio.OpenAL
 		/// <summary>Sets a float source property.</summary>
 		public static void Source(int source, ALSourcef param, float value)
 		{
+			if (source == 0)
+			{
+				return; // no source: see NoSource
+			}
+
 			alSourcef(source, (int)param, value);
 		}
 
 		/// <summary>Sets a three-component source property.</summary>
 		public static void Source(int source, ALSource3f param, float v1, float v2, float v3)
 		{
+			if (source == 0)
+			{
+				return; // no source: see NoSource
+			}
+
 			alSource3f(source, (int)param, v1, v2, v3);
 		}
 
 		/// <summary>Sets a boolean source property.</summary>
 		public static void Source(int source, ALSourceb param, bool value)
 		{
+			if (source == 0)
+			{
+				return; // no source: see NoSource
+			}
+
 			alSourcei(source, (int)param, value ? 1 : 0);
 		}
 
 		/// <summary>Sets an integer source property.</summary>
 		public static void Source(int source, ALSourcei param, int value)
 		{
+			if (source == 0)
+			{
+				return; // no source: see NoSource
+			}
+
 			alSourcei(source, (int)param, value);
 		}
 
 		/// <summary>Reads an integer source property.</summary>
 		public static void GetSource(int source, ALGetSourcei param, out int value)
 		{
+			if (source == 0)
+			{
+				value = 0; // no source: see NoSource
+				return;
+			}
+
 			alGetSourcei(source, (int)param, out value);
 		}
 
@@ -159,24 +192,44 @@ namespace OpenTK.Audio.OpenAL
 		/// <summary>Starts or resumes playback of a source.</summary>
 		public static void SourcePlay(int source)
 		{
+			if (source == 0)
+			{
+				return; // no source: see NoSource
+			}
+
 			alSourcePlay(source);
 		}
 
 		/// <summary>Pauses a source.</summary>
 		public static void SourcePause(int source)
 		{
+			if (source == 0)
+			{
+				return; // no source: see NoSource
+			}
+
 			alSourcePause(source);
 		}
 
 		/// <summary>Stops a source.</summary>
 		public static void SourceStop(int source)
 		{
+			if (source == 0)
+			{
+				return; // no source: see NoSource
+			}
+
 			alSourceStop(source);
 		}
 
 		/// <summary>Rewinds a source.</summary>
 		public static void SourceRewind(int source)
 		{
+			if (source == 0)
+			{
+				return; // no source: see NoSource
+			}
+
 			alSourceRewind(source);
 		}
 

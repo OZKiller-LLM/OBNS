@@ -49,6 +49,21 @@ namespace OpenBve.Android
 		private static int thread = -1;
 		private static long last;
 
+		/*
+		 * Gaps: time a watched category (a plugin's own code, e.g. the train plugin loading a
+		 * scripted train) spends between two host callbacks. The largest, with the callbacks on
+		 * either side, say which of its steps is slow - without instrumenting the plugin itself.
+		 */
+		private const string Watched = "scripted trains: train plugin";
+		private const int GapsKept = 10;
+		private static readonly List<(long Ticks, string Before, string After, int FullCollections)> Gaps = new List<(long, string, string, int)>();
+		private static int lastFullCollections;
+		private static int[] collectionsAtBegin = new int[3];
+		private static TimeSpan pauseAtBegin;
+		private static string lastEvent = "start";
+		private static long watchedGapTicks;
+		private static int watchedGapCount;
+
 		/// <summary>Starts measuring on the calling thread, charging time to <paramref name="category"/>.</summary>
 		public static void Begin(string category)
 		{
@@ -59,32 +74,79 @@ namespace OpenBve.Android
 			Categories.Push(category);
 			Clock.Restart();
 			last = 0;
+			Gaps.Clear();
+			lastEvent = "start";
+			lastFullCollections = GC.CollectionCount(2);
+			collectionsAtBegin = new[] { GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2) };
+			pauseAtBegin = GC.GetTotalPauseDuration();
+			watchedGapTicks = 0;
+			watchedGapCount = 0;
 		}
 
 		/// <summary>Charges time to a category until the returned scope is disposed.</summary>
-		public static Scope Enter(string category)
+		/// <param name="category">What the time is charged to.</param>
+		/// <param name="detail">The file concerned, if any, named in the gap report.</param>
+		public static Scope Enter(string category, string detail = null)
 		{
 			if (Environment.CurrentManagedThreadId != thread)
 			{
 				return default;
 			}
 
-			Charge();
+			string eventName = "start " + category + (detail != null ? " " + System.IO.Path.GetFileName(detail) : string.Empty);
+			Charge(eventName);
 			Categories.Push(category);
 			Calls[category] = Calls.TryGetValue(category, out int n) ? n + 1 : 1;
 			return new Scope(true);
 		}
 
-		private static void Charge()
+		private static void Charge(string eventName = null)
 		{
 			long now = Clock.ElapsedTicks;
 			if (Categories.Count != 0)
 			{
 				string current = Categories.Peek();
 				Ticks[current] = (Ticks.TryGetValue(current, out long t) ? t : 0) + now - last;
+				if (current == Watched && eventName != null)
+				{
+					long gap = now - last;
+					watchedGapTicks += gap;
+					watchedGapCount++;
+					int fullCollections = GC.CollectionCount(2);
+					int during = fullCollections - lastFullCollections;
+					lastFullCollections = fullCollections;
+					if (Gaps.Count < GapsKept || gap > Gaps[Gaps.Count - 1].Ticks)
+					{
+						Gaps.Add((gap, lastEvent, eventName, during));
+						Gaps.Sort((a, b) => b.Ticks.CompareTo(a.Ticks));
+						if (Gaps.Count > GapsKept)
+						{
+							Gaps.RemoveAt(Gaps.Count - 1);
+						}
+					}
+				}
+			}
+
+			if (eventName != null)
+			{
+				lastEvent = eventName;
 			}
 
 			last = now;
+		}
+
+		/// <summary>The largest gaps inside the watched plugin, for the log; empty if none.</summary>
+		public static string GapReport()
+		{
+			if (Gaps.Count == 0)
+			{
+				return string.Empty;
+			}
+
+			return "train plugin's own time: " + (watchedGapTicks / (double)Stopwatch.Frequency).ToString("0.0") + " s in " + watchedGapCount +
+			       " stretches; largest: " + string.Join("; ", Gaps.Select(g =>
+				       (g.Ticks / (double)Stopwatch.Frequency).ToString("0.00") + " s after '" + g.Before + "' before '" + g.After + "'" +
+				       (g.FullCollections > 0 ? " (" + g.FullCollections + " full GC)" : string.Empty)));
 		}
 
 		/// <summary>Stops measuring and describes where the time went, largest first.</summary>
@@ -95,12 +157,16 @@ namespace OpenBve.Android
 				return string.Empty;
 			}
 
-			Charge();
+			Charge("end of load");
 			thread = -1;
 			double total = Ticks.Values.Sum() / (double)Stopwatch.Frequency;
+			// Garbage collections during the stage, and the time they paused the program.
+			string collections = "; GC: " + (GC.CollectionCount(0) - collectionsAtBegin[0]) + " gen0, " + (GC.CollectionCount(1) - collectionsAtBegin[1]) + " gen1, " +
+			                     (GC.CollectionCount(2) - collectionsAtBegin[2]) + " full, paused " + (GC.GetTotalPauseDuration() - pauseAtBegin).TotalSeconds.ToString("0.0") +
+			                     " s, " + (GC.GetTotalMemory(false) >> 20) + " MB managed";
 			return total.ToString("0.0") + " s: " + string.Join(", ", Ticks.OrderByDescending(p => p.Value).Select(p =>
 				p.Key + " " + (p.Value / (double)Stopwatch.Frequency).ToString("0.0") + " s" +
-				(Calls.TryGetValue(p.Key, out int n) ? " (" + n + ")" : string.Empty)));
+				(Calls.TryGetValue(p.Key, out int n) ? " (" + n + ")" : string.Empty))) + collections;
 		}
 
 		/// <summary>Ends a category when disposed.</summary>
@@ -120,7 +186,7 @@ namespace OpenBve.Android
 					return;
 				}
 
-				Charge();
+				Charge("end " + Categories.Peek());
 				Categories.Pop();
 			}
 		}

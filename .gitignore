@@ -17,3 +17,6 @@ dist/
 # Signing keys never belong in the repository
 *.jks
 *.keystore
+
+# Device benchmark results (android/tools/benchmark) - per-run output, not source
+/android/tools/benchmark/results/

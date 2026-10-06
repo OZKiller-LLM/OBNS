@@ -135,6 +135,26 @@ namespace OpenBve.Android
 			Holder.AddCallback(this);
 		}
 
+		/*
+		 * Render resolution: the scene drawn into a smaller surface that the display hardware
+		 * scales up for free (SurfaceHolder.SetFixedSize), for GPUs that cannot fill the screen's
+		 * pixels (Mali-G52 MP1, PowerVR GE8322). The touch overlay is Android views, unaffected.
+		 * 1 = the screen's own resolution. Test switch for now: the render_scale intent extra.
+		 */
+		public static float RenderScale = 1.0f;
+
+		/// <summary>Surface pixels per view pixel, for input that is compared with the scene as drawn.</summary>
+		public float ViewToSurface => Width > 0 && surfaceWidth > 0 ? surfaceWidth / (float)Width : 1.0f;
+
+		protected override void OnSizeChanged(int w, int h, int oldw, int oldh)
+		{
+			base.OnSizeChanged(w, h, oldw, oldh);
+			if (RenderScale < 0.999f && w > 0 && h > 0)
+			{
+				Holder.SetFixedSize(Math.Max(1, (int)Math.Round(w * RenderScale)), Math.Max(1, (int)Math.Round(h * RenderScale)));
+			}
+		}
+
 		protected GameView(IntPtr javaReference, JniHandleOwnership transfer) : base(javaReference, transfer)
 		{
 		}
@@ -222,6 +242,10 @@ namespace OpenBve.Android
 		/// On the render thread: if the window is going, lets go of it and waits for the next one.
 		/// Returns false if the game ended meanwhile.
 		/// </summary>
+		private volatile bool waitingForWindow;
+		private int fpsFrames;
+		private double fpsTime;
+
 		private bool FollowWindow(IRenderSurface egl, AndroidSounds sounds, ref DateTime last)
 		{
 			if (!detachRequested)
@@ -235,8 +259,16 @@ namespace OpenBve.Android
 			// Silent while there is nothing to see (the background, or between displays).
 			sounds?.SetPaused(true);
 			Log.Info(Tag, "window gone: waiting for the next one, with the game kept");
+			// Waiting on purpose, not stalled (see Stalled).
+			waitingForWindow = true;
 			while (running && !windowReady.Wait(500))
 			{
+			}
+
+			waitingForWindow = false;
+			if (profile != null)
+			{
+				System.Threading.Interlocked.Exchange(ref profile.LastMarkTicks, DateTime.UtcNow.Ticks);
 			}
 
 			if (!running)
@@ -341,9 +373,16 @@ namespace OpenBve.Android
 
 				string version = GL.GetString(StringName.Version) + " on " + GL.GetString(StringName.Renderer) +
 				                 (backend == GraphicsBackend.Vulkan ? " (Vulkan via ANGLE)" : string.Empty);
+				// Folder listings remembered while loading (OpenBveApi.Path, Path.Android.cs): content does not change mid-load.
+				OpenBveApi.Path.CacheListings = true;
 				LoadProfile.Begin("route parser");
 				string route = AndroidRouteLoader.LoadRoute(host, fileSystem, renderer, Launch.RouteFile, Launch.RouteEncoding, out RouteManager2.CurrentRoute currentRoute);
 				Log.Info(Tag, "load profile, route: " + LoadProfile.End());
+				string gaps = LoadProfile.GapReport();
+				if (gaps.Length != 0)
+				{
+					Log.Info(Tag, "load profile, " + gaps);
+				}
 				Log.Info(Tag, "memory after route: " + (GC.GetTotalMemory(true) >> 20) + " MB live, " + ResidentMegabytes() + " MB resident");
 
 				bool haveScene = currentRoute != null;
@@ -355,17 +394,33 @@ namespace OpenBve.Android
 					Program.CurrentRoute = currentRoute;
 					sounds.Route = currentRoute;
 					LoadProfile.Begin("scene preparation");
+					// The scripted trains' identical meshes shared before the scene uploads them (MeshSharing).
+					MeshSharing.Reset();
+					MeshSharing.Share(trainManager.TFOs);
+					MeshSharing.Share(host.AnimatedWorldObjects, host.AnimatedWorldObjectsUsed);
 					renderer.PrepareScene(host, options.ViewingDistance);
+					/*
+					 * Scene preparation uploads every static object's buffers, and each keeps a copy
+					 * of its vertices (VertexCopyReleaser): drop them now, before the trains load
+					 * on top - the peak of the load is what the low-memory killer sees.
+					 */
+					VertexCopyReleaser.ReleaseAll(renderer);
+					GC.Collect();
 					Log.Info(Tag, "load profile, scene: " + LoadProfile.End());
 					LoadProfile.Begin("train and placement");
 					train = "\n" + AndroidTrainSession.Load(host, trainManager, renderer, currentRoute, fileSystem, host.CurrentTrainFolder, Launch.TrainEncoding, out loadedSession);
+					VertexCopyReleaser.ReleaseAll(renderer);
 					Log.Info(Tag, "load profile, train: " + LoadProfile.End());
 					// The render loop and the activity's menus reach the session through this field.
 					session = loadedSession;
+					// The trains whose cars' still parts are drawn in batches (StaticBatcher).
+					renderer.TrainSource = () => System.Linq.Enumerable.Concat(host.TrainList, System.Linq.Enumerable.OfType<global::TrainManager.Trains.TrainBase>(trainManager.TFOs));
 					loadedSession?.PrepareOverlays();
 				// From here on, textures first needed while driving are decoded in the background.
 				host.StreamTextures = true;
 				}
+
+				OpenBveApi.Path.CacheListings = false;
 
 				/*
 				 * Loading leaves a great deal of garbage behind - decoded texture probes, parser
@@ -378,7 +433,7 @@ namespace OpenBve.Android
 				GC.WaitForPendingFinalizers();
 				GC.Collect();
 				Log.Info(Tag, "memory after load: " + before + " MB managed before collection, " + (GC.GetTotalMemory(true) >> 20) +
-				              " MB live, " + ResidentMegabytes() + " MB resident");
+				              " MB live, " + ResidentMegabytes() + " MB resident; " + MeshSharing.Describe() + "; " + TextureCensus.DescribeMeshes(renderer));
 
 				string summary = version + "\n" + plugins + "\n" + route + train +
 				                 (host.ErrorCount == 0 ? string.Empty : "\n" + host.ErrorCount + " error(s) - see logcat");
@@ -474,6 +529,16 @@ namespace OpenBve.Android
 								driver?.Update(session.Train, elapsed);
 								session.Update(elapsed);
 								Controls.UpdateTimetableScroll(elapsed);
+								// The frame rate the desktop HUD's fps element shows (upstream's game window keeps it).
+								fpsFrames++;
+								fpsTime += elapsed;
+								if (fpsTime >= 0.5)
+								{
+									renderer.FrameRate = fpsFrames / fpsTime;
+									fpsFrames = 0;
+									fpsTime = 0.0;
+								}
+
 								BetaLog.Frame(elapsed, () => session.Train.FrontCarTrackPosition.ToString("0") + " m, " +
 								                             (session.Train.CurrentSpeed * 3.6).ToString("0") + " km/h, view " + renderer.Camera.CurrentMode +
 								                             ", " + width + "x" + height + ", " + GraphicsLibraries.Active + ", " + (DesktopInterface ? "desktop" : "touch"));
@@ -528,7 +593,8 @@ namespace OpenBve.Android
 							Log.Info(Tag, "frame: " + renderer.Profile.Report());
 							if (renderer.LastFaceDescription.Length > 0)
 							{
-								Log.Info(Tag, "faces: " + renderer.LastFaceDescription + "; drawn in " + renderer.OpaqueDrawCalls + " calls");
+								Log.Info(Tag, "faces: " + renderer.LastFaceDescription + "; drawn in " + renderer.OpaqueDrawCalls + " calls, transparent faces in " + renderer.AlphaDrawCalls +
+								         "; static batches: " + renderer.BatchSummary);
 							}
 
 							renderer.DescribeFacesNextFrame = true;
@@ -545,7 +611,8 @@ namespace OpenBve.Android
 							{
 								Log.Info(Tag, "train: " + session.Describe() + ", " + renderer.VisibleCabFaceCount + " cab faces");
 								Log.Info(Tag, "memory: " + ResidentMegabytes() + " MB resident, " + (GC.GetTotalMemory(false) >> 20) + " MB managed, " +
-								              renderer.TextureManager.GetNumberOfLoadedTextures() + " textures loaded, " + host.TexturesDecoding + " decoding");
+								              renderer.TextureManager.GetNumberOfLoadedTextures() + " textures loaded, " + host.TexturesDecoding + " decoding, " +
+								              (VertexCopyReleaser.ReleasedBytes >> 20) + " MB of vertex copies released; " + TextureCensus.Describe(renderer.TextureManager) + OpenTK.Graphics.OpenGL.GL.Describe16Bit() + "; " + TextureSizeLimit.Describe());
 								Log.Info(Tag, "sound: " + sounds.GetNumberOfPlayingSources() + " playing of " + sounds.GetNumberOfRegisteredSources() +
 								              " sources, " + sounds.GetNumberOfLoadedBuffers() + " of " + sounds.GetNumberOfRegisteredBuffers() + " buffers loaded");
 							}
@@ -593,7 +660,8 @@ namespace OpenBve.Android
 			{
 				FrameProfile current = profile;
 				long ticks = current == null ? 0L : System.Threading.Interlocked.Read(ref current.LastMarkTicks);
-				if (ticks == 0L || !running)
+				// Not while the render thread waits for a window (the app in the background, or moving display).
+				if (ticks == 0L || !running || waitingForWindow)
 				{
 					return TimeSpan.Zero;
 				}

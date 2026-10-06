@@ -110,11 +110,16 @@ namespace OpenBve.Android
 			object routeObject = currentRoute;
 
 			DateTime started = DateTime.UtcNow;
+			// The route's object files parsed ahead on the other cores (ObjectPrefetch).
+			ObjectPrefetch.Start(host, file, encoding, objectFolder);
 			try
 			{
 				// A full load, not a preview: objects are created and registered with the renderer.
 				LoadProgress.Route = plugin.Route;
+				ScriptedTrainLoader.Reset();
 				bool loaded = plugin.Route.LoadRoute(file, encoding, null, objectFolder, soundFolder, false, ref routeObject);
+				// The scripted trains the route asked for, still loading on other cores.
+				ScriptedTrainLoader.Finish(Program.TrainManager?.TFOs);
 				double seconds = (DateTime.UtcNow - started).TotalSeconds;
 
 				if (!loaded || routeObject == null)
@@ -138,6 +143,13 @@ namespace OpenBve.Android
 			{
 				Log.Error(Tag, "route load threw: " + ex);
 				return "route " + Path.GetFileName(file) + " threw " + ex.GetType().Name + ": " + ex.Message;
+			}
+			finally
+			{
+				ScriptedTrainLoader.Finish(Program.TrainManager?.TFOs);
+				Log.Info(Tag, ObjectPrefetch.Describe());
+				Log.Info(Tag, ScriptedTrainLoader.Describe());
+				ObjectPrefetch.Stop();
 			}
 		}
 

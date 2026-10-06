@@ -15,6 +15,9 @@
   <ItemGroup>
     <Compile Include="$(UpstreamSource)SoundManager\**\*.cs" LinkBase="SoundManager" />
     <Compile Remove="$(UpstreamSource)SoundManager\Properties\AssemblyInfo.cs" />
+    <!-- Port copy with the cached file-existence check (see the file's header). -->
+    <Compile Remove="$(UpstreamSource)SoundManager\Sounds.CarSound.cs" />
+    <Compile Include="Sounds.CarSound.Android.cs" />
   </ItemGroup>
 
   <ItemGroup>

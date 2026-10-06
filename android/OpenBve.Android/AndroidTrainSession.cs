@@ -130,7 +130,13 @@ namespace OpenBve.Android
 			AbstractTrain abstractTrain = train;
 			Control[] controls = new Control[0];
 			LoadProgress.Train = plugin.Train;
-			if (!plugin.Train.LoadTrain(encoding, trainFolder, ref abstractTrain, ref controls))
+			bool loaded;
+			using (LoadProfile.Enter("player train: train plugin"))
+			{
+				loaded = plugin.Train.LoadTrain(encoding, trainFolder, ref abstractTrain, ref controls);
+			}
+
+			if (!loaded)
 			{
 				return "train " + Path.GetFileName(trainFolder) + " failed to load - see logcat";
 			}
@@ -146,6 +152,7 @@ namespace OpenBve.Android
 			 */
 			string pluginSummary;
 			InitializationModes startMode = (InitializationModes)host.Options.TrainStart;
+			LoadProfile.Scope safetyProfile = LoadProfile.Enter("player train: safety plugin");
 			if (NativePlugins.NativePluginBridge.TryLoad(train, trainFolder, encoding, startMode, out string translated))
 			{
 				// A Win32 plugin, identified and run as a managed translation.
@@ -161,6 +168,7 @@ namespace OpenBve.Android
 				pluginSummary = "OpenBVE default (ATS-Sx)";
 			}
 
+			safetyProfile.Dispose();
 			Log.Info(Tag, "safety plugin: " + (train.Plugin == null ? "none" : pluginSummary));
 
 			string others = LoadPrecedingTrains(host, trainManager, route, plugin, trainFolder, encoding);
@@ -173,7 +181,13 @@ namespace OpenBve.Android
 				? cab.Groups.Sum(g => g.TouchElements?.Length ?? 0)
 				: 0;
 			Log.Info(Tag, "cab touch areas: " + touchAreas + " in " + (cab?.Groups.Length ?? 0) + " panel group(s), " + controls.Length + " touch control(s)");
-			session.PlaceAtFirstStation();
+			// The player's and preceding trains' identical meshes shared before their first upload (MeshSharing).
+			MeshSharing.Share(trainManager.Trains);
+			using (LoadProfile.Enter("player train: placement"))
+			{
+				session.PlaceAtFirstStation();
+			}
+
 			return "train " + Path.GetFileName(trainFolder) + ": " + train.Cars.Length + " car(s), starting at " +
 			       train.Cars[0].TrackPosition.ToString("0") + " m" + others;
 		}
@@ -305,6 +319,15 @@ namespace OpenBve.Android
 		/// </summary>
 		private void PlaceAtFirstStation()
 		{
+			// Where the placement's time goes, logged at the end ("placement steps").
+			System.Diagnostics.Stopwatch steps = System.Diagnostics.Stopwatch.StartNew();
+			System.Text.StringBuilder stepLog = new System.Text.StringBuilder();
+			void Step(string name)
+			{
+				stepLog.Append(stepLog.Length == 0 ? "" : ", ").Append(name).Append(' ').Append(steps.Elapsed.TotalSeconds.ToString("0.0")).Append(" s");
+				steps.Restart();
+			}
+
 			if (route.Sections.Length > 0)
 			{
 				route.UpdateAllSections();
@@ -381,6 +404,15 @@ namespace OpenBve.Android
 				renderer.Camera.CurrentRestriction = OpenBveApi.Graphics.CameraRestrictionMode.Off;
 			}
 
+			/*
+			 * The trains' and the first view's textures classified on all cores (TextureClassifier),
+			 * before anything is shown: a train shows its cars as it initialises, and the first
+			 * world-object update shows the animated scenery, each texture decoded one at a time.
+			 */
+			Step("sections and views");
+			Log.Info(Tag, "texture transparency: " + TextureClassifier.Classify(ObjectsAboutToShow(startPosition), "old " + host.Options.OldTransparencyMode + ", limit " + TextureSizeLimit.MaxSize));
+			Step("texture classification");
+
 			foreach (TrainBase train in trainManager.Trains)
 			{
 				train.Initialize();
@@ -425,6 +457,7 @@ namespace OpenBve.Android
 				}
 			}
 
+			Step("trains initialised");
 			Log.Info(Tag, trainManager.TFOs.Count + " track following object(s)");
 
 			if (route.Sections.Length > 0)
@@ -468,7 +501,9 @@ namespace OpenBve.Android
 				route.UpdateAllSections();
 			}
 
+			Step("trains placed");
 			FastForward(startupTime);
+			Step("fast-forward");
 
 			Camera.Initialize(startPosition);
 			/*
@@ -481,10 +516,68 @@ namespace OpenBve.Android
 			 */
 			// Positions every car's objects, including the cab, which is attached to the camera.
 			trainManager.UpdateTrainObjects(0.0, true);
+			Step("train objects");
 			renderer.UpdateVisibility(true);
+			Step("visibility");
 			host.UpdateAnimatedWorldObjects(renderer, 0.0, true);
+			Step("animated scenery");
+			Log.Info(Tag, "placement steps: " + stepLog);
 			Log.Info(Tag, "player train placed at " + startPosition.ToString("0.0") + " m, driver car " + Train.DriverCar +
 			              ", view " + renderer.Camera.CurrentMode + ", camera restriction " + renderer.Camera.CurrentRestriction);
+		}
+
+		/// <summary>The objects shown when play starts: every train's, the static scenery in view of the start, and all animated scenery.</summary>
+		private IEnumerable<OpenBveApi.Objects.StaticObject> ObjectsAboutToShow(double position)
+		{
+			List<TrainBase> trains = new List<TrainBase>(host.TrainList);
+			trains.AddRange(trainManager.TFOs.OfType<TrainBase>());
+			foreach (TrainBase train in trains)
+			{
+				foreach (CarBase car in train.Cars)
+				{
+					List<LibRender2.Trains.CarSection> sections = new List<LibRender2.Trains.CarSection>(car.CarSections.Values);
+					sections.AddRange(car.FrontBogie?.CarSections ?? Array.Empty<LibRender2.Trains.CarSection>());
+					sections.AddRange(car.RearBogie?.CarSections ?? Array.Empty<LibRender2.Trains.CarSection>());
+					foreach (LibRender2.Trains.CarSection section in sections)
+					{
+						foreach (OpenBveApi.Objects.StaticObject prototype in TextureClassifier.Prototypes(section))
+						{
+							yield return prototype;
+						}
+					}
+				}
+			}
+
+			double forward = renderer.Camera.ForwardViewingDistance, backward = renderer.Camera.BackwardViewingDistance;
+			foreach (OpenBveApi.Objects.ObjectState state in renderer.StaticObjectStates)
+			{
+				if (state.StartingDistance <= position + forward && state.EndingDistance >= position - backward && state.Prototype != null)
+				{
+					yield return state.Prototype;
+				}
+			}
+
+			/*
+			 * Animated scenery (signals, doors, displays): all of it, wherever it is - the first
+			 * world-object update is forced (as upstream's), and a forced update shows every
+			 * object once, in view or not.
+			 */
+			for (int i = 0; i < host.AnimatedWorldObjectsUsed; i++)
+			{
+				OpenBveApi.Objects.WorldObject world = host.AnimatedWorldObjects[i];
+				if (world?.Object?.States == null)
+				{
+					continue;
+				}
+
+				foreach (OpenBveApi.Objects.ObjectState state in world.Object.States)
+				{
+					if (state?.Prototype != null)
+					{
+						yield return state.Prototype;
+					}
+				}
+			}
 		}
 
 		/*

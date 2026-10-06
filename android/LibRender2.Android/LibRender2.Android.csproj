@@ -35,4 +35,12 @@
     <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
   </ItemGroup>
 
+  <!--
+    The Android renderer (OpenBve.Android) reads the texture transparency cache
+    (TextureManager.textureCache) to batch static objects the way upstream classifies their faces.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenBve.Android" />
+  </ItemGroup>
+
 </Project>

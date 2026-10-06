@@ -198,6 +198,27 @@ namespace OpenBve.Android
 			// For A/B checks of the renderer's draw-call merging (see AndroidRenderer.DrawOpaqueFaces).
 			AndroidRenderer.MergeOpaqueFaces = Intent?.GetBooleanExtra("merge_faces", true) ?? true;
 			AndroidRenderer.CheckMerging = Intent?.GetBooleanExtra("merge_check", false) ?? false;
+			// For comparisons: --ez static_batching false draws every object on its own, as upstream.
+			StaticBatcher.Enabled = Intent?.GetBooleanExtra("static_batching", true) ?? true;
+			StaticBatcher.DetachParts = Intent?.GetBooleanExtra("detach_parts", true) ?? true;
+			VertexCopyReleaser.Enabled = Intent?.GetBooleanExtra("release_vertex_copies", true) ?? true;
+			ObjectPrefetch.Enabled = Intent?.GetBooleanExtra("prefetch_objects", true) ?? true;
+			// For comparisons: --ez parallel_scripted_trains false loads them one at a time, as upstream.
+			ScriptedTrainLoader.Enabled = Intent?.GetBooleanExtra("parallel_scripted_trains", true) ?? true;
+			// Remembered texture transparency (TextureClassifier), in the app's cache folder.
+			TextureClassifier.CacheFolder = CacheDir?.AbsolutePath;
+			// For comparisons: --ez mesh_sharing false loads every train part with its own mesh, as upstream.
+			MeshSharing.Enabled = Intent?.GetBooleanExtra("mesh_sharing", true) ?? true;
+			// For measurements: --ei texture_limit <px> (0 = none, -1 = automatic), for this game only.
+			AndroidSettings.TextureLimitOverride = Intent != null && Intent.HasExtra("texture_limit") ? Intent.GetIntExtra("texture_limit", -1) : (int?)null;
+			// For measurements: --ei texture_depth 16|32, for this game only (automatic: 16 on phones of 4.5 GB or less).
+			AndroidSettings.TextureDepthOverride = Intent != null && Intent.HasExtra("texture_depth") ? Intent.GetIntExtra("texture_depth", 32) : (int?)null;
+			// For measurements: --es transparency performance|quality, for this game only (not saved).
+			string transparency = Intent?.GetStringExtra("transparency");
+			AndroidSettings.TransparencyOverride = transparency == "performance" ? OpenBveApi.Graphics.TransparencyMode.Performance
+				: transparency == "quality" ? OpenBveApi.Graphics.TransparencyMode.Quality : (OpenBveApi.Graphics.TransparencyMode?)null;
+			// For measurements: --ei render_scale 50 draws the scene at half the screen's resolution.
+			GameView.RenderScale = Math.Clamp(Intent?.GetIntExtra("render_scale", 100) ?? 100, 25, 100) / 100.0f;
 			// For diagnosing a Win32 plugin: record its calls for replay in OpenBve.X86.Tests.
 			NativePlugins.NativePluginBridge.TraceFolder = Intent?.GetBooleanExtra("plugin_trace", false) == true ? GetExternalFilesDir(null)?.AbsolutePath : null;
 			LaunchParameters launch = LaunchParameters.ReadFrom(Intent);

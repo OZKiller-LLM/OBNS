@@ -92,6 +92,40 @@ namespace OpenBve.Android
 			Dropdown(Menu.T("options", "quality_interpolation_mode", "Mode:"), modeNames,
 				Math.Max(0, Array.IndexOf(modes, AndroidSettings.GetInterpolation(activity))),
 				i => AndroidSettings.SetInterpolation(activity, modes[i]));
+				// Upstream's own option and wording: Sharp = one pass (faster on weak GPUs), Smooth = two.
+				Dropdown(Menu.T("options", "quality_interpolation_transparency", "Transparency:"),
+					new[] { Menu.T("options", "quality_interpolation_transparency_sharp", "Sharp"), Menu.T("options", "quality_interpolation_transparency_smooth", "Smooth") },
+					AndroidSettings.GetTransparency(activity) == TransparencyMode.Performance ? 0 : 1,
+					i => AndroidSettings.SetTransparency(activity, i == 0 ? TransparencyMode.Performance : TransparencyMode.Quality));
+				// Texture size limit (TextureSizeLimit): on a phone, textures take system RAM.
+				int[] limits = { -1, 0, 2048, 1024, 768, 512 };
+				int automatic = TextureSizeLimit.Automatic(AndroidSettings.TotalRam(activity));
+				string[] limitNames =
+				{
+					Menu.T("android", "texture_limit_auto", "Automatic") + " (" + (automatic > 0 ? automatic + " px" : Menu.T("android", "texture_limit_unlimited", "no limit")) + ")",
+					Menu.T("android", "texture_limit_none", "No limit"),
+					"2048 px", "1024 px", "768 px", "512 px"
+				};
+				Dropdown(Menu.T("android", "texture_limit", "Largest texture size:"), limitNames,
+					Math.Max(0, Array.IndexOf(limits, AndroidSettings.GetTextureLimit(activity))),
+					i => AndroidSettings.SetTextureLimit(activity, limits[i]));
+				Info(Menu.T("android", "texture_limit_note",
+					"Larger textures are scaled down as they load. Heavy routes need less memory with a lower limit; automatically, phones with 4 GB of RAM or less use 1024 px and phones with 6 GB use 2048 px."));
+				// Texture colour depth (GL.Texture16Bit): 16 bits halve the textures' memory.
+				int[] depths = { -1, 32, 16 };
+				long ram = AndroidSettings.TotalRam(activity);
+				bool automatic16 = ram > 0 && ram <= 4608L << 20;
+				Dropdown(Menu.T("android", "texture_depth", "Texture colours:"),
+					new[]
+					{
+						Menu.T("android", "texture_limit_auto", "Automatic") + " (" + (automatic16 ? "16" : "32") + " bit)",
+						Menu.T("android", "texture_depth_32", "Full (32 bit)"),
+						Menu.T("android", "texture_depth_16", "Reduced (16 bit)")
+					},
+					Math.Max(0, Array.IndexOf(depths, AndroidSettings.GetTextureDepth(activity))),
+					i => AndroidSettings.SetTextureDepth(activity, depths[i]));
+				Info(Menu.T("android", "texture_depth_note",
+					"16-bit textures need half the memory, with slightly fewer colours. Phones with 4 GB of RAM or less use them automatically."));
 
 			Slider(Menu.T("options", "quality_distance_viewingdistance", "Viewing distance:"), 100, 2000, 50,
 				AndroidSettings.GetViewingDistance(activity), v => v + " " + Menu.T("options", "quality_distance_viewingdistance_meters", "m"),

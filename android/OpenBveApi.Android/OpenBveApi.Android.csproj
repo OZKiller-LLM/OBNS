@@ -32,6 +32,9 @@
     <Compile Remove="$(UpstreamSource)OpenBveApi\Sound.cs" />
     <!-- WCF service contracts for the 32-bit Win32 ATS plugin proxy: Windows-only by definition. -->
     <Compile Remove="$(UpstreamSource)OpenBveApi\System\Interop.cs" />
+    <!-- Path.cs: replaced by Path.Android.cs (the same, with folder listings remembered while a game loads). -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\System\Path.cs" />
+    <Compile Include="Path.Android.cs" />
   </ItemGroup>
 
   <ItemGroup>

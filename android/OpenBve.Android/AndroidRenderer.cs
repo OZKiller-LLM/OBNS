@@ -187,6 +187,32 @@ namespace OpenBve.Android
 			}
 		}
 
+		/*
+		 * The default shader declares a uniform block of animation matrices (uAnimationMatricies,
+		 * 128 mat4, binding point 0). Upstream binds a buffer there only for objects that carry
+		 * their own matrices, so every other draw runs with nothing bound to an active block. The
+		 * GLES spec makes that an error; Adreno and Mali drivers let it pass, PowerVR does not:
+		 * on the Nokia C31 (PowerVR GE8322) every world draw failed ("ValidateProgramUniformBlock
+		 * Bindings: No bound buffer"), leaving the sky and the overlays alone on screen. A zeroed
+		 * buffer of the block's size is bound there at the start of each frame; an object with
+		 * matrices still binds its own over it, exactly as upstream does.
+		 */
+		private const int AnimationBlockBytes = 128 * 16 * sizeof(float);
+		private int animationBlockFallback;
+
+		private void BindAnimationBlockFallback()
+		{
+			if (animationBlockFallback == 0)
+			{
+				animationBlockFallback = GL.GenBuffer();
+				GL.BindBuffer(BufferTarget.UniformBuffer, animationBlockFallback);
+				GL.BufferData(BufferTarget.UniformBuffer, AnimationBlockBytes, new byte[AnimationBlockBytes], BufferUsageHint.StaticDraw);
+				GL.BindBuffer(BufferTarget.UniformBuffer, 0);
+			}
+
+			GL.BindBufferBase(BufferRangeTarget.UniformBuffer, 0, animationBlockFallback);
+		}
+
 		/// <summary>Draws the world layer from the current camera.</summary>
 		/// <param name="timeElapsed">Seconds since the previous frame, for background animation.</param>
 		public void RenderScene(double timeElapsed)
@@ -227,6 +253,8 @@ namespace OpenBve.Android
 
 			DefaultShader.Activate();
 			GlCheck("DefaultShader.Activate");
+			BindAnimationBlockFallback();
+			GlCheck("BindAnimationBlockFallback");
 			DefaultShader.SetShadowEnabled(false);
 			GlCheck("SetShadowEnabled");
 			Fog.Enabled = false;
@@ -262,11 +290,14 @@ namespace OpenBve.Android
 
 			List<FaceState> opaqueFaces;
 			List<FaceState> alphaFaces;
+			List<FaceState> unsortedAlphaFaces;
 			List<FaceState> overlayOpaqueFaces;
 			List<FaceState> overlayAlphaFaces;
 			lock (VisibleObjects.LockObject)
 			{
 				opaqueFaces = VisibleObjects.OpaqueFaces.ToList();
+				// In the order objects were shown: each object's faces together, in index order.
+				unsortedAlphaFaces = VisibleObjects.AlphaFaces.ToList();
 				alphaFaces = VisibleObjects.GetSortedPolygons();
 				overlayOpaqueFaces = VisibleObjects.OverlayOpaqueFaces.ToList();
 				overlayAlphaFaces = VisibleObjects.GetSortedPolygons(true);
@@ -274,10 +305,17 @@ namespace OpenBve.Android
 
 			Profile.Mark("face lists");
 
+			// Faces the static batches draw come out of the lists (see StaticBatcher).
+			batcher ??= new StaticBatcher(this);
+			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
+			VertexCopyReleaser.Step(this);
+
+			Profile.Mark("batch filter");
+
 			if (DescribeFacesNextFrame)
 			{
 				DescribeFacesNextFrame = false;
-				LastFaceDescription = DescribeFaces(opaqueFaces);
+				LastFaceDescription = DescribeFaces(opaqueFaces) + " | transparent: " + DescribeAlphaFaces(unsortedAlphaFaces, alphaFaces);
 			}
 
 			if (CheckMergeNextFrame && MergeOpaqueFaces)
@@ -287,11 +325,12 @@ namespace OpenBve.Android
 			}
 
 			DrawOpaqueFaces(opaqueFaces);
+			OpaqueDrawCalls += batcher.DrawOpaque();
 
 			Profile.Mark("opaque faces");
 
 			ResetOpenGlState();
-			DrawAlphaFaces(alphaFaces);
+			AlphaDrawCalls = DrawAlphaFaces(alphaFaces, unsortedAlphaFaces, batcher);
 			Profile.Mark("alpha faces");
 
 			DrawingCab = true;
@@ -406,7 +445,7 @@ namespace OpenBve.Android
 			}
 
 			ResetOpenGlState();
-			DrawAlphaFaces(overlayAlphaFaces);
+			DrawAlphaFaces(overlayAlphaFaces, overlayAlphaFaces, null);
 			Lighting.OptionAmbientColor = previousAmbient;
 			Lighting.OptionDiffuseColor = previousDiffuse;
 			Lighting.Initialize();
@@ -420,17 +459,24 @@ namespace OpenBve.Android
 		 * performance branch, with depth writes off for everything: a tree sorted after a carriage's
 		 * interior then drew over it, which from the exterior view put trees inside the train.
 		 */
-		private void DrawAlphaFaces(List<FaceState> faces)
+		/*
+		 * Performance (the 1.01 work): in quality mode every colour-keyed face is in this list, and
+		 * each was drawn with its own call, twice - on the Tuen Ma Line about 18,000 calls a frame,
+		 * 75-85% of it. Both passes now draw runs of an object's faces as one call (DrawRuns).
+		 * The first pass - opaque texels, depth test and writes, no blending - gives the same
+		 * picture in any order, so it takes the list in the order objects were shown, where an
+		 * object's faces lie together and its runs are long. The second, blended pass keeps the
+		 * back-to-front order and only joins neighbours that are already adjacent in it.
+		 */
+		private int DrawAlphaFaces(List<FaceState> sorted, List<FaceState> unsorted, StaticBatcher batches)
 		{
+			int calls = 0;
 			if (options.TransparencyMode == TransparencyMode.Performance)
 			{
 				SetBlendFunc();
 				SetAlphaFunc(AlphaFunction.Greater, 0.0f);
 				GL.DepthMask(false);
-				foreach (FaceState face in faces)
-				{
-					face.Draw();
-				}
+				calls += DrawRuns(sorted, null, null);
 			}
 			else
 			{
@@ -438,21 +484,30 @@ namespace OpenBve.Android
 				UnsetBlendFunc();
 				SetAlphaFunc(AlphaFunction.Equal, 1.0f);
 				GL.DepthMask(true);
-				foreach (FaceState face in faces)
+				calls += DrawRuns(unsorted, face =>
 				{
 					MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
-					if (material.BlendMode == MeshMaterialBlendMode.Normal && material.GlowAttenuationData == 0 && material.Color.A == 255)
-					{
-						face.Draw();
-					}
-				}
+					return material.BlendMode == MeshMaterialBlendMode.Normal && material.GlowAttenuationData == 0 && material.Color.A == 255;
+				}, null);
+				// The batches' colour-keyed faces are all of that kind.
+				calls += batches?.DrawAlpha() ?? 0;
+				Profile.Mark("alpha texels");
 
 				// ...then everything partly transparent, blended on top without writing depth.
 				SetBlendFunc();
 				SetAlphaFunc(AlphaFunction.Less, 1.0f);
 				GL.DepthMask(false);
 				bool additive = false;
-				foreach (FaceState face in faces)
+				// Colour-keyed only: their blended texels are edge fringes, so they go first, unsorted.
+				calls += batches?.DrawAlpha() ?? 0;
+				/*
+				 * The same for every other colour-keyed face (quality mode puts them all in this
+				 * list): in object order, in runs. On the Tuen Ma Line's trains that is thousands of
+				 * the blended pass's calls. Only faces that really blend - alpha textures,
+				 * translucent colours, additive, glow - keep the back-to-front order.
+				 */
+				calls += DrawRuns(unsorted, IsColourKeyed, null);
+				calls += DrawRuns(sorted, face => !IsColourKeyed(face), face =>
 				{
 					if (face.Object.Prototype.Mesh.Materials[face.Face.Material].BlendMode == MeshMaterialBlendMode.Additive)
 					{
@@ -467,12 +522,108 @@ namespace OpenBve.Android
 						SetAlphaFunc();
 						additive = false;
 					}
-
-					face.Draw();
-				}
+				});
 			}
 
 			GL.DepthMask(true);
+			return calls;
+		}
+
+		private StaticBatcher batcher;
+
+		/// <summary>
+		/// Whether a transparent-list face is only colour-keyed: a normal, fully opaque, non-glowing
+		/// material whose textures have no partly transparent texels (upstream's Partial type).
+		/// Faces whose textures are not classified yet count as blending.
+		/// </summary>
+		private static bool IsColourKeyed(FaceState face)
+		{
+			MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
+			if (material.BlendMode != MeshMaterialBlendMode.Normal || material.GlowAttenuationData != 0 || material.Color.A != 255)
+			{
+				return false;
+			}
+
+			return KeyedOrOpaque(material.DaytimeTexture) && KeyedOrOpaque(material.NighttimeTexture);
+		}
+
+		private static bool KeyedOrOpaque(OpenBveApi.Textures.Texture texture) =>
+			texture == null || LibRender2.Textures.TextureManager.textureCache.TryGetValue(texture.Origin, out OpenBveApi.Textures.TextureTransparencyType type) &&
+			type != OpenBveApi.Textures.TextureTransparencyType.Alpha;
+
+		/// <summary>The trains whose still parts are batched (set once the game is loaded).</summary>
+		public System.Func<IEnumerable<global::TrainManager.Trains.TrainBase>> TrainSource;
+
+		/// <summary>The static batches' state, for the performance log.</summary>
+		public string BatchSummary => batcher?.Describe() ?? "none";
+
+		/// <summary>Draw calls issued for the world's transparent faces in the last frame, for the performance log.</summary>
+		public int AlphaDrawCalls { get; private set; }
+
+		/// <summary>
+		/// What the transparent list is made of, and why its runs break: faces, how many the
+		/// first pass draws, face types, and for consecutive faces in each order whether they
+		/// could share a call or differ in object, material, flags or index range. Diagnostic only.
+		/// </summary>
+		private static string DescribeAlphaFaces(List<FaceState> unsorted, List<FaceState> sorted)
+		{
+			int firstPass = 0, triangles = 0, polygons = 0, glow = 0;
+			foreach (FaceState state in unsorted)
+			{
+				MeshMaterial material = state.Object.Prototype.Mesh.Materials[state.Face.Material];
+				if (material.BlendMode == MeshMaterialBlendMode.Normal && material.GlowAttenuationData == 0 && material.Color.A == 255)
+				{
+					firstPass++;
+				}
+
+				if (material.GlowAttenuationData != 0)
+				{
+					glow++;
+				}
+
+				if ((state.Face.Flags & FaceFlags.FaceTypeMask) == FaceFlags.Triangles)
+				{
+					triangles++;
+				}
+				else
+				{
+					polygons++;
+				}
+			}
+
+			return unsorted.Count + " faces (" + firstPass + " in the first pass; triangles " + triangles + ", other " + polygons + ", glowing " + glow +
+			       "); in object order " + Breaks(unsorted) + "; sorted " + Breaks(sorted);
+		}
+
+		private static string Breaks(List<FaceState> faces)
+		{
+			int joined = 0, otherObject = 0, otherMaterial = 0, otherFlags = 0, notAdjacent = 0;
+			for (int i = 1; i < faces.Count; i++)
+			{
+				FaceState a = faces[i - 1], b = faces[i];
+				if (a.Object != b.Object)
+				{
+					otherObject++;
+				}
+				else if (a.Face.Material != b.Face.Material)
+				{
+					otherMaterial++;
+				}
+				else if (a.Face.Flags != b.Face.Flags)
+				{
+					otherFlags++;
+				}
+				else if (b.Face.IboStartIndex == a.Face.IboStartIndex + a.Face.Vertices.Length || b.Face.IboStartIndex + b.Face.Vertices.Length == a.Face.IboStartIndex)
+				{
+					joined++;
+				}
+				else
+				{
+					notAdjacent++;
+				}
+			}
+
+			return "joinable " + joined + ", breaks: object " + otherObject + ", material " + otherMaterial + ", flags " + otherFlags + ", index gap " + notAdjacent;
 		}
 
 		/// <summary>Per-phase frame timings, for finding where frame time goes.</summary>
@@ -519,32 +670,70 @@ namespace OpenBve.Android
 		/// </remarks>
 		private void DrawOpaqueFaces(List<FaceState> faces)
 		{
+			OpaqueDrawCalls = DrawRuns(faces, null, null);
+		}
+
+		/// <summary>
+		/// Draws faces in list order, each run that can share a draw call as one; returns the calls made.
+		/// </summary>
+		/// <param name="faces">The faces, in drawing order.</param>
+		/// <param name="include">Which faces to draw (null: all); the others are skipped, and end a run.</param>
+		/// <param name="beforeRun">Called with a run's first face before it is drawn (null: nothing).</param>
+		/// <remarks>
+		/// A run is consecutive faces of the same object state, material and flags (triangle lists,
+		/// no glow) whose index ranges adjoin - each face's indices beginning where the run's end, or
+		/// ending where its start is - so the whole range is drawn through upstream's own
+		/// RenderFace as one face, with exactly the state it would set for each. Upstream's opaque
+		/// list holds an object's faces in reverse index order and its alpha list in forward
+		/// order; both join up.
+		/// </remarks>
+		private int DrawRuns(List<FaceState> faces, System.Predicate<FaceState> include, System.Action<FaceState> beforeRun)
+		{
 			int calls = 0;
 			int i = 0;
 			while (i < faces.Count)
 			{
 				FaceState first = faces[i];
+				if (include != null && !include(first))
+				{
+					i++;
+					continue;
+				}
+
 				MeshFace face = first.Face;
-				int start = face.IboStartIndex;
-				int count = face.Vertices.Length;
+				int low = face.IboStartIndex;
+				int high = low + face.Vertices.Length;
 				int next = i + 1;
 				if (MergeOpaqueFaces && CanMerge(first))
 				{
 					while (next < faces.Count)
 					{
 						FaceState candidate = faces[next];
-						if (candidate.Object != first.Object || candidate.Face.Material != face.Material || candidate.Face.Flags != face.Flags ||
-						    candidate.Face.IboStartIndex + candidate.Face.Vertices.Length != start)
+						if (candidate.Object != first.Object || candidate.Face.Material != face.Material || candidate.Face.Flags != face.Flags)
 						{
 							break;
 						}
 
-						start = candidate.Face.IboStartIndex;
-						count += candidate.Face.Vertices.Length;
+						int start = candidate.Face.IboStartIndex;
+						int end = start + candidate.Face.Vertices.Length;
+						if (end == low)
+						{
+							low = start;
+						}
+						else if (start == high)
+						{
+							high = end;
+						}
+						else
+						{
+							break;
+						}
+
 						next++;
 					}
 				}
 
+				beforeRun?.Invoke(first);
 				if (next == i + 1)
 				{
 					first.Draw();
@@ -552,8 +741,8 @@ namespace OpenBve.Android
 				else
 				{
 					MeshFace merged = face;
-					merged.IboStartIndex = start;
-					merged.Vertices = VerticesOfLength(count);
+					merged.IboStartIndex = low;
+					merged.Vertices = VerticesOfLength(high - low);
 					RenderFace(CurrentShader as LibRender2.Shaders.Shader, first.Object, merged);
 				}
 
@@ -561,7 +750,7 @@ namespace OpenBve.Android
 				i = next;
 			}
 
-			OpaqueDrawCalls = calls;
+			return calls;
 		}
 
 		/// <summary>Test switch: periodically compare merged and unmerged drawing (the <c>merge_check</c> intent extra).</summary>
@@ -644,7 +833,7 @@ namespace OpenBve.Android
 		 */
 		private readonly Dictionary<int, MeshFaceVertex[]> placeholderVertices = new Dictionary<int, MeshFaceVertex[]>();
 
-		private MeshFaceVertex[] VerticesOfLength(int length)
+		internal MeshFaceVertex[] VerticesOfLength(int length)
 		{
 			if (!placeholderVertices.TryGetValue(length, out MeshFaceVertex[] vertices))
 			{

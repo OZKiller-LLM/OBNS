@@ -25,6 +25,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Text;
 
 // ReSharper disable once CheckNamespace
@@ -270,8 +271,15 @@ namespace OpenTK.Graphics.OpenGL
 		/// <summary>Sets a pixel storage parameter.</summary>
 		public static void PixelStore(PixelStoreParameter pname, int param)
 		{
+			if (pname == PixelStoreParameter.UnpackAlignment)
+			{
+				unpackAlignment = param;
+			}
+
 			glPixelStorei((int)pname, param);
 		}
+
+		private static int unpackAlignment = 4;
 
 		/// <summary>Returns and clears the most recent error.</summary>
 		public static ErrorCode GetError()
@@ -450,9 +458,128 @@ namespace OpenTK.Graphics.OpenGL
 			}
 		}
 
+		/*
+		 * 16-bit textures (set by the Android host around a content texture's upload, on phones
+		 * short of memory): an 8-bit-per-channel RGB or RGBA image is uploaded at half the size -
+		 * RGB565 when opaque, RGB5_A1 when every pixel is fully clear or fully solid (colour-keyed
+		 * textures), RGBA4 otherwise - with an ordered dither against banding. On a phone the GPU's
+		 * memory is system RAM, and on the Tuen Ma Line's exterior view textures were ~1 GB even at
+		 * a 1024 px limit, which a 4 GB phone cannot hold. GLES 3 generates mipmaps for all three.
+		 */
+		[ThreadStatic] public static bool Texture16Bit;
+		private static long bytesSaved16;
+		private static int uploads16;
+
+		/// <summary>16-bit uploads so far, for the performance log.</summary>
+		public static string Describe16Bit() => uploads16 == 0 ? string.Empty : ", " + uploads16 + " in 16 bits (~" + (Interlocked.Read(ref bytesSaved16) * 4 / 3 >> 20) + " MB saved)";
+
+		private const int GL_RGB = 0x1907, GL_RGBA = 0x1908, GL_RGB565 = 0x8D62, GL_RGBA4 = 0x8056, GL_RGB5_A1 = 0x8057;
+		private const int GL_UNSIGNED_SHORT_5_6_5 = 0x8363, GL_UNSIGNED_SHORT_4_4_4_4 = 0x8033, GL_UNSIGNED_SHORT_5_5_5_1 = 0x8034;
+		private const int GL_UNPACK_ALIGNMENT = 0x0CF5;
+
+		private static readonly byte[] Bayer4 = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+
+		private static bool TryUpload16(TextureTarget target, int level, PixelInternalFormat internalFormat, int width, int height, PixelFormat format, PixelType type, byte[] pixels)
+		{
+			bool rgb = internalFormat == PixelInternalFormat.Rgb8 && format == PixelFormat.Rgb;
+			bool rgba = internalFormat == PixelInternalFormat.Rgba8 && format == PixelFormat.Rgba;
+			if (!Texture16Bit || target != TextureTarget.Texture2D || level != 0 || type != PixelType.UnsignedByte || !(rgb || rgba) || width <= 0 || height <= 0)
+			{
+				return false;
+			}
+
+			int channels = rgb ? 3 : 4;
+			int alignment = Math.Max(1, unpackAlignment);
+			int stride = (width * channels + alignment - 1) / alignment * alignment;
+			if (pixels.Length < stride * (height - 1) + width * channels)
+			{
+				return false;
+			}
+
+			bool binaryAlpha = true;
+			if (rgba)
+			{
+				for (int y = 0; y < height && binaryAlpha; y++)
+				{
+					for (int x = 0, i = y * stride + 3; x < width; x++, i += 4)
+					{
+						byte a = pixels[i];
+						if (a != 0 && a != 255)
+						{
+							binaryAlpha = false;
+							break;
+						}
+					}
+				}
+			}
+
+			ushort[] packed = new ushort[width * height];
+			int internal16, type16;
+			for (int y = 0; y < height; y++)
+			{
+				int row = y * stride;
+				int o = y * width;
+				for (int x = 0; x < width; x++)
+				{
+					int i = row + x * channels;
+					int d = Bayer4[((y & 3) << 2) | (x & 3)];
+					int r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+					if (rgb)
+					{
+						packed[o + x] = (ushort)(Math.Min(31, (r + (d >> 1)) >> 3) << 11 | Math.Min(63, (g + (d >> 2)) >> 2) << 5 | Math.Min(31, (b + (d >> 1)) >> 3));
+					}
+					else if (binaryAlpha)
+					{
+						packed[o + x] = (ushort)(Math.Min(31, (r + (d >> 1)) >> 3) << 11 | Math.Min(31, (g + (d >> 1)) >> 3) << 6 | Math.Min(31, (b + (d >> 1)) >> 3) << 1 | (pixels[i + 3] >= 128 ? 1 : 0));
+					}
+					else
+					{
+						packed[o + x] = (ushort)(Math.Min(15, (r + d) >> 4) << 12 | Math.Min(15, (g + d) >> 4) << 8 | Math.Min(15, (b + d) >> 4) << 4 | Math.Min(15, (pixels[i + 3] + 8) >> 4));
+					}
+				}
+			}
+
+			if (rgb)
+			{
+				internal16 = GL_RGB565;
+				type16 = GL_UNSIGNED_SHORT_5_6_5;
+			}
+			else if (binaryAlpha)
+			{
+				internal16 = GL_RGB5_A1;
+				type16 = GL_UNSIGNED_SHORT_5_5_5_1;
+			}
+			else
+			{
+				internal16 = GL_RGBA4;
+				type16 = GL_UNSIGNED_SHORT_4_4_4_4;
+			}
+
+			GCHandle handle = GCHandle.Alloc(packed, GCHandleType.Pinned);
+			try
+			{
+				glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+				glTexImage2D((int)target, 0, internal16, width, height, 0, rgb ? GL_RGB : GL_RGBA, type16, handle.AddrOfPinnedObject());
+				glPixelStorei(GL_UNPACK_ALIGNMENT, unpackAlignment);
+			}
+			finally
+			{
+				handle.Free();
+			}
+
+			Interlocked.Add(ref bytesSaved16, (long)width * height * (channels - 2));
+			Interlocked.Increment(ref uploads16);
+			return true;
+		}
+
 		/// <summary>Uploads a texture image.</summary>
 		public static void TexImage2D<T>(TextureTarget target, int level, PixelInternalFormat internalFormat, int width, int height, int border, PixelFormat format, PixelType type, T[] pixels) where T : struct
 		{
+			if (pixels is byte[] bytes && TryUpload16(target, level, internalFormat, width, height, format, type, bytes))
+			{
+				return;
+			}
+
 			if (pixels == null)
 			{
 				TexImage2D(target, level, internalFormat, width, height, border, format, type, IntPtr.Zero);

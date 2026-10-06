@@ -75,7 +75,13 @@ namespace OpenBve.Android
 			ViewingDistance = 400;
 			QuadTreeLeafSize = 200;
 			ObjectDisposalMode = ObjectDisposalMode.Accurate;
-			ObjectOptimizationBasicThreshold = 1000;
+			/*
+			 * Upstream's desktop default. OptimizeObject leaves objects of this many faces (up to
+			 * 20,000) as they are - polygons and all, one draw call per face; at 1,000 that was
+			 * every detailed train part (the Tuen Ma Line's cars: 6,600 polygon faces a frame in
+			 * the transparent pass alone, none of which can share a call).
+			 */
+			ObjectOptimizationBasicThreshold = 10000;
 			ObjectOptimizationFullThreshold = 250;
 			VerticalSynchronization = true;
 			// Upstream's default and minimum: the loudest 16 sources play, the rest are culled.

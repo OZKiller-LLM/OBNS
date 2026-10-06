@@ -120,7 +120,48 @@ namespace System.Drawing
 			Native = Decode(stream, "<stream>");
 		}
 
+		/*
+		 * A size hint for images decoded on this thread (set by the Android host around a texture
+		 * decode, when a texture size limit is in effect and the texture has no clip region): an
+		 * image at least twice the limit is halved here, in native memory that is freed at once,
+		 * before any caller copies its pixels. Otherwise the texture plugin copies the full image
+		 * into the .NET heap (16 MB for 2048 px) only for the texture size limit to halve it again,
+		 * and on a 4 GB phone that garbage, a few dozen textures' worth while a view streams in,
+		 * is what the low-memory killer sees. The halvings match the texture size limit's own (it
+		 * still makes the final fit): filtered through mipmaps, or nearest-pixel when the texture
+		 * is colour-keyed, so the key colour survives exactly for the host to make transparent.
+		 */
+		[ThreadStatic] public static int DecodeMaxSize;
+		[ThreadStatic] public static bool DecodeNearest;
+
 		private static SKBitmap Decode(Stream stream, string source)
+		{
+			SKBitmap full = DecodeFull(stream, source);
+			int max = DecodeMaxSize;
+			if (max <= 0 || (full.Width < 2 * max && full.Height < 2 * max))
+			{
+				return full;
+			}
+
+			int width = full.Width, height = full.Height;
+			while ((width >= 2 * max || height >= 2 * max) && width >= 2 && height >= 2)
+			{
+				width /= 2;
+				height /= 2;
+			}
+
+			SKSamplingOptions sampling = DecodeNearest ? new SKSamplingOptions(SKFilterMode.Nearest) : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+			SKBitmap reduced = full.Resize(InfoFor(width, height), sampling);
+			if (reduced == null)
+			{
+				return full;
+			}
+
+			full.Dispose();
+			return reduced;
+		}
+
+		private static SKBitmap DecodeFull(Stream stream, string source)
 		{
 			using (SKCodec codec = SKCodec.Create(new SKManagedStream(stream)))
 			{

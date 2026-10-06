@@ -134,7 +134,10 @@ namespace OpenBve.Android
 			Field("Graphics", AndroidSettings.GetBackend(context) == GraphicsBackend.Vulkan ? "Vulkan (via ANGLE)" : "OpenGL ES");
 			Field("Interface", AndroidSettings.GetInterfaceStyle(context) + " (automatic = desktop style in Android desktop mode)");
 			Field("Quality", "viewing distance " + AndroidSettings.GetViewingDistance(context) + " m, " + AndroidSettings.GetSoundNumber(context) +
-			                 " sound sources, texture filtering " + AndroidSettings.GetInterpolation(context));
+			                 " sound sources, texture filtering " + AndroidSettings.GetInterpolation(context) +
+			                 ", transparency " + (AndroidSettings.GetTransparency(context) == OpenBveApi.Graphics.TransparencyMode.Performance ? "sharp" : "smooth") +
+			                 ", largest texture " + (AndroidSettings.EffectiveTextureLimit(context) is int limit && limit > 0 ? limit + " px" : "unlimited") +
+			                 (AndroidSettings.GetTextureLimit(context) < 0 ? " (automatic)" : string.Empty));
 			Field("Touch buttons", new[] { "small", "normal", "large" }[AndroidSettings.GetTouchButtonSize(context)] + " size, " +
 			                       new[] { "solid", "translucent", "faint" }[AndroidSettings.GetTouchButtonOpacityIndex(context)] +
 			                       (AndroidSettings.GetTouchButtonsHidden(context) ? ", hidden" : string.Empty) +

@@ -276,12 +276,82 @@ namespace OpenBve.Android
 
 		public static void SetInterpolation(Context context, InterpolationMode mode) => PutString(context, InterpolationKey, mode.ToString());
 
+		/*
+		 * Upstream's Transparency option (desktop Options: Sharp = Performance, Smooth = Quality).
+		 * Quality draws colour-keyed faces in two passes - their solid texels, then their soft
+		 * edges blended - which on the weakest GPUs is the largest part of the frame (the Galaxy
+		 * A04s: ~160 ms of ~410 in East Rail's exterior view); Performance draws them once.
+		 */
+		private const string TransparencyKey = "transparency";
+
+		/// <summary>For measurements: the transparency intent extra, used for this game without being saved.</summary>
+		public static TransparencyMode? TransparencyOverride;
+
+		public static TransparencyMode GetTransparency(Context context)
+		{
+			string value = Prefs(context)?.GetString(TransparencyKey, null);
+			return Enum.TryParse(value, out TransparencyMode mode) ? mode : TransparencyMode.Quality;
+		}
+
+		public static void SetTransparency(Context context, TransparencyMode mode) => PutString(context, TransparencyKey, mode.ToString());
+
+		/*
+		 * Texture size limit (TextureSizeLimit): -1 automatic (1024 px on phones with 4 GB of RAM
+		 * or less, 2048 px at 6 GB, none above), 0 none, otherwise the largest width or height kept.
+		 */
+		private const string TextureLimitKey = "texture_limit";
+
+		/// <summary>For measurements: the texture_limit intent extra, used for this game without being saved.</summary>
+		public static int? TextureLimitOverride;
+
+		/// <summary>For measurements: 16 or 32 bits per texture pixel for this game only (--ei texture_depth); null = automatic.</summary>
+		public static int? TextureDepthOverride;
+
+		public static int GetTextureLimit(Context context) => Prefs(context)?.GetInt(TextureLimitKey, -1) ?? -1;
+
+		public static void SetTextureLimit(Context context, int value) => PutInt(context, TextureLimitKey, value);
+
+		/// <summary>Texture colour depth (GL.Texture16Bit): -1 automatic (16 bits on phones of 4.5 GB or less), 32 or 16.</summary>
+		private const string TextureDepthKey = "texture_depth";
+
+		public static int GetTextureDepth(Context context) => Prefs(context)?.GetInt(TextureDepthKey, -1) ?? -1;
+
+		public static void SetTextureDepth(Context context, int value) => PutInt(context, TextureDepthKey, value);
+
+		/// <summary>The phone's RAM, for automatic choices.</summary>
+		public static long TotalRam(Context context)
+		{
+			try
+			{
+				global::Android.App.ActivityManager.MemoryInfo info = new global::Android.App.ActivityManager.MemoryInfo();
+				(context.GetSystemService(Context.ActivityService) as global::Android.App.ActivityManager)?.GetMemoryInfo(info);
+				return info.TotalMem;
+			}
+			catch (Exception)
+			{
+				return 0;
+			}
+		}
+
+		/// <summary>The texture size limit in effect: the stored choice, resolved for this phone.</summary>
+		public static int EffectiveTextureLimit(Context context)
+		{
+			int limit = TextureLimitOverride ?? GetTextureLimit(context);
+			return limit < 0 ? TextureSizeLimit.Automatic(TotalRam(context)) : limit;
+		}
+
 		/// <summary>Copies the stored options onto the options the game runs with.</summary>
 		public static void ApplyTo(Context context, AndroidOptions options)
 		{
+			TextureSizeLimit.MaxSize = EffectiveTextureLimit(context);
+			bool lowRam = TotalRam(context) is long ram && ram > 0 && ram <= 4608L << 20;
+			AndroidHost.ParallelDecodes = lowRam ? 2 : int.MaxValue;
+			int depth = TextureDepthOverride ?? GetTextureDepth(context);
+			AndroidHost.Textures16Bit = depth < 0 ? lowRam : depth == 16;
 			options.ViewingDistance = GetViewingDistance(context);
 			options.SoundNumber = Math.Max(16, GetSoundNumber(context));
 			options.Interpolation = GetInterpolation(context);
+			options.TransparencyMode = TransparencyOverride ?? GetTransparency(context);
 			options.LanguageCode = GetLanguage(context);
 			// Upstream's panel2 extended mode: a 2D panel's power, brake and reverser indicators become touch areas.
 			options.Panel2ExtendedMode = GetTouchHandles(context);

@@ -296,6 +296,170 @@ Fixed today:
   output deleted. No release key exists yet: the user makes it (keytool command in the script's
   help); do not make or hold one for them. Beta builds only when the user says.
 
+## 2026-09-30: version 1.01 (performance) in progress
+
+Later the same day (fixes from testing, both built into the current APK, not yet handed out):
+- **.NET train plugins built for .NET Framework** failed to load (framework trimming dropped the
+  mscorlib/System facades' type forwards) - Barcelona Metro L3's FCMB.dll. Fixed in
+  `OpenBve.Android.csproj` (TrimmerRootAssembly; PORTING.md ".NET train plugins"). Regression
+  checked: SelTrac+OS_Ats1 ATO (emulator), KCR TBL ATO (S24).
+- **No 3D on PowerVR GPUs** (Nokia C31, PowerVR GE8322: sky and overlays only). The default
+  shader's animation-matrix uniform block had no buffer bound for ordinary objects; PowerVR
+  rejects such draws (Adreno/Mali let them pass). `AndroidRenderer.BindAnimationBlockFallback`
+  binds a zeroed buffer at point 0 each frame. Verified: C31 draws the world, 0 driver errors;
+  A73 East Rail unchanged (animated doors included).
+- **Crash on every start** when a content folder cannot be created (folders adb push made on an
+  Android 14 A35): `AndroidFileSystem.Create` now logs and carries on.
+- Multi-device benchmarks: summary in PORTING.md "Device benchmarks"; scripts and how-to in
+  `android/tools/benchmark/` (README), raw results in its git-ignored `results/`.
+- **LLVM AOT on by default** (`EnableLLVM` in OpenBve.Android.csproj): exterior ~20-25% faster
+  on the A73 and C31, train updates ~40% faster; plugin regression passed. Build ~10 min.
+- `--ei render_scale <percent>` test switch (GameView.RenderScale): no gain on the A04s, not in
+  Options.
+- Barcelona packages extracted to `content/Barcelona/` (git-ignored) for the FCMB check; they are
+  on the A73 and the emulator.
+- **Train parts out of upstream's per-frame update** (StaticBatcher: far cars and batched still
+  parts; PORTING.md "Train parts out of the per-frame update"): C31 train updates 35.5 -> 19.7 ms,
+  A73 9.0 -> 6.0 ms. No upstream copy needed (the Elements arrays are swapped).
+- Benchmark script: loading is also detected by "scene:" lines (a "startup:" line can fall
+  between reading and clearing the log - it once made a run look hung for 30 minutes).
+- **Transparency option** (Options, Quality: Sharp / Smooth, upstream's): C31 exterior +35% on
+  Sharp. Default stays Smooth.
+- Plugin regression on the A73 with all of the above: 4/4 pass (SelTrac, TBL, FCMB 2000/3000).
+- **Vertex copies released** (VertexCopyReleaser: upstream's VBOs kept every uploaded vertex,
+  60 B each, in managed memory): ~440 MB on TML; released after the scene and train stages too.
+  The 4 GB A05s now loads TML (260 s) but is still killed a few seconds into driving.
+- **Where TML's memory is** (A73, dumpsys meminfo): graphics 2.6 of 3.4 GB. TextureCensus in the
+  memory log line: exterior 751 texture uploads, ~1.7 GB, 177 of them >= 1024 px; only 19 uploaded
+  in several wrap modes. Next: a texture size cap on low-RAM phones (e.g. 1024 px), port-side in
+  the decode path.
+- Benchmark: the cab camera is moved forward 1 s (Keypad 9) before measuring (user request: it
+  starts behind the cab-to-saloon door).
+- **Texture size limit** (TextureSizeLimit; Options "Largest texture size": Automatic = 1024 px
+  at <= 4.5 GB RAM, none above; 2048/1024/768/512; `--ei texture_limit`): A73 TML GL mtrack
+  1.95 -> 1.20 GB, total PSS 3.66 -> 2.97 GB, fps unchanged. The A05s (4 GB) still loses TML to
+  the low-memory killer a few seconds into driving at 1024, 768 and 512 px (managed heap
+  680-830 MB is now as large as the textures). User decision (2026-09-30): stop the 4 GB TML
+  effort here; go on with load time, multi-core loading and the Vulkan renderer. A mesh census
+  (TextureCensus.DescribeMeshes, in "memory after load") is in for when memory is resumed.
+- **Load time**: cached sound-file checks (`Path.FileExists` in Path.Android.cs +
+  `SoundManager.Android/Sounds.CarSound.Android.cs`): TML on the A73 277 -> 192 s (train plugin
+  150 -> 58 s). Remaining route stage: object load 61.5 s (15,933), train plugin 58 s, texture
+  register 13 s; train stage 40 s.
+- Other test switches added this session: `--ez detach_parts`, `--ez release_vertex_copies`,
+  `--es transparency performance|quality`, `--ei texture_limit <px>`, `--ei render_scale <%>`.
+
+## 2026-10-01: 1.01 load time and memory (all built and tested; NOTHING COMMITTED YET)
+
+Load time (TML: A73 192 -> ~100 s, A05s 4GB 247 -> ~145 s, A05s 6GB 148 s, S20 FE 64-70 s):
+- **Multi-core object loading** (`ObjectPrefetch.cs`): route + $Include files scanned for .csv/.b3d,
+  and `.animated` files followed to their state objects; parsed AND optimised (LoadObject's flags:
+  no preserve, vertex culling) on cores-1 workers, <= 512 ahead. `Take(path, encoding, culls)`:
+  same fallback encoding = same file encoding (no whole-file re-detection on the loading thread);
+  LoadStaticObject's no-cull files are left to the loading thread. Mesh census identical on/off.
+  Switch `--ez prefetch_objects false`.
+- **CombineFile existence checks from the listing cache** (`Path.Android.cs`: `Listed`, name maps
+  per folder; same answers as upstream incl. case fallbacks): scripted trains' plugin 58 -> 21 s
+  on the A05s (540,000 sound paths). Also `Path.LastWriteTime` (object cache key) cached.
+- **Texture registration without upstream's linear search** (`AndroidHost.RegisterWithoutSearch`:
+  incremental index of `TextureManager.RegisteredTextures`, InvariantCultureIgnoreCase, first match
+  in array order, rebuilt when the array is replaced): ~32 s -> 0.2 s on the A05s.
+- Profile scopes: "object load: cached copy", "object optimise", "object load: prefetch wait or
+  own parse", "player train: train plugin / safety plugin / placement"; bench_device.sh keeps the
+  "placement steps", "safety plugin" and "train plugin's own time" lines.
+- Remaining: train stage 20-70 s = PNG decoding (texture classification step) + "animated
+  scenery" placement step; scripted trains' plugin 13-40 s (varies with heat/background).
+
+Memory (the 4 GB A05s now runs TML: cab 8.5-10.7 fps, exterior 7-8 fps, full test):
+- **Mesh sharing** (`MeshSharing.cs`): identical meshes of train parts and the route's animated
+  objects point at one Mesh (exact compare; skips overlays, colour-function/LED elements, meshes
+  already with a VAO); before PrepareScene (scripted trains + AnimatedWorldObjects) and after the
+  player/preceding trains load. TML: 10,010 shared, ~219 MB; live heap 642 -> 406 MB; GPU vertex
+  buffers ~430 -> ~175 MB. Switch `--ez mesh_sharing false`.
+- **16-bit textures** (`OpenBve.GLES/GL.cs` TryUpload16: RGB565 / RGB5_A1 / RGBA4, ordered dither;
+  only around content-texture uploads - `AndroidHost.LoadTexture` sets `GL.Texture16Bit` for
+  PathOrigin textures). Automatic on <= 4.5 GB; Options "Texture colours" (Automatic/32/16);
+  `--ei texture_depth 16|32`. A05s exterior: 807 uploads in 16 bits, ~435 MB saved; screenshots
+  look the same as 32-bit (results/tex16_A05s_*.png).
+- **Native decode halving** (`OpenBve.Compat Bitmap.DecodeMaxSize/DecodeNearest`, set by the host
+  when a texture limit applies and there is no clip region): large images halved in Skia memory
+  before the plugin copies them into the .NET heap; nearest-pixel for colour-keyed textures.
+- **2 parallel streamed decodes on <= 4.5 GB** (`AndroidHost.ParallelDecodes`, async semaphore).
+- **Automatic texture limit 2048 px on 6 GB phones** (TextureSizeLimit.Automatic): the S20 FE
+  (6 GB) was killed in TML's exterior uncapped; with this and mesh sharing it runs (cab 29, ext 14).
+- Tried and dropped: Mono GC `default-allowance-ratio=0.1` (no measurable effect).
+- Diagnostics in "memory after load": mesh census with identical-copy count (TextureCensus).
+- APKs of each step in `content/apk/` (git-ignored).
+
+Devices added: A05s 6GB (192.168.0.66), Galaxy S20 FE 5G (SM-G781B, USB RFCR3046Z7B) - both
+prepared with TML (prepare_device.sh now uses `adb push --sync` with retries).
+Regression with everything: SelTrac PASS on the S20 FE; TBL + FCMB need the A73 (content there).
+
+## 2026-10-06: 1.01 candidate (content/apk/candidate101.apk; still NOTHING COMMITTED)
+
+- **Texture transparency disk cache** (`TextureClassifier`, file `texture-transparency.v1.txt`
+  in the app's cache folder; key: path + clip region + colour key + old-transparency option +
+  texture limit; hit needs same size + mtime): TML repeat load classification 20-31 s -> <2 s.
+- **Scripted trains on several cores** (`ScriptedTrainLoader`): host `ParseTrackFollowingObject`
+  reads the XML (`TrackFollowingObjectParser.Prepare`) and returns the train at once; workers
+  (cores-1, own train-plugin instances) run `Complete`; `AndroidRouteLoader` calls
+  `ScriptedTrainLoader.Finish(TFOs)` after `LoadRoute` (waits; removes failed trains). Port copies
+  `Train.OpenBve.Android/{Plugin,ExtensionsCfgParser,TrainXmlParser}.Android.cs` make the plugin's
+  per-train statics [ThreadStatic]. Host locks: object cache, `Renderer.DynamicObjectStates`,
+  Show/HideObject; ErrorCount atomic. Switch `--ez parallel_scripted_trains false`.
+  First design (scan the route for Route.TfoXML) DROPPED: TML picks trains by random $Include and
+  has commented-out includes -> loaded 67 trains for 36.
+- Results (TML): A73 101 s first / 69 s repeat (one at a time 72 s); A05s 6GB 110 / 84 s (95 s);
+  second A05s 4GB (192.168.0.43) 118 / 86 s and survives cab + exterior (8-10 / 7-9 fps).
+  Mesh census identical parallel vs one at a time.
+- Removed diagnostics: per-call timing (AndroidRenderer), identical-copy census (TextureCensus).
+- bench_device.sh: force-stops the game before clearing the log (a leftover "scene:" line made a
+  run look loaded after 4 s); captures "scripted trains:", "texture transparency:" lines.
+- Plugin regression with the candidate on the A73: 4/4 PASS (SelTrac, TBL, FCMB 2000/3000).
+- RELEASE_NOTES.md has a 1.01 section; PORTING.md "Load time on heavy routes" / "Memory on 4 GB
+  phones" and the exclusions table (3 new port copies) updated.
+- User decisions: Vulkan renderer deferred to after 1.01; per-frame threading after the renderer;
+  skip the Galaxy S20 FE 4G (SM-G780F) for now.
+
+- Texture classification limited to `AndroidHost.ParallelDecodes` threads (2 on <= 4.5 GB): the
+  4 GB A14 was killed during TML's first-load classification at 8 threads. Candidate now
+  `content/apk/candidate101b.apk`.
+- Device table rerun (PORTING.md "Device benchmarks", 1.01 rows): A35, A36, S20 FE 5G (second unit,
+  USB RFCR20DF9YT), A73, A05s 6GB, A05s 4GB (second unit), A14, A04s - all run TML now.
+  Not rerun: S24 Ultra, Nokia C31, the first S20 FE 5G; S20 FE 4G skipped (user).
+
+Remaining for 1.01: commit (push only when asked); the user builds the beta with the release key
+and -PortRelease 2.
+
+Rule from the user: never edit OpenBVE-1.14.0.3/; all changes in android/ (memory note).
+Done (built, tested on the A73):
+- **Static and train batching** (`StaticBatcher.cs`; PORTING.md "Static and train batching"):
+  EAL Lo Wu exterior 9.8 -> 16.3 fps; ATO run 12.3->5.4 became 15.9->9.3 fps; images identical.
+- **Sound bug from a beta tester's logs** (Galaxy S24 Exynos, Barcelona L3): sounds paused before
+  they had an OpenAL source were driven as source 0 - 75,000 "Invalid source ID 0" errors, most
+  in the background. Fixed in `AndroidSounds` (no source = not active; resume -> play pending;
+  out-of-sources retried) with a guard in `OpenBve.OpenAL/AL.cs`. Verified: 0 errors.
+- **False "simulation has stopped responding"** while the app is in the background: the hang
+  detector now ignores the wait for a window (`GameView.waitingForWindow`).
+- **Desktop HUD fps counter stuck at 1** (user report): the port never set
+  `Renderer.FrameRate`; the render loop now does, every 0.5 s. Verified (121 fps).
+- Diagnostics: transparent-list breakdown in the `faces:` line; `LoadProfile` gap report for the
+  train plugin ("load profile, train plugin's own time ...").
+- **TML load 20 min -> 5.4 min**: folder-listing cache (`Path.Android.cs`) and all-core texture
+  classification before the trains initialise (train stage 70 -> 48.5 s).
+- **TML frames**: large still train parts, fixed-state parts and untextured faces batched, and
+  `ObjectOptimizationBasicThreshold` back to upstream's 10,000 (1.0 had 1,000, which left the
+  cars' parts as untriangulated polygons, one call per face); cab 4.3-5.2 -> ~25 fps, exterior
+  2.5-3.1 -> ~12 fps cool (the A73 throttles after long tests: check `dumpsys thermalservice`). Exterior and cab screenshots
+  checked (desk, gauges, displays intact). The TML cab camera starts behind the cab-to-saloon
+  door - upstream behaviour, not a port bug (user) - so move it forward before judging the cab.
+EAL/R-Train ATO bench with the threshold change (phone throttled, thermal status 2):
+16.7 -> 11.8 fps (was 15.9 -> 9.3 cool); exterior screenshot correct.
+Next: exterior frame (opaque and
+transparent ~30-45 ms each, train objects ~20-30 ms); remaining load (train plugin 128-147 s of per-car file checks,
+object load 71-80 s, texture register 16-18 s). The per-decode stack sampling in
+`AndroidHost.LoadTexture` is temporary diagnostics - remove before a release.
+
 ## VERSION 1.0 DONE (2026-09-29)
 
 - Released build: `dist.14.0.3-android.1\` (APK + AAB, code 1140301), built by the user with
@@ -309,6 +473,12 @@ Fixed today:
 - release.ps1 now checks the password against the key before building (a wrong one used to fail
   only at signing, "java.exe exited with code 2").
 - Next work (post-1.0): performance for dense scenery / heavy routes; then the smaller open items.
+- Source on GitHub: https://github.com/OZKiller-LLM/OBNS (branch main, tag v1.0 = commit ba09919).
+  C:\dev\OpenBVE-Android is now a git repo (repo-local author OZKiller-LLM with the GitHub
+  noreply address 333285344+OZKiller-LLM@users.noreply.github.com). .gitignore keeps out
+  content/ (third-party routes/trains), dist/, bin/obj, keys and upstream's zip. Pushing: HTTPS
+  via Git Credential Manager; the user signs in (device code at github.com/login/device in
+  Chrome, `GCM_GITHUB_AUTHMODES=device`). Push only when the user asks.
 
 ## 2026-09-29 (late): beta built for testers
 

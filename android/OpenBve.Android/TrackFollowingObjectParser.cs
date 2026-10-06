@@ -64,6 +64,27 @@ namespace OpenBve.Android
 		/// <returns>The train, or null if it could not be loaded.</returns>
 		internal static TrainBase Parse(AndroidHost host, string objectPath, string fileName)
 		{
+			Prepared prepared = Prepare(host, objectPath, fileName);
+			return prepared != null && Complete(host, prepared, null) ? prepared.Train : null;
+		}
+
+		/// <summary>A track following object read from its file, its train not loaded yet.</summary>
+		internal sealed class Prepared
+		{
+			public TrainBase Train;
+			public string FileName;
+			public string TrainDirectory;
+			public string TrainData;
+			public bool ConsistReversed;
+			public List<TravelData> TravelData;
+		}
+
+		/// <summary>
+		/// The quick part, on the route parser's thread: the file read and checked, and the train
+		/// object of the right kind created (null, reported, if the file is unusable).
+		/// </summary>
+		internal static Prepared Prepare(AndroidHost host, string objectPath, string fileName)
+		{
 			TrainBase train = null;
 			LoadProfile.Scope xmlScope = LoadProfile.Enter("scripted trains: xml");
 			XMLFile<TrackFollowingObjectSection, TrackFollowingObjectKey> xmlFile =
@@ -151,15 +172,41 @@ namespace OpenBve.Android
 				trainData = trainDirectory;
 			}
 
+			return new Prepared
+			{
+				Train = train,
+				FileName = fileName,
+				TrainDirectory = trainDirectory,
+				TrainData = trainData,
+				ConsistReversed = consistReversed,
+				TravelData = travelData
+			};
+		}
+
+		/// <summary>
+		/// The heavy part: the train loaded by the train plugin into the prepared train object,
+		/// reversed, given its AI and placed. False (reported) if no train plugin loaded it.
+		/// </summary>
+		/// <param name="host">The host.</param>
+		/// <param name="prepared">What Prepare read.</param>
+		/// <param name="trainPlugins">The train plugins to load it with (a worker's own instances, ScriptedTrainLoader); null for the host's.</param>
+		internal static bool Complete(AndroidHost host, Prepared prepared, IList<TrainInterface> trainPlugins)
+		{
+			TrainBase train = prepared.Train;
+			string fileName = prepared.FileName;
+			string trainDirectory = prepared.TrainDirectory;
+			string trainData = prepared.TrainData;
+			bool consistReversed = prepared.ConsistReversed;
+			List<TravelData> travelData = prepared.TravelData;
 			AbstractTrain currentTrain = train;
 			Control[] controls = new Control[0];
-			foreach (ContentLoadingPlugin plugin in host.Plugins)
+			foreach (TrainInterface trainPlugin in trainPlugins ?? host.Plugins.Where(p => p.Train != null).Select(p => p.Train).ToList())
 			{
-				if (plugin.Train != null && plugin.Train.CanLoadTrain(trainData))
+				if (trainPlugin.CanLoadTrain(trainData))
 				{
 					using (LoadProfile.Enter("scripted trains: train plugin"))
 					{
-						plugin.Train.LoadTrain(Encoding.UTF8, trainDirectory, ref currentTrain, ref controls);
+						trainPlugin.LoadTrain(Encoding.UTF8, trainDirectory, ref currentTrain, ref controls);
 					}
 				}
 			}
@@ -167,7 +214,7 @@ namespace OpenBve.Android
 			if (!train.Cars.Any())
 			{
 				host.AddMessage(MessageType.Error, false, $"Failed to load the specified train in {fileName}");
-				return null;
+				return false;
 			}
 
 			if (consistReversed)
@@ -197,7 +244,7 @@ namespace OpenBve.Android
 				train.Specs.DoorCloseMode = DoorMode.Manual;
 			}
 
-			return train;
+			return true;
 		}
 
 		private static void ParseDefinitionBlock(Block<TrackFollowingObjectSection, TrackFollowingObjectKey> definitionBlock, ScriptedTrain scriptedTrain)

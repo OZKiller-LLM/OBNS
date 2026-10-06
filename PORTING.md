@@ -44,9 +44,12 @@ to build) and loads routes 2–4× faster than Debug. See *Loading time*.
 Builds for other people come from `android/release.ps1`, never from a development build:
 
 ```
-androidelease.ps1 -PortRelease 1                  # dist.14.0.3-android.1\OpenBVE-1.14.0.3-android.1.apk
-androidelease.ps1 -PortRelease 2 -Beta            # the beta testers' build, with the data log (…-beta.apk)
-androidelease.ps1 -PortRelease 1 -Format both     # plus the App Bundle (.aab) for Google Play
+android
+elease.ps1 -PortRelease 1                  # dist.14.0.3-android.1\OpenBVE-1.14.0.3-android.1.apk
+android
+elease.ps1 -PortRelease 2 -Beta            # the beta testers' build, with the data log (…-beta.apk)
+android
+elease.ps1 -PortRelease 1 -Format both     # plus the App Bundle (.aab) for Google Play
 ```
 
 - **Numbering**: `UpstreamVersion` (1.14.0.3) and `PortRelease` in the csproj give the version
@@ -860,6 +863,21 @@ threads are out of reach, and a plugin that throws a C++ exception it expects to
 (Windows structured exception handling is not emulated) — but every 32-bit plugin in this
 library that works on Windows works here.
 
+### .NET train plugins built for .NET Framework (1.01)
+
+Managed plugins go through upstream's own loader (`Assembly.LoadFile`), not the x86 layer. Most
+were built for .NET Framework and reference `mscorlib`, `System` and `System.Core`; on .NET those
+are facades whose type forwards lead to `System.Private.CoreLib` and friends. The Release build
+trims the framework (`TrimMode partial`), which dropped the forwards - and the members - the app
+does not use itself, so such a plugin failed to load and the train fell back to the default ATS.
+Found with the Barcelona Metro packages (tester report: "plugin not functioning in L3"): the FCMB
+2000/3000 trains' `FCMB.dll` (odakyufan's OdakyufanAts 0.9.8) logged "Could not resolve type ...
+System.Globalization.CultureInfo in assembly mscorlib". `OpenBve.Android.csproj` now roots the
+facades and the assemblies they forward the common types to (`TrimmerRootAssembly`, RootMode All):
++5.6 MB of APK (53.6 -> 59.2 MB). Verified on the emulator after installing the packages through
+Package Management: both trains' plugin loads and runs. Regression: MTR SelTrac + OS_Ats1
+(emulator, ATO from Lo Wu) and KCR MLR TBL (S24, ATO departs) unchanged.
+
 ### Track following objects (scripted trains)
 
 `TrackFollowingObjectParser` ports upstream's parser of the same name (the desktop app's
@@ -938,7 +956,206 @@ faces) on the `OpenBVE_Test` AVD, both backends hold **57–60 fps** once runnin
 per frame of which OpenBVE's own work is about 15 ms (setup ~5 ms, opaque faces ~5 ms,
 simulation ~2.5 ms). The route takes about 100 s to load on the emulator.
 
+### Static and train batching (1.01)
+
+On dense routes the frame is set by the number of draw calls, not by drawing: upstream already
+folds each object's faces per material (`OptimizeObject`), so every call is one object × one
+material, and a scene of small placed objects - posts, fences, trees, platform fittings - and
+detailed trains runs to 8,000-18,000 calls. `StaticBatcher` (port-side; drawn through upstream's
+own `RenderFace`, so shading, fog, day/night and textures are unchanged) merges them:
+
+- **Scenery.** Static objects share a visible range, snapped to track blocks, per stretch of
+  track (accurate object disposal); objects with the same range (and day/night blend) form a
+  group, merged per material into one mesh in the group's space - positions and normals baked
+  through each object's model matrix in the shader's Z-flipped space (normals by the inverse
+  transpose), relative to the first object - and drawn exactly when its members would be.
+- **Trains.** Car parts with one state and no animation of any kind never move relative to the
+  car; per car section group they are merged relative to one of them and drawn each frame with
+  that part's current matrix, so the batch follows the car through curves and sway. Doors,
+  wheels, pantographs, displays and the cab keep their own draws.
+- Only faces upstream draws opaque or colour-keyed are merged (classified as `ObjectLibrary`
+  does, through `TextureManager.textureCache`, readable via `InternalsVisibleTo` in the port's
+  `LibRender2.Android.csproj`); translucent, additive, glowing and alpha-textured faces keep their
+  sorted draws. The colour-keyed batch faces go first, unsorted, in both transparent passes.
+- Constant animation functions count as none: `RotateYFunction = 3.14` turns a part round once
+  (`FunctionScript.ConstantResult`), and a prototype's `Dynamic` flag is ignored for scenery - an
+  `.animated` [Include] sets it on the shared cached object, the same one the route places as plain
+  scenery (4,632 objects on the Tuen Ma Line).
+- Train parts get a larger size limit than scenery (65,536 face vertices against 4,096): upstream
+  leaves objects of 1,000-20,000 faces unfolded, so a detailed car body is one draw per face
+  (17,900 on the Tuen Ma Line's cars). Parts with several states and no (or a constant) state
+  function are still too - the state is fixed once `ElementsGroup.Initialize` has run.
+  Untextured faces need no wrap mode (upstream reads it only to bind a texture).
+- Batches are built when their group comes into view (6 ms a frame at most) and freed after 30 s
+  unseen (at most 3 million batched vertices), so memory follows the camera.
+- `--ez static_batching false` turns it off for comparisons; the 5-second `faces:` log line gives
+  groups, batches, faces still drawn singly (scenery / other) and why faces were left out.
+
+MTR East Rail (R-Train, 16 scripted trains), A73, OpenGL ES, exterior view: standing at Lo Wu
+9.8 → 16.3 fps (opaque 43.8 → 13.2 ms, transparent 35.2 → 22.5 ms, 102 → 61 ms a frame); the
+ATO benchmark run 12.3 → 5.4 fps before, 15.9 → 9.3 fps after. Screenshots with and without are
+identical. The transparent pass also draws runs of faces (`DrawRuns`) - but upstream's face
+folding leaves no runs to join, so that alone changed nothing.
+
 ### Loading time
+
+**1.01: the Tuen Ma Line from 20 minutes to 5** (A73, SD card). Nearly all of it was the 36
+scripted trains' default (BVE2) sounds: with no sound.cfg, the train plugin makes a `CarSound`
+for every entry of the motor sound tables - about 1,900 per car - and the tables name
+`Motor0.wav`, 1,050 times per car, which does not exist. For a missing file upstream's
+`Path.CombineFile` lists the whole folder to look for it case-insensitively: 300,000 listings
+through Android's storage layer (a file check costs ~40 µs there, a listing milliseconds).
+`Path.Android.cs` remembers listings while loading: the train plugin's time went from 993 s to
+128 s, the route stage from 1,099 s to 223 s. How this was found: `LoadProfile` now reports the
+largest gaps between host callbacks inside the train plugin, with the files on either side, and
+counts garbage collections per stage (which ruled GC out). The train stage's ~2,500 serial PNG
+decodes were transparency checks (`ShowObject` decodes a texture to classify it): the cars shown
+by `TrainBase.Initialize`, and every animated world object on the route, which upstream's first,
+forced `UpdateAnimatedWorldObjects` shows once whether in view or not. `TextureClassifier` now
+classifies all of them on all cores before the trains initialise (4,371 textures in 24 s), and
+the train stage went from 70 s to 48.5 s; `placement steps:` in the log times the rest.
+
+The motor-table `CarSound`s still checked each file with `System.IO.File.Exists` - ~615,000 checks
+for the 36 scripted trains, ~0.5 ms each on the SD card (the gap report's 0.5 s stretches between
+`Motor1.wav` loads). `Path.FileExists` (in `Path.Android.cs`) answers from the remembered listing
+while loading, and `Sounds.CarSound.Android.cs` (a copy of upstream's, that one line changed) uses
+it: the train plugin 150 -> 58 s, the route stage 257 -> 140 s, the whole Tuen Ma Line load on the
+A73 277 -> 192 s.
+
+### PowerVR: the animation-matrix uniform block (1.01)
+
+Upstream's default shader declares `uniform uAnimationMatricies { mat4 modelMatricies[128]; }`
+(std140, binding point 0) and binds a buffer there only for object states that carry their own
+matrices. Every other draw therefore runs with an active uniform block and no buffer bound, which
+the GLES spec makes an error. Adreno and Mali drivers draw anyway; PowerVR (Nokia C31, GE8322,
+driver 1.15) refuses each draw ("ValidateProgramUniformBlockBindings: No bound buffer", 69,000
+log lines in 30 s) - the phone showed the clear-colour sky and the Android overlays, nothing 3D.
+`AndroidRenderer.BindAnimationBlockFallback` binds a zeroed 8 KiB buffer at point 0 at the start
+of each frame; objects with matrices still bind their own over it.
+
+### LLVM ahead-of-time compilation (1.01)
+
+The Release build was already fully AOT-compiled, but by Mono's own backend, which barely
+optimises. `EnableLLVM` compiles it through LLVM instead: on the phones whose frame is CPU-bound -
+all of them in the exterior view - that is the broadest single gain. East Rail, exterior view:
+
+| | Mono AOT | LLVM AOT |
+|---|---|---|
+| A73 | 17-18 fps (55-58 ms; train updates 13.8-15.5 ms) | 22 fps (45.5 ms; train updates 9.0 ms) |
+| Nokia C31 | 3.5 fps (~280 ms; train updates 58 ms), load 135 s | 4.3 fps (236 ms; 35 ms), load 108 s |
+
+The APK is slightly smaller (58.1 MB against 59.2); the build takes ~10 minutes. Plugins are
+unaffected (`tools/benchmark/plugin_regression.sh` on the A73: SelTrac ATO, TBL ATO, FCMB 2000 and
+3000 - the .NET plugin, loaded at run time, still runs on the JIT).
+
+Tried and not kept as a setting: a reduced render resolution (`--ei render_scale 50`, the display
+hardware scaling up) changed nothing on the Galaxy A04s (Mali-G52 MP1) - its exterior frame is not
+fill-bound but CPU-bound (draw calls, train updates). The switch stays for measuring other phones.
+
+### Train parts out of the per-frame update (1.01)
+
+Upstream's `CarBase.UpdateObjects` updates every part of every car of every train on every frame:
+functions, up to three axis rotations and a chain of double-precision matrix products per part -
+for cars far out of view too (only to hide them again), and for still parts the car batches draw
+(whose own matrices nothing reads once the batch exists). The loop reads `ElementsGroup.Elements`
+afresh each time, so `StaticBatcher` hands it a shorter array, without touching upstream:
+
+- a car beyond viewing range (upstream's own `CarBase.CurrentlyVisible`, false: it has just hidden
+  the parts) gets none, and all of them back the frame it comes within range;
+- a built train batch's members other than its reference, whose faces the batch covers entirely,
+  are left out and hidden (such batches are never evicted).
+
+Each group's array is recomputed from its original; all originals go back before the trains are
+planned again or the batches freed. `--ez detach_parts false` turns it off. East Rail (17 trains,
+147 of ~153 cars out of range at Lo Wu; 703-870 parts batched):
+
+| | Train updates, exterior | Train updates, cab | Exterior fps |
+|---|---|---|---|
+| A73 | 9.0 -> 6.0 ms | 1.2 -> 0.6 ms | 22.5 -> 24.5 |
+| Nokia C31 | 35.5 -> 19.7 ms | 6.2 -> 2.0 ms | 4.1 -> 4.7 |
+
+Checked by screenshots: the batched train drawn whole at Lo Wu, and a scripted train coming back
+into range drawn whole.
+
+### Transparency option (1.01)
+
+Upstream's desktop Options have Transparency: Sharp (`TransparencyMode.Performance`) and Smooth
+(`Quality`, the port's only mode until now). Smooth draws colour-keyed faces twice - their solid
+texels with depth writes, then their soft edges blended - and on weak GPUs that is the frame's
+largest part. The Options page now offers it (Quality section, upstream's own translation keys;
+default Smooth), the beta log records it, and `--es transparency performance|quality` sets it for
+one game without saving. Nokia C31, East Rail exterior: Smooth 4.6-5.1 fps (195 ms), Sharp
+5.8-6.8 fps (147 ms); cab unchanged; screenshots nearly identical (only soft edges, e.g. fence
+mesh, look crisper).
+
+### Device benchmarks (1.01, 2026-09-30)
+
+Same script on every phone (standing start, 30 s cab + 30 s exterior; cool-down to thermal status
+0-1 first): light = 50-station test route, medium = East Rail + R-Train, heavy = Tuen Ma Line.
+fps cab / exterior; GL = OpenGL ES, VK = Vulkan via ANGLE.
+
+| Phone (SoC / GPU, RAM) | Light | Medium GL | Medium VK | Heavy: load, fps |
+|---|---|---|---|---|
+| S24 Ultra (SD 8 Gen 3 / Adreno 750, 12 GB) | 120 / 120 | 120 / 31 | 120 / 27 | 168 s, 41 / 17 (warm) |
+| A36 (SD 6 Gen 3 / Adreno 710, 12 GB) | 120 / 120 | 90 / 22 | 97 / 22 | 216 s, 28 / 12 |
+| A73 (SD 778G / Adreno 642L, 8 GB) | 120 / 120 | 74-88 / 17 | 65 / 16 | 315 s, 24 / 9-10 |
+| A35 (Exynos 1380 / Mali-G68, 6 GB) | 120 / 120 | 75 / 17 | 73 / 16 | 203 s, 22 / 7 (warm) |
+| A14 5G (Dimensity 700 / Mali-G57, 4 GB) | 90 / 90 | 40 / 10 | 35 / 11 | 400 s, 2-5, then killed |
+| A05s (SD 680 / Adreno 610, 4 GB) | 61 / 55 | 19 / 8-9 | 17 / 7-10 | killed while loading |
+| A04s (Exynos 850 / Mali-G52 MP1, 4 GB) | 90 / 90 | 25 / 2-3 | (no ANGLE: GL) 20 / 2 | 623 s, 2 / 1.7 |
+| Nokia C31 (SC9863A / PowerVR GE8322, 3 GB) | 49-58 / 41 | 18-19 / 3.5 | (no ANGLE: GL) 19 / 3.5 | not run |
+
+Findings: the Tuen Ma Line needs more than 4 GB; GL is the better default on most Adreno, VK wins in
+the A36's cab; the weakest GPUs sit at 2-5 fps outside on East Rail with textures still decoding
+(16 in flight throughout); per-car train object updates cost 12-18 ms per exterior frame on
+mid-range and better, and 50-60 ms on the slowest CPUs (A04s, C31). The A04s and C31 have no
+ANGLE: a Vulkan choice falls back to GL (the Options page says so). The C31's first run drew no 3D
+(PowerVR, above); its row is the rerun. Its log buffer is 256 KiB, so the scripts read and clear
+the log every 4 s.
+
+**1.01 candidate (2026-10-06)**, same script. Heavy load: "first" = first load of the route on
+that phone (texture transparency not yet remembered), "repeat" = transparency cache warm:
+
+| Phone (SoC / GPU, RAM) | Light | Medium GL | Medium VK | Heavy: load, fps |
+|---|---|---|---|---|
+| A35 (Exynos 1380 / Mali-G68, 6 GB) | 118 / 118 | 114 / 31 | 114 / 31 | 48 s first, 36 / 14-17 |
+| A36 (SD 6 Gen 3 / Adreno 710, 12 GB) | 113 / 113 | 111 / 33 | 113 / 34 | 58 s first, 35 / 17.5 |
+| S20 FE 5G (SD 865 / Adreno 650, 6 GB) | 118 / 118 | 100 / 26 | 74 / 17.5 | 59 s first, 29 / 5-14 |
+| A73 (SD 778G / Adreno 642L, 8 GB) | 116-120 / 116 | 72 / 25 | 65 / 25 | 71 s repeat, 25 / 13-14 |
+| A05s (SD 680 / Adreno 610, 6 GB) | 57 / 52 | 19.5 / 12-14 | 17 / 10-12 | 83 s repeat, 8 / 7-8 |
+| A05s (SD 680 / Adreno 610, 4 GB) | 58 / 53 | 20.5 / 13-15 | 17.5 / 13 | 105 s repeat, 8 / 7-8.6 |
+| A14 5G (Dimensity 700 / Mali-G57, 4 GB) | 45-90 / 85-90 | 47 / 17 | 45 / 16 | 145 s first, 12-18 / 4-9 |
+| A04s (Exynos 850 / Mali-G52 MP1, 4 GB) | 69 / 69 | 20 / 2.6 | (no ANGLE: GL) 20 / 2.6 | 310 s first, 2-3 / 1.9 |
+
+Against 1.0's table: East Rail's exterior +47% on the A73 (17 -> 25), +60% on the 4 GB A05s (8-9 ->
+13-15), +70% on the A14 (10 -> 17) and +80% on the A35 (17 -> 31); the Tuen Ma Line loads in 71 s
+instead of 315 s on the A73 and 310 s instead of 623 s on the A04s; the three 4 GB phones, all
+killed in 1.0 (A05s while loading, A14 after it), now run it. GL stays the better default on most
+phones; VK is level on the A35 and A36. The A04s's GPU (Mali-G52 MP1) remains the limit outside
+(2-3 fps). The A14 needed texture classification limited to two decodes at a time on phones of
+4.5 GB or less (eight at once got it killed on TML's first load).
+
+### Object optimisation threshold (1.01)
+
+1.0 set `ObjectOptimizationBasicThreshold` to 1,000 (upstream's desktop default is 10,000).
+Upstream's `OptimizeObject` leaves objects with at least that many faces (and under 20,000) as
+they were loaded: polygons are not triangulated and faces are not folded per material, so every
+face is a draw call of its own and cannot join a run (`DrawRuns` joins triangle lists only). On the
+Tuen Ma Line those were the cars' detailed parts: 6,600 of the exterior view's 8,800 transparent
+faces were such polygons, at ~12 us of CPU per call (upstream's `RenderFace` plus the driver).
+Back at 10,000 the transparent faces are 2,100 triangles; load time did not grow (305 s).
+
+Tuen Ma Line frames (A73, OpenGL ES, standing at Tuen Mun):
+
+| | 1.0 | batching | + threshold 10,000 |
+|---|---|---|---|
+| Cab | 4.3-5.2 fps | 8.0-8.6 fps | 24.7-25.2 fps |
+| Exterior | 2.5-3.1 fps | 3.1-3.4 fps | 11.7 fps cool; 4.4-8 once the phone throttles (thermal status 2) |
+
+Tried and dropped: skipping upstream's per-face matrix recomputation for Dynamic prototypes
+(~1 us of the ~12 us a call). Kept: colour-keyed faces drawn unsorted, in runs, in the blended
+pass, like the batches' (their blended texels are edge fringes); faces that really blend stay
+sorted. The `alpha texels` / `batch filter` profile phases are diagnostics.
 
 `LoadProfile` times every host callback during a load: textures (decode, upload, register),
 objects (load, create), sounds and scripted trains. Everything else is charged to the caller
@@ -982,6 +1199,73 @@ with their objects, textures and sounds counted separately. That is probably ver
 creation through the emulator's GL translator, and needs measuring on real hardware before
 optimising. Object parsing takes 7.7 s and the route parser 3.6 s. The Release APK is 52 MB for
 arm64 and x86_64 together and is signed with the debug key; distribution needs a release key.
+
+### Load time on heavy routes (1.01)
+
+Measured on the Tuen Ma Line (15,933 object loads, 36 scripted trains, ~10,000 textures):
+
+| Phone | Start of 1.01 work | Now, first load | Now, repeat load |
+|---|---|---|---|
+| Galaxy A73 (SD778G) | 192 s | 101 s | 69 s |
+| Galaxy A05s 4 GB (SD680) | 247 s | 118 s | 86 s |
+| Galaxy A05s 6 GB (SD680) | 148 s (mid-1.01) | 110 s | 84 s |
+| Galaxy S20 FE (SD865) | - | 64-70 s (before the last two items) | - |
+
+- **Multi-core object loading** (`ObjectPrefetch.cs`). Upstream's route parsers load each object
+  file when they meet it, one after another. The route file, its `$Include` files and the
+  `.animated` files they name are scanned (a scan, not a parse) for object files, which worker
+  threads (cores - 1, at most 512 ahead of the parser) parse and optimise with `LoadObject`'s
+  flags. When the parser asks for a file the host takes the result, or parses it itself as before.
+  A result is used only if read with the same fallback encoding and optimised the same way
+  (`LoadStaticObject`'s no-culling files stay on the loading thread). The scene's mesh census is
+  identical with it on and off. Animated files themselves still load on the loading thread: their
+  parser uses the host's object cache, which is not thread-safe.
+- **File checks from the folder listings.** `Path.CombineFile` (port copy, `Path.Android.cs`)
+  answers its `File.Exists` / `Directory.Exists` checks from the remembered listings while a game
+  loads, with upstream's answers (the file system still decides when a name is listed in another
+  letter case). The scripted trains' plugin resolves ~540,000 sound paths: 58 -> 21 s on the A05s.
+  The object cache's file-date key (`File.GetLastWriteTime`) is remembered the same way.
+- **Texture registration** (`AndroidHost.RegisterWithoutSearch`). Upstream's `RegisterTexture`
+  searches every registered texture for the path; the host keeps an index of upstream's array
+  (same comparison, same first match, rebuilt when the array is replaced) and registers new ones
+  with upstream's own steps: ~32 s -> 0.2 s on the A05s.
+- **Texture transparency remembered** (`TextureClassifier`). Placing the trains needs every
+  texture's transparency class, which upstream finds by decoding the whole image (done on all
+  cores here). The answers are kept in the app's cache folder, keyed by the file (path, size,
+  modification time) and how it is read (texture parameters, the old-transparency option, the
+  texture size limit): on a repeat load 4,371 of TML's textures are remembered, 20-31 s -> 0.2-1.8 s.
+- **Scripted trains on several cores** (`ScriptedTrainLoader`). Upstream's route parser asks for
+  its scripted trains one after another and only adds what the host returns to its list. The host
+  reads each train's XML file at once and returns the train object; the train plugin loads the
+  train into it on a worker thread, and when the route has loaded the host waits for them all and
+  removes any that failed. The parser still chooses which trains load (TML picks most of them by
+  weighted random `$Include`). Each worker has its own train plugin instance, and the plugin's
+  per-train statics are `[ThreadStatic]` (port copies, see the exclusions table); the host's object
+  cache, dynamic object list and object visibility are locked. Same scene as one at a time (mesh
+  census identical); A05s 6 GB 95 -> 84 s, A73 72 -> 69 s on a repeat load.
+
+### Memory on 4 GB phones (1.01)
+
+TML on the 4 GB A05s was killed by Android's low-memory killer a few seconds into driving. It
+now runs (cab 8.5-10.7 fps, exterior 7-8 fps); the S20 FE (6 GB), killed in the exterior view
+before, runs too.
+
+- **Mesh sharing** (`MeshSharing.cs`). Every object handed out from the host's cache is a deep
+  copy, so each train car and each placement of a route's animated object carried its own meshes:
+  12,037 of TML's 15,745 were exact copies. Objects whose meshes are identical (every vertex,
+  face and material) now point at one `Mesh`, before their first upload. Left alone: cab overlays,
+  elements with a colour function or LED updates (they write their meshes every frame), meshes
+  already on the GPU. TML: 10,010 shared; live heap 642 -> 406 MB, vertex buffers ~430 -> ~175 MB.
+- **16-bit textures** (`OpenBve.GLES` `GL.TryUpload16`). Content textures are uploaded as RGB565
+  (opaque), RGB5_A1 (fully clear or solid pixels: colour-keyed) or RGBA4, with an ordered dither:
+  half the memory. Automatic on phones of 4.5 GB or less; Options "Texture colours". TML exterior
+  on the A05s: ~435 MB saved; screenshots show no visible difference.
+- **Decoding.** Large images are halved in native (Skia) memory before the texture plugin copies
+  them into the .NET heap, when a texture size limit applies and no clip region is involved
+  (nearest-pixel for colour-keyed textures, so the key colour survives); streamed decodes run two
+  at a time on phones of 4.5 GB or less.
+- **Automatic texture size limit**: 1024 px at 4.5 GB or less, 2048 px up to 6.5 GB, none above.
+- Tried and dropped: a tighter Mono GC trigger (`default-allowance-ratio=0.1`) - no effect.
 
 ### Graphics backend: OpenGL ES or Vulkan
 
@@ -1092,6 +1376,9 @@ so this confirms OpenAL Soft opened a device and is mixing — it has not been *
 | `FunctionScripts/CSAnimationScript.cs` | CS-Script compiles C# at runtime; unavailable on Android under AOT. Replaced by `CSAnimationScript.Android.cs`, a stub whose constructor throws, so upstream's existing try/catch reports the object as unsupported and route loading continues. `.animated` files, the common case, are unaffected. |
 | `System/Interop.cs` | WCF service contracts for the 32-bit Win32 ATS plugin proxy. Windows-only by definition. |
 | `Texture.cs`, `Sound.cs` | Dead files, present in the tree but not built upstream. Their stale `OpenBveApi.Texture`/`OpenBveApi.Sound` namespaces shadow the real `Texture` and `Sound` types. |
+| `System/Path.cs` | Replaced by `Path.Android.cs`, a copy with one change: the case-insensitive fallbacks of `CombineFile`/`CombineDirectory` list a folder through `ListFiles`/`ListDirectories`, which remember each listing while `Path.CacheListings` is on - only while a game loads (GameView), so elsewhere it is upstream's code. See *Loading time*. **When updating from upstream, re-copy Path.cs and reapply the change** (marked ANDROID PORT at the top of the class). It also adds `Path.FileExists`, answered from the remembered listing while loading. |
+| `SoundManager/Sounds.CarSound.cs` | Replaced by `SoundManager.Android/Sounds.CarSound.Android.cs`, a copy whose constructor checks the sound file with `Path.FileExists` instead of `System.IO.File.Exists` (~1,900 checks a car on trains without sound.cfg). **Re-copy and reapply that one line on upstream updates** (marked ANDROID PORT). |
+| `Plugins/Train.OpenBve/Plugin.cs`, `Train/BVE/ExtensionsCfgParser.cs`, `Train/XML/TrainXmlParser.cs` | Replaced by `Train.OpenBve.Android/*.Android.cs`: copies whose static per-train fields (motor sound tables, acceleration curves, the XML parser's per-train arrays, the Unicode check) are `[ThreadStatic]`, so scripted trains can load on several threads, each with its own plugin instance (`ScriptedTrainLoader`). **Re-copy and mark the same fields on upstream updates.** |
 
 ## Licensing
 

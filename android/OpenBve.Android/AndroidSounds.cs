@@ -172,13 +172,36 @@ namespace OpenBve.Android
 						SourceCount--;
 						i--;
 						break;
+					/*
+					 * A sound paused before it had an OpenAL source (still waiting to start - the
+					 * pause menu, or the app leaving the screen, pauses every sound) has nothing to
+					 * pause or resume: it stays paused without one, and on resuming waits to be
+					 * given one like any sound about to start. Sent to OpenAL, source 0 is an error
+					 * on every call; a beta tester's log had 75,000 of them, most while the game was
+					 * in the background, and one five-second stall in the sound update.
+					 */
 					case SoundSourceState.PausePending:
-						AL.SourcePause(Sources[i].OpenAlSourceName);
+						if (Sources[i].OpenAlSourceName != 0)
+						{
+							AL.SourcePause(Sources[i].OpenAlSourceName);
+						}
+
 						Sources[i].State = SoundSourceState.Paused;
 						break;
 					case SoundSourceState.ResumePending:
-						AL.SourcePlay(Sources[i].OpenAlSourceName);
-						Sources[i].State = SoundSourceState.Playing;
+						if (Sources[i].OpenAlSourceName != 0)
+						{
+							AL.SourcePlay(Sources[i].OpenAlSourceName);
+							Sources[i].State = SoundSourceState.Playing;
+						}
+						else
+						{
+							Sources[i].State = SoundSourceState.PlayPending;
+						}
+
+						break;
+					case SoundSourceState.Paused when Sources[i].OpenAlSourceName == 0:
+						// Paused before it started: nothing to update until it is resumed.
 						break;
 					case SoundSourceState.Stopped:
 						Sources[i] = Sources[SourceCount - 1];
@@ -205,6 +228,12 @@ namespace OpenBve.Android
 							}
 
 							break;
+						}
+
+						if (Sources[i].State == SoundSourceState.Playing && Sources[i].OpenAlSourceName == 0)
+						{
+							// Marked playing without a source (it could not be made): ask for a new one.
+							Sources[i].State = SoundSourceState.PlayPending;
 						}
 
 						if (Sources[i].State == SoundSourceState.Playing)
@@ -318,7 +347,13 @@ namespace OpenBve.Android
 			{
 				SoundSource source = toBePlayed[i].Source;
 				double gain = toBePlayed[i].Gain - clampFactor * toBePlayed[i].Distance * toBePlayed[i].Distance;
-				bool active = source.State == SoundSourceState.Playing || source.State == SoundSourceState.Paused || source.State == SoundSourceState.PausePending;
+				bool active = source.OpenAlSourceName != 0 &&
+				              (source.State == SoundSourceState.Playing || source.State == SoundSourceState.Paused || source.State == SoundSourceState.PausePending);
+				if (!active && (source.State == SoundSourceState.Paused || source.State == SoundSourceState.PausePending))
+				{
+					// Paused before it had a source: it must not start playing now.
+					continue;
+				}
 				if (gain <= 0.0 || i > idx2)
 				{
 					if (source.State == SoundSourceState.Playing)
@@ -344,6 +379,12 @@ namespace OpenBve.Android
 					{
 						case SoundBufferState.Loaded:
 							AL.GenSources(1, out source.OpenAlSourceName);
+							if (source.OpenAlSourceName == 0)
+							{
+								// OpenAL is out of sources: try again next frame rather than drive source 0.
+								continue;
+							}
+
 							AL.Source(source.OpenAlSourceName, ALSourcei.Buffer, source.Buffer.OpenAlBufferName);
 							break;
 						case SoundBufferState.Invalid:

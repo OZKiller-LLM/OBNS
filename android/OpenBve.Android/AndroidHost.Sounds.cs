@@ -46,7 +46,7 @@ namespace OpenBve.Android
 		/// <inheritdoc />
 		public override bool LoadSound(string path, out Sound sound)
 		{
-			using LoadProfile.Scope profile = LoadProfile.Enter("sound");
+			using LoadProfile.Scope profile = LoadProfile.Enter("sound", path);
 			if (File.Exists(path) || Directory.Exists(path))
 			{
 				foreach (ContentLoadingPlugin plugin in Plugins ?? new ContentLoadingPlugin[0])
@@ -102,7 +102,7 @@ namespace OpenBve.Android
 		/// <inheritdoc />
 		public override bool RegisterSound(string path, double radius, out SoundHandle handle)
 		{
-			using LoadProfile.Scope profile = LoadProfile.Enter("sound");
+			using LoadProfile.Scope profile = LoadProfile.Enter("sound", path);
 			if (PathExists(path))
 			{
 				/*

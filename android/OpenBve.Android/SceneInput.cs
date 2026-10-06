@@ -66,7 +66,9 @@ namespace OpenBve.Android
 				{
 					// First, is it on a cab control? A fingertip may land a little off it; a mouse pointer should not.
 					bool mouse = e.GetToolType(0) == MotionEventToolType.Mouse;
-					int element = controls.Cab.HitTest(e.GetX(), e.GetY(), mouse ? 2.0f : 10.0f * density);
+					// The cab's touch areas are in the scene's pixels, which a reduced render resolution makes fewer.
+					float scale = (view as GameView)?.ViewToSurface ?? 1.0f;
+					int element = controls.Cab.HitTest(e.GetX() * scale, e.GetY() * scale, (mouse ? 2.0f : 10.0f * density) * scale);
 					if (element >= 0)
 					{
 						onCabControl = true;

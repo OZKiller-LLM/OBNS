@@ -71,9 +71,26 @@ namespace OpenBve.Android
 				Log.Info(Tag, "extracted data assets for install " + installed);
 			}
 
-			foreach (string folder in new[] { data, settings, railway, Path.Combine(railway, "Route"), train })
+			Directory.CreateDirectory(data);
+			Directory.CreateDirectory(settings);
+
+			/*
+			 * The content folders are shared storage, and other tools write there too: folders
+			 * that adb push creates in Android/data carry the shell user and no group write on
+			 * some Android versions (Galaxy A35, Android 14), so creating Railway/Route inside one
+			 * is refused. That used to end the app on every start. A folder that cannot be made
+			 * only means nothing is there yet; the file browser still opens.
+			 */
+			foreach (string folder in new[] { railway, Path.Combine(railway, "Route"), train })
 			{
-				Directory.CreateDirectory(folder);
+				try
+				{
+					Directory.CreateDirectory(folder);
+				}
+				catch (Exception e) when (e is UnauthorizedAccessException || e is IOException)
+				{
+					Log.Warn(Tag, "content folder " + folder + " could not be created: " + e.Message);
+				}
 			}
 
 			OpenBveApi.FileSystem.FileSystem fileSystem = OpenBveApi.FileSystem.FileSystem.FromCommandLineArgs(new string[0], host);

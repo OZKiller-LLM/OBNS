@@ -15,6 +15,13 @@
   <ItemGroup>
     <Compile Include="$(UpstreamSource)Plugins\Train.OpenBve\**\*.cs" LinkBase="Train.OpenBve" />
     <Compile Remove="$(UpstreamSource)Plugins\Train.OpenBve\Properties\AssemblyInfo.cs" />
+    <!-- Port copies (see each file's header): statics filled in by a train load made [ThreadStatic]. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Train.OpenBve\Plugin.cs" />
+    <Compile Remove="$(UpstreamSource)Plugins\Train.OpenBve\Train\BVE\ExtensionsCfgParser.cs" />
+    <Compile Remove="$(UpstreamSource)Plugins\Train.OpenBve\Train\XML\TrainXmlParser.cs" />
+    <Compile Include="Plugin.Android.cs" />
+    <Compile Include="ExtensionsCfgParser.Android.cs" />
+    <Compile Include="TrainXmlParser.Android.cs" />
 
   </ItemGroup>
 
