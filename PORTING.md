@@ -1422,6 +1422,8 @@ identically to OpenGL ES (3D cab, animated needles and displays, transparency, H
 East Rail cab, same position: OpenGL ES 86-88 fps, native Vulkan 110-117 fps.
 Tuen Ma Line + SP1900 (A73, 2026-10-07): load 75 s; cab 31-38 fps (OpenGL ES 25); exterior
 11-16 fps (OpenGL ES 13-14), ~7,000 draws a frame, 8 pipelines, textures ~1.8 GB, buffers 196 MB.
+Galaxy S24 Ultra (Adreno 750, Vulkan 1.3): East Rail cab at the 120 fps display limit; TML load
+28 s (OpenGL ES 32), cab 51-60 fps (49-50), exterior 23-26 fps (22-25). Rendering identical.
 Next: native fast paths (fewer, larger draws; the exterior is CPU-bound on face lists and
 car updates), recording on several threads, a persisted pipeline cache.
 

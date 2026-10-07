@@ -495,8 +495,9 @@ Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan r
 - Verified on the A73 with `--es graphics vulkannative`: light route, East Rail cab (identical to
   GL; 110-117 vs 86-88 fps), TML (load 75 s, cab 31-38 vs 25 fps, exterior 11-16 vs 13-14 fps).
   Home and back works. TML on the A73 is on the SD card: /storage/6234-3630/Documents/OpenBVE.
-- Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points; S24 Ultra not yet tested
-  with phase 2 (USB dropped). Next: fast paths, multi-threaded recording, pipeline cache on disk,
+- S24 Ultra: East Rail cab 120 fps (display limit); TML load 28 s, cab 51-60 (GL 49-50),
+  exterior 23-26 (GL 22-25). Committed as fa350ab (local).
+- Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points. Next: fast paths, multi-threaded recording, pipeline cache on disk,
   then pipelining.
 
 ## VERSION 1.0 DONE (2026-09-29)
