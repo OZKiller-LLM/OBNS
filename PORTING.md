@@ -45,7 +45,7 @@ Builds for other people come from `android/release.ps1`, never from a developmen
 
 ```
 android
-elease.ps1 -PortRelease 1                  # dist.14.0.3-android.1\OpenBVE-1.14.0.3-android.1.apk
+elease.ps1 -PortRelease 1                  # dist\1.14.0.3-android.1\OpenBVE-1.14.0.3-android.1.apk
 android
 elease.ps1 -PortRelease 2 -Beta            # the beta testers' build, with the data log (…-beta.apk)
 android
@@ -1361,6 +1361,69 @@ The dropdown marks Vulkan unavailable when ANGLE cannot be loaded for the device
 (`android.hardware.vulkan.version`). Choosing it anyway still falls back to OpenGL ES at start.
 Verified: choosing Vulkan in Options and starting a game from the menu gave `ANGLE (NVIDIA,
 Vulkan 1.4.0 ...)` in that game with no app restart.
+
+### Native Vulkan renderer (1.1, in development)
+
+A third backend, `--es graphics vulkannative` (`GraphicsBackend.VulkanNative`): Vulkan through
+Silk.NET.Vulkan (MIT, NuGet), with no OpenGL ES driver and no ANGLE. Project `OpenBve.Vulkan`.
+
+**Approach: OpenGL ES on Vulkan, for OpenBVE's calls only.** Everything the renderer draws —
+upstream's LibRender2 and the port's own passes — goes through `OpenBve.GLES`'s `GL` class. Its
+native entry points (`glXxx`, 79 of them) now dispatch through `GL.Device` (`GL.Device.cs`,
+generated from the `DllImport` list: interface `IGLDevice`, and a wrapper per entry point that
+calls the device when one is set, the GLES driver otherwise). Everything above them — the quad and
+polygon translation, the 16-bit textures, the state and uniform caches — applies unchanged.
+`VulkanGL` implements the interface:
+
+- **Textures by GL name.** `glTexImage2D` converts into staging memory (RGB widened to RGBA;
+  luminance/alpha as R8/RG8 read through a component swizzle; the port's 16-bit packings kept,
+  RGBA4 as `B4G4R4A4` + swizzle where `R4G4B4A4` is missing). The image is made when the texture
+  is first drawn with, by when `glGenerateMipmap` has said whether it wants mipmaps; the copy and
+  the mipmap blits are recorded in the frame's *upload* command buffer, submitted before its
+  drawing. One descriptor set per texture (image + sampler); GL's sampler state lives on the
+  texture, so a change of it makes a new set. Unbound or empty textures sample opaque black, as GL.
+- **Buffers by GL name**, in host-visible memory written directly (device local too on a phone).
+  A change to a buffer the GPU may still read (drawn this frame or in flight) goes to a fresh copy
+  (copy on write); the old memory is freed when its submission's serial completes
+  (`VulkanContext.Defer`). Uniform buffers (the animation matrices, rewritten for every animated
+  object) stay on the CPU and are copied into a per-frame uniform ring when drawn with.
+- **Memory in blocks** (`GpuHeap.cs`): drivers allow ~4,096 allocations, a route has tens of
+  thousands of meshes and textures. 32 MB buffer blocks (one `VkBuffer` each, mapped for life),
+  64 MB image blocks, first-fit free lists.
+- **Programs.** Upstream's three (default, rectangle, text) are recognised by their sources and
+  replaced by GLSL 450 versions in `OpenBve.Vulkan/Shaders/`, compiled to SPIR-V with Khronos
+  glslang (the `.spv` files are committed; the build recompiles a changed shader where glslang is
+  installed, `GlslangPath`). Each program's uniforms are one std140 block; a GL uniform location is
+  the uniform's byte offset / 4, so a `glUniform*` is a write into the program's copy of the block.
+  The normal matrix is computed on the CPU per model-view change instead of `inverse()` per vertex.
+  No shadow cascades (the port draws without shadows); picking and shadow programs are not drawn.
+- **State as pipelines.** Program, primitive, vertex layout, culling, depth and blend state make a
+  64-bit key; each key's pipeline is made on first use. Each vertex attribute has its own binding,
+  so a layout is only formats and strides; a disabled attribute reads GL's default (0, 0, 0, 1)
+  from a stride-0 buffer. Viewport and scissor are dynamic.
+- **Clip space and pre-rotation.** A push constant turns OpenGL clip space into Vulkan's (Y down,
+  depth `(z + w) / 2`) and rotates it for the swapchain's pre-rotation: the swapchain images are in
+  the display's own orientation with `preTransform = currentTransform`, so the compositor does not
+  rotate every frame. Front faces stay counter-clockwise (on screen the winding is unchanged).
+  The first version used an identity transform: Android then reports `VK_SUBOPTIMAL_KHR` on every
+  present, the swapchain was rebuilt every frame, and a clear-only frame ran at 40 fps on the A73.
+- **Frames** begin at the first clear or draw after a swap (the first clear is the render pass's
+  load op) and end at the swap. Uploads between frames (loading) go into the next slot's upload
+  buffer; past 64 MB of staging with no frame they are submitted on their own.
+- Not supported (logged once): framebuffer objects (shadows, picking, motion blur), `glReadPixels`,
+  `glCopyTexImage2D`, points, texture levels other than 0.
+
+`VulkanSurface` creates `VulkanContext` (instance, Android surface, device, swapchain, two frames
+in flight) on the window and sets `GL.Device`; the window can go and come back (Home, another
+display) and the swapchain is rebuilt on size or rotation changes.
+
+Verified on the Galaxy A73 (Adreno 642L, Vulkan 1.1): light route and East Rail + R-Train render
+identically to OpenGL ES (3D cab, animated needles and displays, transparency, HUD, text).
+East Rail cab, same position: OpenGL ES 86-88 fps, native Vulkan 110-117 fps.
+Tuen Ma Line + SP1900 (A73, 2026-10-07): load 75 s; cab 31-38 fps (OpenGL ES 25); exterior
+11-16 fps (OpenGL ES 13-14), ~7,000 draws a frame, 8 pipelines, textures ~1.8 GB, buffers 196 MB.
+Next: native fast paths (fewer, larger draws; the exterior is CPU-bound on face lists and
+car updates), recording on several threads, a persisted pipeline cache.
 
 ### Data assets
 

@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The native Vulkan renderer (1.1): device, swapchain and frame loop on the game's Android
+    surface, through Silk.NET.Vulkan (MIT). See PORTING.md "Vulkan renderer".
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>$(AndroidTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>OpenBve.Vulkan</RootNamespace>
+    <AssemblyName>OpenBve.Vulkan</AssemblyName>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Vulkan" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.23.0" />
+    <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
+  </ItemGroup>
+
+  <!--
+    The shaders (Shaders/*.vert, *.frag: GLSL 450 versions of upstream's) are compiled to SPIR-V
+    with Khronos glslang and the .spv files are kept beside them in the repository, so a build
+    does not need glslang. Where glslang is installed (GlslangPath, by default
+    C:\dev\tools\glslang\bin\glslang.exe), a changed shader is recompiled before the build.
+  -->
+  <PropertyGroup>
+    <GlslangPath Condition="'$(GlslangPath)' == ''">C:\dev\tools\glslang\bin\glslang.exe</GlslangPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ShaderSource Include="Shaders\*.vert;Shaders\*.frag" />
+    <EmbeddedResource Include="Shaders\*.spv" LogicalName="OpenBve.Vulkan.Shaders.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="CompileShaders" BeforeTargets="BeforeBuild" Condition="Exists('$(GlslangPath)')" Inputs="@(ShaderSource)" Outputs="@(ShaderSource->'%(FullPath).spv')">
+    <Exec Command="&quot;$(GlslangPath)&quot; -V --target-env vulkan1.0 -o &quot;%(ShaderSource.FullPath).spv&quot; &quot;%(ShaderSource.FullPath)&quot;" />
+  </Target>
+
+</Project>

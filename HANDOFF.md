@@ -240,8 +240,8 @@ Fixed today:
 
 ## 2026-09-27: keyboard, controllers, menu focus (ADB over Wi-Fi)
 
-- Wireless ADB: use the SDK's adb (`%LOCALAPPDATA%\Android\Sdk\platform-toolsdb.exe`, 36.x);
-  `C:\WINDOWSdb.exe` is 30.0.3 and cannot pair/connect reliably and restarts the server. The
+- Wireless ADB: use the SDK's adb (`%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`, 36.x);
+  `C:\WINDOWS\adb.exe` is 30.0.3 and cannot pair/connect reliably and restarts the server. The
   connect port changes when wireless debugging restarts: a port scan of the phone (30000-50000)
   finds it; the paired device also appears as `adb-R5CT41WNFSV-...._adb-tls-connect._tcp`.
 - USB keyboard via hub: every binding tried works. AI button added above the ATS row.
@@ -464,7 +464,7 @@ object load 71-80 s, texture register 16-18 s). The per-decode stack sampling in
 
 Goals (user): full native Vulkan renderer, pipelining, parallel per-frame animated-object updates.
 Order agreed: parallel updates -> Vulkan (Silk.NET.Vulkan + Khronos glslang, both approved; glslang
-16.6.0 is in C:\dev	ools\glslang, outside the repo) -> pipelining.
+16.6.0 is in C:\dev\tools\glslang, outside the repo) -> pipelining.
 
 Done and committed on `1.1` (2026-10-07, local only - not pushed); verified on phones:
 - **Parallel per-frame updates** (`ParallelUpdates.cs`, `FrameWorkers.cs`,
@@ -486,10 +486,22 @@ Parallel updates are about neutral for fps (frames are GPU/draw-bound): train-ob
 -9 ms (C31 23 -> 14 ms), fps within noise. A ConcurrentDictionary.IsEmpty check in the show-skip
 took all its locks and made parallel updates several times slower - replaced by a counter.
 Next: the Vulkan renderer, phase 1 (device/swapchain/clear on the Android surface).
+Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan renderer"):
+- Phase 1: `OpenBve.Vulkan` (`VulkanContext`: device, swapchain, frames), `VulkanSurface`.
+  Pre-rotation fixed a swapchain rebuilt every frame (SUBOPTIMAL with an identity transform).
+- Phase 2: `VulkanGL` - OpenGL ES on Vulkan behind `GL.Device` (`OpenBve.GLES/GL.Device.cs`,
+  generated from GL.cs's DllImports, which are now `es_glXxx`). GLSL 450 shaders in
+  `OpenBve.Vulkan/Shaders` (+ committed .spv; glslang recompiles when installed). No EGL at all.
+- Verified on the A73 with `--es graphics vulkannative`: light route, East Rail cab (identical to
+  GL; 110-117 vs 86-88 fps), TML (load 75 s, cab 31-38 vs 25 fps, exterior 11-16 vs 13-14 fps).
+  Home and back works. TML on the A73 is on the SD card: /storage/6234-3630/Documents/OpenBVE.
+- Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points; S24 Ultra not yet tested
+  with phase 2 (USB dropped). Next: fast paths, multi-threaded recording, pipeline cache on disk,
+  then pipelining.
 
 ## VERSION 1.0 DONE (2026-09-29)
 
-- Released build: `dist.14.0.3-android.1\` (APK + AAB, code 1140301), built by the user with
+- Released build: `dist\1.14.0.3-android.1\` (APK + AAB, code 1140301), built by the user with
   `release.ps1 -PortRelease 1 -Format both`, signed with the user's release key
   (`%USERPROFILE%\.openbve\openbve-release.jks`, alias openbve, SHA-256 45:B8:92:0B:...:5B:D9).
   The key and its password are the user's: never copy, move or hold them.
@@ -509,7 +521,7 @@ Next: the Vulkan renderer, phase 1 (device/swapchain/clear on the Android surfac
 
 ## 2026-09-29 (late): beta built for testers
 
-- `dist.14.0.3-android.1-beta-debugkey\` (APK 51 MB, README, RELEASE_NOTES, LICENSE,
+- `dist\1.14.0.3-android.1-beta-debugkey\` (APK 51 MB, README, RELEASE_NOTES, LICENSE,
   SHA256SUMS), built by the user's instruction with `release.ps1 -PortRelease 1 -Beta -DebugKey`
   (no release key yet: testers uninstall it before the release-signed build; Documents/OpenBVE
   content survives). Installed on the A73 (same key as dev builds).

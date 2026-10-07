@@ -45,7 +45,7 @@ namespace OpenTK.Graphics.OpenGL
 	/// failed, which cannot happen on a device that got this far.
 	/// </para>
 	/// </remarks>
-	public static class GL
+	public static partial class GL
 	{
 		private const string Library = "libGLESv3.so";
 
@@ -53,92 +53,92 @@ namespace OpenTK.Graphics.OpenGL
 
 		// --- native entry points ---
 
-		[DllImport(Library, EntryPoint = "glEnable")] private static extern void glEnable(int cap);
-		[DllImport(Library, EntryPoint = "glDisable")] private static extern void glDisable(int cap);
-		[DllImport(Library, EntryPoint = "glClear")] private static extern void glClear(int mask);
-		[DllImport(Library, EntryPoint = "glClearColor")] private static extern void glClearColor(float r, float g, float b, float a);
-		[DllImport(Library, EntryPoint = "glViewport")] private static extern void glViewport(int x, int y, int width, int height);
-		[DllImport(Library, EntryPoint = "glBlendFunc")] private static extern void glBlendFunc(int src, int dst);
-		[DllImport(Library, EntryPoint = "glDepthMask")] private static extern void glDepthMask(byte flag);
-		[DllImport(Library, EntryPoint = "glDepthFunc")] private static extern void glDepthFunc(int func);
-		[DllImport(Library, EntryPoint = "glCullFace")] private static extern void glCullFace(int mode);
-		[DllImport(Library, EntryPoint = "glLineWidth")] private static extern void glLineWidth(float width);
-		[DllImport(Library, EntryPoint = "glHint")] private static extern void glHint(int target, int mode);
-		[DllImport(Library, EntryPoint = "glPixelStorei")] private static extern void glPixelStorei(int pname, int param);
-		[DllImport(Library, EntryPoint = "glGetError")] private static extern int glGetError();
-		[DllImport(Library, EntryPoint = "glGetString")] private static extern IntPtr glGetString(int name);
-		[DllImport(Library, EntryPoint = "glGetFloatv")] private static extern void glGetFloatv(int pname, float[] parameters);
-		[DllImport(Library, EntryPoint = "glGetIntegerv")] private static extern void glGetIntegerv(int pname, int[] parameters);
-		[DllImport(Library, EntryPoint = "glReadPixels")] private static extern void glReadPixels(int x, int y, int width, int height, int format, int type, byte[] pixels);
+		[DllImport(Library, EntryPoint = "glEnable")] private static extern void es_glEnable(int cap);
+		[DllImport(Library, EntryPoint = "glDisable")] private static extern void es_glDisable(int cap);
+		[DllImport(Library, EntryPoint = "glClear")] private static extern void es_glClear(int mask);
+		[DllImport(Library, EntryPoint = "glClearColor")] private static extern void es_glClearColor(float r, float g, float b, float a);
+		[DllImport(Library, EntryPoint = "glViewport")] private static extern void es_glViewport(int x, int y, int width, int height);
+		[DllImport(Library, EntryPoint = "glBlendFunc")] private static extern void es_glBlendFunc(int src, int dst);
+		[DllImport(Library, EntryPoint = "glDepthMask")] private static extern void es_glDepthMask(byte flag);
+		[DllImport(Library, EntryPoint = "glDepthFunc")] private static extern void es_glDepthFunc(int func);
+		[DllImport(Library, EntryPoint = "glCullFace")] private static extern void es_glCullFace(int mode);
+		[DllImport(Library, EntryPoint = "glLineWidth")] private static extern void es_glLineWidth(float width);
+		[DllImport(Library, EntryPoint = "glHint")] private static extern void es_glHint(int target, int mode);
+		[DllImport(Library, EntryPoint = "glPixelStorei")] private static extern void es_glPixelStorei(int pname, int param);
+		[DllImport(Library, EntryPoint = "glGetError")] private static extern int es_glGetError();
+		[DllImport(Library, EntryPoint = "glGetString")] private static extern IntPtr es_glGetString(int name);
+		[DllImport(Library, EntryPoint = "glGetFloatv")] private static extern void es_glGetFloatv(int pname, float[] parameters);
+		[DllImport(Library, EntryPoint = "glGetIntegerv")] private static extern void es_glGetIntegerv(int pname, int[] parameters);
+		[DllImport(Library, EntryPoint = "glReadPixels")] private static extern void es_glReadPixels(int x, int y, int width, int height, int format, int type, byte[] pixels);
 
-		[DllImport(Library, EntryPoint = "glGenTextures")] private static extern void glGenTextures(int n, int[] textures);
-		[DllImport(Library, EntryPoint = "glDeleteTextures")] private static extern void glDeleteTextures(int n, int[] textures);
-		[DllImport(Library, EntryPoint = "glBindTexture")] private static extern void glBindTexture(int target, int texture);
-		[DllImport(Library, EntryPoint = "glActiveTexture")] private static extern void glActiveTexture(int texture);
-		[DllImport(Library, EntryPoint = "glGenerateMipmap")] private static extern void glGenerateMipmap(int target);
-		[DllImport(Library, EntryPoint = "glTexParameteri")] private static extern void glTexParameteri(int target, int pname, int param);
-		[DllImport(Library, EntryPoint = "glTexParameterf")] private static extern void glTexParameterf(int target, int pname, float param);
-		[DllImport(Library, EntryPoint = "glTexParameteriv")] private static extern void glTexParameteriv(int target, int pname, int[] parameters);
-		[DllImport(Library, EntryPoint = "glTexParameterfv")] private static extern void glTexParameterfv(int target, int pname, float[] parameters);
-		[DllImport(Library, EntryPoint = "glTexImage2D")] private static extern void glTexImage2D(int target, int level, int internalFormat, int width, int height, int border, int format, int type, IntPtr pixels);
-		[DllImport(Library, EntryPoint = "glCopyTexImage2D")] private static extern void glCopyTexImage2D(int target, int level, int internalFormat, int x, int y, int width, int height, int border);
+		[DllImport(Library, EntryPoint = "glGenTextures")] private static extern void es_glGenTextures(int n, int[] textures);
+		[DllImport(Library, EntryPoint = "glDeleteTextures")] private static extern void es_glDeleteTextures(int n, int[] textures);
+		[DllImport(Library, EntryPoint = "glBindTexture")] private static extern void es_glBindTexture(int target, int texture);
+		[DllImport(Library, EntryPoint = "glActiveTexture")] private static extern void es_glActiveTexture(int texture);
+		[DllImport(Library, EntryPoint = "glGenerateMipmap")] private static extern void es_glGenerateMipmap(int target);
+		[DllImport(Library, EntryPoint = "glTexParameteri")] private static extern void es_glTexParameteri(int target, int pname, int param);
+		[DllImport(Library, EntryPoint = "glTexParameterf")] private static extern void es_glTexParameterf(int target, int pname, float param);
+		[DllImport(Library, EntryPoint = "glTexParameteriv")] private static extern void es_glTexParameteriv(int target, int pname, int[] parameters);
+		[DllImport(Library, EntryPoint = "glTexParameterfv")] private static extern void es_glTexParameterfv(int target, int pname, float[] parameters);
+		[DllImport(Library, EntryPoint = "glTexImage2D")] private static extern void es_glTexImage2D(int target, int level, int internalFormat, int width, int height, int border, int format, int type, IntPtr pixels);
+		[DllImport(Library, EntryPoint = "glCopyTexImage2D")] private static extern void es_glCopyTexImage2D(int target, int level, int internalFormat, int x, int y, int width, int height, int border);
 
-		[DllImport(Library, EntryPoint = "glGenBuffers")] private static extern void glGenBuffers(int n, int[] buffers);
-		[DllImport(Library, EntryPoint = "glDeleteBuffers")] private static extern void glDeleteBuffers(int n, int[] buffers);
-		[DllImport(Library, EntryPoint = "glBindBuffer")] private static extern void glBindBuffer(int target, int buffer);
-		[DllImport(Library, EntryPoint = "glBindBufferBase")] private static extern void glBindBufferBase(int target, int index, int buffer);
-		[DllImport(Library, EntryPoint = "glBufferData")] private static extern void glBufferData(int target, IntPtr size, IntPtr data, int usage);
-		[DllImport(Library, EntryPoint = "glBufferSubData")] private static extern void glBufferSubData(int target, IntPtr offset, IntPtr size, IntPtr data);
+		[DllImport(Library, EntryPoint = "glGenBuffers")] private static extern void es_glGenBuffers(int n, int[] buffers);
+		[DllImport(Library, EntryPoint = "glDeleteBuffers")] private static extern void es_glDeleteBuffers(int n, int[] buffers);
+		[DllImport(Library, EntryPoint = "glBindBuffer")] private static extern void es_glBindBuffer(int target, int buffer);
+		[DllImport(Library, EntryPoint = "glBindBufferBase")] private static extern void es_glBindBufferBase(int target, int index, int buffer);
+		[DllImport(Library, EntryPoint = "glBufferData")] private static extern void es_glBufferData(int target, IntPtr size, IntPtr data, int usage);
+		[DllImport(Library, EntryPoint = "glBufferSubData")] private static extern void es_glBufferSubData(int target, IntPtr offset, IntPtr size, IntPtr data);
 
-		[DllImport(Library, EntryPoint = "glGenVertexArrays")] private static extern void glGenVertexArrays(int n, int[] arrays);
-		[DllImport(Library, EntryPoint = "glDeleteVertexArrays")] private static extern void glDeleteVertexArrays(int n, int[] arrays);
-		[DllImport(Library, EntryPoint = "glBindVertexArray")] private static extern void glBindVertexArray(int array);
-		[DllImport(Library, EntryPoint = "glEnableVertexAttribArray")] private static extern void glEnableVertexAttribArray(int index);
-		[DllImport(Library, EntryPoint = "glDisableVertexAttribArray")] private static extern void glDisableVertexAttribArray(int index);
-		[DllImport(Library, EntryPoint = "glVertexAttribPointer")] private static extern void glVertexAttribPointer(int index, int size, int type, byte normalized, int stride, IntPtr pointer);
-		[DllImport(Library, EntryPoint = "glVertexAttribIPointer")] private static extern void glVertexAttribIPointer(int index, int size, int type, int stride, IntPtr pointer);
-		[DllImport(Library, EntryPoint = "glDrawArrays")] private static extern void glDrawArrays(int mode, int first, int count);
-		[DllImport(Library, EntryPoint = "glDrawElements")] private static extern void glDrawElements(int mode, int count, int type, IntPtr indices);
+		[DllImport(Library, EntryPoint = "glGenVertexArrays")] private static extern void es_glGenVertexArrays(int n, int[] arrays);
+		[DllImport(Library, EntryPoint = "glDeleteVertexArrays")] private static extern void es_glDeleteVertexArrays(int n, int[] arrays);
+		[DllImport(Library, EntryPoint = "glBindVertexArray")] private static extern void es_glBindVertexArray(int array);
+		[DllImport(Library, EntryPoint = "glEnableVertexAttribArray")] private static extern void es_glEnableVertexAttribArray(int index);
+		[DllImport(Library, EntryPoint = "glDisableVertexAttribArray")] private static extern void es_glDisableVertexAttribArray(int index);
+		[DllImport(Library, EntryPoint = "glVertexAttribPointer")] private static extern void es_glVertexAttribPointer(int index, int size, int type, byte normalized, int stride, IntPtr pointer);
+		[DllImport(Library, EntryPoint = "glVertexAttribIPointer")] private static extern void es_glVertexAttribIPointer(int index, int size, int type, int stride, IntPtr pointer);
+		[DllImport(Library, EntryPoint = "glDrawArrays")] private static extern void es_glDrawArrays(int mode, int first, int count);
+		[DllImport(Library, EntryPoint = "glDrawElements")] private static extern void es_glDrawElements(int mode, int count, int type, IntPtr indices);
 
-		[DllImport(Library, EntryPoint = "glCreateShader")] private static extern int glCreateShader(int type);
-		[DllImport(Library, EntryPoint = "glDeleteShader")] private static extern void glDeleteShader(int shader);
-		[DllImport(Library, EntryPoint = "glShaderSource")] private static extern void glShaderSource(int shader, int count, IntPtr[] str, int[] length);
-		[DllImport(Library, EntryPoint = "glCompileShader")] private static extern void glCompileShader(int shader);
-		[DllImport(Library, EntryPoint = "glGetShaderiv")] private static extern void glGetShaderiv(int shader, int pname, int[] parameters);
-		[DllImport(Library, EntryPoint = "glGetShaderInfoLog")] private static extern void glGetShaderInfoLog(int shader, int bufferSize, int[] length, StringBuilder infoLog);
+		[DllImport(Library, EntryPoint = "glCreateShader")] private static extern int es_glCreateShader(int type);
+		[DllImport(Library, EntryPoint = "glDeleteShader")] private static extern void es_glDeleteShader(int shader);
+		[DllImport(Library, EntryPoint = "glShaderSource")] private static extern void es_glShaderSource(int shader, int count, IntPtr[] str, int[] length);
+		[DllImport(Library, EntryPoint = "glCompileShader")] private static extern void es_glCompileShader(int shader);
+		[DllImport(Library, EntryPoint = "glGetShaderiv")] private static extern void es_glGetShaderiv(int shader, int pname, int[] parameters);
+		[DllImport(Library, EntryPoint = "glGetShaderInfoLog")] private static extern void es_glGetShaderInfoLog(int shader, int bufferSize, int[] length, StringBuilder infoLog);
 
-		[DllImport(Library, EntryPoint = "glCreateProgram")] private static extern int glCreateProgram();
-		[DllImport(Library, EntryPoint = "glDeleteProgram")] private static extern void glDeleteProgram(int program);
-		[DllImport(Library, EntryPoint = "glAttachShader")] private static extern void glAttachShader(int program, int shader);
-		[DllImport(Library, EntryPoint = "glLinkProgram")] private static extern void glLinkProgram(int program);
-		[DllImport(Library, EntryPoint = "glUseProgram")] private static extern void glUseProgram(int program);
-		[DllImport(Library, EntryPoint = "glGetProgramiv")] private static extern void glGetProgramiv(int program, int pname, int[] parameters);
-		[DllImport(Library, EntryPoint = "glGetProgramInfoLog")] private static extern void glGetProgramInfoLog(int program, int bufferSize, int[] length, StringBuilder infoLog);
-		[DllImport(Library, EntryPoint = "glGetAttribLocation")] private static extern int glGetAttribLocation(int program, string name);
-		[DllImport(Library, EntryPoint = "glGetUniformLocation")] private static extern int glGetUniformLocation(int program, string name);
-		[DllImport(Library, EntryPoint = "glGetUniformBlockIndex")] private static extern int glGetUniformBlockIndex(int program, string name);
-		[DllImport(Library, EntryPoint = "glUniformBlockBinding")] private static extern void glUniformBlockBinding(int program, int blockIndex, int binding);
+		[DllImport(Library, EntryPoint = "glCreateProgram")] private static extern int es_glCreateProgram();
+		[DllImport(Library, EntryPoint = "glDeleteProgram")] private static extern void es_glDeleteProgram(int program);
+		[DllImport(Library, EntryPoint = "glAttachShader")] private static extern void es_glAttachShader(int program, int shader);
+		[DllImport(Library, EntryPoint = "glLinkProgram")] private static extern void es_glLinkProgram(int program);
+		[DllImport(Library, EntryPoint = "glUseProgram")] private static extern void es_glUseProgram(int program);
+		[DllImport(Library, EntryPoint = "glGetProgramiv")] private static extern void es_glGetProgramiv(int program, int pname, int[] parameters);
+		[DllImport(Library, EntryPoint = "glGetProgramInfoLog")] private static extern void es_glGetProgramInfoLog(int program, int bufferSize, int[] length, StringBuilder infoLog);
+		[DllImport(Library, EntryPoint = "glGetAttribLocation")] private static extern int es_glGetAttribLocation(int program, string name);
+		[DllImport(Library, EntryPoint = "glGetUniformLocation")] private static extern int es_glGetUniformLocation(int program, string name);
+		[DllImport(Library, EntryPoint = "glGetUniformBlockIndex")] private static extern int es_glGetUniformBlockIndex(int program, string name);
+		[DllImport(Library, EntryPoint = "glUniformBlockBinding")] private static extern void es_glUniformBlockBinding(int program, int blockIndex, int binding);
 
-		[DllImport(Library, EntryPoint = "glUniform1i")] private static extern void glUniform1i(int location, int v0);
-		[DllImport(Library, EntryPoint = "glUniform1f")] private static extern void glUniform1f(int location, float v0);
-		[DllImport(Library, EntryPoint = "glUniform2f")] private static extern void glUniform2f(int location, float v0, float v1);
-		[DllImport(Library, EntryPoint = "glUniform3f")] private static extern void glUniform3f(int location, float v0, float v1, float v2);
-		[DllImport(Library, EntryPoint = "glUniform4f")] private static extern void glUniform4f(int location, float v0, float v1, float v2, float v3);
-		[DllImport(Library, EntryPoint = "glUniform1fv")] private static extern void glUniform1fv(int location, int count, float[] value);
-		[DllImport(Library, EntryPoint = "glUniformMatrix4fv")] private static extern void glUniformMatrix4fv(int location, int count, byte transpose, float[] value);
+		[DllImport(Library, EntryPoint = "glUniform1i")] private static extern void es_glUniform1i(int location, int v0);
+		[DllImport(Library, EntryPoint = "glUniform1f")] private static extern void es_glUniform1f(int location, float v0);
+		[DllImport(Library, EntryPoint = "glUniform2f")] private static extern void es_glUniform2f(int location, float v0, float v1);
+		[DllImport(Library, EntryPoint = "glUniform3f")] private static extern void es_glUniform3f(int location, float v0, float v1, float v2);
+		[DllImport(Library, EntryPoint = "glUniform4f")] private static extern void es_glUniform4f(int location, float v0, float v1, float v2, float v3);
+		[DllImport(Library, EntryPoint = "glUniform1fv")] private static extern void es_glUniform1fv(int location, int count, float[] value);
+		[DllImport(Library, EntryPoint = "glUniformMatrix4fv")] private static extern void es_glUniformMatrix4fv(int location, int count, byte transpose, float[] value);
 
-		[DllImport(Library, EntryPoint = "glGenFramebuffers")] private static extern void glGenFramebuffers(int n, int[] framebuffers);
-		[DllImport(Library, EntryPoint = "glDeleteFramebuffers")] private static extern void glDeleteFramebuffers(int n, int[] framebuffers);
-		[DllImport(Library, EntryPoint = "glBindFramebuffer")] private static extern void glBindFramebuffer(int target, int framebuffer);
-		[DllImport(Library, EntryPoint = "glFramebufferTexture2D")] private static extern void glFramebufferTexture2D(int target, int attachment, int textarget, int texture, int level);
-		[DllImport(Library, EntryPoint = "glFramebufferRenderbuffer")] private static extern void glFramebufferRenderbuffer(int target, int attachment, int renderbuffertarget, int renderbuffer);
-		[DllImport(Library, EntryPoint = "glCheckFramebufferStatus")] private static extern int glCheckFramebufferStatus(int target);
-		[DllImport(Library, EntryPoint = "glGenRenderbuffers")] private static extern void glGenRenderbuffers(int n, int[] renderbuffers);
-		[DllImport(Library, EntryPoint = "glDeleteRenderbuffers")] private static extern void glDeleteRenderbuffers(int n, int[] renderbuffers);
-		[DllImport(Library, EntryPoint = "glBindRenderbuffer")] private static extern void glBindRenderbuffer(int target, int renderbuffer);
-		[DllImport(Library, EntryPoint = "glRenderbufferStorage")] private static extern void glRenderbufferStorage(int target, int internalFormat, int width, int height);
-		[DllImport(Library, EntryPoint = "glDrawBuffers")] private static extern void glDrawBuffers(int n, int[] buffers);
-		[DllImport(Library, EntryPoint = "glReadBuffer")] private static extern void glReadBuffer(int mode);
+		[DllImport(Library, EntryPoint = "glGenFramebuffers")] private static extern void es_glGenFramebuffers(int n, int[] framebuffers);
+		[DllImport(Library, EntryPoint = "glDeleteFramebuffers")] private static extern void es_glDeleteFramebuffers(int n, int[] framebuffers);
+		[DllImport(Library, EntryPoint = "glBindFramebuffer")] private static extern void es_glBindFramebuffer(int target, int framebuffer);
+		[DllImport(Library, EntryPoint = "glFramebufferTexture2D")] private static extern void es_glFramebufferTexture2D(int target, int attachment, int textarget, int texture, int level);
+		[DllImport(Library, EntryPoint = "glFramebufferRenderbuffer")] private static extern void es_glFramebufferRenderbuffer(int target, int attachment, int renderbuffertarget, int renderbuffer);
+		[DllImport(Library, EntryPoint = "glCheckFramebufferStatus")] private static extern int es_glCheckFramebufferStatus(int target);
+		[DllImport(Library, EntryPoint = "glGenRenderbuffers")] private static extern void es_glGenRenderbuffers(int n, int[] renderbuffers);
+		[DllImport(Library, EntryPoint = "glDeleteRenderbuffers")] private static extern void es_glDeleteRenderbuffers(int n, int[] renderbuffers);
+		[DllImport(Library, EntryPoint = "glBindRenderbuffer")] private static extern void es_glBindRenderbuffer(int target, int renderbuffer);
+		[DllImport(Library, EntryPoint = "glRenderbufferStorage")] private static extern void es_glRenderbufferStorage(int target, int internalFormat, int width, int height);
+		[DllImport(Library, EntryPoint = "glDrawBuffers")] private static extern void es_glDrawBuffers(int n, int[] buffers);
+		[DllImport(Library, EntryPoint = "glReadBuffer")] private static extern void es_glReadBuffer(int mode);
 
 		// --- state ---
 

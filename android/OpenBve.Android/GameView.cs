@@ -298,7 +298,9 @@ namespace OpenBve.Android
 				GraphicsBackend backend = GraphicsLibraries.Select(AndroidSettings.GetBackend(Context));
 				egl = backend == GraphicsBackend.Vulkan
 					? AngleSurface.Create(holder.Surface)
-					: EglSurface.Create(holder.Surface);
+					: backend == GraphicsBackend.VulkanNative
+						? VulkanSurface.Create(holder.Surface)
+						: EglSurface.Create(holder.Surface);
 				Log.Info(Tag, "graphics backend: " + backend + " (" + GraphicsLibraries.Detail + ")");
 
 				// LibRender2 checks whether it is on the render thread before touching GL objects.
@@ -591,6 +593,10 @@ namespace OpenBve.Android
 							Log.Info(Tag, "scene: " + (frames / window).ToString("0.0") + " fps at track position " +
 							              trackPosition.ToString("0") + " m" + speed + ", " + renderer.VisibleFaceCount + " visible faces");
 							Log.Info(Tag, "frame: " + renderer.Profile.Report());
+							if (egl is VulkanSurface vulkanSurface)
+							{
+								Log.Info(Tag, "vulkan: " + vulkanSurface.Describe());
+							}
 							if (renderer.LastFaceDescription.Length > 0)
 							{
 								Log.Info(Tag, "faces: " + renderer.LastFaceDescription + "; drawn in " + renderer.OpaqueDrawCalls + " calls, transparent faces in " + renderer.AlphaDrawCalls +

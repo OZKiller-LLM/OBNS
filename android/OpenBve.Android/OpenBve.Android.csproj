@@ -142,6 +142,7 @@
     <ProjectReference Include="..\OpenBveApi.Android\OpenBveApi.Android.csproj" />
     <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
     <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
+    <ProjectReference Include="..\OpenBve.Vulkan\OpenBve.Vulkan.csproj" />
     <ProjectReference Include="..\OpenBve.X86\OpenBve.X86.csproj" />
     <ProjectReference Include="..\OpenBve.OpenAL\OpenBve.OpenAL.csproj" />
     <ProjectReference Include="..\LibRender2.Android\LibRender2.Android.csproj" />

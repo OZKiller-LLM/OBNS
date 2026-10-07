@@ -41,7 +41,13 @@ namespace OpenTK.Graphics
 		/// Vulkan, through ANGLE: the renderer still issues OpenGL ES calls, and ANGLE's Vulkan
 		/// back end turns them into Vulkan command buffers.
 		/// </summary>
-		Vulkan = 1
+		Vulkan = 1,
+
+		/// <summary>
+		/// The native Vulkan renderer (1.1, in development): the renderer's OpenGL ES calls are
+		/// carried out with Vulkan by OpenBve.Vulkan's VulkanGL (GL.Device), with no GL driver.
+		/// </summary>
+		VulkanNative = 2
 	}
 
 	/// <summary>
@@ -179,7 +185,13 @@ namespace OpenTK.Graphics
 				}
 
 				selected = true;
-				if (requested == GraphicsBackend.Vulkan)
+				if (requested == GraphicsBackend.VulkanNative)
+				{
+					// No GL driver is used: GL.Device takes the calls (OpenBve.Vulkan.VulkanGL).
+					Active = GraphicsBackend.VulkanNative;
+					Detail = "native Vulkan (in development: OpenBVE's GL calls carried out with Vulkan)";
+				}
+				else if (requested == GraphicsBackend.Vulkan)
 				{
 					string copiedFrom = EnsurePrivateCopy();
 					List<string> failures = new List<string>();
