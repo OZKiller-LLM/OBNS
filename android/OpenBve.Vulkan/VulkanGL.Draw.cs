@@ -119,8 +119,42 @@ namespace OpenBve.Vulkan
 		private ulong boundIndexOffset;
 		private IndexType boundIndexType;
 
+		/*
+		 * The commands recorded for every draw, called through the device's own function pointers
+		 * (vkGetDeviceProcAddr) rather than Silk.NET's dispatch: at seven thousand draws a frame its
+		 * lookup per call cost more than the commands themselves.
+		 */
+		private delegate* unmanaged<CommandBuffer, uint, uint, uint, int, uint, void> cmdDrawIndexed;
+		private delegate* unmanaged<CommandBuffer, uint, uint, uint, uint, void> cmdDraw;
+		private delegate* unmanaged<CommandBuffer, PipelineBindPoint, Pipeline, void> cmdBindPipeline;
+		private delegate* unmanaged<CommandBuffer, PipelineBindPoint, PipelineLayout, uint, uint, DescriptorSet*, uint, uint*, void> cmdBindDescriptorSets;
+		private delegate* unmanaged<CommandBuffer, uint, uint, Buffer*, ulong*, void> cmdBindVertexBuffers;
+		private delegate* unmanaged<CommandBuffer, Buffer, ulong, IndexType, void> cmdBindIndexBuffer;
+
+		private void* DeviceProc(string name)
+		{
+			void* proc = (void*)vk.GetDeviceProcAddr(device, name).Handle;
+			if (proc == null)
+			{
+				throw new InvalidOperationException(name + " is missing");
+			}
+
+			return proc;
+		}
+
+		private void LoadCommands()
+		{
+			cmdDrawIndexed = (delegate* unmanaged<CommandBuffer, uint, uint, uint, int, uint, void>)DeviceProc("vkCmdDrawIndexed");
+			cmdDraw = (delegate* unmanaged<CommandBuffer, uint, uint, uint, uint, void>)DeviceProc("vkCmdDraw");
+			cmdBindPipeline = (delegate* unmanaged<CommandBuffer, PipelineBindPoint, Pipeline, void>)DeviceProc("vkCmdBindPipeline");
+			cmdBindDescriptorSets = (delegate* unmanaged<CommandBuffer, PipelineBindPoint, PipelineLayout, uint, uint, DescriptorSet*, uint, uint*, void>)DeviceProc("vkCmdBindDescriptorSets");
+			cmdBindVertexBuffers = (delegate* unmanaged<CommandBuffer, uint, uint, Buffer*, ulong*, void>)DeviceProc("vkCmdBindVertexBuffers");
+			cmdBindIndexBuffer = (delegate* unmanaged<CommandBuffer, Buffer, ulong, IndexType, void>)DeviceProc("vkCmdBindIndexBuffer");
+		}
+
 		private void CreateLayouts()
 		{
+			LoadCommands();
 			DescriptorSetLayoutBinding* uniformBindings = stackalloc DescriptorSetLayoutBinding[2];
 			uniformBindings[0] = new DescriptorSetLayoutBinding(0, DescriptorType.UniformBufferDynamic, 1, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit);
 			uniformBindings[1] = new DescriptorSetLayoutBinding(1, DescriptorType.UniformBufferDynamic, 1, ShaderStageFlags.VertexBit);
@@ -261,11 +295,21 @@ namespace OpenBve.Vulkan
 			return (uint)(segment.Offset + position);
 		}
 
+		private BufferHeap.Block lastUniformBlock;
+		private DescriptorSet lastUniformSet;
+
 		/// <summary>The uniform descriptor set over a heap block's buffer.</summary>
 		private DescriptorSet UniformSet(BufferHeap.Block block)
 		{
+			if (block == lastUniformBlock)
+			{
+				return lastUniformSet;
+			}
+
 			if (uniformSets.TryGetValue(block, out DescriptorSet set))
 			{
+				lastUniformBlock = block;
+				lastUniformSet = set;
 				return set;
 			}
 
@@ -342,6 +386,7 @@ namespace OpenBve.Vulkan
 				Attribute attribute = array.Attributes[i];
 				Format format = attribute.Enabled && attribute.Buffer != null ? AttributeFormat(attribute.Type, attribute.Size, attribute.Normalized, attribute.Integer) : Format.Undefined;
 				layout.Set(i, format, format == Format.Undefined ? 0 : attribute.Stride);
+				array.Reads[i] = format != Format.Undefined;
 			}
 
 			if (!vertexLayouts.TryGetValue(layout, out int id))
@@ -372,12 +417,30 @@ namespace OpenBve.Vulkan
 			return key;
 		}
 
+		private ulong lastPipelineKey = ulong.MaxValue;
+		private Pipeline lastPipeline;
+
 		private Pipeline GetPipeline(ulong key)
 		{
-			if (pipelines.TryGetValue(key, out Pipeline pipeline))
+			if (key == lastPipelineKey)
 			{
-				return pipeline;
+				return lastPipeline;
 			}
+
+			if (!pipelines.TryGetValue(key, out Pipeline pipeline))
+			{
+				pipeline = CreatePipeline(key);
+				pipelines[key] = pipeline;
+			}
+
+			lastPipelineKey = key;
+			lastPipeline = pipeline;
+			return pipeline;
+		}
+
+		private Pipeline CreatePipeline(ulong key)
+		{
+			Pipeline pipeline;
 
 			ProgramKind kind = (ProgramKind)(key & 3);
 			PrimitiveTopology topology = (PrimitiveTopology)(key >> 2 & 15);
@@ -496,7 +559,6 @@ namespace OpenBve.Vulkan
 				Silk.NET.Core.Native.SilkMarshal.Free(main);
 			}
 
-			pipelines[key] = pipeline;
 			return pipeline;
 		}
 
@@ -504,16 +566,67 @@ namespace OpenBve.Vulkan
 
 		public void glDrawArrays(int mode, int first, int count)
 		{
+			long started = System.Diagnostics.Stopwatch.GetTimestamp();
+			DrawArrays(mode, first, count);
+			drawTicks += System.Diagnostics.Stopwatch.GetTimestamp() - started;
+		}
+
+		public void glDrawElements(int mode, int count, int type, IntPtr indices)
+		{
+			long started = System.Diagnostics.Stopwatch.GetTimestamp();
+			DrawElements(mode, count, type, indices);
+			drawTicks += System.Diagnostics.Stopwatch.GetTimestamp() - started;
+		}
+
+		/// <summary>Stopwatch ticks per stage of a draw this frame: texture, pipeline, uniforms, descriptor sets, viewport and vertex buffers, the draw.</summary>
+		private readonly long[] sectionTicks = new long[6];
+
+		/// <summary>The last finished frame's stage times, for the log.</summary>
+		public string LastFrameSections { get; private set; } = string.Empty;
+
+		/// <summary>Whether to time each stage of a draw for the log (a few clock reads a draw: off unless asked for).</summary>
+		public static bool ProfileStages;
+
+		private void Section(int index, ref long mark)
+		{
+			if (!ProfileStages)
+			{
+				return;
+			}
+
+			long now = System.Diagnostics.Stopwatch.GetTimestamp();
+			sectionTicks[index] += now - mark;
+			mark = now;
+		}
+
+		private void SectionsDone()
+		{
+			string[] names = { "texture", "pipeline", "uniforms", "sets", "vertex", "draw" };
+			System.Text.StringBuilder text = new System.Text.StringBuilder();
+			for (int i = 0; i < sectionTicks.Length; i++)
+			{
+				text.Append(i == 0 ? string.Empty : ", ").Append(names[i]).Append(' ').Append((sectionTicks[i] * 1000.0 / System.Diagnostics.Stopwatch.Frequency).ToString("0.0"));
+				sectionTicks[i] = 0;
+			}
+
+			LastFrameSections = text.ToString();
+		}
+
+		/// <summary>Time spent recording draws this frame (Stopwatch ticks), for the log.</summary>
+		private long drawTicks;
+
+		private void DrawArrays(int mode, int first, int count)
+		{
 			if (count <= 0 || !PrepareDraw(mode))
 			{
 				return;
 			}
 
-			vk.CmdDraw(context.DrawCommands, (uint)count, 1, (uint)Math.Max(0, first), 0);
+			cmdDraw(context.DrawCommands, (uint)count, 1, (uint)Math.Max(0, first), 0);
 			frameDraws++;
 		}
 
-		public void glDrawElements(int mode, int count, int type, IntPtr indices)
+		private void DrawElements(int mode, int count, int type, IntPtr indices)
 		{
 			if (count <= 0)
 			{
@@ -551,23 +664,35 @@ namespace OpenBve.Vulkan
 			}
 
 			CommandBuffer commands = context.DrawCommands;
+			BindElements(commands, elements, indexType);
+
+			long drawMark = ProfileStages ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+			cmdDrawIndexed(commands, (uint)count, 1, (uint)(offset / indexBytes), 0, 0);
+			Section(5, ref drawMark);
+			frameDraws++;
+		}
+
+		/// <summary>Binds a buffer of indices, if it is not bound already.</summary>
+		private void BindElements(CommandBuffer commands, GLBuffer elements, IndexType indexType)
+		{
 			elements.LastUse = context.RecordingSerial;
 			Buffer buffer = elements.Memory.Buffer;
 			ulong bufferOffset = elements.Memory.Offset;
 			if (buffer.Handle != boundIndexBuffer.Handle || bufferOffset != boundIndexOffset || indexType != boundIndexType)
 			{
-				vk.CmdBindIndexBuffer(commands, buffer, bufferOffset, indexType);
+				cmdBindIndexBuffer(commands, buffer, bufferOffset, indexType);
 				boundIndexBuffer = buffer;
 				boundIndexOffset = bufferOffset;
 				boundIndexType = indexType;
 			}
-
-			vk.CmdDrawIndexed(commands, (uint)count, 1, (uint)(offset / indexBytes), 0, 0);
-			frameDraws++;
 		}
 
-		/// <summary>Records everything a draw needs but the draw itself. False when it cannot be drawn.</summary>
-		private bool PrepareDraw(int mode)
+		/// <summary>
+		/// Records everything a draw needs but the draw itself. False when it cannot be drawn. A
+		/// native face draw (VulkanGL.Faces) passes its vertex array, texture and uniform block;
+		/// a GL draw uses what GL has bound and the program's own block.
+		/// </summary>
+		private bool PrepareDraw(int mode, GLVertexArray array = null, GLTexture texture = null, byte[] faceBlock = null)
 		{
 			GLProgram program = currentProgram;
 			if (offscreenBound || program == null || program.Kind == ProgramKind.Unsupported)
@@ -586,7 +711,7 @@ namespace OpenBve.Vulkan
 				ReportOnce("line loops are drawn as line strips by the Vulkan renderer");
 			}
 
-			GLVertexArray array = CurrentVertexArray;
+			array ??= CurrentVertexArray;
 			if (program.Kind == ProgramKind.Default)
 			{
 				// Every enabled attribute needs its data.
@@ -609,15 +734,18 @@ namespace OpenBve.Vulkan
 			ulong serial = context.RecordingSerial;
 
 			// The texture first: realizing it records uploads, outside this command buffer.
-			DescriptorSet textureSet = TextureSet(units[0]);
+			long mark = ProfileStages ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+			DescriptorSet textureSet = TextureSet(faceBlock != null ? texture : units[0]);
+			Section(0, ref mark);
 
 			Pipeline pipeline = GetPipeline(PipelineKey(program.Kind, Topology(mode), program.Kind == ProgramKind.Default ? VertexLayoutId(array) : 0));
 			if (pipeline.Handle != boundPipeline.Handle)
 			{
-				vk.CmdBindPipeline(commands, PipelineBindPoint.Graphics, pipeline);
+				cmdBindPipeline(commands, PipelineBindPoint.Graphics, pipeline);
 				boundPipeline = pipeline;
 			}
 
+			Section(1, ref mark);
 			// Uniforms: the program's block, and for the default program the animation matrices,
 			// both in the ring's current segment (one descriptor set covers one buffer).
 			ReserveRing(AnimationBlockSize + DrawBlockRange);
@@ -641,37 +769,50 @@ namespace OpenBve.Vulkan
 					animationOffset = matrices.RingOffset;
 				}
 
-				if (program.NormalDirty)
+				if (program.NormalDirty && faceBlock == null)
 				{
 					UpdateNormalMatrix(program);
 				}
 			}
 
-			if (program.Dirty || program.RingSerial != serial || program.RingBlock != block)
+			uint drawOffset;
+			if (faceBlock != null)
 			{
-				program.RingOffset = RingWrite(program.Data, program.Data.Length);
-				ring.Position = Math.Max(ring.Position, program.RingOffset - ring.Segments[ring.Segment].Offset + DrawBlockRange);
-				program.RingSerial = serial;
-				program.RingBlock = block;
-				program.Dirty = false;
+				drawOffset = RingWrite(faceBlock, faceBlock.Length);
+				ring.Position = Math.Max(ring.Position, drawOffset - ring.Segments[ring.Segment].Offset + DrawBlockRange);
+			}
+			else
+			{
+				if (program.Dirty || program.RingSerial != serial || program.RingBlock != block)
+				{
+					program.RingOffset = RingWrite(program.Data, program.Data.Length);
+					ring.Position = Math.Max(ring.Position, program.RingOffset - ring.Segments[ring.Segment].Offset + DrawBlockRange);
+					program.RingSerial = serial;
+					program.RingBlock = block;
+					program.Dirty = false;
+				}
+
+				drawOffset = program.RingOffset;
 			}
 
+			Section(2, ref mark);
 			DescriptorSet uniformSet = UniformSet(block);
-			if (uniformSet.Handle != boundUniformSet.Handle || program.RingOffset != boundOffset0 || animationOffset != boundOffset1)
+			if (uniformSet.Handle != boundUniformSet.Handle || drawOffset != boundOffset0 || animationOffset != boundOffset1)
 			{
-				uint* offsets = stackalloc uint[2] { program.RingOffset, animationOffset };
-				vk.CmdBindDescriptorSets(commands, PipelineBindPoint.Graphics, pipelineLayout, 0, 1, &uniformSet, 2, offsets);
+				uint* offsets = stackalloc uint[2] { drawOffset, animationOffset };
+				cmdBindDescriptorSets(commands, PipelineBindPoint.Graphics, pipelineLayout, 0, 1, &uniformSet, 2, offsets);
 				boundUniformSet = uniformSet;
-				boundOffset0 = program.RingOffset;
+				boundOffset0 = drawOffset;
 				boundOffset1 = animationOffset;
 			}
 
 			if (textureSet.Handle != boundTextureSet.Handle)
 			{
-				vk.CmdBindDescriptorSets(commands, PipelineBindPoint.Graphics, pipelineLayout, 1, 1, &textureSet, 0, null);
+				cmdBindDescriptorSets(commands, PipelineBindPoint.Graphics, pipelineLayout, 1, 1, &textureSet, 0, null);
 				boundTextureSet = textureSet;
 			}
 
+			Section(3, ref mark);
 			if (viewportDirty)
 			{
 				Rect2D rect = context.ToImageRect(viewportX, viewportY, Math.Max(1, viewportWidth), Math.Max(1, viewportHeight));
@@ -689,12 +830,12 @@ namespace OpenBve.Vulkan
 				bool changed = false;
 				for (int i = 0; i < DefaultLocations; i++)
 				{
-					Attribute attribute = array.Attributes[i];
-					if (attribute.Enabled && attribute.Buffer != null && AttributeFormat(attribute.Type, attribute.Size, attribute.Normalized, attribute.Integer) != Format.Undefined)
+					if (array.Reads[i])
 					{
-						attribute.Buffer.LastUse = serial;
-						buffers[i] = attribute.Buffer.Memory.Buffer;
-						offsets[i] = attribute.Buffer.Memory.Offset + (ulong)attribute.Offset;
+						GLBuffer source = array.Attributes[i].Buffer;
+						source.LastUse = serial;
+						buffers[i] = source.Memory.Buffer;
+						offsets[i] = source.Memory.Offset + (ulong)array.Attributes[i].Offset;
 					}
 					else
 					{
@@ -707,7 +848,7 @@ namespace OpenBve.Vulkan
 
 				if (changed)
 				{
-					vk.CmdBindVertexBuffers(commands, 0, DefaultLocations, buffers, offsets);
+					cmdBindVertexBuffers(commands, 0, DefaultLocations, buffers, offsets);
 					for (int i = 0; i < DefaultLocations; i++)
 					{
 						boundVertexBuffers[i] = buffers[i];
@@ -716,6 +857,7 @@ namespace OpenBve.Vulkan
 				}
 			}
 
+			Section(4, ref mark);
 			return true;
 		}
 

@@ -154,11 +154,13 @@ namespace OpenBve.Android
 			string[] backends =
 			{
 				"OpenGL ES",
-				"Vulkan (ANGLE)" + (anglePackaged && vulkanDevice ? string.Empty : " — " + Menu.T("android", "unavailable", "unavailable"))
+				"Vulkan (ANGLE)" + (anglePackaged && vulkanDevice ? string.Empty : " — " + Menu.T("android", "unavailable", "unavailable")),
+				Menu.T("android", "vulkan_native", "Vulkan (native, beta)") + (vulkanDevice ? string.Empty : " — " + Menu.T("android", "unavailable", "unavailable"))
 			};
+			GraphicsBackend[] backendValues = { GraphicsBackend.OpenGL, GraphicsBackend.Vulkan, GraphicsBackend.VulkanNative };
 			Dropdown(Menu.T("android", "graphics_backend", "Graphics backend:"), backends,
-				AndroidSettings.GetBackend(activity) == GraphicsBackend.Vulkan ? 1 : 0,
-				i => AndroidSettings.SetBackend(activity, i == 1 ? GraphicsBackend.Vulkan : GraphicsBackend.OpenGL));
+				Math.Max(0, Array.IndexOf(backendValues, AndroidSettings.GetBackend(activity))),
+				i => AndroidSettings.SetBackend(activity, backendValues[i]));
 			Dropdown(Menu.T("android", "touch_handles", "Touch the cab panel's handles:"),
 				new[] { Menu.T("android", "on", "On"), Menu.T("android", "off", "Off") },
 				AndroidSettings.GetTouchHandles(activity) ? 0 : 1,
@@ -190,6 +192,9 @@ namespace OpenBve.Android
 			{
 				note += "\n" + Menu.T("android", "vulkan_missing", "This device reports no Vulkan support, so Vulkan falls back to OpenGL ES.");
 			}
+
+			note += "\n" + Menu.T("android", "vulkan_native_note",
+				"Native Vulkan (beta) draws with Vulkan directly, without OpenGL ES, and is faster on most phones. If something looks wrong, please report it and switch back.");
 
 			Info(note);
 			Refresh();

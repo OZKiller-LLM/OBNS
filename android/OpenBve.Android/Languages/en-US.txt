@@ -1,6 +1,5 @@
 # OpenBVE for Android: the port's own labels (the "android" group).
-# One "key = text" per line; 
- is a line break, {0} is filled in by the game.
+# One "key = text" per line; \n is a line break, {0} is filled in by the game.
 # Copy this file to <language code>.txt (as upstream's .xlf names) and translate the texts.
 # A key left out falls back to English.
 
@@ -45,6 +44,8 @@ interface_desktop = Desktop (HUD, keyboard and controller)
 graphics_backend_note = Vulkan runs the same renderer through ANGLE, which turns its OpenGL ES calls into Vulkan. The change applies from the next game.
 angle_missing = This device's system has no ANGLE for the app to use, so Vulkan falls back to OpenGL ES.
 vulkan_missing = This device reports no Vulkan support, so Vulkan falls back to OpenGL ES.
+vulkan_native = Vulkan (native, beta)
+vulkan_native_note = Native Vulkan (beta) draws with Vulkan directly, without OpenGL ES, and is faster on most phones. If something looks wrong, please report it and switch back.
 storage_granted = The app can read content anywhere on this device's storage.
 storage_denied = The app can only read its own folders. Allow access to all files to use content stored elsewhere.
 plain_archive = A plain archive (no package.xml). Its contents will be placed by their folder layout.

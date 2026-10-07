@@ -618,7 +618,7 @@ namespace OpenBve.Android
 				// RenderFace draws as many indices as the face has vertices: a shared array of that length.
 				MeshFace face = meshFaces[index];
 				face.Vertices = renderer.VerticesOfLength(batch.FaceLengths[index]);
-				renderer.RenderFace(shader, batch.State, face);
+				renderer.DrawFace(shader, batch.State, face);
 			}
 
 			return faces.Length;

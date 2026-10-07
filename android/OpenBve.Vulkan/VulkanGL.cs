@@ -93,6 +93,13 @@ namespace OpenBve.Vulkan
 		private readonly Dictionary<int, IntPtr> strings = new Dictionary<int, IntPtr>();
 		private readonly HashSet<string> reported = new HashSet<string>();
 
+		/// <summary>Time spent recording the last finished frame's draws, for the log.</summary>
+		public double LastFrameDrawMilliseconds { get; private set; }
+
+		/// <summary>Uniform values set in the last finished frame, for the log.</summary>
+		public int LastFrameUniformCalls { get; private set; }
+		private int uniformCalls;
+
 		/// <summary>Draw calls in the last finished frame, for the log.</summary>
 		public int LastFrameDraws { get; private set; }
 		private int frameDraws;
@@ -128,7 +135,7 @@ namespace OpenBve.Vulkan
 		/// <summary>Memory and object counts, for the log.</summary>
 		public string Describe()
 		{
-			return LastFrameDraws + " draws, " + pipelines.Count + " pipelines, " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
+			return LastFrameDraws + " draws (" + LastFrameDrawMilliseconds.ToString("0.0") + " ms recording them" + (ProfileStages ? ": " + LastFrameSections : string.Empty) + "; " + LastFrameUniformCalls + " uniform sets), " + pipelines.Count + " pipelines, " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
 			       (imageHeap.ReservedBytes >> 20) + " MB reserved), " + glBuffers.Count + " buffers (" + (bufferHeap.UsedBytes >> 20) + " MB, " +
 			       (bufferHeap.ReservedBytes >> 20) + " MB reserved" + (bufferHeap.DeviceLocal ? ", unified" : ", host") + ")";
 		}
@@ -172,6 +179,11 @@ namespace OpenBve.Vulkan
 			{
 				LastFrameDraws = frameDraws;
 				frameDraws = 0;
+				LastFrameDrawMilliseconds = drawTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+				drawTicks = 0;
+				SectionsDone();
+				LastFrameUniformCalls = uniformCalls;
+				uniformCalls = 0;
 				context.EndFrame();
 				stagingPending = 0;
 			}

@@ -286,6 +286,23 @@ namespace OpenBve.Android
 			return true;
 		}
 
+		/// <summary>
+		/// The native Vulkan renderer's window, or - if the device cannot make one (no usable Vulkan
+		/// driver) - OpenGL ES on the system driver, so the game still starts.
+		/// </summary>
+		private static IRenderSurface CreateVulkanOrFallBack(Surface window)
+		{
+			try
+			{
+				return VulkanSurface.Create(window);
+			}
+			catch (Exception e)
+			{
+				Log.Warn(Tag, "native Vulkan could not start (" + e.Message + "): drawing with OpenGL ES instead");
+				return EglSurface.Create(window);
+			}
+		}
+
 		private void RenderLoop(ISurfaceHolder holder)
 		{
 			IRenderSurface egl = null;
@@ -299,7 +316,7 @@ namespace OpenBve.Android
 				egl = backend == GraphicsBackend.Vulkan
 					? AngleSurface.Create(holder.Surface)
 					: backend == GraphicsBackend.VulkanNative
-						? VulkanSurface.Create(holder.Surface)
+						? CreateVulkanOrFallBack(holder.Surface)
 						: EglSurface.Create(holder.Surface);
 				Log.Info(Tag, "graphics backend: " + backend + " (" + GraphicsLibraries.Detail + ")");
 

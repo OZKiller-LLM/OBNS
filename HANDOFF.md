@@ -497,6 +497,11 @@ Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan r
   Home and back works. TML on the A73 is on the SD card: /storage/6234-3630/Documents/OpenBVE.
 - S24 Ultra: East Rail cab 120 fps (display limit); TML load 28 s, cab 51-60 (GL 49-50),
   exterior 23-26 (GL 22-25). Committed as fa350ab (local).
+- Fast paths (uncommitted until verified, 2026-10-08): raw vkCmd function pointers, cached vertex
+  formats, native faces (AndroidRenderer.DrawFace -> VulkanGL.DrawFace). TML S24U cab 66 /
+  exterior 29 fps, A73 31-35 / 19-21 fps (GL 40-55 / 22-25, 28-32 / 15-18; A73 by bench_device.sh). First native-faces build
+  crashed (InvalidOperation_NoValue: material.WrapMode is null on untextured materials) - fixed.
+  Switches: --ez native_faces false, --ez vulkan_stages true.
 - Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points. Next: fast paths, multi-threaded recording, pipeline cache on disk,
   then pipelining.
 

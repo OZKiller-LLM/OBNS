@@ -207,6 +207,10 @@ namespace OpenBve.Android
 			ScriptedTrainLoader.Enabled = Intent?.GetBooleanExtra("parallel_scripted_trains", true) ?? true;
 			// For comparisons: --ez parallel_updates false updates animated objects one after another, as upstream.
 			ParallelUpdates.Enabled = Intent?.GetBooleanExtra("parallel_updates", true) ?? true;
+			// For comparisons: --ez native_faces false draws faces through upstream's RenderFace on the Vulkan renderer too.
+			AndroidRenderer.NativeFaces = Intent?.GetBooleanExtra("native_faces", true) ?? true;
+			// Diagnostics: --ez vulkan_stages true times each stage of a Vulkan draw for the log.
+			OpenBve.Vulkan.VulkanGL.ProfileStages = Intent?.GetBooleanExtra("vulkan_stages", false) ?? false;
 			// Remembered texture transparency (TextureClassifier), in the app's cache folder.
 			TextureClassifier.CacheFolder = CacheDir?.AbsolutePath;
 			// For comparisons: --ez mesh_sharing false loads every train part with its own mesh, as upstream.

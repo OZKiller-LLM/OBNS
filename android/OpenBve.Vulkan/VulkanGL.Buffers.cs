@@ -75,6 +75,8 @@ namespace OpenBve.Vulkan
 			internal GLBuffer Elements;
 			/// <summary>The vertex layout's number (VertexLayoutId), or -1 when the attributes changed.</summary>
 			internal int LayoutId = -1;
+			/// <summary>Which of the default program's attributes read from a buffer (set with LayoutId).</summary>
+			internal readonly bool[] Reads = new bool[VulkanGL.Attributes];
 		}
 
 		private readonly Dictionary<int, GLBuffer> glBuffers = new Dictionary<int, GLBuffer>();
@@ -401,23 +403,31 @@ namespace OpenBve.Vulkan
 			switch (type)
 			{
 				case GL_FLOAT:
-					return new[] { Format.R32Sfloat, Format.R32G32Sfloat, Format.R32G32B32Sfloat, Format.R32G32B32A32Sfloat }[n];
+					return FloatFormats[n];
 				case GL_INT:
-					return integer ? new[] { Format.R32Sint, Format.R32G32Sint, Format.R32G32B32Sint, Format.R32G32B32A32Sint }[n] : Format.Undefined;
+					return integer ? IntFormats[n] : Format.Undefined;
 				case GL_UNSIGNED_INT:
-					return integer ? new[] { Format.R32Uint, Format.R32G32Uint, Format.R32G32B32Uint, Format.R32G32B32A32Uint }[n] : Format.Undefined;
+					return integer ? UintFormats[n] : Format.Undefined;
 				case GL_UNSIGNED_BYTE:
-					return normalized ? new[] { Format.R8Unorm, Format.R8G8Unorm, Format.R8G8B8Unorm, Format.R8G8B8A8Unorm }[n] :
-						integer ? new[] { Format.R8Uint, Format.R8G8Uint, Format.R8G8B8Uint, Format.R8G8B8A8Uint }[n] : Format.Undefined;
+					return normalized ? UnormByteFormats[n] : integer ? UintByteFormats[n] : Format.Undefined;
 				case GL_BYTE:
-					return normalized ? new[] { Format.R8SNorm, Format.R8G8SNorm, Format.R8G8B8SNorm, Format.R8G8B8A8SNorm }[n] : Format.Undefined;
+					return normalized ? SnormByteFormats[n] : Format.Undefined;
 				case GL_UNSIGNED_SHORT:
-					return normalized ? new[] { Format.R16Unorm, Format.R16G16Unorm, Format.R16G16B16Unorm, Format.R16G16B16A16Unorm }[n] : Format.Undefined;
+					return normalized ? UnormShortFormats[n] : Format.Undefined;
 				case GL_SHORT:
-					return normalized ? new[] { Format.R16SNorm, Format.R16G16SNorm, Format.R16G16B16SNorm, Format.R16G16B16A16SNorm }[n] : Format.Undefined;
+					return normalized ? SnormShortFormats[n] : Format.Undefined;
 				default:
 					return Format.Undefined;
 			}
 		}
+
+		private static readonly Format[] FloatFormats = { Format.R32Sfloat, Format.R32G32Sfloat, Format.R32G32B32Sfloat, Format.R32G32B32A32Sfloat };
+		private static readonly Format[] IntFormats = { Format.R32Sint, Format.R32G32Sint, Format.R32G32B32Sint, Format.R32G32B32A32Sint };
+		private static readonly Format[] UintFormats = { Format.R32Uint, Format.R32G32Uint, Format.R32G32B32Uint, Format.R32G32B32A32Uint };
+		private static readonly Format[] UnormByteFormats = { Format.R8Unorm, Format.R8G8Unorm, Format.R8G8B8Unorm, Format.R8G8B8A8Unorm };
+		private static readonly Format[] UintByteFormats = { Format.R8Uint, Format.R8G8Uint, Format.R8G8B8Uint, Format.R8G8B8A8Uint };
+		private static readonly Format[] SnormByteFormats = { Format.R8SNorm, Format.R8G8SNorm, Format.R8G8B8SNorm, Format.R8G8B8A8SNorm };
+		private static readonly Format[] UnormShortFormats = { Format.R16Unorm, Format.R16G16Unorm, Format.R16G16B16Unorm, Format.R16G16B16A16Unorm };
+		private static readonly Format[] SnormShortFormats = { Format.R16SNorm, Format.R16G16SNorm, Format.R16G16B16SNorm, Format.R16G16B16A16SNorm };
 	}
 }

@@ -290,6 +290,7 @@ namespace OpenBve.Vulkan
 		/// <summary>Where a uniform write goes in the current program's block, or -1 if nowhere.</summary>
 		private int UniformTarget(int location, int bytes)
 		{
+			uniformCalls++;
 			GLProgram program = currentProgram;
 			if (program == null || location < 0 || location == SamplerLocation)
 			{

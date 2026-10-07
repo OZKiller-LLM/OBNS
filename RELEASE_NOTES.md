@@ -1,5 +1,39 @@
 # OpenBVE for Android — release notes
 
+## 1.1 beta (1.14.0.3-android.3-beta) — native Vulkan renderer
+
+A beta for testers: the new renderer is not the default yet.
+
+### Native Vulkan renderer (beta)
+
+**Options → Advanced Options → Graphics backend → Vulkan (native, beta)**, then start a game.
+The game is drawn with Vulkan directly - no OpenGL ES, no ANGLE - and the scene is drawn with
+much less work per object. It should look exactly as with OpenGL ES; if anything looks different
+(missing or black objects, wrong colours or transparency), please report the route, the train
+and a screenshot, and switch back to OpenGL ES. Measured on the HKRSC Tuen Ma Line pack:
+
+| Phone | OpenGL ES cab / exterior | Native Vulkan cab / exterior |
+|---|---|---|
+| Galaxy S24 Ultra | 40-55 / 22-25 fps | 66 / 29 fps |
+| Galaxy A73 | 28-32 / 15-18 fps | 31-35 / 19-21 fps |
+
+On East Rail with the R-Train the A73's cab runs at 110-117 fps instead of 86-88. If a phone
+cannot start Vulkan, the game falls back to OpenGL ES by itself.
+
+### Other changes
+
+- Animated objects and the trains' cars are updated on all processor cores each frame.
+- **Safety system buttons can be held**: keep a button pressed for over half a second and it stays
+  pressed when you let go (shown with "●"); tap it again to release it - for dead-man switches
+  such as Barcelona Metro L2/L3's. All the safety buttons (A2-G, H-P) are in the ATS... menu, in
+  two rows.
+- Train plugin gimmicks that set panel values outside a frame now work (e.g. the MTR R-Train's
+  pantograph and LED destination displays through OS_Ats1).
+
+### Known limitations of the native Vulkan renderer
+
+- Shadows and motion blur are not drawn (the Android port does not use them yet either).
+
 ## 1.01 (1.14.0.3-android.2) — performance
 
 Heavy routes are now playable, including on 4 GB phones. Measured on the HKRSC Tuen Ma Line pack

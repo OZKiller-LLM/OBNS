@@ -1424,8 +1424,35 @@ Tuen Ma Line + SP1900 (A73, 2026-10-07): load 75 s; cab 31-38 fps (OpenGL ES 25)
 11-16 fps (OpenGL ES 13-14), ~7,000 draws a frame, 8 pipelines, textures ~1.8 GB, buffers 196 MB.
 Galaxy S24 Ultra (Adreno 750, Vulkan 1.3): East Rail cab at the 120 fps display limit; TML load
 28 s (OpenGL ES 32), cab 51-60 fps (49-50), exterior 23-26 fps (22-25). Rendering identical.
-Next: native fast paths (fewer, larger draws; the exterior is CPU-bound on face lists and
-car updates), recording on several threads, a persisted pipeline cache.
+
+**Fast paths (2026-10-08).** On TML's exterior (~7,000 draws a frame) recording draws was most
+of the frame: 17 ms on the S24 Ultra, ~2.5 µs a draw (timed per stage with
+`--ez vulkan_stages true`). Fixed:
+
+- The draw commands go through the device's own function pointers (`vkGetDeviceProcAddr`), not
+  Silk.NET's per-call dispatch; vertex formats are worked out once per vertex array (they were
+  rebuilt, with five small array allocations, every draw); the last pipeline and uniform
+  descriptor set are remembered.
+- **Native faces** (`AndroidRenderer.NativeFaces.cs`, `VulkanGL.Faces.cs`): the world, batch and
+  cab faces go through `AndroidRenderer.DrawFace`, which does what upstream's `RenderFace` does
+  (transforms, animation matrices, culling, material, daytime/nighttime textures, brightness,
+  opacity, glow, additive) and hands it to `VulkanGL.DrawFace` in one go. The face's uniform
+  block is the default program's current block (projection, lights, fog, alpha test) with the
+  face's values written over it, so the program's own values, GL's uniform cache and upstream's
+  caches stay true for whatever still goes through `RenderFace`. Uniform calls a frame: ~8,500 ->
+  90. Upstream keeps the index type in a private field; it is read once per vertex array.
+  `--ez native_faces false` for comparisons.
+
+TML, native faces (2026-10-08):
+
+| Phone | OpenGL ES cab / exterior | Vulkan (GL path) | Vulkan, native faces |
+|---|---|---|---|
+| S24 Ultra | 40-55 / 22-25 fps | 50 / 23-26 fps | 66 / 29 fps |
+| A73 | 28-32 / 15-18 fps | 31-38 / 11-16 fps | 31-35 / 19-21 fps |
+
+A73 rows from bench_device.sh (cab camera moved forward, as always); load 78 s (GL) / 66 s (Vulkan).
+The cab camera at TML's start is behind the cab-to-saloon door: move it forward (Keypad 9, ~1 s).
+Next: recording on several threads, a persisted pipeline cache, then pipelining.
 
 ### Data assets
 

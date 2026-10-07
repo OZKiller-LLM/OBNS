@@ -50,7 +50,7 @@ namespace OpenBve.Android
 	/// faces. Not yet ported: shadow cascades, motion blur, particles, event markers, and the cab
 	/// overlay layer.
 	/// </remarks>
-	public class AndroidRenderer : OpenBve.Graphics.NewRenderer
+	public partial class AndroidRenderer : OpenBve.Graphics.NewRenderer
 	{
 		/// <summary>The driver's eye height above the rail, in metres.</summary>
 		public const double EyeHeight = 2.5;
@@ -380,6 +380,13 @@ namespace OpenBve.Android
 
 		private OpenBve.Graphics.Renderers.Overlays overlays;
 
+		/// <inheritdoc />
+		public override void ResetOpenGlState()
+		{
+			base.ResetOpenGlState();
+			ResetNativeFaces();
+		}
+
 		/// <summary>
 		/// Draws the overlay layer: the 3D cab, in its own viewport over the world. A port of the
 		/// 3D branch of upstream's overlay pass; the 2D panel branch is not ported yet.
@@ -413,7 +420,7 @@ namespace OpenBve.Android
 				GL.DepthMask(false);
 				foreach (FaceState face in overlayAlphaFaces)
 				{
-					face.Draw();
+					DrawFace(CurrentShader as LibRender2.Shaders.Shader, face.Object, face.Face);
 				}
 
 				GL.DepthMask(true);
@@ -441,7 +448,7 @@ namespace OpenBve.Android
 
 			foreach (FaceState face in overlayOpaqueFaces)
 			{
-				face.Draw();
+				DrawFace(CurrentShader as LibRender2.Shaders.Shader, face.Object, face.Face);
 			}
 
 			ResetOpenGlState();
@@ -736,14 +743,14 @@ namespace OpenBve.Android
 				beforeRun?.Invoke(first);
 				if (next == i + 1)
 				{
-					first.Draw();
+					DrawFace(CurrentShader as LibRender2.Shaders.Shader, first.Object, first.Face);
 				}
 				else
 				{
 					MeshFace merged = face;
 					merged.IboStartIndex = low;
 					merged.Vertices = VerticesOfLength(high - low);
-					RenderFace(CurrentShader as LibRender2.Shaders.Shader, first.Object, merged);
+					DrawFace(CurrentShader as LibRender2.Shaders.Shader, first.Object, merged);
 				}
 
 				calls++;
