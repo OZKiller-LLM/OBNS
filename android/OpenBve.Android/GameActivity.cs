@@ -205,6 +205,8 @@ namespace OpenBve.Android
 			ObjectPrefetch.Enabled = Intent?.GetBooleanExtra("prefetch_objects", true) ?? true;
 			// For comparisons: --ez parallel_scripted_trains false loads them one at a time, as upstream.
 			ScriptedTrainLoader.Enabled = Intent?.GetBooleanExtra("parallel_scripted_trains", true) ?? true;
+			// For comparisons: --ez parallel_updates false updates animated objects one after another, as upstream.
+			ParallelUpdates.Enabled = Intent?.GetBooleanExtra("parallel_updates", true) ?? true;
 			// Remembered texture transparency (TextureClassifier), in the app's cache folder.
 			TextureClassifier.CacheFolder = CacheDir?.AbsolutePath;
 			// For comparisons: --ez mesh_sharing false loads every train part with its own mesh, as upstream.

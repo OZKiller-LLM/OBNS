@@ -66,6 +66,9 @@ namespace OpenBve.X86
 		private const uint ReturnTrap = 0xFFFFFFF0;
 		private readonly List<(HostFunction Function, int ArgBytes, string Name)> hostFunctions = new List<(HostFunction, int, string)>();
 
+		/// <summary>Diagnostics (the test harness): called before every emulated instruction. Null in the game.</summary>
+		public Action<Cpu> StepHook;
+
 		/// <summary>Instructions executed, for diagnostics and runaway protection.</summary>
 		public long InstructionCount;
 
@@ -158,6 +161,7 @@ namespace OpenBve.X86
 				}
 
 				recent[recentIndex++ & 31] = Eip;
+				StepHook?.Invoke(this);
 				try
 				{
 					Step();

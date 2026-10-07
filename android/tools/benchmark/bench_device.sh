@@ -9,7 +9,20 @@ thermal() { sh_ dumpsys thermalservice | grep -m1 "Thermal Status" | grep -oE "[
 skin() { sh_ dumpsys thermalservice | grep -m1 "mName=SKIN" | grep -oE "mValue=[0-9.]+" | cut -d= -f2; }
 log() { "$A" -s "$S" logcat -d | grep " OpenBVE"; }
 # The game runs in its own process (net.openbve:game).
-running() { [ -n "$(sh_ pidof net.openbve:game)" ]; }
+# Closed only when adb answers, twice, that there is no such process: an adb hiccup (its server
+# restarting when a phone is plugged in) once made every running game look closed.
+running() {
+  local i out
+  for i in 1 2 3; do
+    out=$(sh_ "pidof net.openbve:game; echo adb-ok" 2>/dev/null)
+    case "$out" in
+      *adb-ok*) [ -n "${out%adb-ok*}" ] && [ -n "$(echo "${out%adb-ok*}" | tr -d '[:space:]')" ] && return 0
+                [ "$i" -ge 2 ] && return 1 ;;
+    esac
+    sleep 2
+  done
+  return 0
+}
 
 {
 echo "=== $LABEL | $G | $(date '+%Y-%m-%d %H:%M') ==="

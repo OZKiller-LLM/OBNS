@@ -460,6 +460,33 @@ transparent ~30-45 ms each, train objects ~20-30 ms); remaining load (train plug
 object load 71-80 s, texture register 16-18 s). The per-decode stack sampling in
 `AndroidHost.LoadTexture` is temporary diagnostics - remove before a release.
 
+## 1.1 (branch `1.1`, started 2026-10-06; 1.01 pushed as branch `1.01`, commit f4ce6a9)
+
+Goals (user): full native Vulkan renderer, pipelining, parallel per-frame animated-object updates.
+Order agreed: parallel updates -> Vulkan (Silk.NET.Vulkan + Khronos glslang, both approved; glslang
+16.6.0 is in C:\dev	ools\glslang, outside the repo) -> pipelining.
+
+Done and committed on `1.1` (2026-10-07, local only - not pushed); verified on phones:
+- **Parallel per-frame updates** (`ParallelUpdates.cs`, `FrameWorkers.cs`,
+  `AndroidTrainManager.UpdateTrainObjectsParallel`, `AndroidHost.UpdateAnimatedWorldObjects`):
+  see PORTING.md "Animated objects updated in parallel". First version (Parallel.For) deadlocked /
+  crashed (worker ShowObject -> CreateVAO -> RunInRenderThread); fixed by queueing show/hide.
+  The host now skips ShowObject for objects already shown (4,300 redundant calls a frame on TML).
+- **Latching safety keys** + all 19 keys (A2-G, H-P in two rows behind ATS…) - user feedback,
+  Barcelona L2/L3 dead-man switch (ControlOverlay.Button latching:).
+- **OS_Ats1 gimmicks** (user feedback, EAL R-Train pantograph / LED displays): x86 `AtsPlugin.Elapse`
+  overwrote panel values the plugin wrote between frames; now copies in only host-changed values.
+  Verified on desktop against the native DLL (32-bit PowerShell, scratch script osats_native.ps1).
+- Bench script: `running()` no longer reads an adb failure as "game closed"; force-stops before a run.
+- Diagnostics added: profile marks "train objects: lists / cars / show/hide"; `Cpu.StepHook`.
+
+Results: plugin regression 4/4 on the A73; OS_Ats1 gimmicks verified with a plugin trace on the
+A73 (E -> 108, I -> 112 LED destination display, J -> 113 cab door); latching S verified (screenshot).
+Parallel updates are about neutral for fps (frames are GPU/draw-bound): train-object step -1 to
+-9 ms (C31 23 -> 14 ms), fps within noise. A ConcurrentDictionary.IsEmpty check in the show-skip
+took all its locks and made parallel updates several times slower - replaced by a counter.
+Next: the Vulkan renderer, phase 1 (device/swapchain/clear on the Android surface).
+
 ## VERSION 1.0 DONE (2026-09-29)
 
 - Released build: `dist.14.0.3-android.1\` (APK + AAB, code 1140301), built by the user with

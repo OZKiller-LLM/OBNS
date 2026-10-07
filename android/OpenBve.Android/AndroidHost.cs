@@ -59,6 +59,8 @@ namespace OpenBve.Android
 		/// <summary>Creates the host.</summary>
 		public AndroidHost() : base(HostApplication.OpenBve)
 		{
+			// Function scripts draw from this on several threads at once (ParallelUpdates).
+			Random = Random.Shared;
 		}
 
 		/// <summary>The number of messages reported as errors so far.</summary>

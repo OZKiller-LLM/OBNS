@@ -153,15 +153,32 @@ namespace OpenBve.X86
 			if (initialize != 0) Cpu.Call(initialize, (uint)brake);
 		}
 
+		/// <summary>The panel and sound values handed back after the last frame (see Elapse).</summary>
+		private int[] lastPanel, lastSound;
+
 		/// <summary>Runs one frame of the plugin. The panel and sound arrays are read and written in place.</summary>
 		public AtsHandles Elapse(AtsVehicleState state, int[] panel, int[] sound)
 		{
 			Trace?.ElapseInput(state, panel, sound);
 			Memory memory = Process.Memory;
+			/*
+			 * Windows hands the plugin the host's own arrays, which nothing else writes between frames.
+			 * Plugins keep the pointer Elapse gets and write through it from their other calls: OS_Ats1's
+			 * custom indicators (pantograph, destination displays, cab doors on the MTR R-Train) are
+			 * toggled straight into the panel array by KeyDown. So only values the host itself changed
+			 * since the last frame are copied in; whatever the plugin wrote in between is kept.
+			 */
 			for (int i = 0; i < ArraySize; i++)
 			{
-				memory.Write32(panelAddress + (uint)(4 * i), (uint)panel[i]);
-				memory.Write32(soundAddress + (uint)(4 * i), (uint)sound[i]);
+				if (lastPanel == null || panel[i] != lastPanel[i])
+				{
+					memory.Write32(panelAddress + (uint)(4 * i), (uint)panel[i]);
+				}
+
+				if (lastSound == null || sound[i] != lastSound[i])
+				{
+					memory.Write32(soundAddress + (uint)(4 * i), (uint)sound[i]);
+				}
 			}
 
 			AtsHandles result = default;
@@ -192,10 +209,14 @@ namespace OpenBve.X86
 				result.ConstantSpeed = (int)memory.Read32(handlesAddress + 12);
 			}
 
+			lastPanel ??= new int[ArraySize];
+			lastSound ??= new int[ArraySize];
 			for (int i = 0; i < ArraySize; i++)
 			{
 				panel[i] = (int)memory.Read32(panelAddress + (uint)(4 * i));
 				sound[i] = (int)memory.Read32(soundAddress + (uint)(4 * i));
+				lastPanel[i] = panel[i];
+				lastSound[i] = sound[i];
 			}
 
 			Trace?.ElapseOutput(result, panel, sound);

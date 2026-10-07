@@ -492,6 +492,23 @@ namespace OpenBve.Android
 		/// <inheritdoc />
 		public override void ShowObject(ObjectState objectToShow, ObjectType objectType)
 		{
+			/*
+			 * Upstream shows every visible animated object again every frame (~4,300 calls a frame on
+			 * the Tuen Ma Line from outside), and the renderer ignores all but the first. Already
+			 * shown, and not about to be hidden by a queued hide: nothing to do, on any thread.
+			 */
+			if (objectToShow != null && Renderer.VisibleObjects.Objects.ContainsKey(objectToShow) && !ParallelUpdates.HidePending(objectToShow))
+			{
+				return;
+			}
+
+			// During a parallel update, applied by the render thread afterwards (ParallelUpdates).
+			if (ParallelUpdates.Active)
+			{
+				ParallelUpdates.Defer(objectToShow, objectType, true);
+				return;
+			}
+
 			// Locked: scripted trains' cars are set up on several threads (ScriptedTrainLoader).
 			lock (visibilityLock)
 			{
@@ -502,6 +519,12 @@ namespace OpenBve.Android
 		/// <inheritdoc />
 		public override void HideObject(ObjectState objectToHide)
 		{
+			if (ParallelUpdates.Active)
+			{
+				ParallelUpdates.Defer(objectToHide, ObjectType.Dynamic, false);
+				return;
+			}
+
 			lock (visibilityLock)
 			{
 				Renderer.VisibleObjects.HideObject(objectToHide);

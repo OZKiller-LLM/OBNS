@@ -26,6 +26,7 @@ using System;
 using System.Collections.Generic;
 using LibRender2;
 using OpenBveApi.Math;
+using OpenBveApi.Objects;
 using OpenBveApi.Trains;
 using TrainManager.Trains;
 
@@ -115,7 +116,16 @@ namespace OpenBve.Android
 		public override void ExecuteFunctionScript(OpenBveApi.FunctionScripting.FunctionScript functionScript, AbstractTrain train, int CarIndex,
 			Vector3 Position, double TrackPosition, int SectionIndex, bool IsPartOfTrain, double TimeElapsed, int CurrentState)
 		{
-			FunctionScripts.ExecuteFunctionScript(functionScript, train as TrainBase, CarIndex, Position, TrackPosition, SectionIndex, IsPartOfTrain, TimeElapsed, CurrentState);
+			// During a parallel update, on a stack of this thread's own (ParallelUpdates).
+			double[] shared = ParallelUpdates.UseThreadStack(functionScript);
+			try
+			{
+				FunctionScripts.ExecuteFunctionScript(functionScript, train as TrainBase, CarIndex, Position, TrackPosition, SectionIndex, IsPartOfTrain, TimeElapsed, CurrentState);
+			}
+			finally
+			{
+				ParallelUpdates.Restore(functionScript, shared);
+			}
 		}
 
 		/// <inheritdoc />
@@ -163,15 +173,61 @@ namespace OpenBve.Android
 		public void UpdateAnimatedWorldObjects(BaseRenderer renderer, double timeElapsed, bool forceUpdate)
 		{
 			double backgroundDistance = Route.CurrentBackground.BackgroundImageDistance;
-			for (int i = 0; i < AnimatedWorldObjectsUsed; i++)
+			Vector3 cameraPosition = renderer.Camera.Alignment.Position;
+			cameraPosition.Z += renderer.CameraTrackFollower.TrackPosition;
+			double extraViewingDistance = renderer.Camera.ExtraViewingDistance;
+			int count = AnimatedWorldObjectsUsed;
+			if (!ParallelUpdates.Enabled || forceUpdate || count < 64)
 			{
-				Vector3 cameraPosition = renderer.Camera.Alignment.Position;
-				cameraPosition.Z += renderer.CameraTrackFollower.TrackPosition;
-				bool visible = AnimatedWorldObjects[i].IsVisible(cameraPosition, backgroundDistance, renderer.Camera.ExtraViewingDistance);
+				for (int i = 0; i < count; i++)
+				{
+					UpdateAnimatedWorldObject(AnimatedWorldObjects[i], cameraPosition, backgroundDistance, extraViewingDistance, timeElapsed, forceUpdate);
+				}
 
-				AbstractTrain train = visible || forceUpdate ? ClosestTrain(AnimatedWorldObjects[i].Position) : null;
-				AnimatedWorldObjects[i].Update(train, timeElapsed, forceUpdate, visible);
+				return;
 			}
+
+			/*
+			 * On several cores (ParallelUpdates): plain animated and keyframe objects, which only move
+			 * and show their own objects. Those that play sounds (WorldSound, state sounds) or follow
+			 * the track stay on this thread, after the others, in their usual order.
+			 */
+			WorldObject[] objects = AnimatedWorldObjects;
+			ParallelUpdates.Active = true;
+			try
+			{
+				FrameWorkers.Shared.Run(count, (start, end) =>
+				{
+					for (int i = start; i < end; i++)
+					{
+						WorldObject worldObject = objects[i];
+						if (worldObject is OpenBveApi.Objects.AnimatedWorldObject || worldObject is OpenBveApi.Objects.KeyframeWorldObject)
+						{
+							UpdateAnimatedWorldObject(worldObject, cameraPosition, backgroundDistance, extraViewingDistance, timeElapsed, false);
+						}
+					}
+				}, 32);
+			}
+			finally
+			{
+				ParallelUpdates.End(this);
+			}
+
+			for (int i = 0; i < count; i++)
+			{
+				WorldObject worldObject = objects[i];
+				if (!(worldObject is OpenBveApi.Objects.AnimatedWorldObject) && !(worldObject is OpenBveApi.Objects.KeyframeWorldObject))
+				{
+					UpdateAnimatedWorldObject(worldObject, cameraPosition, backgroundDistance, extraViewingDistance, timeElapsed, false);
+				}
+			}
+		}
+
+		private void UpdateAnimatedWorldObject(WorldObject worldObject, Vector3 cameraPosition, double backgroundDistance, double extraViewingDistance, double timeElapsed, bool forceUpdate)
+		{
+			bool visible = worldObject.IsVisible(cameraPosition, backgroundDistance, extraViewingDistance);
+			AbstractTrain train = visible || forceUpdate ? ClosestTrain(worldObject.Position) : null;
+			worldObject.Update(train, timeElapsed, forceUpdate, visible);
 		}
 	}
 }

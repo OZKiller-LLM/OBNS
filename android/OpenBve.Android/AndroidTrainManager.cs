@@ -22,6 +22,7 @@
 //(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using LibRender2;
@@ -49,7 +50,10 @@ namespace OpenBve.Android
 		public AndroidTrainManager(HostInterface host, BaseRenderer renderer, BaseOptions options, OpenBveApi.FileSystem.FileSystem fileSystem)
 			: base(host, renderer, options, fileSystem)
 		{
+			profile = (renderer as AndroidRenderer)?.Profile;
 		}
+
+		private readonly FrameProfile profile;
 
 		/// <summary>Advances every train by the given time.</summary>
 		/// <remarks>
@@ -151,6 +155,80 @@ namespace OpenBve.Android
 					car.RearBogie.UpdateTopplingCantAndSpring();
 				}
 			});
+		}
+
+		/// <summary>
+		/// Upstream's UpdateTrainObjects - every train's car objects for this frame - with the cars of
+		/// every train updated on several cores (ParallelUpdates): each car, with its bogies and the
+		/// coupler behind it, only moves its own objects. On this thread: the player's driver car
+		/// while it shows the cab (its LED elements rebuild GPU buffers), and the windscreens.
+		/// </summary>
+		public void UpdateTrainObjectsParallel(double timeElapsed, bool forceUpdate)
+		{
+			if (!ParallelUpdates.Enabled || forceUpdate || currentHost.SimulationState != SimulationState.Running)
+			{
+				UpdateTrainObjects(timeElapsed, forceUpdate);
+				return;
+			}
+
+			List<TrainBase> trains = new List<TrainBase>(Trains.Count + TFOs.Count);
+			trains.AddRange(Trains);
+			trains.AddRange(TFOs.OfType<ScriptedTrain>());
+			cars.Clear();
+			foreach (TrainBase train in trains)
+			{
+				for (int i = 0; i < train.Cars.Length; i++)
+				{
+					CarBase car = train.Cars[i];
+					if (train.IsPlayerTrain && i == train.DriverCar && car.CarSections.TryGetValue(car.CurrentCarSection, out LibRender2.Trains.CarSection section) &&
+					    section.Type == OpenBveApi.Objects.ObjectType.Overlay)
+					{
+						UpdateCar(car, timeElapsed);
+					}
+					else
+					{
+						cars.Add(car);
+					}
+				}
+			}
+
+			profile?.Mark("train objects: lists");
+			ParallelUpdates.Active = true;
+			try
+			{
+				FrameWorkers.Shared.Run(cars.Count, (start, end) =>
+				{
+					for (int i = start; i < end; i++)
+					{
+						UpdateCar(cars[i], timeElapsed);
+					}
+				}, 4);
+			}
+			finally
+			{
+				profile?.Mark("train objects: cars");
+				ParallelUpdates.End(currentHost);
+				profile?.Mark("train objects: show/hide");
+			}
+
+			foreach (TrainBase train in trains)
+			{
+				if (train.DriverCar >= 0 && train.DriverCar < train.Cars.Length)
+				{
+					train.Cars[train.DriverCar].Windscreen?.Update(timeElapsed);
+				}
+			}
+		}
+
+		private readonly List<CarBase> cars = new List<CarBase>();
+
+		/// <summary>One car's part of upstream's TrainBase.UpdateObjects.</summary>
+		private static void UpdateCar(CarBase car, double timeElapsed)
+		{
+			car.UpdateObjects(timeElapsed, false, true);
+			car.FrontBogie.UpdateObjects(timeElapsed, false);
+			car.RearBogie.UpdateObjects(timeElapsed, false);
+			car.Coupler.UpdateObjects(timeElapsed, false);
 		}
 	}
 }

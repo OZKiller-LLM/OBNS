@@ -863,6 +863,27 @@ threads are out of reach, and a plugin that throws a C++ exception it expects to
 (Windows structured exception handling is not emulated) — but every 32-bit plugin in this
 library that works on Windows works here.
 
+### Panel values a plugin writes between frames (1.1)
+
+On Windows a plugin's `Elapse` gets the host's own panel and sound arrays, and nothing else writes
+them between frames. Some plugins keep that pointer and write through it from their other calls:
+OS_Ats1 (in DetailManager on the MTR R-Train) toggles its custom indicators - pantograph, destination
+displays, cab doors, keys C1/C2/D/E/I/J/K -> panel 105-114 - straight into the panel array in
+`KeyDown`. The x86 layer copied the host's arrays into emulated memory before every `Elapse`,
+overwriting those toggles, so the gimmicks never moved (the wiper, written inside `Elapse`,
+worked). `AtsPlugin.Elapse` now copies in only the values the host changed since the last frame.
+Checked against the real DLL run natively in 32-bit PowerShell: identical panel results.
+`OpenBve.X86.Tests <train> <dll> indicators` checks it (and with `TRACE_KEYDOWN=1` traces every
+instruction of `KeyDown(8)` and the next `Elapse`, through the new `Cpu.StepHook`).
+
+### Latching safety keys (1.1)
+
+Barcelona Metro L2/L3's FCMB plugin has a dead-man switch: S must be held for the whole run. The
+touch overlay's safety keys latch: held 0.6 s, a key stays pressed (lit, "S ●") when the finger
+lifts, until it is tapped again; a quick tap is a press and release as before. All 19 of upstream's
+keys are there: S, A1, B1 on the panel, A2-G and H-P in two rows behind ATS…. The overlay and its
+rows split multi-touch explicitly, so a held key never takes over another finger's touches.
+
 ### .NET train plugins built for .NET Framework (1.01)
 
 Managed plugins go through upstream's own loader (`Assembly.LoadFile`), not the x86 layer. Most
@@ -1266,6 +1287,23 @@ before, runs too.
   at a time on phones of 4.5 GB or less.
 - **Automatic texture size limit**: 1024 px at 4.5 GB or less, 2048 px up to 6.5 GB, none above.
 - Tried and dropped: a tighter Mono GC trigger (`default-allowance-ratio=0.1`) - no effect.
+
+### Animated objects updated in parallel (1.1)
+
+Each frame upstream updates every train car's objects and every animated object of the route one
+after another. Now (`ParallelUpdates`, `FrameWorkers`): the cars of all trains and the route's plain
+and keyframe animated objects are updated on all cores, by a pool of persistent worker threads (the
+.NET thread pool took longer to hand out a frame's few milliseconds of work than the work took).
+Made safe for it: function scripts evaluate on a per-thread stack (upstream's `FunctionScript.Clone`
+shares one stack between all copies of a script), the host's `Random` is `Random.Shared`, and
+showing/hiding objects is queued and applied on the render thread afterwards (showing an object
+for the first time creates GPU buffers; from a worker that waited 2 s for the render thread, which
+was waiting for the workers). Upstream re-shows every visible animated object every frame (~4,300
+calls a frame on TML from outside); the host now skips objects already shown. Kept on the render
+thread: the player's driver car while it shows the cab (LED elements rebuild GPU buffers), sound
+and track-following world objects. `--ez parallel_updates false` for comparisons.
+TML exterior: S24 Ultra 26 -> 29-30 fps, cab 55 -> 64-70 fps; A73/A04s small gains, A05s/A36/C31
+about level (each car's work is small; the rest of the frame is GPU-bound there).
 
 ### Graphics backend: OpenGL ES or Vulkan
 

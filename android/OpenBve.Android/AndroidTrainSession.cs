@@ -726,7 +726,7 @@ namespace OpenBve.Android
 			Camera.Update(cameraTime);
 
 			// After the camera, as upstream does: the cab objects are placed relative to it.
-			trainManager.UpdateTrainObjects(simulationTime, false);
+			trainManager.UpdateTrainObjectsParallel(simulationTime, false);
 			Camera.EndFrame();
 			renderer.Profile.Mark("train objects");
 			renderer.UpdateVisibility(false);

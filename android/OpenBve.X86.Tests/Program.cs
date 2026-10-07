@@ -87,6 +87,12 @@ namespace OpenBve.X86.Tests
 				return 0;
 			}
 
+			if (args.Length > 2 && args[2] == "indicators")
+			{
+				IndicatorProbe.Run(root, dll);
+				return 0;
+			}
+
 			if (args.Length > 2 && args[2] == "probe")
 			{
 				Probe.Run(root, dll);

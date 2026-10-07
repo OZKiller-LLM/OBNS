@@ -74,6 +74,7 @@ namespace OpenBve.Android
 			System.Func<(RouteGeometry, RouteLive)> routeSource) : base(context)
 		{
 			this.controls = controls;
+			MotionEventSplittingEnabled = true;
 			/*
 			 * The player's size choice scales every measurement (all go through Dp, the card's
 			 * margins included, so the layout keeps its shape) and the button text; the opacity
@@ -196,24 +197,43 @@ namespace OpenBve.Android
 			 * acknowledges, A1 silences the chime and B1 resets after an emergency application;
 			 * the rest are there for trains whose own plugin uses them.
 			 */
-			atsKeys = Row();
+			/*
+			 * The rest of upstream's safety keys, A2 to P, in two rows shown by the ATS... button. Like
+			 * S, A1 and B1 they latch when held (Button): some plugins' dead-man switches need a key held.
+			 */
+			atsKeys = Column();
 			atsKeys.Visibility = ViewStates.Gone;
-			Translations.Command[] keys =
+			Translations.Command[][] rows =
 			{
-				Translations.Command.SecurityA2, Translations.Command.SecurityB2, Translations.Command.SecurityC1,
-				Translations.Command.SecurityC2, Translations.Command.SecurityD, Translations.Command.SecurityE,
-				Translations.Command.SecurityF, Translations.Command.SecurityG
+				new[]
+				{
+					Translations.Command.SecurityA2, Translations.Command.SecurityB2, Translations.Command.SecurityC1,
+					Translations.Command.SecurityC2, Translations.Command.SecurityD, Translations.Command.SecurityE,
+					Translations.Command.SecurityF, Translations.Command.SecurityG
+				},
+				new[]
+				{
+					Translations.Command.SecurityH, Translations.Command.SecurityI, Translations.Command.SecurityJ,
+					Translations.Command.SecurityK, Translations.Command.SecurityL, Translations.Command.SecurityM,
+					Translations.Command.SecurityN, Translations.Command.SecurityO, Translations.Command.SecurityP
+				}
 			};
-			foreach (Translations.Command key in keys)
+			foreach (Translations.Command[] keys in rows)
 			{
-				string label = key.ToString().Substring("Security".Length);
-				atsKeys.AddView(Button(label, key, Color.Argb(160, 80, 60, 30), small: true), Spaced());
+				LinearLayout row = Row();
+				foreach (Translations.Command key in keys)
+				{
+					string label = key.ToString().Substring("Security".Length);
+					row.AddView(Button(label, key, Color.Argb(160, 80, 60, 30), small: true, latching: true), Spaced());
+				}
+
+				atsKeys.AddView(row);
 			}
 
 			ats = Row();
-			ats.AddView(Button("S", Translations.Command.SecurityS, Color.Argb(190, 150, 100, 20), small: true), Spaced());
-			ats.AddView(Button("A1", Translations.Command.SecurityA1, Color.Argb(160, 80, 60, 30), small: true), Spaced());
-			ats.AddView(Button("B1", Translations.Command.SecurityB1, Color.Argb(160, 80, 60, 30), small: true), Spaced());
+			ats.AddView(Button("S", Translations.Command.SecurityS, Color.Argb(190, 150, 100, 20), small: true, latching: true), Spaced());
+			ats.AddView(Button("A1", Translations.Command.SecurityA1, Color.Argb(160, 80, 60, 30), small: true, latching: true), Spaced());
+			ats.AddView(Button("B1", Translations.Command.SecurityB1, Color.Argb(160, 80, 60, 30), small: true, latching: true), Spaced());
 			ats.AddView(atsKeys);
 			ats.AddView(Action("ATS…", Color.Argb(160, 80, 60, 30),
 				() => atsKeys.Visibility = atsKeys.Visibility == ViewStates.Gone ? ViewStates.Visible : ViewStates.Gone), Spaced());
@@ -563,9 +583,19 @@ namespace OpenBve.Android
 			}
 		}
 
-		private Button Button(string label, Translations.Command command, Color color, bool wide = false, bool small = false)
+		/*
+		 * Latching keys (the safety system's): a key held for LatchSeconds or more stays pressed when
+		 * the finger lifts - the button stays lit - until it is tapped again. Some train plugins'
+		 * dead-man switches need a key (S, on Barcelona Metro's L2 and L3) held for the whole run,
+		 * which on a touch screen would tie up a finger. A quick tap is a press and release as before.
+		 */
+		private const double LatchSeconds = 0.6;
+
+		private Button Button(string label, Translations.Command command, Color color, bool wide = false, bool small = false, bool latching = false)
 		{
 			Button button = Styled(label, color, wide, small);
+			bool latched = false, unlatching = false;
+			long pressedAt = 0;
 
 			button.Touch += (sender, e) =>
 			{
@@ -574,12 +604,47 @@ namespace OpenBve.Android
 					case MotionEventActions.Down:
 						// Dimmed when pressed; a faded button brightens instead, to be seen.
 						button.Alpha = opacity > 0.99f ? 0.6f : System.Math.Min(1.0f, opacity + 0.4f);
-						controls.Press(command);
+						pressedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+						if (latched)
+						{
+							// The tap that ends a latch: released when this finger lifts, however long it rests.
+							latched = false;
+							unlatching = true;
+						}
+						else
+						{
+							controls.Press(command);
+						}
+
 						break;
 					case MotionEventActions.Up:
+						double held = (System.Diagnostics.Stopwatch.GetTimestamp() - pressedAt) / (double)System.Diagnostics.Stopwatch.Frequency;
+						if (latching && held >= LatchSeconds && !unlatching && pressedAt != 0)
+						{
+							// Held long enough: stays pressed, the button lit, until tapped again.
+							latched = true;
+							button.Alpha = 1.0f;
+							button.Text = label + " ●";
+						}
+						else
+						{
+							latched = false;
+							button.Alpha = opacity;
+							button.Text = label;
+							controls.Release(command);
+						}
+
+						pressedAt = 0;
+						unlatching = false;
+						break;
 					case MotionEventActions.Cancel:
-						button.Alpha = opacity;
-						controls.Release(command);
+						if (!latched)
+						{
+							button.Alpha = opacity;
+							controls.Release(command);
+						}
+
+						pressedAt = 0;
 						break;
 				}
 
@@ -654,12 +719,13 @@ namespace OpenBve.Android
 
 		private LinearLayout Row()
 		{
-			return new LinearLayout(Context) { Orientation = Orientation.Horizontal };
+			// Each finger to its own button: a held safety key never takes over another finger's touches.
+			return new LinearLayout(Context) { Orientation = Orientation.Horizontal, MotionEventSplittingEnabled = true };
 		}
 
 		private LinearLayout Column(params View[] children)
 		{
-			LinearLayout column = new LinearLayout(Context) { Orientation = Orientation.Vertical };
+			LinearLayout column = new LinearLayout(Context) { Orientation = Orientation.Vertical, MotionEventSplittingEnabled = true };
 			foreach (View child in children)
 			{
 				LinearLayout.LayoutParams parameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
