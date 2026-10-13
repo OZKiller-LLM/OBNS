@@ -15,7 +15,7 @@ failed to start (it tries again after a system update, or when chosen again). **
 Options → Graphics backend** chooses OpenGL ES, Vulkan through ANGLE, or native Vulkan. It should
 look exactly as with OpenGL ES; if anything looks different (missing or black objects, wrong
 colours or transparency), please report the route, the train and a screenshot, and choose OpenGL
-ES. Measured on 11 phones (median frames per second, cab / exterior view; East Rail with the
+ES. Measured on 17 phones (median frames per second, cab / exterior view; 60 and 120 are the screens' limits; East Rail with the
 R-Train, and the HKRSC Tuen Ma Line pack with the SP1900):
 
 | Phone | East Rail, OpenGL ES | East Rail, Vulkan | Tuen Ma Line, OpenGL ES | Tuen Ma Line, Vulkan |
@@ -23,16 +23,23 @@ R-Train, and the HKRSC Tuen Ma Line pack with the SP1900):
 | Galaxy A04s | 25 / 3.3 | 43 / 15 | 3.8 / 2.5 | 17 / 7.5 |
 | Galaxy A05s (6 GB) | 20 / 14 | 39 / 19 | 7.8 / 8.6 | 22 / 11.5 |
 | Galaxy A23 (two phones) | 19 / 14-15 | 39-40 / 19.5 | 13-14 / 6.5-7 | 19-20 / 10-11 |
+| Galaxy A23 5G (SCG18, Japan) | 25 / 14.5 | 32 / 13.6 | 19 / 9.9 | 15 / 15 |
+| Galaxy Tab A9 | 53 / 16.5 | 52 / 30 | 21 / 10.6 | 36 / 20.5 |
 | Galaxy Tab S5e | 20 / 15 | 32 / 18 | 13 / 6.8 | 17 / 12 |
 | Galaxy A52 4G | 48 / 22 | 76 / 25 | 25 / 11 | 30 / 15 |
 | Galaxy A36 | 87 / 24 | 107 / 43 | 33 / 16 | 45 / 24 |
 | Galaxy A73 | 71 / 26 | 114 / 34 | 24 / 13 | 28-34 / 18-23 |
 | Galaxy Z Flip4 | 95 / 29 | 113 / 44 | 32 / 13 | 38 / 22 |
 | Galaxy S20 FE 4G | 46 / 15 | 118 / 39 | 19 / 9.6 | 30 / closed (memory) |
+| Galaxy A71 5G | 60 / 9.1 | 60 / 27 | 7.0 / 4.3 | 28 / 15 |
+| Galaxy A35 | 114 / 35 | 120 / 59 | 35 / 15 | 49 / 25 |
+| Galaxy A55 | 104 / 33 | 119 / 48 | 36 / 18 | 53 / 27 |
+| Galaxy S24 Ultra | 120 / 52 | 120 / 64 | 48 / 23 | 62 / 34 |
 | Galaxy S8 (no Vulkan 1.1) | 40 / 5.6 | OpenGL ES used | 6.2 / 3.8 | OpenGL ES used |
 
 The cheapest phones gain the most: the A04s draws East Rail's exterior at 15 fps instead of 3, and
-the Tuen Ma Line's cab at 17 instead of 4. The Galaxy S8, without Vulkan 1.1, used OpenGL ES by
+the Tuen Ma Line's cab at 17 instead of 4; the A71 the Tuen Ma Line at 28 / 15 instead of 7 / 4. The
+Galaxy A23 5G's small GPU gains little (its Tuen Ma Line cab is slower). The Galaxy S8, without Vulkan 1.1, used OpenGL ES by
 itself.
 
 ### Other changes

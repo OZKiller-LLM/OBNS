@@ -1529,15 +1529,29 @@ where there is one; `summarise.py` gives the table). Median fps, cab / exterior:
 | Galaxy A04s | 25 / 3.3 | 43 / 15 | 3.8 / 2.5 | 17 / 7.5 |
 | Galaxy A05s (6 GB) | 20 / 14 | 39 / 19 | 7.8 / 8.6 | 22 / 11.5 |
 | Galaxy A23 (two phones) | 19 / 14-15 | 39-40 / 19.5 | 13-14 / 6.5-7 | 19-20 / 10-11 |
+| Galaxy A23 5G (SCG18, Japan) | 25 / 14.5 | 32 / 13.6 | 19 / 9.9 | 15 / 15 |
+| Galaxy Tab A9 | 53 / 16.5 | 52 / 30 | 21 / 10.6 | 36 / 20.5 |
 | Galaxy Tab S5e | 20 / 15 | 32 / 18 | 13 / 6.8 | 17 / 12 |
 | Galaxy A52 4G | 48 / 22 | 76 / 25 | 25 / 11 | 30 / 15 |
 | Galaxy A36 | 87 / 24 | 107 / 43 | 33 / 16 | 45 / 24 |
 | Galaxy A73 | 71 / 26 | 114 / 34 | 24 / 13 | 28-34 / 18-23 |
 | Galaxy Z Flip4 | 95 / 29 | 113 / 44 | 32 / 13 | 38 / 22 |
 | Galaxy S20 FE 4G | 46 / 15 | 118 / 39 | 19 / 9.6 | 30 / closed (memory) |
+| Galaxy A71 5G | 60 / 9.1 | 60 / 27 | 7.0 / 4.3 | 28 / 15 |
+| Galaxy A35 | 114 / 35 | 120 / 59 | 35 / 15 | 49 / 25 |
+| Galaxy A55 | 104 / 33 | 119 / 48 | 36 / 18 | 53 / 27 |
+| Galaxy S24 Ultra | 120 / 52 | 120 / 64 | 48 / 23 | 62 / 34 |
 | Galaxy S8 (no Vulkan 1.1) | 40 / 5.6 | OpenGL ES used | 6.2 / 3.8 | OpenGL ES used |
 
-SelTrac ATO passed on every phone. Load times favour OpenGL ES here only because the Vulkan run
+Second round (same day, build with the staging limits): A55 and Tab A9 from their SD cards, S24
+Ultra, A71 5G, A35 and A23 5G (SCG18) from internal storage. The A23 5G (Dimensity 700, Mali-G57
+MC2, 720x1560) is the one phone where Vulkan does not clearly win: GPU-bound, with 5-7 ms of
+"setup" per frame on Vulkan (waiting for the GPU before drawing) against under 1 ms on OpenGL ES;
+its Tuen Ma Line cab is 15 fps against 19. Also seen: the "texture size limit ... reduced" count is
+far higher on Vulkan than on OpenGL ES with the same GPU memory (A23 5G: 1203 against 22; S20 FE:
+94 against 9) - textures decoded more than once? To look into.
+
+SelTrac ATO passed on every phone (TBL ATO too on the S24 Ultra, which has the KCR route). Load times favour OpenGL ES here only because the Vulkan run
 went first on a freshly copied pack (cold file cache, first pipeline compiles).
 
 **Memory on the S20 FE 4G.** Its Tuen Ma Line exterior with Vulkan was closed by the low-memory
