@@ -59,7 +59,7 @@ Both trains' `train.txt` are UTF-16; this matters (see "Recently fixed").
 ## Build and install
 
 ```
-cd C:\dev\OpenBVE-Android\android
+cd D:\dev\OpenBVE-Android\android
 dotnet build OpenBve.Android/OpenBve.Android.csproj -c Release -p:RuntimeIdentifier=android-arm64 -t:Install -p:AdbTarget="-s R5CT41WNFSV"
 ```
 
@@ -284,7 +284,7 @@ Fixed today:
   Controls page (key and pad binding, saved across restarts, reset), zh-HK labels, touch button
   size/opacity/hide. Fixed from it: Large overflowed (fit cap), top row compacted, analog commands
   removed from the Controls lists. Icon confirmed by the user on the launcher.
-- Source zip refreshed: C:\dev\OpenBVE-Android-source-2026-09-27.zip (16.2 MB, same exclusions
+- Source zip refreshed: D:\dev\OpenBVE-Android-source-2026-09-27.zip (16.2 MB, same exclusions
   as before; dist/ and keys never included). Dense-scenery performance work paused until the
   user is home. The A73 is still set to the Vulkan backend from the benchmarks.
 
@@ -460,11 +460,14 @@ transparent ~30-45 ms each, train objects ~20-30 ms); remaining load (train plug
 object load 71-80 s, texture register 16-18 s). The per-decode stack sampling in
 `AndroidHost.LoadTexture` is temporary diagnostics - remove before a release.
 
+**2026-10-14: the projects moved from C:\dev to D:\dev** (user): D:\dev\OpenBVE-Android, D:\dev\Rinkin,
+D:\dev	ools (glslang). Paths in the repo (GlslangPath, these notes) updated.
+
 ## 1.1 (branch `1.1`, started 2026-10-06; 1.01 pushed as branch `1.01`, commit f4ce6a9)
 
 Goals (user): full native Vulkan renderer, pipelining, parallel per-frame animated-object updates.
 Order agreed: parallel updates -> Vulkan (Silk.NET.Vulkan + Khronos glslang, both approved; glslang
-16.6.0 is in C:\dev\tools\glslang, outside the repo) -> pipelining.
+16.6.0 is in D:\dev\tools\glslang, outside the repo) -> pipelining.
 
 Done and committed on `1.1` (2026-10-07, local only - not pushed); verified on phones:
 - **Parallel per-frame updates** (`ParallelUpdates.cs`, `FrameWorkers.cs`,
@@ -527,7 +530,7 @@ Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan r
   only at signing, "java.exe exited with code 2").
 - Next work (post-1.0): performance for dense scenery / heavy routes; then the smaller open items.
 - Source on GitHub: https://github.com/OZKiller-LLM/OBNS (branch main, tag v1.0 = commit ba09919).
-  C:\dev\OpenBVE-Android is now a git repo (repo-local author OZKiller-LLM with the GitHub
+  D:\dev\OpenBVE-Android is now a git repo (repo-local author OZKiller-LLM with the GitHub
   noreply address 333285344+OZKiller-LLM@users.noreply.github.com). .gitignore keeps out
   content/ (third-party routes/trains), dist/, bin/obj, keys and upstream's zip. Pushing: HTTPS
   via Git Credential Manager; the user signs in (device code at github.com/login/device in

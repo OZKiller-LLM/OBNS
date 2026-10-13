@@ -25,10 +25,10 @@
     The shaders (Shaders/*.vert, *.frag: GLSL 450 versions of upstream's) are compiled to SPIR-V
     with Khronos glslang and the .spv files are kept beside them in the repository, so a build
     does not need glslang. Where glslang is installed (GlslangPath, by default
-    C:\dev\tools\glslang\bin\glslang.exe), a changed shader is recompiled before the build.
+    D:\dev\tools\glslang\bin\glslang.exe), a changed shader is recompiled before the build.
   -->
   <PropertyGroup>
-    <GlslangPath Condition="'$(GlslangPath)' == ''">C:\dev\tools\glslang\bin\glslang.exe</GlslangPath>
+    <GlslangPath Condition="'$(GlslangPath)' == ''">D:\dev\tools\glslang\bin\glslang.exe</GlslangPath>
   </PropertyGroup>
 
   <ItemGroup>
