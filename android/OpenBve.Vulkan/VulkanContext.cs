@@ -800,6 +800,34 @@ namespace OpenBve.Vulkan
 		}
 
 		/// <summary>
+		/// Inside a frame: submits the uploads recorded so far and waits for them, so that their
+		/// staging memory can be freed at once (VulkanGL keeps a frame's uploads under a budget). The
+		/// frame's own bookkeeping is left alone - its serial has not been submitted, and what it
+		/// draws with must not count as done - and the slot's fence ends signalled, as it was.
+		/// </summary>
+		public void FlushUploadsInFrame()
+		{
+			if (!uploadsRecording)
+			{
+				return;
+			}
+
+			CommandBuffer commands = uploadBuffers[frame];
+			Check(vk.EndCommandBuffer(commands), "vkEndCommandBuffer");
+			uploadsRecording = false;
+			Fence fence = inFlight[frame];
+			vk.ResetFences(device, 1, in fence);
+			SubmitInfo submit = new SubmitInfo
+			{
+				SType = StructureType.SubmitInfo,
+				CommandBufferCount = 1,
+				PCommandBuffers = &commands
+			};
+			Check(vk.QueueSubmit(queue, 1, in submit, fence), "vkQueueSubmit");
+			vk.WaitForFences(device, 1, in fence, true, ulong.MaxValue);
+		}
+
+		/// <summary>
 		/// Starts a frame: waits for this frame slot and takes a swapchain image. The frame is drawn
 		/// and submitted after DetachFrame (SubmitFrame). False when there is nothing to draw on (no
 		/// window, or it was rebuilt); try again later then.

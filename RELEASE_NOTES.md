@@ -15,15 +15,25 @@ failed to start (it tries again after a system update, or when chosen again). **
 Options → Graphics backend** chooses OpenGL ES, Vulkan through ANGLE, or native Vulkan. It should
 look exactly as with OpenGL ES; if anything looks different (missing or black objects, wrong
 colours or transparency), please report the route, the train and a screenshot, and choose OpenGL
-ES. Measured on the HKRSC Tuen Ma Line pack (before pipelining; the full device table follows):
+ES. Measured on 11 phones (median frames per second, cab / exterior view; East Rail with the
+R-Train, and the HKRSC Tuen Ma Line pack with the SP1900):
 
-| Phone | OpenGL ES cab / exterior | Native Vulkan cab / exterior |
-|---|---|---|
-| Galaxy S24 Ultra | 40-55 / 22-25 fps | 66 / 29 fps |
-| Galaxy A73 | 28-32 / 15-18 fps | 31-35 / 19-21 fps |
+| Phone | East Rail, OpenGL ES | East Rail, Vulkan | Tuen Ma Line, OpenGL ES | Tuen Ma Line, Vulkan |
+|---|---|---|---|---|
+| Galaxy A04s | 25 / 3.3 | 43 / 15 | 3.8 / 2.5 | 17 / 7.5 |
+| Galaxy A05s (6 GB) | 20 / 14 | 39 / 19 | 7.8 / 8.6 | 22 / 11.5 |
+| Galaxy A23 (two phones) | 19 / 14-15 | 39-40 / 19.5 | 13-14 / 6.5-7 | 19-20 / 10-11 |
+| Galaxy Tab S5e | 20 / 15 | 32 / 18 | 13 / 6.8 | 17 / 12 |
+| Galaxy A52 4G | 48 / 22 | 76 / 25 | 25 / 11 | 30 / 15 |
+| Galaxy A36 | 87 / 24 | 107 / 43 | 33 / 16 | 45 / 24 |
+| Galaxy A73 | 71 / 26 | 114 / 34 | 24 / 13 | 28-34 / 18-23 |
+| Galaxy Z Flip4 | 95 / 29 | 113 / 44 | 32 / 13 | 38 / 22 |
+| Galaxy S20 FE 4G | 46 / 15 | 118 / 39 | 19 / 9.6 | 30 / closed (memory) |
+| Galaxy S8 (no Vulkan 1.1) | 40 / 5.6 | OpenGL ES used | 6.2 / 3.8 | OpenGL ES used |
 
-On East Rail with the R-Train the A73's cab runs at 110-117 fps instead of 86-88. If a phone
-cannot start Vulkan, the game falls back to OpenGL ES by itself.
+The cheapest phones gain the most: the A04s draws East Rail's exterior at 15 fps instead of 3, and
+the Tuen Ma Line's cab at 17 instead of 4. The Galaxy S8, without Vulkan 1.1, used OpenGL ES by
+itself.
 
 ### Other changes
 
@@ -38,6 +48,10 @@ cannot start Vulkan, the game falls back to OpenGL ES by itself.
 ### Known limitations of the native Vulkan renderer
 
 - Shadows and motion blur are not drawn (the Android port does not use them yet either).
+- On a phone with little free memory (a Galaxy S20 FE 4G, 5.3 GB, about 800 MB free with the game
+  running), the Tuen Ma Line's exterior view can use more memory than the phone has free, and
+  Android closes the game. OpenGL ES, whose memory Android can partly swap out, gets through
+  there; choose it in Options for very heavy routes on such phones.
 
 ## 1.01 (1.14.0.3-android.2) — performance
 

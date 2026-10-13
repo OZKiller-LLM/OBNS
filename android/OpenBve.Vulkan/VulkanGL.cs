@@ -154,8 +154,48 @@ namespace OpenBve.Vulkan
 		 * buffer; past a budget they are submitted on their own, so their staging memory comes back.
 		 */
 
+		/*
+		 * Staging memory is a second copy of every texture uploaded, held until its copy has run.
+		 * Switching to a busy view uploads hundreds of textures in one frame (TML's exterior: about
+		 * 250, ~1 GB): held until the frame was submitted, that doubled the textures' memory for a
+		 * moment and the low-memory killer stopped the game on a 5 GB phone (Galaxy S20 FE 4G). So
+		 * past a budget the uploads recorded so far are submitted and waited for there and then -
+		 * in a frame too - and their staging freed.
+		 */
 		private const ulong StagingBudget = 64UL << 20;
 		private ulong stagingPending;
+		private readonly List<BufferHeap.Allocation> stagingRecorded = new List<BufferHeap.Allocation>();
+
+		/// <summary>Frees the staging of uploads that have run.</summary>
+		private void FreeRecordedStaging()
+		{
+			foreach (BufferHeap.Allocation staging in stagingRecorded)
+			{
+				bufferHeap.Free(staging);
+			}
+
+			stagingRecorded.Clear();
+			stagingPending = 0;
+		}
+
+		/// <summary>The frame's remaining uploads go with it: their staging is freed once it has run.</summary>
+		private void StagingGoesWithFrame()
+		{
+			if (stagingRecorded.Count > 0)
+			{
+				BufferHeap.Allocation[] staging = stagingRecorded.ToArray();
+				context.Defer(() =>
+				{
+					foreach (BufferHeap.Allocation allocation in staging)
+					{
+						bufferHeap.Free(allocation);
+					}
+				});
+				stagingRecorded.Clear();
+			}
+
+			stagingPending = 0;
+		}
 
 		/// <summary>Ends and presents the frame (the swap).</summary>
 		public void EndFrame()
@@ -170,8 +210,8 @@ namespace OpenBve.Vulkan
 				LastFrameUniformCalls = uniformCalls;
 				uniformCalls = 0;
 				// Handed over: recorded, submitted and presented on the submitter thread.
+				StagingGoesWithFrame();
 				RecordFrame();
-				stagingPending = 0;
 				PipelineCacheFrame();
 			}
 			else if (stagingPending > 0)
@@ -179,7 +219,7 @@ namespace OpenBve.Vulkan
 				// No frame since the uploads: a loading screen, or the window gone.
 				WaitSubmitter();
 				context.FlushUploads();
-				stagingPending = 0;
+				FreeRecordedStaging();
 			}
 		}
 
@@ -187,12 +227,23 @@ namespace OpenBve.Vulkan
 		private void StagingAdded(ulong bytes)
 		{
 			stagingPending += bytes;
-			if (stagingPending > StagingBudget && !context.InFrame)
+			if (stagingPending <= StagingBudget)
+			{
+				return;
+			}
+
+			if (context.InFrame)
+			{
+				// The previous frame's submission is done (EnsureFrame waited for it): the queue is free.
+				context.FlushUploadsInFrame();
+			}
+			else
 			{
 				WaitSubmitter();
 				context.FlushUploads();
-				stagingPending = 0;
 			}
+
+			FreeRecordedStaging();
 		}
 
 		// --- state ---

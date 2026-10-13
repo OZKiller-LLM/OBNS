@@ -1521,7 +1521,39 @@ Files, not preferences: the menu and the game are separate processes.
 Checked on the emulator (`OpenBVE_Test`, x86_64, gfxstream Vulkan 1.4): the default resolves to
 native Vulkan (1.3 path), pipelined frames, light route drawn correctly.
 
-Next: the device benchmark of 1.1 on every phone (`tools/benchmark/run_all.sh`).
+**The 1.1 device benchmark** (2026-10-14, `tools/benchmark/run_all.sh`, content on the SD card
+where there is one; `summarise.py` gives the table). Median fps, cab / exterior:
+
+| Phone | East Rail, OpenGL ES | East Rail, Vulkan | Tuen Ma Line, OpenGL ES | Tuen Ma Line, Vulkan |
+|---|---|---|---|---|
+| Galaxy A04s | 25 / 3.3 | 43 / 15 | 3.8 / 2.5 | 17 / 7.5 |
+| Galaxy A05s (6 GB) | 20 / 14 | 39 / 19 | 7.8 / 8.6 | 22 / 11.5 |
+| Galaxy A23 (two phones) | 19 / 14-15 | 39-40 / 19.5 | 13-14 / 6.5-7 | 19-20 / 10-11 |
+| Galaxy Tab S5e | 20 / 15 | 32 / 18 | 13 / 6.8 | 17 / 12 |
+| Galaxy A52 4G | 48 / 22 | 76 / 25 | 25 / 11 | 30 / 15 |
+| Galaxy A36 | 87 / 24 | 107 / 43 | 33 / 16 | 45 / 24 |
+| Galaxy A73 | 71 / 26 | 114 / 34 | 24 / 13 | 28-34 / 18-23 |
+| Galaxy Z Flip4 | 95 / 29 | 113 / 44 | 32 / 13 | 38 / 22 |
+| Galaxy S20 FE 4G | 46 / 15 | 118 / 39 | 19 / 9.6 | 30 / closed (memory) |
+| Galaxy S8 (no Vulkan 1.1) | 40 / 5.6 | OpenGL ES used | 6.2 / 3.8 | OpenGL ES used |
+
+SelTrac ATO passed on every phone. Load times favour OpenGL ES here only because the Vulkan run
+went first on a freshly copied pack (cold file cache, first pipeline compiles).
+
+**Memory on the S20 FE 4G.** Its Tuen Ma Line exterior with Vulkan was closed by the low-memory
+killer. Two causes of peaks were found and fixed: textures uploaded in one frame kept every
+staging copy until the frame was submitted (now: past 64 MB the uploads so far are submitted and
+waited for in the frame, `FlushUploadsInFrame`, and their staging freed), and textures given an
+image but not yet drawn kept theirs indefinitely (now realized past 64 MB waiting, between
+frames after `WaitSubmitter` - the submitter records from the same command pool). Empty buffer
+blocks are now given back (one spare kept). With both it got from 670 to 724 textures (~1.3 GB)
+before being closed; OpenGL ES got through with 751 (~1.4 GB) - its driver memory shows as `GL
+mtrack`, and Android swapped the rest of the process out (Unknown 880 -> 300 MB) while Vulkan's
+device memory on Mali cannot be. The phone has ~800 MB free with the game running. A73 check
+of the fixes: Tuen Ma Line 34 / 23 fps (28 / 18 before, warmer start) - no regression.
+
+Next: the second round (S24 Ultra, A35, A14, C31); for low-memory phones, perhaps a smaller
+texture limit on Vulkan, or falling back per route.
 
 ### Data assets
 

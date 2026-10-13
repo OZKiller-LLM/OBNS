@@ -12,12 +12,24 @@ A="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"
 D="$(cd "$(dirname "$0")" && pwd)"
 APK="$1"
 mkdir -p "$D/results"
-serials="${ONLY:-$("$A" devices | awk 'NR>1 && $2=="device" {print $1}')}"
+# One connection per phone: a phone on USB and wireless at once is listed twice (and two runs
+# would restart the game over each other). Grouped by the phone's Android ID, USB first; emulators left out.
+pick_serials() {
+  local s hw kind
+  for s in $("$A" devices | awk 'NR>1 && $2=="device" {print $1}'); do
+    case "$s" in emulator-*) continue ;; esac
+    hw=$(MSYS_NO_PATHCONV=1 "$A" -s "$s" shell settings get secure android_id 2>/dev/null </dev/null | tr -d '')
+    [ -z "$hw" ] && continue
+    case "$s" in *:*|*_adb-tls-connect*) kind=2 ;; *) kind=1 ;; esac
+    echo "$hw $kind $s"
+  done | sort -k1,1 -k2,2n | awk '!seen[$1]++ {print $3}'
+}
+serials="${ONLY:-$(pick_serials)}"
 [ -z "$serials" ] && { echo "no phones connected"; exit 1; }
 
 one() {
   local s="$1" model safe out base tml where ram notml
-  model=$(MSYS_NO_PATHCONV=1 "$A" -s "$s" shell getprop ro.product.model | tr -d '\r ')
+  model=$(MSYS_NO_PATHCONV=1 "$A" -s "$s" shell getprop ro.product.model </dev/null | tr -d '\r ')
   safe="${model}_${s//[:.]/_}"
   out="$D/results/all_$safe.txt"
   : > "$out"

@@ -69,6 +69,40 @@ namespace OpenBve.Vulkan
 		}
 
 		private readonly Dictionary<int, GLTexture> textures = new Dictionary<int, GLTexture>();
+
+		/*
+		 * Textures given an image but not drawn with yet hold it in staging memory. Upstream loads
+		 * textures ahead of drawing them (TML's exterior: hundreds at once), so past a budget the
+		 * waiting ones are made there and then - each has had its glGenerateMipmap by the time the
+		 * next texture's image comes - and their staging goes with their uploads.
+		 */
+		private readonly List<GLTexture> waitingTextures = new List<GLTexture>();
+		private ulong waitingBytes;
+
+		private void RealizeWaiting()
+		{
+			if (waitingBytes <= StagingBudget)
+			{
+				return;
+			}
+
+			if (!context.InFrame)
+			{
+				// Between frames the submitter may be recording the last one, from the same command pool.
+				WaitSubmitter();
+			}
+
+			foreach (GLTexture waiting in waitingTextures)
+			{
+				if (waiting.Pending)
+				{
+					Realize(waiting);
+				}
+			}
+
+			waitingTextures.Clear();
+			waitingBytes = 0;
+		}
 		private readonly GLTexture[] units = new GLTexture[Units];
 		private int activeUnit;
 
@@ -264,6 +298,7 @@ namespace OpenBve.Vulkan
 				return;
 			}
 
+			RealizeWaiting();
 			if (texture.Pending)
 			{
 				bufferHeap.Free(texture.Staging);
@@ -275,6 +310,8 @@ namespace OpenBve.Vulkan
 			texture.Height = height;
 			texture.Pending = true;
 			texture.WantMips = false;
+			waitingTextures.Add(texture);
+			waitingBytes += texture.Staging.Size;
 		}
 
 		/// <summary>The format's optimal tiling features (cached).</summary>
@@ -543,9 +580,8 @@ namespace OpenBve.Vulkan
 			};
 			Check(vk.CreateImageView(device, in viewInfo, null, out texture.View), "vkCreateImageView");
 
-			BufferHeap.Allocation staging = texture.Staging;
-			context.Defer(() => bufferHeap.Free(staging));
-			StagingAdded(staging.Size);
+			stagingRecorded.Add(texture.Staging);
+			StagingAdded(texture.Staging.Size);
 			texture.Staging = default;
 			texture.Pending = false;
 			texture.HasMips = levels > 1;

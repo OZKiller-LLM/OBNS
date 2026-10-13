@@ -235,11 +235,27 @@ namespace OpenBve.Vulkan
 			UsedBytes -= allocation.Size;
 			Block block = allocation.Block;
 			block.Free.Give(allocation.Offset, allocation.Size);
-			if (block.Dedicated && block.Free.Empty(block.Size))
+			// An empty block goes back to the system, but for one spare: a burst of uploads (their
+			// staging) would otherwise keep its peak reserved for the rest of the game.
+			if (block.Free.Empty(block.Size) && (block.Dedicated || SpareBlocks() > 1))
 			{
 				Release(block);
 				blocks.Remove(block);
 			}
+		}
+
+		private int SpareBlocks()
+		{
+			int spare = 0;
+			foreach (Block candidate in blocks)
+			{
+				if (!candidate.Dedicated && candidate.Free.Empty(candidate.Size))
+				{
+					spare++;
+				}
+			}
+
+			return spare;
 		}
 
 		private Block NewBlock(ulong size)
@@ -378,12 +394,26 @@ namespace OpenBve.Vulkan
 			UsedBytes -= allocation.Size;
 			Block block = allocation.Block;
 			block.Free.Give(allocation.Offset, allocation.Size);
-			if (block.Dedicated && block.Free.Empty(block.Size))
+			if (block.Free.Empty(block.Size) && (block.Dedicated || SpareBlocks(block.MemoryType) > 1))
 			{
 				vk.FreeMemory(device, block.Memory, null);
 				ReservedBytes -= block.Size;
 				blocks.Remove(block);
 			}
+		}
+
+		private int SpareBlocks(uint type)
+		{
+			int spare = 0;
+			foreach (Block candidate in blocks)
+			{
+				if (!candidate.Dedicated && candidate.MemoryType == type && candidate.Free.Empty(candidate.Size))
+				{
+					spare++;
+				}
+			}
+
+			return spare;
 		}
 
 		private Block NewBlock(ulong size, uint type)

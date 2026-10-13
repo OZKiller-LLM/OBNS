@@ -517,6 +517,11 @@ Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan r
   (VulkanStartup), SD-first benchmark scripts (content_base.sh, core11_suite.sh, run_all.sh).
   Emulator OpenBVE_Test checked. Committed b20fafe. Device run of 11 phones started (A05s, S8,
   A52, A73, Z Flip4, S20 FE 4G, Tab S5e, A36, A23 x2, A04s); S24U, A35, A14, C31 next round.
+- 2026-10-14 (later): device run finished on 11 phones (table in PORTING.md and RELEASE_NOTES.md).
+  S20 FE 4G's TML exterior with Vulkan closed by the low-memory killer; staging limits (in-frame
+  upload flush, waiting textures realized past 64 MB) and release of empty buffer blocks added -
+  it gets further but still closes. Note: the A73's screen-off timeout was set to 30 min by
+  mistake during the run (original value not recorded) - the user to set it back.
 - Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points. Next: fast paths, multi-threaded recording, pipeline cache on disk,
   then pipelining.
 
