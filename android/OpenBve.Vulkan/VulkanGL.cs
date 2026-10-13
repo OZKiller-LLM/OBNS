@@ -139,7 +139,8 @@ namespace OpenBve.Vulkan
 		/// <summary>Memory and object counts, for the log.</summary>
 		public string Describe()
 		{
-			return LastFrameDraws + " draws (" + LastFrameDrawMilliseconds.ToString("0.0") + " ms recording them" + (ProfileStages ? ": " + LastFrameSections : string.Empty) + "; " + LastFrameUniformCalls + " uniform sets), " + pipelines.Count + " pipelines, " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
+			return LastFrameDraws + " draws (" + LastFrameDrawMilliseconds.ToString("0.0") + " ms preparing them" + (ProfileStages ? ": " + LastFrameSections : string.Empty) + ", " +
+			       LastFrameReplayMilliseconds.ToString("0.0") + " ms recording them in " + LastFrameChunks + " chunks; " + LastFrameUniformCalls + " uniform sets), " + pipelines.Count + " pipelines, " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
 			       (imageHeap.ReservedBytes >> 20) + " MB reserved), " + glBuffers.Count + " buffers (" + (bufferHeap.UsedBytes >> 20) + " MB, " +
 			       (bufferHeap.ReservedBytes >> 20) + " MB reserved" + (bufferHeap.DeviceLocal ? ", unified" : ", host") + ")";
 		}
@@ -154,28 +155,6 @@ namespace OpenBve.Vulkan
 		private const ulong StagingBudget = 64UL << 20;
 		private ulong stagingPending;
 
-		/// <summary>Ensures a frame is being recorded, inside its render pass. False when there is no window to draw on.</summary>
-		private bool EnsureRenderPass()
-		{
-			if (!context.InFrame)
-			{
-				if (!context.BeginFrame())
-				{
-					return false;
-				}
-
-				FrameBegun();
-			}
-
-			if (!context.InRenderPass)
-			{
-				context.BeginRenderPass(clearRed, clearGreen, clearBlue, clearAlpha, 1.0f);
-				RenderPassBegun();
-			}
-
-			return true;
-		}
-
 		/// <summary>Ends and presents the frame (the swap).</summary>
 		public void EndFrame()
 		{
@@ -188,6 +167,7 @@ namespace OpenBve.Vulkan
 				SectionsDone();
 				LastFrameUniformCalls = uniformCalls;
 				uniformCalls = 0;
+				RecordFrame();
 				context.EndFrame();
 				stagingPending = 0;
 				PipelineCacheFrame();
@@ -248,27 +228,10 @@ namespace OpenBve.Vulkan
 				return;
 			}
 
-			if (!context.InFrame || !context.InRenderPass)
+			if (EnsureFrame())
 			{
-				// The first clear of the frame is the render pass's own (load op clear).
-				EnsureRenderPass();
-				return;
+				RecordClear(mask);
 			}
-
-			ClearAttachment* attachments = stackalloc ClearAttachment[2];
-			uint count = 0;
-			if ((mask & GL_COLOR_BUFFER_BIT) != 0)
-			{
-				attachments[count++] = new ClearAttachment(ImageAspectFlags.ColorBit, 0, new ClearValue(new ClearColorValue(clearRed, clearGreen, clearBlue, clearAlpha)));
-			}
-
-			if ((mask & GL_DEPTH_BUFFER_BIT) != 0)
-			{
-				attachments[count++] = new ClearAttachment(ImageAspectFlags.DepthBit, 0, new ClearValue(default, new ClearDepthStencilValue(1.0f, 0)));
-			}
-
-			ClearRect rect = new ClearRect(new Rect2D(new Offset2D(0, 0), context.ImageExtent), 0, 1);
-			vk.CmdClearAttachments(context.DrawCommands, count, attachments, 1, &rect);
 		}
 
 		public void glViewport(int x, int y, int width, int height)

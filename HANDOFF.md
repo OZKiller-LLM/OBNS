@@ -506,7 +506,10 @@ Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan r
   android.3 to be built by the user (release key): `release.ps1 -PortRelease 3 -Beta`.
 - Then (user, 2026-10-13): pipeline cache kept between games; a Vulkan 1.3 path (dynamic
   rendering, sync2, extended dynamic state) beside the 1.1 baseline (user's choice of what the
-  "Vulkan 1.1 variant" means). Built, not yet tested on phones (vulkan4b.apk).
+  "Vulkan 1.1 variant" means). Committed 10c855a. Then: dynamic state made opt-in (slower on the
+  Adreno 750), multi-threaded recording (secondary command buffers on FrameWorkers). A bug found
+  and fixed on the way: pipelines must follow context.Vulkan13 (dynamic rendering), not the dynamic
+  state switch. S24U benchmarks are thermally confounded (status 3, 42 C): rerun cooler.
 - Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points. Next: fast paths, multi-threaded recording, pipeline cache on disk,
   then pipelining.
 

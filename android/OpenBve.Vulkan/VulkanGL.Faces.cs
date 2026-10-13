@@ -142,23 +142,7 @@ namespace OpenBve.Vulkan
 					return true;
 				}
 
-				CommandBuffer commands = context.DrawCommands;
-				BindElements(commands, elements, intIndices ? IndexType.Uint32 : IndexType.Uint16);
-				if (mode == GL_QUADS)
-				{
-					// One fan per quad, as GL.DrawElements does on GLES.
-					for (int quad = 0; quad + 4 <= count; quad += 4)
-					{
-						cmdDrawIndexed(commands, 4, 1, (uint)(firstIndex + quad), 0, 0);
-						frameDraws++;
-					}
-				}
-				else
-				{
-					cmdDrawIndexed(commands, (uint)count, 1, (uint)firstIndex, 0, 0);
-					frameDraws++;
-				}
-
+				AddDraw((uint)count, (uint)firstIndex, elements, intIndices ? IndexType.Uint32 : IndexType.Uint16, mode == GL_QUADS);
 				return true;
 			}
 			finally

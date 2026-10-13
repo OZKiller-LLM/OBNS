@@ -53,6 +53,9 @@ namespace OpenBve.Android
 			this.window = window;
 		}
 
+		/// <summary>Whether the frame's draws are recorded on several threads (`--ez vulkan_threads false`: on the render thread only).</summary>
+		public static bool RecordOnWorkers = true;
+
 		/// <summary>The Vulkan device and window.</summary>
 		public VulkanContext Vulkan => vulkan;
 
@@ -70,10 +73,28 @@ namespace OpenBve.Android
 			{
 				vulkan = new VulkanContext(window);
 				VulkanGL.Log = message => Log.Warn("OpenBVE", "vulkan: " + message);
+				// The frame's draws are recorded on the frame workers (VulkanGL.Records), unless turned off for comparisons.
+				if (RecordOnWorkers)
+				{
+					VulkanGL.ParallelRun = (count, body) => FrameWorkers.Shared.Run(count, (first, end) =>
+					{
+						for (int i = first; i < end; i++)
+						{
+							body(i);
+						}
+					});
+					VulkanGL.ParallelThreads = FrameWorkers.Shared.Threads;
+				}
+				else
+				{
+					VulkanGL.ParallelRun = null;
+					VulkanGL.ParallelThreads = 1;
+				}
+
 				VulkanGL device = new VulkanGL(vulkan, global::Android.App.Application.Context.CacheDir?.AbsolutePath);
 				GL.Device = device;
 				GL.ResetStateCache();
-				Log.Info("OpenBVE", "native Vulkan: " + vulkan.Description + (vulkan.Vulkan13 ? ", Vulkan 1.3 path" : ", Vulkan 1.1 path") + ", swapchain " + vulkan.Width + "x" + vulkan.Height + ", pre-rotation " + vulkan.Rotation + "°; " + device.PipelineCacheReport);
+				Log.Info("OpenBVE", "native Vulkan: " + vulkan.Description + (vulkan.Vulkan13 ? ", Vulkan 1.3 path" + (VulkanGL.UseDynamicState ? " with dynamic state" : string.Empty) : ", Vulkan 1.1 path") + ", swapchain " + vulkan.Width + "x" + vulkan.Height + ", pre-rotation " + vulkan.Rotation + "°; " + device.PipelineCacheReport);
 				return new VulkanSurface(vulkan, device, window);
 			}
 			catch

@@ -846,8 +846,17 @@ namespace OpenBve.Vulkan
 			return true;
 		}
 
-		/// <summary>Begins the frame's render pass, clearing to these values.</summary>
-		public void BeginRenderPass(float red, float green, float blue, float alpha, float depth)
+		/// <summary>The queue family the device draws with.</summary>
+		public uint QueueFamily => queueFamily;
+
+		/// <summary>The framebuffer of the image being drawn (Vulkan 1.1 path).</summary>
+		public Framebuffer CurrentFramebuffer => framebuffers.Length > imageIndex ? framebuffers[imageIndex] : default;
+
+		/// <summary>
+		/// Begins the frame's render pass, clearing to these values. With secondary, its drawing comes
+		/// from secondary command buffers (vkCmdExecuteCommands) rather than recorded inline.
+		/// </summary>
+		public void BeginRenderPass(float red, float green, float blue, float alpha, float depth, bool secondary = false)
 		{
 			if (!frameStarted || renderPassStarted)
 			{
@@ -856,7 +865,7 @@ namespace OpenBve.Vulkan
 
 			if (Vulkan13)
 			{
-				BeginRendering(red, green, blue, alpha, depth);
+				BeginRendering(red, green, blue, alpha, depth, secondary);
 				renderPassStarted = true;
 				return;
 			}
@@ -873,7 +882,7 @@ namespace OpenBve.Vulkan
 				ClearValueCount = 2,
 				PClearValues = clear
 			};
-			vk.CmdBeginRenderPass(commandBuffers[frame], in pass, SubpassContents.Inline);
+			vk.CmdBeginRenderPass(commandBuffers[frame], in pass, secondary ? SubpassContents.SecondaryCommandBuffers : SubpassContents.Inline);
 			renderPassStarted = true;
 		}
 
@@ -883,7 +892,7 @@ namespace OpenBve.Vulkan
 		 * depth not stored - and the image moved on to be presented.
 		 */
 
-		private void BeginRendering(float red, float green, float blue, float alpha, float depth)
+		private void BeginRendering(float red, float green, float blue, float alpha, float depth, bool secondary)
 		{
 			CommandBuffer commands = commandBuffers[frame];
 			ImageAspectFlags depthAspect = depthFormat == Format.D24UnormS8Uint ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit : ImageAspectFlags.DepthBit;
@@ -940,6 +949,7 @@ namespace OpenBve.Vulkan
 			RenderingInfo rendering = new RenderingInfo
 			{
 				SType = StructureType.RenderingInfo,
+				Flags = secondary ? RenderingFlags.ContentsSecondaryCommandBuffersBit : 0,
 				RenderArea = new Rect2D(new Offset2D(0, 0), extent),
 				LayerCount = 1,
 				ColorAttachmentCount = 1,

@@ -1474,9 +1474,25 @@ after new pipelines and a few quiet seconds, when the window goes and when the g
   leaves them out, so there are fewer pipelines and they change less often.
 
 `--ez vulkan13 false` keeps a 1.3 phone on the 1.1 path, for comparisons. The startup line says
-which path runs.
+which path runs. Measured on the S24 Ultra (Adreno 750), the extended dynamic state was not faster
+(the per-draw state commands cost the driver more than the fewer pipeline changes saved), so the
+1.3 path uses dynamic rendering only by default; `--ez vulkan13_dynamic_state true` adds the
+dynamic state for experiments.
 
-Next: recording on several threads, then pipelining.
+**Recording on several threads** (`VulkanGL.Records.cs`). A draw no longer goes into a command
+buffer when the renderer makes it: what it needs (pipeline, descriptor sets and offsets, viewport,
+vertex and index buffers, dynamic state) is worked out on the render thread - texture uploads,
+pipelines and the uniform ring stay there - and kept as a record. At the swap the records are cut
+into up to 8 consecutive chunks, recorded into secondary command buffers on the frame workers
+(`FrameWorkers`, set as `VulkanGL.ParallelRun` by `VulkanSurface`), and run in order from the frame's
+command buffer (`SubpassContents.SecondaryCommandBuffers` / `RenderingFlags.ContentsSecondary...`).
+Same commands, same order. `--ez vulkan_threads false` records on the render thread only.
+TML exterior on the A73: recording 10.5 ms -> 3.7 ms of the render thread; fps unchanged there,
+the A73's exterior now waits 13-17 ms for its GPU at the swap. The S24 Ultra stayed at thermal
+status 3 through the comparisons (cab 52-65, exterior 25-31 fps across variants), so its numbers
+need a cooler rerun.
+
+Next: pipelining.
 
 ### Data assets
 

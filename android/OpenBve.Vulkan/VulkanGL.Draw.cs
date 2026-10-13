@@ -108,16 +108,6 @@ namespace OpenBve.Vulkan
 		private Ring ring;
 		private ulong uniformAlignment;
 
-		// What is bound in the frame's command buffer, so as not to bind it again.
-		private Pipeline boundPipeline;
-		private DescriptorSet boundUniformSet;
-		private uint boundOffset0 = uint.MaxValue, boundOffset1 = uint.MaxValue;
-		private DescriptorSet boundTextureSet;
-		private readonly Buffer[] boundVertexBuffers = new Buffer[DefaultLocations];
-		private readonly ulong[] boundVertexOffsets = new ulong[DefaultLocations];
-		private Buffer boundIndexBuffer;
-		private ulong boundIndexOffset;
-		private IndexType boundIndexType;
 
 		/*
 		 * The commands recorded for every draw, called through the device's own function pointers
@@ -149,48 +139,10 @@ namespace OpenBve.Vulkan
 		private delegate* unmanaged<CommandBuffer, uint, void> cmdSetDepthWriteEnable;
 		private delegate* unmanaged<CommandBuffer, CompareOp, void> cmdSetDepthCompareOp;
 		private delegate* unmanaged<CommandBuffer, uint, uint, Buffer*, ulong*, ulong*, ulong*, void> cmdBindVertexBuffers2;
-		private readonly ulong[] boundVertexStrides = new ulong[DefaultLocations];
-		private int boundCullMode, boundTopology, boundDepthTest, boundDepthWrite, boundDepthCompare;
-
-		/// <summary>Sets culling, the primitive and the depth state from GL's, where they changed (Vulkan 1.3 path).</summary>
-		private void SetDynamicState(CommandBuffer commands, int topology)
-		{
-			int cull = !cullFace ? (int)CullModeFlags.None : cullMode == GL_FRONT ? (int)CullModeFlags.FrontBit : cullMode == GL_BACK ? (int)CullModeFlags.BackBit : (int)CullModeFlags.FrontAndBack;
-			if (cull != boundCullMode)
-			{
-				cmdSetCullMode(commands, (CullModeFlags)cull);
-				boundCullMode = cull;
-			}
-
-			if (topology != boundTopology)
-			{
-				cmdSetPrimitiveTopology(commands, (PrimitiveTopology)topology);
-				boundTopology = topology;
-			}
-
-			int test = depthTest ? 1 : 0, write = depthTest && depthMask ? 1 : 0;
-			if (test != boundDepthTest)
-			{
-				cmdSetDepthTestEnable(commands, (uint)test);
-				boundDepthTest = test;
-			}
-
-			if (write != boundDepthWrite)
-			{
-				cmdSetDepthWriteEnable(commands, (uint)write);
-				boundDepthWrite = write;
-			}
-
-			int compare = depthTest ? Math.Max(0, Math.Min(7, depthFunc - 0x0200)) : (int)CompareOp.Always;
-			if (compare != boundDepthCompare)
-			{
-				cmdSetDepthCompareOp(commands, (CompareOp)compare);
-				boundDepthCompare = compare;
-			}
-		}
 
 		private void LoadCommands()
 		{
+			LoadRecordCommands();
 			if (context.Vulkan13)
 			{
 				cmdSetCullMode = (delegate* unmanaged<CommandBuffer, CullModeFlags, void>)DeviceProc("vkCmdSetCullMode");
@@ -287,32 +239,16 @@ namespace OpenBve.Vulkan
 			CreateBlackTexture();
 		}
 
-		/// <summary>A frame was begun: its slot's ring starts over, and nothing is bound in its command buffer yet.</summary>
+		/// <summary>A frame was begun: its slot's ring and secondary command buffers start over, and it has no draws yet.</summary>
 		private void FrameBegun()
 		{
 			ring = rings[context.FrameSlot];
 			ring.Segment = 0;
 			ring.Position = 0;
 			StartSegment();
-			boundPipeline = default;
-			boundUniformSet = default;
-			boundOffset0 = boundOffset1 = uint.MaxValue;
-			boundTextureSet = default;
-			Array.Clear(boundVertexBuffers);
-			Array.Clear(boundVertexOffsets);
-			boundIndexBuffer = default;
-			Array.Clear(boundVertexStrides);
-			boundCullMode = -1;
-			boundTopology = -1;
-			boundDepthTest = boundDepthWrite = -1;
-			boundDepthCompare = -1;
-		}
-
-		/// <summary>The render pass began: the clip transform and the viewport go into the command buffer.</summary>
-		private void RenderPassBegun()
-		{
-			Vector4 clip = context.ClipTransform;
-			vk.CmdPushConstants(context.DrawCommands, pipelineLayout, ShaderStageFlags.VertexBit, 0, 16, &clip);
+			ResetChunkPools(context.FrameSlot);
+			recordCount = 0;
+			passClear = new Vector4(clearRed, clearGreen, clearBlue, clearAlpha);
 			viewportDirty = true;
 		}
 
@@ -467,7 +403,14 @@ namespace OpenBve.Vulkan
 		 * state, set with commands as they change rather than baked into the pipeline. The key then
 		 * leaves them out, so there are fewer pipelines and fewer pipeline changes.
 		 */
-		private bool Dynamic13 => context.Vulkan13;
+		private bool Dynamic13 => context.Vulkan13 && UseDynamicState;
+
+		/// <summary>
+		/// Whether the Vulkan 1.3 path also takes culling, depth state, the primitive and vertex
+		/// strides as dynamic state (otherwise only dynamic rendering). Off: on the S24 Ultra's
+		/// Adreno 750 the per-draw state commands made TML's exterior slower (29 fps against 39).
+		/// </summary>
+		public static bool UseDynamicState;
 
 		private ulong PipelineKey(ProgramKind kind, int topology, int layoutId)
 		{
@@ -651,7 +594,7 @@ namespace OpenBve.Vulkan
 				GraphicsPipelineCreateInfo info = new GraphicsPipelineCreateInfo
 				{
 					SType = StructureType.GraphicsPipelineCreateInfo,
-					PNext = Dynamic13 ? &rendering : null,
+					PNext = context.Vulkan13 ? &rendering : null,
 					StageCount = 2,
 					PStages = stages,
 					PVertexInputState = &vertexInput,
@@ -663,7 +606,7 @@ namespace OpenBve.Vulkan
 					PColorBlendState = &colorBlend,
 					PDynamicState = &dynamic,
 					Layout = pipelineLayout,
-					RenderPass = Dynamic13 ? default : context.RenderPass,
+					RenderPass = context.Vulkan13 ? default : context.RenderPass,
 					Subpass = 0
 				};
 				Check(vk.CreateGraphicsPipelines(device, pipelineCache, 1, in info, null, out pipeline), "vkCreateGraphicsPipelines");
@@ -736,8 +679,7 @@ namespace OpenBve.Vulkan
 				return;
 			}
 
-			cmdDraw(context.DrawCommands, (uint)count, 1, (uint)Math.Max(0, first), 0);
-			frameDraws++;
+			AddDraw((uint)count, (uint)Math.Max(0, first), null, default, false);
 		}
 
 		private void DrawElements(int mode, int count, int type, IntPtr indices)
@@ -777,28 +719,7 @@ namespace OpenBve.Vulkan
 				return;
 			}
 
-			CommandBuffer commands = context.DrawCommands;
-			BindElements(commands, elements, indexType);
-
-			long drawMark = ProfileStages ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-			cmdDrawIndexed(commands, (uint)count, 1, (uint)(offset / indexBytes), 0, 0);
-			Section(5, ref drawMark);
-			frameDraws++;
-		}
-
-		/// <summary>Binds a buffer of indices, if it is not bound already.</summary>
-		private void BindElements(CommandBuffer commands, GLBuffer elements, IndexType indexType)
-		{
-			elements.LastUse = context.RecordingSerial;
-			Buffer buffer = elements.Memory.Buffer;
-			ulong bufferOffset = elements.Memory.Offset;
-			if (buffer.Handle != boundIndexBuffer.Handle || bufferOffset != boundIndexOffset || indexType != boundIndexType)
-			{
-				cmdBindIndexBuffer(commands, buffer, bufferOffset, indexType);
-				boundIndexBuffer = buffer;
-				boundIndexOffset = bufferOffset;
-				boundIndexType = indexType;
-			}
+			AddDraw((uint)count, (uint)(offset / indexBytes), elements, indexType, false);
 		}
 
 		/// <summary>
@@ -839,29 +760,28 @@ namespace OpenBve.Vulkan
 				}
 			}
 
-			if (!EnsureRenderPass())
+			if (!EnsureFrame())
 			{
 				return false;
 			}
 
-			CommandBuffer commands = context.DrawCommands;
 			ulong serial = context.RecordingSerial;
+			pending = default;
 
-			// The texture first: realizing it records uploads, outside this command buffer.
+			// The texture first: realizing it records uploads, outside the frame's drawing.
 			long mark = ProfileStages ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-			DescriptorSet textureSet = TextureSet(faceBlock != null ? texture : units[0]);
+			pending.TextureSet = TextureSet(faceBlock != null ? texture : units[0]);
 			Section(0, ref mark);
 
-			Pipeline pipeline = GetPipeline(PipelineKey(program.Kind, Topology(mode), program.Kind == ProgramKind.Default ? VertexLayoutId(array) : 0));
-			if (pipeline.Handle != boundPipeline.Handle)
-			{
-				cmdBindPipeline(commands, PipelineBindPoint.Graphics, pipeline);
-				boundPipeline = pipeline;
-			}
-
+			int topology = Topology(mode);
+			pending.Pipeline = GetPipeline(PipelineKey(program.Kind, topology, program.Kind == ProgramKind.Default ? VertexLayoutId(array) : 0));
 			if (Dynamic13)
 			{
-				SetDynamicState(commands, Topology(mode));
+				pending.Cull = !cullFace ? (int)CullModeFlags.None : cullMode == GL_FRONT ? (int)CullModeFlags.FrontBit : cullMode == GL_BACK ? (int)CullModeFlags.BackBit : (int)CullModeFlags.FrontAndBack;
+				pending.Topology = topology;
+				pending.DepthTest = depthTest ? 1 : 0;
+				pending.DepthWrite = depthTest && depthMask ? 1 : 0;
+				pending.DepthCompare = depthTest ? Math.Max(0, Math.Min(7, depthFunc - 0x0200)) : (int)CompareOp.Always;
 			}
 
 			Section(1, ref mark);
@@ -915,83 +835,35 @@ namespace OpenBve.Vulkan
 			}
 
 			Section(2, ref mark);
-			DescriptorSet uniformSet = UniformSet(block);
-			if (uniformSet.Handle != boundUniformSet.Handle || drawOffset != boundOffset0 || animationOffset != boundOffset1)
-			{
-				uint* offsets = stackalloc uint[2] { drawOffset, animationOffset };
-				cmdBindDescriptorSets(commands, PipelineBindPoint.Graphics, pipelineLayout, 0, 1, &uniformSet, 2, offsets);
-				boundUniformSet = uniformSet;
-				boundOffset0 = drawOffset;
-				boundOffset1 = animationOffset;
-			}
-
-			if (textureSet.Handle != boundTextureSet.Handle)
-			{
-				cmdBindDescriptorSets(commands, PipelineBindPoint.Graphics, pipelineLayout, 1, 1, &textureSet, 0, null);
-				boundTextureSet = textureSet;
-			}
-
-			Section(3, ref mark);
+			pending.UniformSet = UniformSet(block);
+			pending.Offset0 = drawOffset;
+			pending.Offset1 = animationOffset;
 			if (viewportDirty)
 			{
-				Rect2D rect = context.ToImageRect(viewportX, viewportY, Math.Max(1, viewportWidth), Math.Max(1, viewportHeight));
-				Viewport viewport = new Viewport(rect.Offset.X, rect.Offset.Y, rect.Extent.Width, rect.Extent.Height, 0.0f, 1.0f);
-				vk.CmdSetViewport(commands, 0, 1, &viewport);
-				Rect2D scissor = new Rect2D(new Offset2D(0, 0), context.ImageExtent);
-				vk.CmdSetScissor(commands, 0, 1, &scissor);
+				currentViewport = context.ToImageRect(viewportX, viewportY, Math.Max(1, viewportWidth), Math.Max(1, viewportHeight));
 				viewportDirty = false;
 			}
 
+			pending.Viewport = currentViewport;
+			Section(3, ref mark);
 			if (program.Kind == ProgramKind.Default)
 			{
-				Buffer* buffers = stackalloc Buffer[DefaultLocations];
-				ulong* offsets = stackalloc ulong[DefaultLocations];
-				bool changed = false;
+				pending.VertexBufferCount = DefaultLocations;
 				for (int i = 0; i < DefaultLocations; i++)
 				{
 					if (array.Reads[i])
 					{
 						GLBuffer source = array.Attributes[i].Buffer;
 						source.LastUse = serial;
-						buffers[i] = source.Memory.Buffer;
-						offsets[i] = source.Memory.Offset + (ulong)array.Attributes[i].Offset;
+						pending.Buffers[i] = source.Memory.Buffer.Handle;
+						pending.Offsets[i] = source.Memory.Offset + (ulong)array.Attributes[i].Offset;
+						pending.Strides[i] = (ulong)array.Attributes[i].Stride;
 					}
 					else
 					{
-						buffers[i] = defaultAttributes.Buffer;
-						offsets[i] = defaultAttributes.Offset + (i == 4 ? 16UL : 0UL);
-					}
-
-					changed |= buffers[i].Handle != boundVertexBuffers[i].Handle || offsets[i] != boundVertexOffsets[i];
-				}
-
-				if (Dynamic13)
-				{
-					ulong* strides = stackalloc ulong[DefaultLocations];
-					for (int i = 0; i < DefaultLocations; i++)
-					{
-						strides[i] = array.Reads[i] ? (ulong)array.Attributes[i].Stride : 0UL;
-						changed |= strides[i] != boundVertexStrides[i];
-					}
-
-					if (changed)
-					{
-						cmdBindVertexBuffers2(commands, 0, DefaultLocations, buffers, offsets, null, strides);
-						for (int i = 0; i < DefaultLocations; i++)
-						{
-							boundVertexBuffers[i] = buffers[i];
-							boundVertexOffsets[i] = offsets[i];
-							boundVertexStrides[i] = strides[i];
-						}
-					}
-				}
-				else if (changed)
-				{
-					cmdBindVertexBuffers(commands, 0, DefaultLocations, buffers, offsets);
-					for (int i = 0; i < DefaultLocations; i++)
-					{
-						boundVertexBuffers[i] = buffers[i];
-						boundVertexOffsets[i] = offsets[i];
+						pending.Buffers[i] = defaultAttributes.Buffer.Handle;
+						pending.Offsets[i] = defaultAttributes.Offset + (i == 4 ? 16UL : 0UL);
+						pending.Strides[i] = 0;
 					}
 				}
 			}
@@ -1002,6 +874,7 @@ namespace OpenBve.Vulkan
 
 		private void DisposeDraw()
 		{
+			DisposeRecords();
 			foreach (Pipeline pipeline in pipelines.Values)
 			{
 				vk.DestroyPipeline(device, pipeline, null);

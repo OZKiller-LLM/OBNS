@@ -67,7 +67,7 @@ namespace OpenBve.Vulkan
 			writer.Write(properties.DeviceID);
 			writer.Write(properties.DriverVersion);
 			// The 1.1 and 1.3 paths make different pipelines (and keys) on the same device.
-			writer.Write(context.Vulkan13 ? 13 : 11);
+			writer.Write((context.Vulkan13 ? 130 : 110) + (Dynamic13 ? 1 : 0));
 			for (int i = 0; i < 16; i++)
 			{
 				writer.Write(properties.PipelineCacheUuid[i]);

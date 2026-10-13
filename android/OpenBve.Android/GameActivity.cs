@@ -213,6 +213,10 @@ namespace OpenBve.Android
 			OpenBve.Vulkan.VulkanGL.ProfileStages = Intent?.GetBooleanExtra("vulkan_stages", false) ?? false;
 			// For comparisons: --ez vulkan13 false keeps a Vulkan 1.3 phone on the native renderer's Vulkan 1.1 path.
 			OpenBve.Vulkan.VulkanContext.AllowVulkan13 = Intent?.GetBooleanExtra("vulkan13", true) ?? true;
+			// Experiments: --ez vulkan13_dynamic_state true adds the extended dynamic state to the 1.3 path.
+			OpenBve.Vulkan.VulkanGL.UseDynamicState = Intent?.GetBooleanExtra("vulkan13_dynamic_state", false) ?? false;
+			// For comparisons: --ez vulkan_threads false records the Vulkan frame on the render thread only.
+			VulkanSurface.RecordOnWorkers = Intent?.GetBooleanExtra("vulkan_threads", true) ?? true;
 			// Remembered texture transparency (TextureClassifier), in the app's cache folder.
 			TextureClassifier.CacheFolder = CacheDir?.AbsolutePath;
 			// For comparisons: --ez mesh_sharing false loads every train part with its own mesh, as upstream.
