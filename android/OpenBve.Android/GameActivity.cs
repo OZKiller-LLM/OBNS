@@ -211,6 +211,8 @@ namespace OpenBve.Android
 			AndroidRenderer.NativeFaces = Intent?.GetBooleanExtra("native_faces", true) ?? true;
 			// Diagnostics: --ez vulkan_stages true times each stage of a Vulkan draw for the log.
 			OpenBve.Vulkan.VulkanGL.ProfileStages = Intent?.GetBooleanExtra("vulkan_stages", false) ?? false;
+			// For comparisons: --ez vulkan13 false keeps a Vulkan 1.3 phone on the native renderer's Vulkan 1.1 path.
+			OpenBve.Vulkan.VulkanContext.AllowVulkan13 = Intent?.GetBooleanExtra("vulkan13", true) ?? true;
 			// Remembered texture transparency (TextureClassifier), in the app's cache folder.
 			TextureClassifier.CacheFolder = CacheDir?.AbsolutePath;
 			// For comparisons: --ez mesh_sharing false loads every train part with its own mesh, as upstream.

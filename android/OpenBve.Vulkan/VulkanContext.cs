@@ -75,9 +75,33 @@ namespace OpenBve.Vulkan
 		private readonly Semaphore[] renderFinished = new Semaphore[FramesInFlight];
 		private readonly Fence[] inFlight = new Fence[FramesInFlight];
 		private int frame;
+		private uint instanceVersion;
 		private uint imageIndex;
 		private bool frameStarted;
 		private bool rebuild;
+
+		/// <summary>
+		/// Whether a Vulkan 1.3 device may use its 1.3 path (dynamic rendering, synchronization2 and
+		/// the extended dynamic state VulkanGL uses). A test switch: false keeps every device on the
+		/// Vulkan 1.1 path. Read when the context is made.
+		/// </summary>
+		public static bool AllowVulkan13 = true;
+
+		/// <summary>
+		/// The Vulkan 1.3 path: the frame is drawn with dynamic rendering (no render pass objects) and
+		/// pipelines take culling, depth state, the primitive and vertex strides as dynamic state.
+		/// False: the Vulkan 1.1 path, which every Vulkan phone runs.
+		/// </summary>
+		public bool Vulkan13 { get; private set; }
+
+		/// <summary>The swapchain images' format.</summary>
+		public Format ColorFormat => colorFormat;
+
+		/// <summary>The depth buffer's format.</summary>
+		public Format DepthFormat => depthFormat;
+
+		/// <summary>The device's properties (vendor, device, driver, pipeline cache UUID, limits).</summary>
+		public PhysicalDeviceProperties Properties { get; private set; }
 
 		/// <summary>The device and driver, for the log.</summary>
 		public string Description { get; private set; }
@@ -165,6 +189,10 @@ namespace OpenBve.Vulkan
 		{
 			IntPtr name = SilkMarshal.StringToPtr("OpenBVE");
 			string[] extensions = { KhrSurface.ExtensionName, KhrAndroidSurface.ExtensionName };
+			// Vulkan 1.3 where the loader has it (and the 1.3 path is allowed); the device decides later.
+			uint loaderVersion = Vk.Version10;
+			vk.EnumerateInstanceVersion(ref loaderVersion);
+			instanceVersion = AllowVulkan13 && loaderVersion >= Vk.Version13 ? Vk.Version13 : Vk.Version11;
 			IntPtr extensionNames = SilkMarshal.StringArrayToPtr(extensions);
 			try
 			{
@@ -173,7 +201,7 @@ namespace OpenBve.Vulkan
 					SType = StructureType.ApplicationInfo,
 					PApplicationName = (byte*)name,
 					PEngineName = (byte*)name,
-					ApiVersion = Vk.Version11
+					ApiVersion = instanceVersion
 				};
 				InstanceCreateInfo info = new InstanceCreateInfo
 				{
@@ -239,6 +267,7 @@ namespace OpenBve.Vulkan
 						physicalDevice = candidate;
 						queueFamily = i;
 						vk.GetPhysicalDeviceProperties(candidate, out PhysicalDeviceProperties deviceProperties);
+						Properties = deviceProperties;
 						Description = "Vulkan " + Version(deviceProperties.ApiVersion) + " (" + SilkMarshal.PtrToString((nint)deviceProperties.DeviceName) +
 						              ", driver " + deviceProperties.DriverVersion.ToString("X") + ")";
 						return;
@@ -275,14 +304,32 @@ namespace OpenBve.Vulkan
 					MaxAnisotropy = properties.Limits.MaxSamplerAnisotropy;
 				}
 
+				// The 1.3 path needs a 1.3 device with dynamic rendering and synchronization2 (both
+				// required by 1.3, but asked for rather than assumed).
+				PhysicalDeviceVulkan13Features supported13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features };
+				if (instanceVersion >= Vk.Version13 && properties.ApiVersion >= Vk.Version13)
+				{
+					PhysicalDeviceFeatures2 query = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &supported13 };
+					vk.GetPhysicalDeviceFeatures2(physicalDevice, &query);
+				}
+
+				Vulkan13 = supported13.DynamicRendering && supported13.Synchronization2;
+				PhysicalDeviceVulkan13Features enabled13 = new PhysicalDeviceVulkan13Features
+				{
+					SType = StructureType.PhysicalDeviceVulkan13Features,
+					DynamicRendering = true,
+					Synchronization2 = true
+				};
+				PhysicalDeviceFeatures2 enabled = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &enabled13, Features = features };
 				DeviceCreateInfo info = new DeviceCreateInfo
 				{
 					SType = StructureType.DeviceCreateInfo,
+					PNext = Vulkan13 ? &enabled : null,
 					QueueCreateInfoCount = 1,
 					PQueueCreateInfos = &queueInfo,
 					EnabledExtensionCount = (uint)extensions.Length,
 					PpEnabledExtensionNames = (byte**)extensionNames,
-					PEnabledFeatures = &features
+					PEnabledFeatures = Vulkan13 ? null : &features
 				};
 				Check(vk.CreateDevice(physicalDevice, in info, null, out device), "vkCreateDevice");
 			}
@@ -444,18 +491,24 @@ namespace OpenBve.Vulkan
 				khrSwapchain.GetSwapchainImages(device, swapchain, ref count, p);
 			}
 
-			if (renderPass.Handle == 0)
+			if (renderPass.Handle == 0 && !Vulkan13)
 			{
 				CreateRenderPass();
 			}
 
 			CreateDepthBuffer();
 			views = new ImageView[count];
-			framebuffers = new Framebuffer[count];
+			framebuffers = new Framebuffer[Vulkan13 ? 0 : count];
 			ImageView* attachments = stackalloc ImageView[2];
 			for (int i = 0; i < count; i++)
 			{
 				views[i] = CreateView(images[i], colorFormat, ImageAspectFlags.ColorBit);
+				if (Vulkan13)
+				{
+					// Dynamic rendering draws to the image views directly.
+					continue;
+				}
+
 				attachments[0] = views[i];
 				attachments[1] = depthView;
 				FramebufferCreateInfo framebufferInfo = new FramebufferCreateInfo
@@ -801,6 +854,13 @@ namespace OpenBve.Vulkan
 				return;
 			}
 
+			if (Vulkan13)
+			{
+				BeginRendering(red, green, blue, alpha, depth);
+				renderPassStarted = true;
+				return;
+			}
+
 			ClearValue* clear = stackalloc ClearValue[2];
 			clear[0] = new ClearValue(new ClearColorValue(red, green, blue, alpha));
 			clear[1] = new ClearValue(default, new ClearDepthStencilValue(depth, 0));
@@ -815,6 +875,99 @@ namespace OpenBve.Vulkan
 			};
 			vk.CmdBeginRenderPass(commandBuffers[frame], in pass, SubpassContents.Inline);
 			renderPassStarted = true;
+		}
+
+		/*
+		 * The 1.3 path's frame: the swapchain image and the depth buffer are moved into attachment
+		 * layouts (synchronization2 barriers), drawn with dynamic rendering - cleared on load, the
+		 * depth not stored - and the image moved on to be presented.
+		 */
+
+		private void BeginRendering(float red, float green, float blue, float alpha, float depth)
+		{
+			CommandBuffer commands = commandBuffers[frame];
+			ImageAspectFlags depthAspect = depthFormat == Format.D24UnormS8Uint ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit : ImageAspectFlags.DepthBit;
+			ImageMemoryBarrier2* barriers = stackalloc ImageMemoryBarrier2[2];
+			barriers[0] = new ImageMemoryBarrier2
+			{
+				SType = StructureType.ImageMemoryBarrier2,
+				SrcStageMask = PipelineStageFlags2.ColorAttachmentOutputBit,
+				SrcAccessMask = 0,
+				DstStageMask = PipelineStageFlags2.ColorAttachmentOutputBit,
+				DstAccessMask = AccessFlags2.ColorAttachmentWriteBit,
+				OldLayout = ImageLayout.Undefined,
+				NewLayout = ImageLayout.ColorAttachmentOptimal,
+				SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+				DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+				Image = images[imageIndex],
+				SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1)
+			};
+			barriers[1] = new ImageMemoryBarrier2
+			{
+				SType = StructureType.ImageMemoryBarrier2,
+				SrcStageMask = PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit,
+				SrcAccessMask = AccessFlags2.DepthStencilAttachmentWriteBit,
+				DstStageMask = PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit,
+				DstAccessMask = AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit,
+				OldLayout = ImageLayout.Undefined,
+				NewLayout = ImageLayout.DepthStencilAttachmentOptimal,
+				SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+				DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+				Image = depthImage,
+				SubresourceRange = new ImageSubresourceRange(depthAspect, 0, 1, 0, 1)
+			};
+			DependencyInfo dependency = new DependencyInfo { SType = StructureType.DependencyInfo, ImageMemoryBarrierCount = 2, PImageMemoryBarriers = barriers };
+			vk.CmdPipelineBarrier2(commands, in dependency);
+
+			RenderingAttachmentInfo color = new RenderingAttachmentInfo
+			{
+				SType = StructureType.RenderingAttachmentInfo,
+				ImageView = views[imageIndex],
+				ImageLayout = ImageLayout.ColorAttachmentOptimal,
+				LoadOp = AttachmentLoadOp.Clear,
+				StoreOp = AttachmentStoreOp.Store,
+				ClearValue = new ClearValue(new ClearColorValue(red, green, blue, alpha))
+			};
+			RenderingAttachmentInfo depthAttachment = new RenderingAttachmentInfo
+			{
+				SType = StructureType.RenderingAttachmentInfo,
+				ImageView = depthView,
+				ImageLayout = ImageLayout.DepthStencilAttachmentOptimal,
+				LoadOp = AttachmentLoadOp.Clear,
+				StoreOp = AttachmentStoreOp.DontCare,
+				ClearValue = new ClearValue(default, new ClearDepthStencilValue(depth, 0))
+			};
+			RenderingInfo rendering = new RenderingInfo
+			{
+				SType = StructureType.RenderingInfo,
+				RenderArea = new Rect2D(new Offset2D(0, 0), extent),
+				LayerCount = 1,
+				ColorAttachmentCount = 1,
+				PColorAttachments = &color,
+				PDepthAttachment = &depthAttachment
+			};
+			vk.CmdBeginRendering(commands, in rendering);
+		}
+
+		private void EndRendering(CommandBuffer commands)
+		{
+			vk.CmdEndRendering(commands);
+			ImageMemoryBarrier2 present = new ImageMemoryBarrier2
+			{
+				SType = StructureType.ImageMemoryBarrier2,
+				SrcStageMask = PipelineStageFlags2.ColorAttachmentOutputBit,
+				SrcAccessMask = AccessFlags2.ColorAttachmentWriteBit,
+				DstStageMask = PipelineStageFlags2.None,
+				DstAccessMask = 0,
+				OldLayout = ImageLayout.ColorAttachmentOptimal,
+				NewLayout = ImageLayout.PresentSrcKhr,
+				SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+				DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+				Image = images[imageIndex],
+				SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1)
+			};
+			DependencyInfo dependency = new DependencyInfo { SType = StructureType.DependencyInfo, ImageMemoryBarrierCount = 1, PImageMemoryBarriers = &present };
+			vk.CmdPipelineBarrier2(commands, in dependency);
 		}
 
 		/// <summary>Ends the render pass, submits the frame (its uploads first) and presents it.</summary>
@@ -833,7 +986,15 @@ namespace OpenBve.Vulkan
 			frameStarted = false;
 			renderPassStarted = false;
 			CommandBuffer commands = commandBuffers[frame];
-			vk.CmdEndRenderPass(commands);
+			if (Vulkan13)
+			{
+				EndRendering(commands);
+			}
+			else
+			{
+				vk.CmdEndRenderPass(commands);
+			}
+
 			Check(vk.EndCommandBuffer(commands), "vkEndCommandBuffer");
 			CommandBuffer* buffers = stackalloc CommandBuffer[2];
 			uint bufferCount = 0;

@@ -142,8 +142,65 @@ namespace OpenBve.Vulkan
 			return proc;
 		}
 
+		// The Vulkan 1.3 path's dynamic state commands, and what was last set in the frame's command buffer.
+		private delegate* unmanaged<CommandBuffer, CullModeFlags, void> cmdSetCullMode;
+		private delegate* unmanaged<CommandBuffer, PrimitiveTopology, void> cmdSetPrimitiveTopology;
+		private delegate* unmanaged<CommandBuffer, uint, void> cmdSetDepthTestEnable;
+		private delegate* unmanaged<CommandBuffer, uint, void> cmdSetDepthWriteEnable;
+		private delegate* unmanaged<CommandBuffer, CompareOp, void> cmdSetDepthCompareOp;
+		private delegate* unmanaged<CommandBuffer, uint, uint, Buffer*, ulong*, ulong*, ulong*, void> cmdBindVertexBuffers2;
+		private readonly ulong[] boundVertexStrides = new ulong[DefaultLocations];
+		private int boundCullMode, boundTopology, boundDepthTest, boundDepthWrite, boundDepthCompare;
+
+		/// <summary>Sets culling, the primitive and the depth state from GL's, where they changed (Vulkan 1.3 path).</summary>
+		private void SetDynamicState(CommandBuffer commands, int topology)
+		{
+			int cull = !cullFace ? (int)CullModeFlags.None : cullMode == GL_FRONT ? (int)CullModeFlags.FrontBit : cullMode == GL_BACK ? (int)CullModeFlags.BackBit : (int)CullModeFlags.FrontAndBack;
+			if (cull != boundCullMode)
+			{
+				cmdSetCullMode(commands, (CullModeFlags)cull);
+				boundCullMode = cull;
+			}
+
+			if (topology != boundTopology)
+			{
+				cmdSetPrimitiveTopology(commands, (PrimitiveTopology)topology);
+				boundTopology = topology;
+			}
+
+			int test = depthTest ? 1 : 0, write = depthTest && depthMask ? 1 : 0;
+			if (test != boundDepthTest)
+			{
+				cmdSetDepthTestEnable(commands, (uint)test);
+				boundDepthTest = test;
+			}
+
+			if (write != boundDepthWrite)
+			{
+				cmdSetDepthWriteEnable(commands, (uint)write);
+				boundDepthWrite = write;
+			}
+
+			int compare = depthTest ? Math.Max(0, Math.Min(7, depthFunc - 0x0200)) : (int)CompareOp.Always;
+			if (compare != boundDepthCompare)
+			{
+				cmdSetDepthCompareOp(commands, (CompareOp)compare);
+				boundDepthCompare = compare;
+			}
+		}
+
 		private void LoadCommands()
 		{
+			if (context.Vulkan13)
+			{
+				cmdSetCullMode = (delegate* unmanaged<CommandBuffer, CullModeFlags, void>)DeviceProc("vkCmdSetCullMode");
+				cmdSetPrimitiveTopology = (delegate* unmanaged<CommandBuffer, PrimitiveTopology, void>)DeviceProc("vkCmdSetPrimitiveTopology");
+				cmdSetDepthTestEnable = (delegate* unmanaged<CommandBuffer, uint, void>)DeviceProc("vkCmdSetDepthTestEnable");
+				cmdSetDepthWriteEnable = (delegate* unmanaged<CommandBuffer, uint, void>)DeviceProc("vkCmdSetDepthWriteEnable");
+				cmdSetDepthCompareOp = (delegate* unmanaged<CommandBuffer, CompareOp, void>)DeviceProc("vkCmdSetDepthCompareOp");
+				cmdBindVertexBuffers2 = (delegate* unmanaged<CommandBuffer, uint, uint, Buffer*, ulong*, ulong*, ulong*, void>)DeviceProc("vkCmdBindVertexBuffers2");
+			}
+
 			cmdDrawIndexed = (delegate* unmanaged<CommandBuffer, uint, uint, uint, int, uint, void>)DeviceProc("vkCmdDrawIndexed");
 			cmdDraw = (delegate* unmanaged<CommandBuffer, uint, uint, uint, uint, void>)DeviceProc("vkCmdDraw");
 			cmdBindPipeline = (delegate* unmanaged<CommandBuffer, PipelineBindPoint, Pipeline, void>)DeviceProc("vkCmdBindPipeline");
@@ -177,8 +234,7 @@ namespace OpenBve.Vulkan
 			};
 			Check(vk.CreatePipelineLayout(device, in layoutInfo, null, out pipelineLayout), "vkCreatePipelineLayout");
 
-			PipelineCacheCreateInfo cacheInfo = new PipelineCacheCreateInfo { SType = StructureType.PipelineCacheCreateInfo };
-			Check(vk.CreatePipelineCache(device, in cacheInfo, null, out pipelineCache), "vkCreatePipelineCache");
+			CreatePipelineCache();
 
 			DescriptorPoolSize poolSize = new DescriptorPoolSize(DescriptorType.UniformBufferDynamic, 256);
 			DescriptorPoolCreateInfo poolInfo = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 128, PoolSizeCount = 1, PPoolSizes = &poolSize };
@@ -245,6 +301,11 @@ namespace OpenBve.Vulkan
 			Array.Clear(boundVertexBuffers);
 			Array.Clear(boundVertexOffsets);
 			boundIndexBuffer = default;
+			Array.Clear(boundVertexStrides);
+			boundCullMode = -1;
+			boundTopology = -1;
+			boundDepthTest = boundDepthWrite = -1;
+			boundDepthCompare = -1;
 		}
 
 		/// <summary>The render pass began: the clip transform and the viewport go into the command buffer.</summary>
@@ -385,7 +446,7 @@ namespace OpenBve.Vulkan
 			{
 				Attribute attribute = array.Attributes[i];
 				Format format = attribute.Enabled && attribute.Buffer != null ? AttributeFormat(attribute.Type, attribute.Size, attribute.Normalized, attribute.Integer) : Format.Undefined;
-				layout.Set(i, format, format == Format.Undefined ? 0 : attribute.Stride);
+				layout.Set(i, format, format == Format.Undefined || Dynamic13 ? 0 : attribute.Stride);
 				array.Reads[i] = format != Format.Undefined;
 			}
 
@@ -400,8 +461,27 @@ namespace OpenBve.Vulkan
 			return id;
 		}
 
+		/*
+		 * The Vulkan 1.3 path: culling, depth test, depth writes, the depth comparison, the
+		 * primitive (within its class: triangles or lines) and the vertex strides are dynamic
+		 * state, set with commands as they change rather than baked into the pipeline. The key then
+		 * leaves them out, so there are fewer pipelines and fewer pipeline changes.
+		 */
+		private bool Dynamic13 => context.Vulkan13;
+
 		private ulong PipelineKey(ProgramKind kind, int topology, int layoutId)
 		{
+			if (Dynamic13)
+			{
+				ulong dynamicKey = (ulong)kind;
+				dynamicKey |= (ulong)TopologyClass(topology) << 2;
+				dynamicKey |= (blend ? 1UL : 0UL) << 13;
+				dynamicKey |= (ulong)(blend ? BlendIndex(blendSource) : 0) << 14;
+				dynamicKey |= (ulong)(blend ? BlendIndex(blendDestination) : 0) << 18;
+				dynamicKey |= (ulong)layoutId << 22;
+				return dynamicKey;
+			}
+
 			int cull = !cullFace ? 0 : cullMode == GL_FRONT ? 1 : cullMode == GL_BACK ? 2 : 3;
 			int depthCompare = Math.Max(0, Math.Min(7, depthFunc - 0x0200));
 			ulong key = (ulong)kind;
@@ -415,6 +495,13 @@ namespace OpenBve.Vulkan
 			key |= (ulong)(blend ? BlendIndex(blendDestination) : 0) << 18;
 			key |= (ulong)layoutId << 22;
 			return key;
+		}
+
+		/// <summary>The topology a pipeline of this primitive's class is made with (the draw sets the real one).</summary>
+		private static int TopologyClass(int topology)
+		{
+			PrimitiveTopology value = (PrimitiveTopology)topology;
+			return value == PrimitiveTopology.LineList || value == PrimitiveTopology.LineStrip ? (int)PrimitiveTopology.LineList : (int)PrimitiveTopology.TriangleList;
 		}
 
 		private ulong lastPipelineKey = ulong.MaxValue;
@@ -431,6 +518,7 @@ namespace OpenBve.Vulkan
 			{
 				pipeline = CreatePipeline(key);
 				pipelines[key] = pipeline;
+				PipelineMade();
 			}
 
 			lastPipelineKey = key;
@@ -533,11 +621,37 @@ namespace OpenBve.Vulkan
 					ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit
 				};
 				PipelineColorBlendStateCreateInfo colorBlend = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &attachment };
-				DynamicState* dynamics = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
-				PipelineDynamicStateCreateInfo dynamic = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dynamics };
+				Silk.NET.Vulkan.DynamicState* dynamics = stackalloc Silk.NET.Vulkan.DynamicState[9];
+				uint dynamicCount = 0;
+				dynamics[dynamicCount++] = Silk.NET.Vulkan.DynamicState.Viewport;
+				dynamics[dynamicCount++] = Silk.NET.Vulkan.DynamicState.Scissor;
+				if (Dynamic13)
+				{
+					dynamics[dynamicCount++] = Silk.NET.Vulkan.DynamicState.CullMode;
+					dynamics[dynamicCount++] = Silk.NET.Vulkan.DynamicState.PrimitiveTopology;
+					dynamics[dynamicCount++] = Silk.NET.Vulkan.DynamicState.DepthTestEnable;
+					dynamics[dynamicCount++] = Silk.NET.Vulkan.DynamicState.DepthWriteEnable;
+					dynamics[dynamicCount++] = Silk.NET.Vulkan.DynamicState.DepthCompareOp;
+					if (kind == ProgramKind.Default)
+					{
+						dynamics[dynamicCount++] = Silk.NET.Vulkan.DynamicState.VertexInputBindingStride;
+					}
+				}
+
+				PipelineDynamicStateCreateInfo dynamic = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = dynamicCount, PDynamicStates = dynamics };
+				// Dynamic rendering (1.3): the attachments' formats instead of a render pass.
+				Format colorFormat = context.ColorFormat;
+				PipelineRenderingCreateInfo rendering = new PipelineRenderingCreateInfo
+				{
+					SType = StructureType.PipelineRenderingCreateInfo,
+					ColorAttachmentCount = 1,
+					PColorAttachmentFormats = &colorFormat,
+					DepthAttachmentFormat = context.DepthFormat
+				};
 				GraphicsPipelineCreateInfo info = new GraphicsPipelineCreateInfo
 				{
 					SType = StructureType.GraphicsPipelineCreateInfo,
+					PNext = Dynamic13 ? &rendering : null,
 					StageCount = 2,
 					PStages = stages,
 					PVertexInputState = &vertexInput,
@@ -549,7 +663,7 @@ namespace OpenBve.Vulkan
 					PColorBlendState = &colorBlend,
 					PDynamicState = &dynamic,
 					Layout = pipelineLayout,
-					RenderPass = context.RenderPass,
+					RenderPass = Dynamic13 ? default : context.RenderPass,
 					Subpass = 0
 				};
 				Check(vk.CreateGraphicsPipelines(device, pipelineCache, 1, in info, null, out pipeline), "vkCreateGraphicsPipelines");
@@ -745,6 +859,11 @@ namespace OpenBve.Vulkan
 				boundPipeline = pipeline;
 			}
 
+			if (Dynamic13)
+			{
+				SetDynamicState(commands, Topology(mode));
+			}
+
 			Section(1, ref mark);
 			// Uniforms: the program's block, and for the default program the animation matrices,
 			// both in the ring's current segment (one descriptor set covers one buffer).
@@ -846,7 +965,27 @@ namespace OpenBve.Vulkan
 					changed |= buffers[i].Handle != boundVertexBuffers[i].Handle || offsets[i] != boundVertexOffsets[i];
 				}
 
-				if (changed)
+				if (Dynamic13)
+				{
+					ulong* strides = stackalloc ulong[DefaultLocations];
+					for (int i = 0; i < DefaultLocations; i++)
+					{
+						strides[i] = array.Reads[i] ? (ulong)array.Attributes[i].Stride : 0UL;
+						changed |= strides[i] != boundVertexStrides[i];
+					}
+
+					if (changed)
+					{
+						cmdBindVertexBuffers2(commands, 0, DefaultLocations, buffers, offsets, null, strides);
+						for (int i = 0; i < DefaultLocations; i++)
+						{
+							boundVertexBuffers[i] = buffers[i];
+							boundVertexOffsets[i] = offsets[i];
+							boundVertexStrides[i] = strides[i];
+						}
+					}
+				}
+				else if (changed)
 				{
 					cmdBindVertexBuffers(commands, 0, DefaultLocations, buffers, offsets);
 					for (int i = 0; i < DefaultLocations; i++)

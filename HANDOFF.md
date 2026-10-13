@@ -502,6 +502,11 @@ Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan r
   exterior 29 fps, A73 31-35 / 19-21 fps (GL 40-55 / 22-25, 28-32 / 15-18; A73 by bench_device.sh). First native-faces build
   crashed (InvalidOperation_NoValue: material.WrapMode is null on untextured materials) - fixed.
   Switches: --ez native_faces false, --ez vulkan_stages true.
+- Committed 2bcdaec (fast paths, native faces, Options entry "Vulkan (native, beta)"); beta
+  android.3 to be built by the user (release key): `release.ps1 -PortRelease 3 -Beta`.
+- Then (user, 2026-10-13): pipeline cache kept between games; a Vulkan 1.3 path (dynamic
+  rendering, sync2, extended dynamic state) beside the 1.1 baseline (user's choice of what the
+  "Vulkan 1.1 variant" means). Built, not yet tested on phones (vulkan4b.apk).
 - Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points. Next: fast paths, multi-threaded recording, pipeline cache on disk,
   then pipelining.
 

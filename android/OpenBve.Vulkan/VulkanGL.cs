@@ -107,9 +107,12 @@ namespace OpenBve.Vulkan
 		/// <summary>Messages about what is not supported, each once; the host logs them.</summary>
 		public static Action<string> Log = message => { };
 
-		public VulkanGL(VulkanContext context)
+		/// <param name="context">The device and window.</param>
+		/// <param name="cacheDirectory">Where the pipeline cache is kept between games (null: not kept).</param>
+		public VulkanGL(VulkanContext context, string cacheDirectory = null)
 		{
 			this.context = context;
+			this.cacheDirectory = cacheDirectory;
 			vk = context.Api;
 			device = context.Device;
 			bufferHeap = new BufferHeap(context);
@@ -119,6 +122,7 @@ namespace OpenBve.Vulkan
 			CreateLayouts();
 			CreateShaderModules();
 			CreateDefaults();
+			PrewarmPipelines();
 		}
 
 		/// <summary>The Vulkan device and window this draws to.</summary>
@@ -186,6 +190,7 @@ namespace OpenBve.Vulkan
 				uniformCalls = 0;
 				context.EndFrame();
 				stagingPending = 0;
+				PipelineCacheFrame();
 			}
 			else if (stagingPending > 0)
 			{
@@ -457,6 +462,7 @@ namespace OpenBve.Vulkan
 		public void Dispose()
 		{
 			context.WaitIdle();
+			SavePipelineCache();
 			DisposeDraw();
 			DisposeTextures();
 			bufferHeap.Dispose();

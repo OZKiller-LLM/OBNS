@@ -1452,7 +1452,31 @@ TML, native faces (2026-10-08):
 
 A73 rows from bench_device.sh (cab camera moved forward, as always); load 78 s (GL) / 66 s (Vulkan).
 The cab camera at TML's start is behind the cab-to-saloon door: move it forward (Keypad 9, ~1 s).
-Next: recording on several threads, a persisted pipeline cache, then pipelining.
+
+**Pipeline cache kept between games** (`VulkanGL.PipelineCache.cs`). Making a pipeline compiles
+its shaders for the GPU (tens of milliseconds on a phone: a stutter the first time each kind of
+object is drawn). The driver's cache data (`vulkan-pipelines.bin`) and the list of pipelines used,
+with their vertex layouts (`vulkan-pipelines.keys`), are kept in the app's cache folder; at the next
+start every listed pipeline is made from the cached data before the first frame (logged on the
+`native Vulkan:` line). Both files begin with the GPU's vendor, device, driver version, pipeline
+cache UUID and the renderer path; files from another driver are ignored, not handed to it. Saved
+after new pipelines and a few quiet seconds, when the window goes and when the game ends.
+
+**Vulkan 1.3 path.** The native renderer has two paths, chosen when the device is made:
+
+- **Vulkan 1.1** (every Vulkan phone; e.g. the A73): render pass objects, and every piece of draw
+  state in the pipeline.
+- **Vulkan 1.3** (devices reporting 1.3 with dynamic rendering and synchronization2; e.g. the S24
+  Ultra): dynamic rendering (no render pass or framebuffer objects; the swapchain image and the
+  depth buffer move between layouts with synchronization2 barriers), and culling, depth test,
+  depth writes, the depth comparison, the primitive (within triangles or lines) and the vertex
+  strides as dynamic state (`vkCmdSetCullMode`, ..., `vkCmdBindVertexBuffers2`): the pipeline key
+  leaves them out, so there are fewer pipelines and they change less often.
+
+`--ez vulkan13 false` keeps a 1.3 phone on the 1.1 path, for comparisons. The startup line says
+which path runs.
+
+Next: recording on several threads, then pipelining.
 
 ### Data assets
 

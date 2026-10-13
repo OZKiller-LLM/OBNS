@@ -70,10 +70,10 @@ namespace OpenBve.Android
 			{
 				vulkan = new VulkanContext(window);
 				VulkanGL.Log = message => Log.Warn("OpenBVE", "vulkan: " + message);
-				VulkanGL device = new VulkanGL(vulkan);
+				VulkanGL device = new VulkanGL(vulkan, global::Android.App.Application.Context.CacheDir?.AbsolutePath);
 				GL.Device = device;
 				GL.ResetStateCache();
-				Log.Info("OpenBVE", "native Vulkan: " + vulkan.Description + ", swapchain " + vulkan.Width + "x" + vulkan.Height + ", pre-rotation " + vulkan.Rotation + "°");
+				Log.Info("OpenBVE", "native Vulkan: " + vulkan.Description + (vulkan.Vulkan13 ? ", Vulkan 1.3 path" : ", Vulkan 1.1 path") + ", swapchain " + vulkan.Width + "x" + vulkan.Height + ", pre-rotation " + vulkan.Rotation + "°; " + device.PipelineCacheReport);
 				return new VulkanSurface(vulkan, device, window);
 			}
 			catch
@@ -97,6 +97,8 @@ namespace OpenBve.Android
 		/// <inheritdoc />
 		public void DetachWindow()
 		{
+			// The game may not come back (the app closed from the background): keep what was compiled.
+			device.SavePipelineCache();
 			vulkan.DetachWindow();
 			if (window != IntPtr.Zero)
 			{
