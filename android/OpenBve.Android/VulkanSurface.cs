@@ -73,23 +73,9 @@ namespace OpenBve.Android
 			{
 				vulkan = new VulkanContext(window);
 				VulkanGL.Log = message => Log.Warn("OpenBVE", "vulkan: " + message);
-				// The frame's draws are recorded on the frame workers (VulkanGL.Records), unless turned off for comparisons.
-				if (RecordOnWorkers)
-				{
-					VulkanGL.ParallelRun = (count, body) => FrameWorkers.Shared.Run(count, (first, end) =>
-					{
-						for (int i = first; i < end; i++)
-						{
-							body(i);
-						}
-					});
-					VulkanGL.ParallelThreads = FrameWorkers.Shared.Threads;
-				}
-				else
-				{
-					VulkanGL.ParallelRun = null;
-					VulkanGL.ParallelThreads = 1;
-				}
+				// The frame's draws are recorded on threads of the renderer's own (VulkanGL.Records): half the
+				// cores, at most 4 with the submitting thread - the frame workers update the next frame meanwhile.
+				VulkanGL.RecordThreads = RecordOnWorkers ? Math.Max(1, Math.Min(3, Environment.ProcessorCount / 2 - 1)) : 0;
 
 				VulkanGL device = new VulkanGL(vulkan, global::Android.App.Application.Context.CacheDir?.AbsolutePath);
 				GL.Device = device;
@@ -118,6 +104,8 @@ namespace OpenBve.Android
 		/// <inheritdoc />
 		public void DetachWindow()
 		{
+			// The last frame's submission first: it presents to this window.
+			device.WaitSubmitter();
 			// The game may not come back (the app closed from the background): keep what was compiled.
 			device.SavePipelineCache();
 			vulkan.DetachWindow();

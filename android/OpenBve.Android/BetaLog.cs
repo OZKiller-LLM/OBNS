@@ -131,7 +131,7 @@ namespace OpenBve.Android
 			Field("Language", "app " + AndroidSettings.GetLanguage(context) + ", system " + Java.Util.Locale.Default);
 
 			Section("Settings");
-			Field("Graphics", AndroidSettings.GetBackend(context) == GraphicsBackend.Vulkan ? "Vulkan (via ANGLE)" : "OpenGL ES");
+			Field("Graphics", AndroidSettings.BackendName(AndroidSettings.GetBackend(context)) + (VulkanStartup.FailureOnThisDevice(context) is string failure ? " (native Vulkan failed here before: " + failure + ")" : string.Empty));
 			Field("Interface", AndroidSettings.GetInterfaceStyle(context) + " (automatic = desktop style in Android desktop mode)");
 			Field("Quality", "viewing distance " + AndroidSettings.GetViewingDistance(context) + " m, " + AndroidSettings.GetSoundNumber(context) +
 			                 " sound sources, texture filtering " + AndroidSettings.GetInterpolation(context) +

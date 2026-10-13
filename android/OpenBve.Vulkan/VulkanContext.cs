@@ -70,7 +70,6 @@ namespace OpenBve.Vulkan
 		private readonly System.Collections.Generic.List<(ulong Serial, Action Action)> deferred = new System.Collections.Generic.List<(ulong, Action)>();
 		private bool slotReady;
 		private bool uploadsRecording;
-		private bool renderPassStarted;
 		private readonly Semaphore[] imageAvailable = new Semaphore[FramesInFlight];
 		private readonly Semaphore[] renderFinished = new Semaphore[FramesInFlight];
 		private readonly Fence[] inFlight = new Fence[FramesInFlight];
@@ -132,8 +131,6 @@ namespace OpenBve.Vulkan
 		/// <summary>Whether a frame is being recorded (BeginFrame without EndFrame yet).</summary>
 		public bool InFrame => frameStarted;
 
-		/// <summary>Whether the frame's render pass has begun (BeginRenderPass).</summary>
-		public bool InRenderPass => renderPassStarted;
 
 		/// <summary>
 		/// The serial the submission now being recorded will have: whatever is used now may be freed
@@ -803,9 +800,9 @@ namespace OpenBve.Vulkan
 		}
 
 		/// <summary>
-		/// Starts a frame: waits for this frame slot and takes a swapchain image. The render pass
-		/// begins separately (BeginRenderPass), with the clear values. False when there is nothing
-		/// to draw on (no window, or it was rebuilt); try again later then.
+		/// Starts a frame: waits for this frame slot and takes a swapchain image. The frame is drawn
+		/// and submitted after DetachFrame (SubmitFrame). False when there is nothing to draw on (no
+		/// window, or it was rebuilt); try again later then.
 		/// </summary>
 		public bool BeginFrame()
 		{
@@ -842,48 +839,140 @@ namespace OpenBve.Vulkan
 			CommandBufferBeginInfo begin = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
 			Check(vk.BeginCommandBuffer(commands, in begin), "vkBeginCommandBuffer");
 			frameStarted = true;
-			renderPassStarted = false;
 			return true;
 		}
 
 		/// <summary>The queue family the device draws with.</summary>
 		public uint QueueFamily => queueFamily;
 
-		/// <summary>The framebuffer of the image being drawn (Vulkan 1.1 path).</summary>
-		public Framebuffer CurrentFramebuffer => framebuffers.Length > imageIndex ? framebuffers[imageIndex] : default;
+		/// <summary>
+		/// A frame handed over to be submitted (DetachFrame, then SubmitFrame): its slot, its
+		/// swapchain image and whether it has uploads. The context has moved on to the next slot,
+		/// so the render thread can prepare the next frame while this one is submitted.
+		/// </summary>
+		public sealed class FrameHandoff
+		{
+			internal int Slot;
+			internal uint Image;
+			internal bool Uploads;
+
+			/// <summary>The frame slot (per-slot resources such as command pools).</summary>
+			public int FrameSlot => Slot;
+
+			/// <summary>The framebuffer the frame draws into (the 1.1 path's render pass; default on the 1.3 path).</summary>
+			public Framebuffer Framebuffer { get; internal set; }
+		}
 
 		/// <summary>
-		/// Begins the frame's render pass, clearing to these values. With secondary, its drawing comes
-		/// from secondary command buffers (vkCmdExecuteCommands) rather than recorded inline.
+		/// Ends the render thread's part of the frame: hands it over to be submitted (SubmitFrame) and
+		/// moves on to the next frame slot. What this frame used is freed once its submission completes.
 		/// </summary>
-		public void BeginRenderPass(float red, float green, float blue, float alpha, float depth, bool secondary = false)
+		public FrameHandoff DetachFrame()
 		{
-			if (!frameStarted || renderPassStarted)
+			FrameHandoff handoff = new FrameHandoff
 			{
-				return;
-			}
+				Slot = frame,
+				Image = imageIndex,
+				Uploads = uploadsRecording,
+				Framebuffer = framebuffers.Length > imageIndex ? framebuffers[imageIndex] : default
+			};
+			slotSerial[frame] = RecordingSerial++;
+			frameStarted = false;
+			uploadsRecording = false;
+			frame = (frame + 1) % FramesInFlight;
+			slotReady = false;
+			return handoff;
+		}
 
+		/// <summary>
+		/// Records a handed-over frame's render pass - its drawing from drawPass, which runs the
+		/// frame's secondary command buffers - submits it (uploads first) and presents it. May run on
+		/// another thread than the render thread, one frame at a time, while the render thread does not
+		/// use the device's queue or swapchain (VulkanGL waits for it before beginning the next frame).
+		/// </summary>
+		public void SubmitFrame(FrameHandoff handoff, System.Numerics.Vector4 clearColor, Action<CommandBuffer> drawPass)
+		{
+			int slot = handoff.Slot;
+			CommandBuffer commands = commandBuffers[slot];
 			if (Vulkan13)
 			{
-				BeginRendering(red, green, blue, alpha, depth, secondary);
-				renderPassStarted = true;
-				return;
+				BeginRendering(commands, handoff.Image, clearColor);
+			}
+			else
+			{
+				ClearValue* clear = stackalloc ClearValue[2];
+				clear[0] = new ClearValue(new ClearColorValue(clearColor.X, clearColor.Y, clearColor.Z, clearColor.W));
+				clear[1] = new ClearValue(default, new ClearDepthStencilValue(1.0f, 0));
+				RenderPassBeginInfo pass = new RenderPassBeginInfo
+				{
+					SType = StructureType.RenderPassBeginInfo,
+					RenderPass = renderPass,
+					Framebuffer = handoff.Framebuffer,
+					RenderArea = new Rect2D(new Offset2D(0, 0), extent),
+					ClearValueCount = 2,
+					PClearValues = clear
+				};
+				vk.CmdBeginRenderPass(commands, in pass, SubpassContents.SecondaryCommandBuffers);
 			}
 
-			ClearValue* clear = stackalloc ClearValue[2];
-			clear[0] = new ClearValue(new ClearColorValue(red, green, blue, alpha));
-			clear[1] = new ClearValue(default, new ClearDepthStencilValue(depth, 0));
-			RenderPassBeginInfo pass = new RenderPassBeginInfo
+			drawPass(commands);
+			if (Vulkan13)
 			{
-				SType = StructureType.RenderPassBeginInfo,
-				RenderPass = renderPass,
-				Framebuffer = framebuffers[imageIndex],
-				RenderArea = new Rect2D(new Offset2D(0, 0), extent),
-				ClearValueCount = 2,
-				PClearValues = clear
+				EndRendering(commands, handoff.Image);
+			}
+			else
+			{
+				vk.CmdEndRenderPass(commands);
+			}
+
+			Check(vk.EndCommandBuffer(commands), "vkEndCommandBuffer");
+			CommandBuffer* buffers = stackalloc CommandBuffer[2];
+			uint bufferCount = 0;
+			if (handoff.Uploads)
+			{
+				Check(vk.EndCommandBuffer(uploadBuffers[slot]), "vkEndCommandBuffer");
+				buffers[bufferCount++] = uploadBuffers[slot];
+			}
+
+			buffers[bufferCount++] = commands;
+			Semaphore wait = imageAvailable[slot];
+			Semaphore signal = renderFinished[slot];
+			PipelineStageFlags stage = PipelineStageFlags.ColorAttachmentOutputBit;
+			SubmitInfo submit = new SubmitInfo
+			{
+				SType = StructureType.SubmitInfo,
+				WaitSemaphoreCount = 1,
+				PWaitSemaphores = &wait,
+				PWaitDstStageMask = &stage,
+				CommandBufferCount = bufferCount,
+				PCommandBuffers = buffers,
+				SignalSemaphoreCount = 1,
+				PSignalSemaphores = &signal
 			};
-			vk.CmdBeginRenderPass(commandBuffers[frame], in pass, secondary ? SubpassContents.SecondaryCommandBuffers : SubpassContents.Inline);
-			renderPassStarted = true;
+			Fence fence = inFlight[slot];
+			vk.ResetFences(device, 1, in fence);
+			Check(vk.QueueSubmit(queue, 1, in submit, fence), "vkQueueSubmit");
+			SwapchainKHR chain = swapchain;
+			uint index = handoff.Image;
+			PresentInfoKHR present = new PresentInfoKHR
+			{
+				SType = StructureType.PresentInfoKhr,
+				WaitSemaphoreCount = 1,
+				PWaitSemaphores = &signal,
+				SwapchainCount = 1,
+				PSwapchains = &chain,
+				PImageIndices = &index
+			};
+			Result presented = khrSwapchain.QueuePresent(queue, in present);
+			if (presented == Result.ErrorOutOfDateKhr || presented == Result.SuboptimalKhr)
+			{
+				// Rebuilt by the render thread before its next frame.
+				rebuild = true;
+			}
+			else if (presented != Result.Success)
+			{
+				Check(presented, "vkQueuePresentKHR");
+			}
 		}
 
 		/*
@@ -892,9 +981,8 @@ namespace OpenBve.Vulkan
 		 * depth not stored - and the image moved on to be presented.
 		 */
 
-		private void BeginRendering(float red, float green, float blue, float alpha, float depth, bool secondary)
+		private void BeginRendering(CommandBuffer commands, uint image, System.Numerics.Vector4 clearColor)
 		{
-			CommandBuffer commands = commandBuffers[frame];
 			ImageAspectFlags depthAspect = depthFormat == Format.D24UnormS8Uint ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit : ImageAspectFlags.DepthBit;
 			ImageMemoryBarrier2* barriers = stackalloc ImageMemoryBarrier2[2];
 			barriers[0] = new ImageMemoryBarrier2
@@ -908,7 +996,7 @@ namespace OpenBve.Vulkan
 				NewLayout = ImageLayout.ColorAttachmentOptimal,
 				SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
 				DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-				Image = images[imageIndex],
+				Image = images[image],
 				SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1)
 			};
 			barriers[1] = new ImageMemoryBarrier2
@@ -931,11 +1019,11 @@ namespace OpenBve.Vulkan
 			RenderingAttachmentInfo color = new RenderingAttachmentInfo
 			{
 				SType = StructureType.RenderingAttachmentInfo,
-				ImageView = views[imageIndex],
+				ImageView = views[image],
 				ImageLayout = ImageLayout.ColorAttachmentOptimal,
 				LoadOp = AttachmentLoadOp.Clear,
 				StoreOp = AttachmentStoreOp.Store,
-				ClearValue = new ClearValue(new ClearColorValue(red, green, blue, alpha))
+				ClearValue = new ClearValue(new ClearColorValue(clearColor.X, clearColor.Y, clearColor.Z, clearColor.W))
 			};
 			RenderingAttachmentInfo depthAttachment = new RenderingAttachmentInfo
 			{
@@ -944,12 +1032,12 @@ namespace OpenBve.Vulkan
 				ImageLayout = ImageLayout.DepthStencilAttachmentOptimal,
 				LoadOp = AttachmentLoadOp.Clear,
 				StoreOp = AttachmentStoreOp.DontCare,
-				ClearValue = new ClearValue(default, new ClearDepthStencilValue(depth, 0))
+				ClearValue = new ClearValue(default, new ClearDepthStencilValue(1.0f, 0))
 			};
 			RenderingInfo rendering = new RenderingInfo
 			{
 				SType = StructureType.RenderingInfo,
-				Flags = secondary ? RenderingFlags.ContentsSecondaryCommandBuffersBit : 0,
+				Flags = RenderingFlags.ContentsSecondaryCommandBuffersBit,
 				RenderArea = new Rect2D(new Offset2D(0, 0), extent),
 				LayerCount = 1,
 				ColorAttachmentCount = 1,
@@ -959,7 +1047,7 @@ namespace OpenBve.Vulkan
 			vk.CmdBeginRendering(commands, in rendering);
 		}
 
-		private void EndRendering(CommandBuffer commands)
+		private void EndRendering(CommandBuffer commands, uint image)
 		{
 			vk.CmdEndRendering(commands);
 			ImageMemoryBarrier2 present = new ImageMemoryBarrier2
@@ -973,90 +1061,11 @@ namespace OpenBve.Vulkan
 				NewLayout = ImageLayout.PresentSrcKhr,
 				SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
 				DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-				Image = images[imageIndex],
+				Image = images[image],
 				SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1)
 			};
 			DependencyInfo dependency = new DependencyInfo { SType = StructureType.DependencyInfo, ImageMemoryBarrierCount = 1, PImageMemoryBarriers = &present };
 			vk.CmdPipelineBarrier2(commands, in dependency);
-		}
-
-		/// <summary>Ends the render pass, submits the frame (its uploads first) and presents it.</summary>
-		public void EndFrame()
-		{
-			if (!frameStarted)
-			{
-				return;
-			}
-
-			if (!renderPassStarted)
-			{
-				BeginRenderPass(0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-			}
-
-			frameStarted = false;
-			renderPassStarted = false;
-			CommandBuffer commands = commandBuffers[frame];
-			if (Vulkan13)
-			{
-				EndRendering(commands);
-			}
-			else
-			{
-				vk.CmdEndRenderPass(commands);
-			}
-
-			Check(vk.EndCommandBuffer(commands), "vkEndCommandBuffer");
-			CommandBuffer* buffers = stackalloc CommandBuffer[2];
-			uint bufferCount = 0;
-			if (uploadsRecording)
-			{
-				Check(vk.EndCommandBuffer(uploadBuffers[frame]), "vkEndCommandBuffer");
-				buffers[bufferCount++] = uploadBuffers[frame];
-				uploadsRecording = false;
-			}
-
-			buffers[bufferCount++] = commands;
-			Semaphore wait = imageAvailable[frame];
-			Semaphore signal = renderFinished[frame];
-			PipelineStageFlags stage = PipelineStageFlags.ColorAttachmentOutputBit;
-			SubmitInfo submit = new SubmitInfo
-			{
-				SType = StructureType.SubmitInfo,
-				WaitSemaphoreCount = 1,
-				PWaitSemaphores = &wait,
-				PWaitDstStageMask = &stage,
-				CommandBufferCount = bufferCount,
-				PCommandBuffers = buffers,
-				SignalSemaphoreCount = 1,
-				PSignalSemaphores = &signal
-			};
-			Fence fence = inFlight[frame];
-			vk.ResetFences(device, 1, in fence);
-			Check(vk.QueueSubmit(queue, 1, in submit, fence), "vkQueueSubmit");
-			slotSerial[frame] = RecordingSerial++;
-			SwapchainKHR chain = swapchain;
-			uint index = imageIndex;
-			PresentInfoKHR present = new PresentInfoKHR
-			{
-				SType = StructureType.PresentInfoKhr,
-				WaitSemaphoreCount = 1,
-				PWaitSemaphores = &signal,
-				SwapchainCount = 1,
-				PSwapchains = &chain,
-				PImageIndices = &index
-			};
-			Result presented = khrSwapchain.QueuePresent(queue, in present);
-			if (presented == Result.ErrorOutOfDateKhr || presented == Result.SuboptimalKhr)
-			{
-				rebuild = true;
-			}
-			else if (presented != Result.Success)
-			{
-				Check(presented, "vkQueuePresentKHR");
-			}
-
-			frame = (frame + 1) % FramesInFlight;
-			slotReady = false;
 		}
 
 		/*

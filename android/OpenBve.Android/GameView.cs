@@ -290,14 +290,20 @@ namespace OpenBve.Android
 		/// The native Vulkan renderer's window, or - if the device cannot make one (no usable Vulkan
 		/// driver) - OpenGL ES on the system driver, so the game still starts.
 		/// </summary>
-		private static IRenderSurface CreateVulkanOrFallBack(Surface window)
+		private IRenderSurface CreateVulkanOrFallBack(Surface window)
 		{
+			// A driver that crashes here takes the process with it: the marker tells the next start (VulkanStartup).
+			VulkanStartup.Begin(Context, "making the Vulkan device");
 			try
 			{
-				return VulkanSurface.Create(window);
+				IRenderSurface surface = VulkanSurface.Create(window);
+				VulkanStartup.Done(Context);
+				return surface;
 			}
 			catch (Exception e)
 			{
+				VulkanStartup.Done(Context);
+				VulkanStartup.MarkFailed(Context, "the Vulkan device could not be made: " + e.Message);
 				Log.Warn(Tag, "native Vulkan could not start (" + e.Message + "): drawing with OpenGL ES instead");
 				return EglSurface.Create(window);
 			}
@@ -312,7 +318,7 @@ namespace OpenBve.Android
 			try
 			{
 				// Fixed for the life of the process: the GL bindings attach to a library on first use.
-				GraphicsBackend backend = GraphicsLibraries.Select(AndroidSettings.GetBackend(Context));
+				GraphicsBackend backend = GraphicsLibraries.Select(AndroidSettings.ResolveBackend(Context));
 				egl = backend == GraphicsBackend.Vulkan
 					? AngleSurface.Create(holder.Surface)
 					: backend == GraphicsBackend.VulkanNative
@@ -465,7 +471,7 @@ namespace OpenBve.Android
 						("Route", Launch.RouteFile + " (text encoding " + (Launch.RouteEncoding?.WebName ?? "auto-detected") + ")"),
 						("Train", host.CurrentTrainFolder + " (text encoding " + (Launch.TrainEncoding?.WebName ?? "auto-detected") + ")"),
 						("Safety plugin", session?.Train.Plugin == null ? "none" : session.Train.Plugin.PluginTitle),
-						("Graphics", (AndroidSettings.GetBackend(Context) == GraphicsBackend.Vulkan ? "Vulkan (via ANGLE)" : "OpenGL ES") + " chosen, " +
+						("Graphics", AndroidSettings.BackendName(AndroidSettings.GetBackend(Context)) + " chosen, " +
 						             GraphicsLibraries.Active + " in use"),
 						("Graphics detail", GraphicsLibraries.Detail),
 						("Game mode", DesktopInterface ? "Desktop (Android desktop mode: HUD, keyboard and controller, as on a PC)" : "Phone (touch interface)"),
@@ -493,6 +499,12 @@ namespace OpenBve.Android
 				DateTime last = DateTime.UtcNow;
 				DateTime windowStart = last;
 				int frames = 0;
+				// Native Vulkan's first frames are the other place a driver may fail (VulkanStartup).
+				int framesToTrust = egl is VulkanSurface ? 60 : 0;
+				if (framesToTrust > 0)
+				{
+					VulkanStartup.Begin(Context, "the first frames");
+				}
 
 				while (running)
 				{
@@ -649,6 +661,10 @@ namespace OpenBve.Android
 					}
 
 					egl.SwapBuffers();
+					if (framesToTrust > 0 && --framesToTrust == 0)
+					{
+						VulkanStartup.Done(Context);
+					}
 				}
 			}
 			catch (Exception ex)

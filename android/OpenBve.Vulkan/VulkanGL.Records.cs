@@ -23,6 +23,7 @@
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 using System;
 using System.Numerics;
+using System.Threading;
 using Silk.NET.Vulkan;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
@@ -37,20 +38,37 @@ namespace OpenBve.Vulkan
 	 * buffer by a worker thread, and the frame's command buffer runs them in order inside its render
 	 * pass. The commands are the same, in the same order; only who records them changes. On TML's
 	 * exterior recording ~6,000 draws took 8-15 ms of the render thread's frame.
+	 *
+	 * Pipelining: the recording and the submission run on a thread of their own (the submitter),
+	 * with workers of their own for the chunks. At the swap the render thread hands the frame over
+	 * and goes on with the next frame's simulation and animated objects (5-15 ms on TML) while the
+	 * last one is recorded, submitted and presented; it waits for that to finish only when it begins
+	 * drawing the next frame. So the device's queue, the swapchain and the records are never used by
+	 * both threads at once, and what a frame used stays untouched until its submission completes
+	 * (the serials of VulkanContext.Defer, copy on write for buffers).
 	 */
 	public sealed unsafe partial class VulkanGL
 	{
 		private const int MaxChunks = 8;
 		private const int RecordsPerChunk = 400;
 
-		/// <summary>
-		/// Runs body(0..count-1) on the host's worker threads and returns when all are done (the port
-		/// sets FrameWorkers here); null: one after another on the render thread.
-		/// </summary>
-		public static Action<int, Action<int>> ParallelRun;
+		/// <summary>Whether frames are recorded and submitted on their own thread while the next is prepared (`--ez vulkan_pipelined false`: at the swap, on the render thread).</summary>
+		public static bool Pipelined = true;
 
-		/// <summary>How many threads ParallelRun uses (the chunks are cut to fit them).</summary>
-		public static int ParallelThreads = 1;
+		/// <summary>Threads that record chunks besides the one submitting (0: it records them all). Set before the device is made.</summary>
+		public static int RecordThreads = 2;
+
+		private RecordWorkers workers;
+		private Thread submitter;
+		private readonly object submitGate = new object();
+		private Action submitJob;
+		private bool submitBusy;
+		private bool stopping;
+		private Exception submitFailure;
+		private long submitWaitTicks;
+
+		/// <summary>Time the render thread waited for the previous frame's submission, last frame, for the log.</summary>
+		public double LastFrameSubmitWaitMilliseconds { get; private set; }
 
 		private enum RecordKind : byte
 		{
@@ -127,6 +145,8 @@ namespace OpenBve.Vulkan
 				return true;
 			}
 
+			// The last frame's submission must be done before the device is used for the next.
+			WaitSubmitter();
 			if (!context.BeginFrame())
 			{
 				return false;
@@ -193,50 +213,261 @@ namespace OpenBve.Vulkan
 		}
 
 		/// <summary>
-		/// At the swap: begins the render pass, records the frame's draws on the worker threads into
-		/// secondary command buffers, and runs them from the frame's command buffer.
+		/// At the swap: hands the frame over (VulkanContext.DetachFrame) and has it recorded - its
+		/// draws in chunks into secondary command buffers, on the workers - submitted and presented,
+		/// on the submitter thread (or here when not pipelined).
 		/// </summary>
 		private void RecordFrame()
 		{
-			int slot = context.FrameSlot;
-			context.BeginRenderPass(passClear.X, passClear.Y, passClear.Z, passClear.W, 1.0f, true);
-			if (recordCount == 0)
-			{
-				LastFrameChunks = 0;
-				return;
-			}
-
-			long started = System.Diagnostics.Stopwatch.GetTimestamp();
-			int chunks = Math.Max(1, Math.Min(Math.Min(MaxChunks, ParallelThreads * 2), recordCount / RecordsPerChunk));
-			int perChunk = (recordCount + chunks - 1) / chunks;
+			VulkanContext.FrameHandoff handoff = context.DetachFrame();
+			int slot = handoff.FrameSlot;
+			int count = recordCount;
+			Vector4 clear = passClear;
+			Vector4 clip = context.ClipTransform;
+			int threads = workers == null ? 1 : RecordThreads + 1;
+			int chunks = count == 0 ? 0 : Math.Max(1, Math.Min(Math.Min(MaxChunks, threads * 2), count / RecordsPerChunk));
+			int perChunk = chunks == 0 ? 0 : (count + chunks - 1) / chunks;
 			for (int chunk = 0; chunk < chunks; chunk++)
 			{
 				EnsureChunkBuffer(slot, chunk);
 			}
 
-			Vector4 clip = context.ClipTransform;
-			Action<int> record = chunk => RecordChunk(slot, chunk, chunk * perChunk, Math.Min(recordCount, (chunk + 1) * perChunk), clip);
-			if (chunks == 1 || ParallelRun == null)
+			LastFrameSubmitWaitMilliseconds = submitWaitTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+			submitWaitTicks = 0;
+			Action job = () =>
 			{
-				for (int chunk = 0; chunk < chunks; chunk++)
+				long started = System.Diagnostics.Stopwatch.GetTimestamp();
+				context.SubmitFrame(handoff, clear, commands =>
 				{
-					record(chunk);
+					if (chunks == 0)
+					{
+						return;
+					}
+
+					Action<int> record = chunk => RecordChunk(slot, chunk, chunk * perChunk, Math.Min(count, (chunk + 1) * perChunk), clip, handoff.Framebuffer);
+					if (chunks == 1 || workers == null)
+					{
+						for (int chunk = 0; chunk < chunks; chunk++)
+						{
+							record(chunk);
+						}
+					}
+					else
+					{
+						workers.Run(chunks, record);
+					}
+
+					CommandBuffer* buffers = stackalloc CommandBuffer[chunks];
+					for (int chunk = 0; chunk < chunks; chunk++)
+					{
+						buffers[chunk] = chunkBuffers[slot, chunk];
+					}
+
+					vk.CmdExecuteCommands(commands, (uint)chunks, buffers);
+				});
+				LastFrameChunks = chunks;
+				LastFrameReplayMilliseconds = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+			};
+
+			if (Pipelined)
+			{
+				StartSubmitter();
+				lock (submitGate)
+				{
+					submitJob = job;
+					submitBusy = true;
+					Monitor.PulseAll(submitGate);
 				}
 			}
 			else
 			{
-				ParallelRun(chunks, record);
+				job();
 			}
+		}
 
-			CommandBuffer* buffers = stackalloc CommandBuffer[chunks];
-			for (int chunk = 0; chunk < chunks; chunk++)
+		private void StartSubmitter()
+		{
+			if (submitter != null)
 			{
-				buffers[chunk] = chunkBuffers[slot, chunk];
+				return;
 			}
 
-			vk.CmdExecuteCommands(context.DrawCommands, (uint)chunks, buffers);
-			LastFrameChunks = chunks;
-			LastFrameReplayMilliseconds = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+			submitter = new Thread(SubmitLoop) { IsBackground = true, Name = "OpenBVE Vulkan submit" };
+			submitter.Start();
+		}
+
+		private void SubmitLoop()
+		{
+			while (true)
+			{
+				Action job;
+				lock (submitGate)
+				{
+					while (submitJob == null && !stopping)
+					{
+						Monitor.Wait(submitGate);
+					}
+
+					if (submitJob == null)
+					{
+						return;
+					}
+
+					job = submitJob;
+				}
+
+				try
+				{
+					job();
+				}
+				catch (Exception e)
+				{
+					submitFailure = e;
+				}
+
+				lock (submitGate)
+				{
+					submitJob = null;
+					submitBusy = false;
+					Monitor.PulseAll(submitGate);
+				}
+			}
+		}
+
+		/// <summary>
+		/// Waits until the last frame handed over has been submitted, rethrowing what went wrong if it
+		/// failed. Before anything else uses the device's queue or swapchain.
+		/// </summary>
+		public void WaitSubmitter()
+		{
+			long started = System.Diagnostics.Stopwatch.GetTimestamp();
+			lock (submitGate)
+			{
+				while (submitBusy)
+				{
+					Monitor.Wait(submitGate);
+				}
+			}
+
+			submitWaitTicks += System.Diagnostics.Stopwatch.GetTimestamp() - started;
+			Exception failure = submitFailure;
+			if (failure != null)
+			{
+				submitFailure = null;
+				throw new InvalidOperationException("recording or submitting a Vulkan frame failed: " + failure.Message, failure);
+			}
+		}
+
+		/// <summary>Ends the submitter thread (the device is going).</summary>
+		private void StopSubmitter()
+		{
+			lock (submitGate)
+			{
+				stopping = true;
+				Monitor.PulseAll(submitGate);
+			}
+
+			submitter?.Join(2000);
+			submitter = null;
+		}
+
+		/*
+		 * The chunks' workers: threads of their own, not the frame workers the render thread uses for
+		 * animated objects at the same time. Each Run hands out chunk numbers to the workers and the
+		 * calling thread, and returns when all are recorded.
+		 */
+		private sealed class RecordWorkers
+		{
+			// One object per Run: a worker still finishing the last one only ever sees that one, done.
+			private sealed class Job
+			{
+				internal Action<int> Body;
+				internal int Count;
+				internal int Next;
+				internal int Pending;
+				internal Exception Failure;
+
+				internal void Drain()
+				{
+					while (true)
+					{
+						int index = Interlocked.Increment(ref Next) - 1;
+						if (index >= Count)
+						{
+							return;
+						}
+
+						try
+						{
+							Body(index);
+						}
+						catch (Exception e)
+						{
+							Interlocked.CompareExchange(ref Failure, e, null);
+						}
+						finally
+						{
+							Interlocked.Decrement(ref Pending);
+						}
+					}
+				}
+			}
+
+			private readonly object gate = new object();
+			private int generation;
+			private Job current;
+
+			internal RecordWorkers(int threads)
+			{
+				for (int i = 0; i < threads; i++)
+				{
+					new Thread(Work) { IsBackground = true, Name = "OpenBVE Vulkan record " + (i + 1) }.Start();
+				}
+			}
+
+			internal void Run(int total, Action<int> work)
+			{
+				Job job = new Job { Body = work, Count = total, Pending = total };
+				lock (gate)
+				{
+					current = job;
+					generation++;
+					Monitor.PulseAll(gate);
+				}
+
+				job.Drain();
+				SpinWait spin = new SpinWait();
+				while (Volatile.Read(ref job.Pending) > 0)
+				{
+					spin.SpinOnce(-1);
+				}
+
+				if (job.Failure != null)
+				{
+					throw new AggregateException(job.Failure);
+				}
+			}
+
+			private void Work()
+			{
+				int seen = 0;
+				while (true)
+				{
+					Job job;
+					lock (gate)
+					{
+						while (generation == seen)
+						{
+							Monitor.Wait(gate);
+						}
+
+						seen = generation;
+						job = current;
+					}
+
+					job.Drain();
+				}
+			}
 		}
 
 		/// <summary>The chunk's secondary command buffer for this slot, made the first time.</summary>
@@ -278,7 +509,7 @@ namespace OpenBve.Vulkan
 		}
 
 		/// <summary>Records records [start, end) into a chunk's secondary command buffer (on a worker thread).</summary>
-		private void RecordChunk(int slot, int chunk, int start, int end, Vector4 clip)
+		private void RecordChunk(int slot, int chunk, int start, int end, Vector4 clip, Framebuffer framebuffer)
 		{
 			CommandBuffer commands = chunkBuffers[slot, chunk];
 			Format colorFormat = context.ColorFormat;
@@ -296,7 +527,7 @@ namespace OpenBve.Vulkan
 				PNext = context.Vulkan13 ? &rendering : null,
 				RenderPass = context.Vulkan13 ? default : context.RenderPass,
 				Subpass = 0,
-				Framebuffer = context.Vulkan13 ? default : context.CurrentFramebuffer
+				Framebuffer = framebuffer
 			};
 			CommandBufferBeginInfo begin = new CommandBufferBeginInfo
 			{
@@ -483,6 +714,7 @@ namespace OpenBve.Vulkan
 
 		private void DisposeRecords()
 		{
+			StopSubmitter();
 			for (int slot = 0; slot < VulkanContext.Slots; slot++)
 			{
 				for (int chunk = 0; chunk < MaxChunks; chunk++)

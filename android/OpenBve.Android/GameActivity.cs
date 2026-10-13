@@ -217,6 +217,8 @@ namespace OpenBve.Android
 			OpenBve.Vulkan.VulkanGL.UseDynamicState = Intent?.GetBooleanExtra("vulkan13_dynamic_state", false) ?? false;
 			// For comparisons: --ez vulkan_threads false records the Vulkan frame on the render thread only.
 			VulkanSurface.RecordOnWorkers = Intent?.GetBooleanExtra("vulkan_threads", true) ?? true;
+			// For comparisons: --ez vulkan_pipelined false records and submits each frame at its swap, on the render thread.
+			OpenBve.Vulkan.VulkanGL.Pipelined = Intent?.GetBooleanExtra("vulkan_pipelined", true) ?? true;
 			// Remembered texture transparency (TextureClassifier), in the app's cache folder.
 			TextureClassifier.CacheFolder = CacheDir?.AbsolutePath;
 			// For comparisons: --ez mesh_sharing false loads every train part with its own mesh, as upstream.

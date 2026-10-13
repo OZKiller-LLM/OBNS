@@ -155,7 +155,7 @@ namespace OpenBve.Android
 			{
 				"OpenGL ES",
 				"Vulkan (ANGLE)" + (anglePackaged && vulkanDevice ? string.Empty : " — " + Menu.T("android", "unavailable", "unavailable")),
-				Menu.T("android", "vulkan_native", "Vulkan (native, beta)") + (vulkanDevice ? string.Empty : " — " + Menu.T("android", "unavailable", "unavailable"))
+				Menu.T("android", "vulkan_native", "Vulkan (native)") + (VulkanStartup.VulkanUsable(activity) ? string.Empty : " — " + Menu.T("android", "unavailable", "unavailable"))
 			};
 			GraphicsBackend[] backendValues = { GraphicsBackend.OpenGL, GraphicsBackend.Vulkan, GraphicsBackend.VulkanNative };
 			Dropdown(Menu.T("android", "graphics_backend", "Graphics backend:"), backends,
@@ -194,7 +194,12 @@ namespace OpenBve.Android
 			}
 
 			note += "\n" + Menu.T("android", "vulkan_native_note",
-				"Native Vulkan (beta) draws with Vulkan directly, without OpenGL ES, and is faster on most phones. If something looks wrong, please report it and switch back.");
+				"Native Vulkan (the default) draws with Vulkan directly, without OpenGL ES, and is faster on most phones; where it does not work, OpenGL ES is used. If something looks wrong, please report it and choose OpenGL ES.");
+			if (VulkanStartup.FailureOnThisDevice(activity) is string failure)
+			{
+				note += "\n" + string.Format(Menu.T("android", "vulkan_native_failed",
+					"Native Vulkan did not work on this device last time ({0}), so OpenGL ES is used. Choose native Vulkan again to retry."), failure);
+			}
 
 			Info(note);
 			Refresh();
@@ -228,7 +233,16 @@ namespace OpenBve.Android
 				Adapter = new ArrayAdapter<string>(activity, global::Android.Resource.Layout.SimpleSpinnerDropDownItem, items)
 			};
 			spinner.SetSelection(selected);
-			spinner.ItemSelected += (s, e) => changed(e.Position);
+			// Android reports the initial selection as a change too: only real changes are passed on.
+			int current = selected;
+			spinner.ItemSelected += (s, e) =>
+			{
+				if (e.Position != current)
+				{
+					current = e.Position;
+					changed(e.Position);
+				}
+			};
 			row.AddView(spinner, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1.0f));
 		}
 

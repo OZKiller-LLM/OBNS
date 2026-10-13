@@ -123,6 +123,7 @@ namespace OpenBve.Vulkan
 			CreateShaderModules();
 			CreateDefaults();
 			PrewarmPipelines();
+			workers = RecordThreads > 0 ? new RecordWorkers(RecordThreads) : null;
 		}
 
 		/// <summary>The Vulkan device and window this draws to.</summary>
@@ -140,7 +141,8 @@ namespace OpenBve.Vulkan
 		public string Describe()
 		{
 			return LastFrameDraws + " draws (" + LastFrameDrawMilliseconds.ToString("0.0") + " ms preparing them" + (ProfileStages ? ": " + LastFrameSections : string.Empty) + ", " +
-			       LastFrameReplayMilliseconds.ToString("0.0") + " ms recording them in " + LastFrameChunks + " chunks; " + LastFrameUniformCalls + " uniform sets), " + pipelines.Count + " pipelines, " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
+			       LastFrameReplayMilliseconds.ToString("0.0") + " ms recording and submitting them in " + LastFrameChunks + " chunks" +
+			       (Pipelined ? ", waited " + LastFrameSubmitWaitMilliseconds.ToString("0.0") + " ms for it" : ", not pipelined") + "; " + LastFrameUniformCalls + " uniform sets), " + pipelines.Count + " pipelines, " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
 			       (imageHeap.ReservedBytes >> 20) + " MB reserved), " + glBuffers.Count + " buffers (" + (bufferHeap.UsedBytes >> 20) + " MB, " +
 			       (bufferHeap.ReservedBytes >> 20) + " MB reserved" + (bufferHeap.DeviceLocal ? ", unified" : ", host") + ")";
 		}
@@ -167,14 +169,15 @@ namespace OpenBve.Vulkan
 				SectionsDone();
 				LastFrameUniformCalls = uniformCalls;
 				uniformCalls = 0;
+				// Handed over: recorded, submitted and presented on the submitter thread.
 				RecordFrame();
-				context.EndFrame();
 				stagingPending = 0;
 				PipelineCacheFrame();
 			}
 			else if (stagingPending > 0)
 			{
 				// No frame since the uploads: a loading screen, or the window gone.
+				WaitSubmitter();
 				context.FlushUploads();
 				stagingPending = 0;
 			}
@@ -186,6 +189,7 @@ namespace OpenBve.Vulkan
 			stagingPending += bytes;
 			if (stagingPending > StagingBudget && !context.InFrame)
 			{
+				WaitSubmitter();
 				context.FlushUploads();
 				stagingPending = 0;
 			}
@@ -424,6 +428,7 @@ namespace OpenBve.Vulkan
 
 		public void Dispose()
 		{
+			WaitSubmitter();
 			context.WaitIdle();
 			SavePipelineCache();
 			DisposeDraw();

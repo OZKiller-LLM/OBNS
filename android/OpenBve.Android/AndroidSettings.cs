@@ -26,6 +26,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Android.Content;
+using Android.Util;
 using OpenBveApi.Graphics;
 using OpenTK.Graphics;
 
@@ -42,7 +43,9 @@ namespace OpenBve.Android
 	public static class AndroidSettings
 	{
 		private const string File = "openbve";
-		private const string BackendKey = "graphics_backend";
+		// 1.1: a new key, so that native Vulkan is everyone's default - before, opening Options stored
+		// "OpenGL" whether or not it was chosen (the dropdown saved its initial selection).
+		private const string BackendKey = "graphics_backend_1_1";
 		private const string LanguageKey = "language";
 		private const string ViewingDistanceKey = "viewing_distance";
 		private const string SoundNumberKey = "sound_number";
@@ -73,11 +76,58 @@ namespace OpenBve.Android
 		public static GraphicsBackend GetBackend(Context context)
 		{
 			string value = Prefs(context)?.GetString(BackendKey, null);
-			return Enum.TryParse(value, true, out GraphicsBackend backend) ? backend : GraphicsBackend.OpenGL;
+			return Enum.TryParse(value, true, out GraphicsBackend backend) ? backend : GraphicsBackend.VulkanNative;
 		}
 
+		/// <summary>
+		/// The backend a game starts with: the one chosen (native Vulkan unless another was), except
+		/// that native Vulkan falls back to OpenGL ES on a device without Vulkan 1.1 or where it has
+		/// failed (VulkanStartup). Called by the game process as it starts.
+		/// </summary>
+		public static GraphicsBackend ResolveBackend(Context context)
+		{
+			GraphicsBackend chosen = GetBackend(context);
+			if (chosen != GraphicsBackend.VulkanNative)
+			{
+				return chosen;
+			}
+
+			string interrupted = VulkanStartup.CheckInterrupted(context);
+			if (interrupted != null)
+			{
+				Log.Warn("OpenBVE", "native Vulkan: the last game stopped during " + interrupted + ": OpenGL ES from now on (choose native Vulkan in Options to try again)");
+			}
+
+			if (!VulkanStartup.VulkanUsable(context))
+			{
+				Log.Info("OpenBVE", "native Vulkan: the device reports no Vulkan 1.1: OpenGL ES instead");
+				return GraphicsBackend.OpenGL;
+			}
+
+			string failure = VulkanStartup.FailureOnThisDevice(context);
+			if (failure != null)
+			{
+				Log.Info("OpenBVE", "native Vulkan failed on this device before (" + failure + "): OpenGL ES instead");
+				return GraphicsBackend.OpenGL;
+			}
+
+			return GraphicsBackend.VulkanNative;
+		}
+
+		/// <summary>A backend's name, for reports.</summary>
+		public static string BackendName(GraphicsBackend backend) =>
+			backend == GraphicsBackend.VulkanNative ? "Vulkan (native)" : backend == GraphicsBackend.Vulkan ? "Vulkan (via ANGLE)" : "OpenGL ES";
+
 		/// <summary>Stores the graphics backend to use from the next game.</summary>
-		public static void SetBackend(Context context, GraphicsBackend backend) => PutString(context, BackendKey, backend.ToString());
+		public static void SetBackend(Context context, GraphicsBackend backend)
+		{
+			PutString(context, BackendKey, backend.ToString());
+			if (backend == GraphicsBackend.VulkanNative)
+			{
+				// Chosen again: try it again, even where it failed before.
+				VulkanStartup.ClearFailed(context);
+			}
+		}
 
 		/// <summary>The interface style chosen in Options.</summary>
 		public static InterfaceStyle GetInterfaceStyle(Context context)
