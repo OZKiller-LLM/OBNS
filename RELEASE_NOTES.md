@@ -1,16 +1,21 @@
 # OpenBVE for Android — release notes
 
-## 1.1 beta (1.14.0.3-android.3-beta) — native Vulkan renderer
+## 1.1 (1.14.0.3-android.3) — native Vulkan renderer
 
-A beta for testers: the new renderer is not the default yet.
+### Native Vulkan renderer, now the default
 
-### Native Vulkan renderer (beta)
+The game is drawn with Vulkan directly - no OpenGL ES, no ANGLE - with much less work per object,
+the drawing recorded on several processor cores, and each frame recorded and shown while the next
+is already being prepared. Compiled graphics pipelines are kept between games, so new kinds of
+objects no longer stutter the first time they appear. On phones with Vulkan 1.3 it uses 1.3's
+dynamic rendering.
 
-**Options → Advanced Options → Graphics backend → Vulkan (native, beta)**, then start a game.
-The game is drawn with Vulkan directly - no OpenGL ES, no ANGLE - and the scene is drawn with
-much less work per object. It should look exactly as with OpenGL ES; if anything looks different
-(missing or black objects, wrong colours or transparency), please report the route, the train
-and a screenshot, and switch back to OpenGL ES. Measured on the HKRSC Tuen Ma Line pack:
+OpenGL ES is used instead, by itself, on phones without Vulkan 1.1, and on a phone where Vulkan
+failed to start (it tries again after a system update, or when chosen again). **Options → Advanced
+Options → Graphics backend** chooses OpenGL ES, Vulkan through ANGLE, or native Vulkan. It should
+look exactly as with OpenGL ES; if anything looks different (missing or black objects, wrong
+colours or transparency), please report the route, the train and a screenshot, and choose OpenGL
+ES. Measured on the HKRSC Tuen Ma Line pack (before pipelining; the full device table follows):
 
 | Phone | OpenGL ES cab / exterior | Native Vulkan cab / exterior |
 |---|---|---|

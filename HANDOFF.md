@@ -457,8 +457,8 @@ EAL/R-Train ATO bench with the threshold change (phone throttled, thermal status
 16.7 -> 11.8 fps (was 15.9 -> 9.3 cool); exterior screenshot correct.
 Next: exterior frame (opaque and
 transparent ~30-45 ms each, train objects ~20-30 ms); remaining load (train plugin 128-147 s of per-car file checks,
-object load 71-80 s, texture register 16-18 s). The per-decode stack sampling in
-`AndroidHost.LoadTexture` is temporary diagnostics - remove before a release.
+object load 71-80 s, texture register 16-18 s). (The per-decode stack sampling once in
+`AndroidHost.LoadTexture` has since been removed.)
 
 **2026-10-14: the projects moved from C:\dev to D:\dev** (user): D:\dev\OpenBVE-Android, D:\dev\Rinkin,
 D:\dev	ools (glslang). Paths in the repo (GlslangPath, these notes) updated.
@@ -513,6 +513,10 @@ Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan r
   Adreno 750), multi-threaded recording (secondary command buffers on FrameWorkers). A bug found
   and fixed on the way: pipelines must follow context.Vulkan13 (dynamic rendering), not the dynamic
   state switch. S24U benchmarks are thermally confounded (status 3, 42 C): rerun cooler.
+- 2026-10-14: pipelining (submitter thread), native Vulkan the default with OpenGL ES fallback
+  (VulkanStartup), SD-first benchmark scripts (content_base.sh, core11_suite.sh, run_all.sh).
+  Emulator OpenBVE_Test checked. Committed b20fafe. Device run of 11 phones started (A05s, S8,
+  A52, A73, Z Flip4, S20 FE 4G, Tab S5e, A36, A23 x2, A04s); S24U, A35, A14, C31 next round.
 - Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points. Next: fast paths, multi-threaded recording, pipeline cache on disk,
   then pipelining.
 

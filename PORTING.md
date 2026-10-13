@@ -1492,7 +1492,36 @@ the A73's exterior now waits 13-17 ms for its GPU at the swap. The S24 Ultra sta
 status 3 through the comparisons (cab 52-65, exterior 25-31 fps across variants), so its numbers
 need a cooler rerun.
 
-Next: pipelining.
+**Pipelining** (`VulkanContext.DetachFrame` / `SubmitFrame`, `VulkanGL.Records`). At the swap the
+render thread hands the frame over - its slot, swapchain image and records - to a thread of the
+renderer's own (the submitter), which records the chunks on workers of its own (not the frame
+workers, busy with the next frame's animated objects meanwhile), records the render pass, submits
+and presents. The render thread goes straight on with the next frame's simulation and object
+updates (5-15 ms on TML) and waits for the submitter only when it begins drawing the next frame -
+so the queue, the swapchain and the records are never used by both at once, and what a frame used
+is kept until its submission completes (serials, copy on write). Errors on the submitter are
+rethrown on the render thread. `--ez vulkan_pipelined false` submits at the swap on the render
+thread; the log's `vulkan:` line shows the wait (`waited x ms for it`).
+
+**Native Vulkan is the default** (1.1). The setting moved to a new key (`graphics_backend_1_1`):
+the Options dropdown used to save its initial selection, so anyone who had opened Options had
+"OpenGL" stored without choosing it (the dropdowns now pass on real changes only). OpenGL ES is
+used instead (`AndroidSettings.ResolveBackend`, `VulkanStartup`) when:
+
+- the device reports no Vulkan 1.1 (`android.hardware.vulkan.version`);
+- making the Vulkan device fails (an exception: recorded, OpenGL ES at once);
+- the last start died making the device or in its first 60 frames: a marker file is written
+  before each and removed after, so a driver crash, which takes the process with it, is seen at
+  the next start.
+
+A failure is kept per device and system build (`Build.Fingerprint`): a system update, or choosing
+native Vulkan again in Options, tries again. Options shows the reason; the beta report has it.
+Files, not preferences: the menu and the game are separate processes.
+
+Checked on the emulator (`OpenBVE_Test`, x86_64, gfxstream Vulkan 1.4): the default resolves to
+native Vulkan (1.3 path), pipelined frames, light route drawn correctly.
+
+Next: the device benchmark of 1.1 on every phone (`tools/benchmark/run_all.sh`).
 
 ### Data assets
 
