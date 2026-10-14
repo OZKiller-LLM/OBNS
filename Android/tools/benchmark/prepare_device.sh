@@ -8,7 +8,7 @@
 # Stops, without uninstalling anything, if an existing install has another signature.
 A="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"; S="$1"; D="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cygpath -m "$(cd "$D/../../.." && pwd)")"   # the repository, as C:/... for adb.exe
-APK="${2:-$ROOT/android/OpenBve.Android/bin/Release/net10.0-android36.0/android-arm64/net.openbve-Signed.apk}"
+APK="${2:-$ROOT/Android/OpenBve.Android/bin/Release/net10.0-android36.0/android-arm64/net.openbve-Signed.apk}"
 F="${BASE:-/storage/emulated/0/Android/data/net.openbve/files}"
 TMLDIR="${TML:-$F/TML}"
 sh_() { MSYS_NO_PATHCONV=1 "$A" -s "$S" shell "$@"; }
@@ -49,8 +49,8 @@ case "$out" in *Success*) ;; *) echo "STOPPED: install failed (see above); nothi
 sh_ "monkey -p net.openbve -c android.intent.category.LAUNCHER 1" >/dev/null 2>&1
 sleep 8
 
-push "$ROOT/android/testcontent" Railway "$F"
-push "$ROOT/android/testcontent" Train "$F"
+push "$ROOT/Android/testcontent" Railway "$F"
+push "$ROOT/Android/testcontent" Train "$F"
 push "$ROOT/content" Railway "$F"
 push "$ROOT/content/Train" "MTR R-Train EMU 2023" "$F/Train"
 # NO_TML=1: phones with little storage or RAM get the light route and East Rail only.

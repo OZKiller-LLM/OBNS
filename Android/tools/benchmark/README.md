@@ -17,17 +17,17 @@ Results go to `results/`, which git ignores.
 | `core6_suite.sh` | Light route (GL), East Rail + R-Train (GL and Vulkan via ANGLE), Tuen Ma Line (GL). |
 | `bench_device.sh` | One run: device and SoC, cool-down to thermal status 0-1, load time and profile, ~35 s cab and ~35 s exterior fps (5-second samples), memory, heat after. The cab camera is first moved forward for one second (Keypad 9), since it often starts behind the cab-to-saloon door or a barrier (as upstream places it). `EXTRA="--ez detach_parts false"` etc. adds intent extras. |
 
-Content: the light route and its train come from `android/testcontent`, East Rail and the R-Train
+Content: the light route and its train come from `Android/testcontent`, East Rail and the R-Train
 from `content/` (third-party, not in git). The Tuen Ma Line pack is private (HKRSC terms): it is
 copied only when `TML_SOURCE` points at a local copy, and must never be committed or packaged.
 `NO_TML=1` leaves it out (phones with little storage or RAM: it needs more than 4 GB).
 
 ```bash
-TML_SOURCE="D:/path/to/TML" bash android/tools/benchmark/run_all.sh
+TML_SOURCE="D:/path/to/TML" bash Android/tools/benchmark/run_all.sh
 ```
 
 ```bash
-TML_SOURCE="D:/path/to/TML" bash android/tools/benchmark/run_model.sh SM-A366 A36
+TML_SOURCE="D:/path/to/TML" bash Android/tools/benchmark/run_model.sh SM-A366 A36
 ```
 
 Things learnt the hard way:

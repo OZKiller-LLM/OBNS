@@ -12,7 +12,7 @@
     <ApplicationId>net.openbve</ApplicationId>
     <!--
       Numbering: the upstream version the port is built from, and PortRelease, counting this port's
-      releases of it (android/release.ps1 passes it; bump it for each release). The version code
+      releases of it (Android/release.ps1 passes it; bump it for each release). The version code
       Android compares for updates is the upstream version's digits times 100 plus PortRelease -
       1.14.0.3 release 1 is 1140301 - so it rises with either; the name reads 1.14.0.3-android.1.
     -->
@@ -34,7 +34,7 @@
   </PropertyGroup>
 
   <!--
-    Release signing, when a keystore is given (-p:OpenBveKeyStore=path; android/release.ps1 does
+    Release signing, when a keystore is given (-p:OpenBveKeyStore=path; Android/release.ps1 does
     this). The passwords come from the environment, never from a file in the tree. Without a
     keystore the SDK signs with its debug key, which suits development only: Android refuses to
     update an app over one signed with another key, so every published build must use the same

@@ -7,10 +7,10 @@ layer, no desktop VM).
 
 | Path | What it is |
 |---|---|
-| `OpenBVE-1.14.0.3/` | Upstream source, from the 1.14.0.3 release tag. Kept as close to pristine as possible — see *Upstream patches* below. |
-| `android/` | The port. SDK-style projects that compile the upstream sources for Android. |
-| `android/OpenBve.Compat/` | Compatibility layer: Android replacements for desktop-only BCL APIs. |
-| `android/OpenBveApi.Android/` | The upstream `OpenBveApi` sources, built for Android. |
+| `OpenBVE/` | Upstream source, from the 1.14.0.3 release tag. Kept as close to pristine as possible — see *Upstream patches* below. |
+| `Android/` | The port. SDK-style projects that compile the upstream sources for Android. |
+| `Android/OpenBve.Compat/` | Compatibility layer: Android replacements for desktop-only BCL APIs. |
+| `Android/OpenBveApi.Android/` | The upstream `OpenBveApi` sources, built for Android. |
 
 ## Approach
 
@@ -27,13 +27,13 @@ Editing upstream is the last resort.
 ## Build
 
 Requires the .NET 10 SDK with the `android` workload, plus a JDK 17+ and the Android SDK.
-`android/Directory.Build.props` points the build at Android Studio's bundled JBR, because a
+`Android/Directory.Build.props` points the build at Android Studio's bundled JBR, because a
 Java 8 JRE sits ahead of the real JDKs on this machine's PATH.
 
 ```
-dotnet build android/OpenBve.Android/OpenBve.Android.csproj -c Debug -t:Install
-dotnet build android/OpenBve.Android/OpenBve.Android.csproj -c Release
-adb install -r android/OpenBve.Android/bin/Release/net10.0-android36.0/net.openbve-Signed.apk
+dotnet build Android/OpenBve.Android/OpenBve.Android.csproj -c Debug -t:Install
+dotnet build Android/OpenBve.Android/OpenBve.Android.csproj -c Release
+adb install -r Android/OpenBve.Android/bin/Release/net10.0-android36.0/net.openbve-Signed.apk
 ```
 
 Use Release to judge speed: it is compiled ahead of time for arm64 and x86_64 (about 2 minutes
@@ -41,7 +41,7 @@ to build) and loads routes 2–4× faster than Debug. See *Loading time*.
 
 ### Release packaging
 
-Builds for other people come from `android/release.ps1`, never from a development build:
+Builds for other people come from `Android/release.ps1`, never from a development build:
 
 ```
 android
@@ -99,7 +99,7 @@ pure managed code and load fine; the smoke test is the check that matters.
 
 ## Smoke test
 
-`android/OpenBve.SmokeTest` is an Android app that runs `OpenBveApi` on a device and reports
+`Android/OpenBve.SmokeTest` is an Android app that runs `OpenBveApi` on a device and reports
 what worked, to logcat under the tag `OPENBVE_SMOKE` and on screen. It is the gate before more
 layers are stacked on top: compiling proves nothing about Mono's behaviour at runtime.
 
@@ -114,7 +114,7 @@ The shader test earns its keep: it exercises the P/Invoke bindings, the GLSL tra
 driver in one go, and every shader problem below was found by it rather than by reading specs.
 
 ```
-dotnet build android/OpenBve.SmokeTest/OpenBve.SmokeTest.csproj -t:Install
+dotnet build Android/OpenBve.SmokeTest/OpenBve.SmokeTest.csproj -t:Install
 adb shell am start -n net.openbve.smoketest/crc64ff8d715676c236fc.MainActivity
 adb logcat -d -s OPENBVE_SMOKE:V
 ```
@@ -153,7 +153,7 @@ files directory during startup. `ComboBox`/`BindingSource` exist only so the ups
 
 ## The front end
 
-`android/OpenBve.Android` replaces upstream's Windows Forms and OpenTK windowing entirely:
+`Android/OpenBve.Android` replaces upstream's Windows Forms and OpenTK windowing entirely:
 
 | Piece | What it does |
 |---|---|
@@ -195,7 +195,7 @@ Routes reference objects and sounds relative to **sibling folders of the Route f
 relative to the route file, so the loader derives `Railway/Object` and `Railway/Sound` from the
 route's parent.
 
-`android/testcontent/` holds the test route. It is built entirely from OpenBVE's own
+`Android/testcontent/` holds the test route. It is built entirely from OpenBVE's own
 open-source **Uchibo** compatibility objects (`assets/Compatibility/Uchibo`, which ship with
 OpenBVE), so it can be redistributed with the port. It exercises textured objects, a background
 image, a ground object, ballast, a second track, a walled cutting, a station platform and roof,
@@ -376,7 +376,7 @@ Verified on the emulator:
   train. Start ran it in the game process, and a Vulkan choice made in Options applied to that
   game.
 
-Test archives and the scripts that make them are in `android/testcontent/archives`.
+Test archives and the scripts that make them are in `Android/testcontent/archives`.
 
 **Options** covers what applies on a phone, under the Windows headings: language, interpolation
 mode, viewing distance, number of sounds, the installation folders, storage access, and
@@ -454,7 +454,7 @@ only** (`_tpwsTrainstop`, `_tpwsRelease`, a startup test; no overspeed sensor). 
 at a stand `tpwsresetkey` (0 = S) releases it, and `tpwsoverridekey` (3 = B1) lights
 `tpwsindicator2` (52) and lets the next red be passed once. Verified in `OpenBve.X86.Tests tpws`
 (types 44000–44010 scanned, pairs for an OSS, override-first) and on the phone through
-DetailManager on a test copy of EAL2023 (`android/testcontent/tpws/README.md`). Beacons must name
+DetailManager on a test copy of EAL2023 (`Android/testcontent/tpws/README.md`). Beacons must name
 section 1 (the signal ahead): for the section it is in, a train is sent the aspect that section
 would show without it (upstream's `GetPluginSignal`).
 
@@ -542,8 +542,8 @@ and pl-PL; they want checking by native speakers. When adding a label, add its k
 
 ### App icon
 
-The classic (older generation) OpenBVE logo, `android/artwork/openbve_logo_classic.png`, made
-into launcher icons by `android/artwork/make_icons.ps1` (Windows' own System.Drawing, nothing to
+The classic (older generation) OpenBVE logo, `Android/artwork/openbve_logo_classic.png`, made
+into launcher icons by `Android/artwork/make_icons.ps1` (Windows' own System.Drawing, nothing to
 install). The logo has its own rounded frame, which a launcher's mask would show as a second
 outline inside its shape, so from Android 8 the adaptive icon (`mipmap-anydpi-v26/ic_launcher.xml`)
 is a single full-bleed layer: the artwork without the frame in the 66 dp safe zone, carried on to
@@ -608,7 +608,7 @@ panel-screen jumps and touch sounds. A fingertip counts within 10 dp of an area,
 `SceneInput` holds the scene gestures for both interfaces: the touch overlay passes it the touches
 its buttons miss, and the game view uses it in the desktop interface (drag to look around, two
 fingers to move, pinch or the mouse wheel to zoom). Verified on the A73 with a test panel
-(`android/testcontent/touch`: two large digital-number handle indicators added to the KCR
+(`Android/testcontent/touch`: two large digital-number handle indicators added to the KCR
 panel2.cfg): taps in the touch interface notched the brake up, taps in the desktop interface
 released the brake and added power. The overlay's buttons still take precedence where they cover
 a touch area.
@@ -706,7 +706,7 @@ backdrop and the start-up summary panel no longer take focus. Verified on the ph
 key events: main menu → route list → A selects a route; Start → pause menu → D-pad → A into the
 station list (suggested station focused) → B, B back to the game.
 
-The test train (`android/testcontent/Train/AndroidTest`) is a two-car EMU defined only by
+The test train (`Android/testcontent/Train/AndroidTest`) is a two-car EMU defined only by
 `train.dat` — physics, no exterior, panel or sounds. **Its `train.dat` carries no comments:** the
 parser strips `;` comments but still reads each section's fields by line position, so a comment
 line shifts every value after it. That silently produced a driver car index of 9000 and an
@@ -1607,7 +1607,7 @@ harmless because null objects are placeholders.
 
 ## Audio
 
-`android/OpenBve.OpenAL` presents OpenTK 3's `AL`/`Alc` classes and their enums, bound to
+`Android/OpenBve.OpenAL` presents OpenTK 3's `AL`/`Alc` classes and their enums, bound to
 OpenAL Soft. Android ships no system OpenAL, and no NDK is installed on this machine to build
 one — but **MonoGame.Library.OpenAL** publishes prebuilt `libopenal.so` for all four Android
 ABIs (arm, arm64, x64, x86), so the app project references that package and the native library
@@ -1649,7 +1649,7 @@ so this confirms OpenAL Soft opened a device and is mixing — it has not been *
 ## Licensing
 
 The port is under the Simplified BSD License (`LICENSE` at the repository root; every source file
-under `android/` carries the header), like OpenBVE's newer code (its original code is public
+under `Android/` carries the header), like OpenBVE's newer code (its original code is public
 domain). BSD-2 and the bundled libraries' own licences require binaries to carry their notices:
 `OpenBve.Android/Licenses/*.txt` is packaged as `Assets/Licenses` and shown under About →
 Licences (OpenBVE, this port, NAudio, NAudio.Vorbis, NVorbis, NLayer, SharpCompress, DotNetZip,
@@ -1783,7 +1783,7 @@ left over from `Initialize` several frames earlier.
 
 ### What the shim covers
 
-`android/OpenBve.GLES` provides, in the namespaces upstream expects:
+`Android/OpenBve.GLES` provides, in the namespaces upstream expects:
 
 - `OpenTK.Graphics.OpenGL.GL` — the ~97 entry points, P/Invoked to `libGLESv3.so`.
 - The used members of ~35 GL enums, with their real token values.

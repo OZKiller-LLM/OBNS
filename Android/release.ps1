@@ -4,15 +4,15 @@
   with checksums and a read-me for the people installing it.
 
 .EXAMPLE
-  android\release.ps1 -PortRelease 1
+  Android\release.ps1 -PortRelease 1
   The release build, signed with the release key: dist\1.14.0.3-android.1\OpenBVE-1.14.0.3-android.1.apk
 
 .EXAMPLE
-  android\release.ps1 -PortRelease 2 -Beta
+  Android\release.ps1 -PortRelease 2 -Beta
   The beta testers' build, with the data log (Documents/OpenBVE): OpenBVE-1.14.0.3-android.2-beta.apk
 
 .EXAMPLE
-  android\release.ps1 -PortRelease 1 -Format both
+  Android\release.ps1 -PortRelease 1 -Format both
   The APK for sideloading and the App Bundle (.aab) for Google Play.
 
 .NOTES
@@ -70,7 +70,7 @@ if ($DebugKey -and $Beta) {
 } else {
 	if (-not (Test-Path $KeyStore)) {
 		Write-Host "No release key at $KeyStore." -ForegroundColor Red
-		Write-Host 'Make one (once; keep it and its password safe and backed up) - see the notes: Get-Help android\release.ps1 -Full'
+		Write-Host 'Make one (once; keep it and its password safe and backed up) - see the notes: Get-Help Android\release.ps1 -Full'
 		exit 1
 	}
 

@@ -1,5 +1,5 @@
 # Makes the app's launcher icons from openbve_logo_classic.png (the classic OpenBVE logo, 250 x 250).
-# Run from anywhere: powershell -ExecutionPolicy Bypass -File android\artwork\make_icons.ps1
+# Run from anywhere: powershell -ExecutionPolicy Bypass -File Android\artwork\make_icons.ps1
 #
 # The logo carries its own rounded frame: 3 px of transparency, a 5 px bevel, then the artwork,
 # whose gradient square spans x/y 8-241 with ~31 px corners. Two kinds of icon come out:

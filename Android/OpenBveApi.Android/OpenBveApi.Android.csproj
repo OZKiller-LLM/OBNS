@@ -42,7 +42,7 @@
     <Compile Include="Resource.Android.cs" />
     <!-- Replaces the CS-Script backed animation script, which cannot run under AOT. -->
     <Compile Include="CSAnimationScript.Android.cs" />
-    <EmbeddedResource Include="$(MSBuildThisFileDirectory)..\..\OpenBVE-1.14.0.3\assets\Languages\en-US.xlf"
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)..\..\OpenBVE\assets\Languages\en-US.xlf"
                       LogicalName="OpenBveApi.Resources.en-US.xlf" />
   </ItemGroup>
 

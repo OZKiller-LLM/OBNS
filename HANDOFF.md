@@ -39,8 +39,8 @@ Both trains' `train.txt` are UTF-16; this matters (see "Recently fixed").
 
 ## Layout
 
-- `OpenBVE-1.14.0.3/source/` — upstream, compiled in place.
-- `android/` — SDK-style shim projects (`*.Android.csproj`) compiling upstream folders for
+- `OpenBVE/source/` — upstream, compiled in place.
+- `Android/` — SDK-style shim projects (`*.Android.csproj`) compiling upstream folders for
   `net10.0-android36.0`, plus:
   - `OpenBve.GLES` — hand-written OpenTK-shaped GLES 3 binding, EGL/ANGLE selection.
   - `OpenBve.Android` — the app (activities, host, renderer glue, UI, native-plugin bridge).
@@ -48,9 +48,9 @@ Both trains' `train.txt` are UTF-16; this matters (see "Recently fixed").
     (`Cpu*.cs`), paged memory, PE loader and Win32 process (`Win32Process.cs`), kernel32/msvcrt
     shims, the BVE ATS ABI (`AtsPlugin.cs`), and call recording/replay (`AtsTrace.cs`).
   - `OpenBve.X86.Tests` — desktop console harness for plugins (see "Plugin debugging").
-- `android/Directory.Build.props` — `EnableDefaultCompileItems=false` for shim projects, `true`
+- `Android/Directory.Build.props` — `EnableDefaultCompileItems=false` for shim projects, `true`
   in `OpenBve.Android`, `OpenBve.X86`, `OpenBve.X86.Tests`.
-- `android/OpenBve.Android/UpstreamFacade.cs` — `OpenBve.Program` (CurrentHost, Renderer,
+- `Android/OpenBve.Android/UpstreamFacade.cs` — `OpenBve.Program` (CurrentHost, Renderer,
   CurrentRoute, Sounds, TrainManager), `OpenBve.Interface.CurrentOptions`, and an abstract
   `OpenBve.TrainManager` so desktop files compile unchanged. Linked upstream desktop files:
   `FunctionScripts.cs`, `Game/AI/AI.cs`, `AI.SimpleHuman.cs`, `AI.PreTrain.cs`. Inside namespace
@@ -159,11 +159,11 @@ Keys per `Train.txt`: E pantograph, F–I run number, B1/B2 destination, C1 coup
   UTF-8/UTF-16 the train's legacy text files decide (KCR → 950, Japanese → 932), else UTF-8.
 - **Diagnostics**: `Cpu.HostCallTrace`, harness `calls` mode (every Windows call with strings).
 - **ANGLE**: no longer shipped. First use copies the device's `/system/lib64` ANGLE into
-  `files/angle/` and loads it (GLES before EGL). `android/angle/` and `tools/Get-Angle.ps1` are
+  `files/angle/` and loads it (GLES before EGL). `Android/angle/` and `tools/Get-Angle.ps1` are
   deleted. Verified Vulkan on the A73.
 - **Licensing**: root `LICENSE` (BSD-2, holder "The OpenBVE Android port contributors"), header
   on all 83 port `.cs` files, `OpenBve.Android/Licenses/*.txt` packaged and shown in About →
-  Licences. Test screenshots of third-party content deleted from `android/`.
+  Licences. Test screenshots of third-party content deleted from `Android/`.
 
 ## 2026-09-25 (all on the phone, build 2026-09-25 19:01)
 
@@ -229,7 +229,7 @@ Fixed today:
 
 - **TPWS verified** (item 5): OS_Ats1 beacon 44003 = train stop at red → indicator 51 +
   emergency; S resets at a stand; B1 overrides (indicator 52). Harness mode `tpws`; on-phone
-  procedure in `android/testcontent/tpws/README.md` (test route/train removed from the phone).
+  procedure in `Android/testcontent/tpws/README.md` (test route/train removed from the phone).
 - Touch Map/Gradient tabs are native vector charts (`RouteViews.cs`); desktop keeps upstream's.
 - Fixed: `AndroidHost.Trains` hid the base member (crash with forced-red departure signals);
   added missing host overrides AddScore, AddMarker/RemoveMarker, AddObjectForCustomTimeTable,
@@ -279,7 +279,7 @@ Fixed today:
 - Options: touch button size / opacity; pause menu: hide / show touch buttons.
 - Android-only labels translated (drafts, 13 languages) through `AndroidStrings`; per-key,
   pad-axis and cab-touch-area log lines moved to Debug level.
-- App icon from the user's classic logo (android/artwork).
+- App icon from the user's classic logo (Android/artwork).
 - Tested on the A73 over the user's VPN (100.108.27.76, wireless-debugging port found by scan):
   Controls page (key and pad binding, saved across restarts, reset), zh-HK labels, touch button
   size/opacity/hide. Fixed from it: Large overflowed (fit cap), top row compacted, analog commands
@@ -290,7 +290,7 @@ Fixed today:
 
 ## 2026-09-27: release packaging
 
-- `android/release.ps1` (see PORTING.md "Release packaging"): version 1.14.0.3-android.<n>,
+- `Android/release.ps1` (see PORTING.md "Release packaging"): version 1.14.0.3-android.<n>,
   code 1140300+n, release-key signing via environment passwords, APK/AAB, dist\<version>\ with
   checksums, licence and read-me. Tried end to end with `-DebugKey` (APK and AAB verified), trial
   output deleted. No release key exists yet: the user makes it (keytool command in the script's
@@ -311,7 +311,7 @@ Later the same day (fixes from testing, both built into the current APK, not yet
 - **Crash on every start** when a content folder cannot be created (folders adb push made on an
   Android 14 A35): `AndroidFileSystem.Create` now logs and carries on.
 - Multi-device benchmarks: summary in PORTING.md "Device benchmarks"; scripts and how-to in
-  `android/tools/benchmark/` (README), raw results in its git-ignored `results/`.
+  `Android/tools/benchmark/` (README), raw results in its git-ignored `results/`.
 - **LLVM AOT on by default** (`EnableLLVM` in OpenBve.Android.csproj): exterior ~20-25% faster
   on the A73 and C31, train updates ~40% faster; plugin regression passed. Build ~10 min.
 - `--ei render_scale <percent>` test switch (GameView.RenderScale): no gain on the A04s, not in
@@ -431,7 +431,7 @@ Regression with everything: SelTrac PASS on the S20 FE; TBL + FCMB need the A73 
 Remaining for 1.01: commit (push only when asked); the user builds the beta with the release key
 and -PortRelease 2.
 
-Rule from the user: never edit OpenBVE-1.14.0.3/; all changes in android/ (memory note).
+Rule from the user: never edit OpenBVE/; all changes in Android/ (memory note).
 Done (built, tested on the A73):
 - **Static and train batching** (`StaticBatcher.cs`; PORTING.md "Static and train batching"):
   EAL Lo Wu exterior 9.8 -> 16.3 fps; ATO run 12.3->5.4 became 15.9->9.3 fps; images identical.

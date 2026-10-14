@@ -5,7 +5,7 @@ obj/
 *.user
 *.suo
 
-# Release packages (android/release.ps1) - published separately, not source
+# Release packages (Android/release.ps1) - published separately, not source
 dist/
 
 # Third-party routes and trains used for testing: their authors' terms forbid redistribution
@@ -18,5 +18,5 @@ dist/
 *.jks
 *.keystore
 
-# Device benchmark results (android/tools/benchmark) - per-run output, not source
-/android/tools/benchmark/results/
+# Device benchmark results (Android/tools/benchmark) - per-run output, not source
+/Android/tools/benchmark/results/
