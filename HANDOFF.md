@@ -4,7 +4,7 @@ A working summary for whoever continues this port (human or AI). `PORTING.md` is
 design record (brought up to date 2026-09-26); this file is the short "where things stand and how
 to carry on".
 
-Last updated 2026-09-26.
+Last updated 2026-10-15 (1.1 released).
 
 ## Goal
 
@@ -462,6 +462,20 @@ object load 71-80 s, texture register 16-18 s). (The per-decode stack sampling o
 
 **2026-10-14: the projects moved from C:\dev to D:\dev** (user): D:\dev\OpenBVE-Android, D:\dev\Rinkin,
 D:\dev	ools (glslang). Paths in the repo (GlslangPath, these notes) updated.
+
+## VERSION 1.1 DONE (2026-10-15)
+
+- Released build: `dist.14.0.3-android.3\` (APK + AAB, code 1140303), built by the user on
+  2026-10-14 with `release.ps1 -PortRelease 3 -Format both`, signed with the release key (same
+  certificate as 1.0 and 1.01). Next build handed out: `-PortRelease 4` or higher.
+- What 1.1 is: the native Vulkan renderer as the default (OpenGL ES the automatic fallback),
+  pipelined frames, recording on several threads, the kept pipeline cache, the Vulkan 1.3 path,
+  parallel per-frame object updates, smaller textures with native Vulkan on phones of ~6 GB or
+  less, and the game mode chooser on the Start page. Measured on 20 phones (RELEASE_NOTES.md).
+- Source on GitHub: branch `1.1`, tag `v1.1`.
+- Open after 1.1: the Galaxy A23 5G (SCG18) gains little from Vulkan (driver, it seems: the A14 5G
+  with the same chip gains fully); Options' "Automatic" texture labels do not show the Vulkan
+  reduction (known only once the game's window is made); FBOs (shadows, motion blur) on Vulkan.
 
 ## 1.1 (branch `1.1`, started 2026-10-06; 1.01 pushed as branch `1.01`, commit f4ce6a9)
 
