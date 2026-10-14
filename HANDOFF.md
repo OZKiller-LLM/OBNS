@@ -524,6 +524,9 @@ Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan r
   mistake during the run (original value not recorded) - the user to set it back.
 - Second round done (A55, Tab A9, S24 Ultra, A71 5G, A35, A23 5G SCG18), third (A14 5G, C31, Z Flip5):
   20 phones in the tables.
+- Smaller textures with native Vulkan (Options, on by default: 1024 px + 16 bit at ~6 GB or less)
+  and the game mode chooser on the Start page. S20 FE 4G now runs the TML on Vulkan (cold start too).
+  Pushed branch 1.1; the release build with the key is the user's (release.ps1 -PortRelease 3).
   To look into: the A23 5G's GPU-bound Vulkan, and the texture-reduction count gap.
 - Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points. Next: fast paths, multi-threaded recording, pipeline cache on disk,
   then pipelining.

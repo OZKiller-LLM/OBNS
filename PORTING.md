@@ -1539,7 +1539,7 @@ where there is one; `summarise.py` gives the table). Median fps, cab / exterior:
 | Galaxy A73<br>Snapdragon 778G | 71 / 26 | 114 / 34 | 24 / 13 | 28-34 / 18-23 |
 | Galaxy Z Flip4<br>Snapdragon 8+ Gen 1 | 95 / 29 | 113 / 44 | 32 / 13 | 38 / 22 |
 | Galaxy Z Flip5<br>Snapdragon 8 Gen 2 | 119 / 36 | 119 / 47.5 | 38 / 17 | 40 / 25.6 |
-| Galaxy S20 FE 4G<br>Exynos 990 | 46 / 15 | 118 / 39 | 19 / 9.6 | 30 / closed (memory) |
+| Galaxy S20 FE 4G<br>Exynos 990 | 46 / 15 | 118 / 39 | 19 / 9.6 | 30 / 17 * |
 | Galaxy A71 5G<br>Exynos 980 | 60 / 9.1 | 60 / 27 | 7.0 / 4.3 | 28 / 15 |
 | Galaxy A35<br>Exynos 1380 | 114 / 35 | 120 / 59 | 35 / 15 | 49 / 25 |
 | Galaxy A55<br>Exynos 1480 | 104 / 33 | 119 / 48 | 36 / 18 | 53 / 27 |
@@ -1556,7 +1556,7 @@ and gains as much as the others (Tuen Ma Line 25 / 11.6 against 15 / 6.3) - the 
 
 Third round: A14 5G, Nokia C31 (4.6 GB free, so no Tuen Ma Line: `NO_TML=1 run_all.sh`), Z Flip5. Also seen: the "texture size limit ... reduced" count is
 far higher on Vulkan than on OpenGL ES with the same GPU memory (A23 5G: 1203 against 22; S20 FE:
-94 against 9) - textures decoded more than once? To look into.
+94 against 9) - the run order: see below.
 
 SelTrac ATO passed on every phone (TBL ATO too on the S24 Ultra, which has the KCR route). Load times favour OpenGL ES here only because the Vulkan run
 went first on a freshly copied pack (cold file cache, first pipeline compiles).
@@ -1573,8 +1573,22 @@ mtrack`, and Android swapped the rest of the process out (Unknown 880 -> 300 MB)
 device memory on Mali cannot be. The phone has ~800 MB free with the game running. A73 check
 of the fixes: Tuen Ma Line 34 / 23 fps (28 / 18 before, warmer start) - no regression.
 
-Next: the second round (S24 Ultra, A35, A14, C31); for low-memory phones, perhaps a smaller
-texture limit on Vulkan, or falling back per route.
+**Smaller textures with native Vulkan** (`AndroidSettings.EffectiveTextureLimit` / `ApplyTo`,
+pref `vulkan_small_textures`, on by default): on phones of about 6 GB or less, while native Vulkan
+draws (`NativeVulkanInUse`, set from the window made, so the OpenGL ES fallback is not affected),
+the automatic texture limit becomes 1024 px and automatic texture colours 16 bits. A limit or depth
+chosen by hand is kept. S20 FE 4G, Tuen Ma Line: 1024 px alone got through once warm (lowest free
+memory ~650 MB) but was closed on a cold start (the transparency classifier re-decoding all 4371
+textures: its disk cache is keyed by the limit, so a changed limit is a first play again); with 16
+bits as well, a cold start (`--ei texture_limit 1023`, cache key new) ran 30 / 17 fps with ~950 MB
+free at the lowest. (`pm clear --cache-only` hung on that phone - not used.)
+
+Also: the "reduced" count's gap between Vulkan and OpenGL ES was the run order - the Vulkan run went
+first and classified every texture cold; OpenGL ES found them remembered.
+
+**Game mode** (Arcade / Normal / Expert) on the Start page beside Start, as upstream's comboboxMode,
+with upstream's own strings (`start/start_mode`, `mode/*`); pref `game_mode`, copied to
+`options.GameMode` in `ApplyTo`. The port had no way to choose it: every game ran in Normal.
 
 ### Data assets
 

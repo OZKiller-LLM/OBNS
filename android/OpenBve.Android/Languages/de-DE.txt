@@ -66,3 +66,6 @@ timetable_overdue = {0} überfällig
 timetable_late = {0} Verspätung
 timetable_pass = Durchfahrt
 timetable_terminal = Endbahnhof
+vulkan_small_textures = Kleinere Texturen mit nativem Vulkan:
+vulkan_small_textures_note = Auf Telefonen mit etwa 6 GB RAM oder weniger begrenzt natives Vulkan Texturen auf 1024 px und 16-Bit-Farbe (wo diese Optionen automatisch sind), damit schwere Strecken nicht den Speicher erschöpfen. Ausschalten für schärfere Texturen.
+vulkan_small_textures_large = (Dieses Gerät hat mehr Speicher: hier ohne Wirkung.)

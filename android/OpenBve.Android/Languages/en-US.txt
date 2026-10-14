@@ -68,3 +68,6 @@ timetable_overdue = overdue {0}
 timetable_late = late {0}
 timetable_pass = pass
 timetable_terminal = terminus
+vulkan_small_textures = Smaller textures with native Vulkan:
+vulkan_small_textures_note = On phones with about 6 GB of RAM or less, native Vulkan keeps textures to 1024 px and 16-bit colour (where those options are automatic), so heavy routes do not run out of memory. Turn it off for sharper textures.
+vulkan_small_textures_large = (This device has more memory: it has no effect here.)

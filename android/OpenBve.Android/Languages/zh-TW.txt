@@ -66,3 +66,6 @@ timetable_overdue = 已逾時 {0}
 timetable_late = 誤點 {0}
 timetable_pass = 通過
 timetable_terminal = 終點站
+vulkan_small_textures = 原生 Vulkan 使用較小材質：
+vulkan_small_textures_note = 在記憶體約 6 GB 或以下的手機上，原生 Vulkan 會將材質限制在 1024 px 及 16 位元色彩（當這些選項為自動時），以免大型路線耗盡記憶體。關閉可獲得更清晰的材質。
+vulkan_small_textures_large = （此裝置記憶體較多：此處無效。）

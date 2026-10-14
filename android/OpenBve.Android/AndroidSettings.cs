@@ -383,11 +383,48 @@ namespace OpenBve.Android
 			}
 		}
 
-		/// <summary>The texture size limit in effect: the stored choice, resolved for this phone.</summary>
+		/*
+		 * Smaller textures with native Vulkan (on by default): with the automatic texture limit, a
+		 * phone of about 6 GB or less keeps textures to 1024 px, in 16-bit colour when that is automatic
+ * too, while native Vulkan draws. Vulkan's
+		 * texture memory cannot be swapped out as OpenGL ES's driver memory partly can, and a
+		 * Galaxy S20 FE 4G (5.3 GB) was closed by the low-memory killer in the Tuen Ma Line's
+		 * exterior view at 2048 px, where OpenGL ES got through.
+		 */
+		private const string VulkanSmallTexturesKey = "vulkan_small_textures";
+
+		/// <summary>Set by the game once its window is made: whether native Vulkan draws (not OpenGL ES, nor its fallback).</summary>
+		public static bool NativeVulkanInUse;
+
+		public static bool GetVulkanSmallTextures(Context context) => Prefs(context)?.GetBoolean(VulkanSmallTexturesKey, true) ?? true;
+
+		public static void SetVulkanSmallTextures(Context context, bool value)
+		{
+			ISharedPreferencesEditor editor = Prefs(context)?.Edit();
+			editor?.PutBoolean(VulkanSmallTexturesKey, value);
+			editor?.Apply();
+		}
+
+		/// <summary>Whether a phone is small enough for the smaller Vulkan textures: about 6 GB of RAM or less.</summary>
+		public static bool SmallTexturesPhone(long totalRamBytes) => totalRamBytes > 0 && totalRamBytes <= 6656L << 20;
+
+		/// <summary>The texture size limit in effect: the stored choice, resolved for this phone and renderer.</summary>
 		public static int EffectiveTextureLimit(Context context)
 		{
 			int limit = TextureLimitOverride ?? GetTextureLimit(context);
-			return limit < 0 ? TextureSizeLimit.Automatic(TotalRam(context)) : limit;
+			if (limit >= 0)
+			{
+				return limit;
+			}
+
+			long ram = TotalRam(context);
+			int automatic = TextureSizeLimit.Automatic(ram);
+			if (NativeVulkanInUse && GetVulkanSmallTextures(context) && SmallTexturesPhone(ram))
+			{
+				automatic = automatic > 0 ? Math.Min(automatic, 1024) : 1024;
+			}
+
+			return automatic;
 		}
 
 		/// <summary>Copies the stored options onto the options the game runs with.</summary>
@@ -397,16 +434,31 @@ namespace OpenBve.Android
 			bool lowRam = TotalRam(context) is long ram && ram > 0 && ram <= 4608L << 20;
 			AndroidHost.ParallelDecodes = lowRam ? 2 : int.MaxValue;
 			int depth = TextureDepthOverride ?? GetTextureDepth(context);
-			AndroidHost.Textures16Bit = depth < 0 ? lowRam : depth == 16;
+			// Automatic: 16 bits at 4.5 GB or less, and with the smaller Vulkan textures at about 6 GB or less.
+			bool smallVulkan = NativeVulkanInUse && GetVulkanSmallTextures(context) && SmallTexturesPhone(TotalRam(context));
+			AndroidHost.Textures16Bit = depth < 0 ? lowRam || smallVulkan : depth == 16;
 			options.ViewingDistance = GetViewingDistance(context);
 			options.SoundNumber = Math.Max(16, GetSoundNumber(context));
 			options.Interpolation = GetInterpolation(context);
 			options.TransparencyMode = TransparencyOverride ?? GetTransparency(context);
 			options.LanguageCode = GetLanguage(context);
+			options.GameMode = GetGameMode(context);
+			options.PreviousGameMode = options.GameMode;
 			// Upstream's panel2 extended mode: a 2D panel's power, brake and reverser indicators become touch areas.
 			options.Panel2ExtendedMode = GetTouchHandles(context);
 			options.Panel2ExtendedMinSize = 128;
 		}
+
+		/// <summary>Upstream's game mode (Arcade, Normal, Expert), chosen on the Start page as on the desktop.</summary>
+		private const string GameModeKey = "game_mode";
+
+		public static OpenBveApi.GameMode GetGameMode(Context context)
+		{
+			string value = Prefs(context)?.GetString(GameModeKey, null);
+			return Enum.TryParse(value, out OpenBveApi.GameMode mode) ? mode : OpenBveApi.GameMode.Normal;
+		}
+
+		public static void SetGameMode(Context context, OpenBveApi.GameMode mode) => PutString(context, GameModeKey, mode.ToString());
 
 		/// <summary>
 		/// Whether a 2D panel's handle indicators can be touched (upstream's "panel2 extended

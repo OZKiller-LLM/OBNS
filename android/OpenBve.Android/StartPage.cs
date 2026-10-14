@@ -92,6 +92,22 @@ namespace OpenBve.Android
 			steps.AddView(start, new LayoutParams(Ui.Dp(activity, 140), ViewGroup.LayoutParams.MatchParent));
 			AddView(steps, new LayoutParams(ViewGroup.LayoutParams.MatchParent, Ui.Dp(activity, 48)));
 
+			// Upstream's game mode (its Start page has it by the Start button; here, atop the preview).
+			LinearLayout modeRow = new LinearLayout(activity) { Orientation = Orientation.Horizontal };
+			modeRow.SetGravity(GravityFlags.CenterVertical);
+			modeRow.AddView(Ui.Label(activity, Menu.T("start", "start_mode", "Mode:")));
+			OpenBveApi.GameMode[] modes = { OpenBveApi.GameMode.Arcade, OpenBveApi.GameMode.Normal, OpenBveApi.GameMode.Expert };
+			Spinner mode = new Spinner(activity)
+			{
+				Adapter = new ArrayAdapter<string>(activity, global::Android.Resource.Layout.SimpleSpinnerDropDownItem, new[]
+				{
+					Menu.T("mode", "arcade", "Arcade"), Menu.T("mode", "normal", "Normal"), Menu.T("mode", "expert", "Expert")
+				})
+			};
+			mode.SetSelection(Math.Max(0, Array.IndexOf(modes, AndroidSettings.GetGameMode(activity))));
+			mode.ItemSelected += (s, e) => AndroidSettings.SetGameMode(activity, modes[e.Position]);
+			modeRow.AddView(mode, new LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
+
 			LinearLayout content = new LinearLayout(activity) { Orientation = Orientation.Horizontal };
 			content.SetPadding(0, Ui.Dp(activity, 8), 0, 0);
 
@@ -128,6 +144,7 @@ namespace OpenBve.Android
 			LinearLayout right = new LinearLayout(activity) { Orientation = Orientation.Vertical };
 			right.Background = Ui.Panel(activity, Ui.Surface);
 			right.SetPadding(pad, pad, pad, pad);
+			right.AddView(modeRow);
 			useDefaultTrain = new CheckBox(activity)
 			{
 				Checked = AndroidSettings.GetUseDefaultTrain(activity),

@@ -325,6 +325,8 @@ namespace OpenBve.Android
 						? CreateVulkanOrFallBack(holder.Surface)
 						: EglSurface.Create(holder.Surface);
 				Log.Info(Tag, "graphics backend: " + backend + " (" + GraphicsLibraries.Detail + ")");
+				// Before the options are applied: native Vulkan can mean smaller textures (AndroidSettings).
+				AndroidSettings.NativeVulkanInUse = egl is VulkanSurface;
 
 				// LibRender2 checks whether it is on the render thread before touching GL objects.
 				AndroidGraphicsContext.RenderThreadId = Environment.CurrentManagedThreadId;

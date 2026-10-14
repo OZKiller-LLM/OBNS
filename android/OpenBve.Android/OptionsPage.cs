@@ -111,6 +111,14 @@ namespace OpenBve.Android
 					i => AndroidSettings.SetTextureLimit(activity, limits[i]));
 				Info(Menu.T("android", "texture_limit_note",
 					"Larger textures are scaled down as they load. Heavy routes need less memory with a lower limit; automatically, phones with 4 GB of RAM or less use 1024 px and phones with 6 GB use 2048 px."));
+				// Smaller textures with native Vulkan (AndroidSettings.EffectiveTextureLimit).
+				Dropdown(Menu.T("android", "vulkan_small_textures", "Smaller textures with native Vulkan:"),
+					new[] { Menu.T("android", "on", "On"), Menu.T("android", "off", "Off") },
+					AndroidSettings.GetVulkanSmallTextures(activity) ? 0 : 1,
+					i => AndroidSettings.SetVulkanSmallTextures(activity, i == 0));
+				Info(Menu.T("android", "vulkan_small_textures_note",
+					"On phones with about 6 GB of RAM or less, native Vulkan keeps textures to 1024 px and 16-bit colour (where those options are automatic), so heavy routes do not run out of memory. Turn it off for sharper textures.") +
+					(AndroidSettings.SmallTexturesPhone(AndroidSettings.TotalRam(activity)) ? string.Empty : " " + Menu.T("android", "vulkan_small_textures_large", "(This device has more memory: it has no effect here.)")));
 				// Texture colour depth (GL.Texture16Bit): 16 bits halve the textures' memory.
 				int[] depths = { -1, 32, 16 };
 				long ram = AndroidSettings.TotalRam(activity);

@@ -66,3 +66,6 @@ timetable_overdue = excedido {0}
 timetable_late = atraso {0}
 timetable_pass = passagem
 timetable_terminal = terminal
+vulkan_small_textures = Texturas menores com Vulkan nativo:
+vulkan_small_textures_note = Em celulares com cerca de 6 GB de RAM ou menos, o Vulkan nativo limita as texturas a 1024 px e cores de 16 bits (quando essas opções são automáticas), para que rotas pesadas não fiquem sem memória. Desative para texturas mais nítidas.
+vulkan_small_textures_large = (Este aparelho tem mais memória: aqui não tem efeito.)
