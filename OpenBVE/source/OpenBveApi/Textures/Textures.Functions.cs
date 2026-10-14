@@ -1,0 +1,592 @@
+using System;
+using System.Linq;
+using OpenBveApi.Colors;
+
+namespace OpenBveApi.Textures {
+	/// <summary>Provides functions for manipulating textures.</summary>
+	internal static class Functions {
+		
+		
+		// --- apply parameters ---
+		
+		/// <summary>Applies parameters onto a texture.</summary>
+		/// <param name="texture">The original texture.</param>
+		/// <param name="parameters">The parameters, or a null reference.</param>
+		/// <returns>The texture with the parameters applied.</returns>
+		/// <exception cref="System.ArgumentException">Raised when the clip region is outside the texture bounds.</exception>
+		/// <exception cref="System.NotSupportedException">Raised when the bits per pixel in the texture is other than 32.</exception>
+		internal static Texture ApplyParameters(Texture texture, TextureParameters parameters) {
+			Texture result = texture;
+			if (parameters != null) {
+				if (parameters.ClipRegion != null) {
+					result = ExtractClipRegion(result, parameters.ClipRegion);
+					result.CompatibleTransparencyMode = texture.CompatibleTransparencyMode;
+				}
+
+				if (parameters.TransparencyTexture != null && parameters.TransparencyTexture.Size == texture.Size)
+				{
+					if (texture.PixelFormat == PixelFormat.Paletted && texture.Palette32 != null)
+					{
+						// Expand paletted to RGBA first, then apply texture transparency
+						byte[] expanded = new byte[texture.Width * texture.Height * 4];
+						byte[] src = texture.Bytes;
+						for (int p = 0; p < src.Length; p++)
+						{
+							int idx = src[p] & 0xFF;
+							Color32 c = idx < texture.Palette32.Length ? texture.Palette32[idx] : new Color32(0,0,0,255);
+							expanded[p*4] = c.R; expanded[p*4+1] = c.G; expanded[p*4+2] = c.B; expanded[p*4+3] = c.A;
+						}
+						result = new Texture(texture.Width, texture.Height, PixelFormat.RGBAlpha, ApplyTransparentTexture(expanded, PixelFormat.RGBAlpha, texture.Width, texture.Height, parameters.TransparencyTexture), texture.Palette);
+					}
+					else
+					{
+						result = new Texture(texture.Width, texture.Height, PixelFormat.RGBAlpha, ApplyTransparentTexture(texture.Bytes, texture.PixelFormat, texture.Width, texture.Height, parameters.TransparencyTexture), texture.Palette);
+					}
+				}
+				else if (parameters.FirstColorTransparent) {
+					result = ApplyTransparentColor(result, result.Palette[0]);
+				}
+				else if (parameters.TransparentColor != null) {
+					result = ApplyTransparentColor(result, parameters.TransparentColor);
+				}
+			}
+			return result;
+		}
+		
+		
+		// --- extract clip region ---
+		
+		/// <summary>Extracts a clip region from a texture.</summary>
+		/// <param name="texture">The original texture.</param>
+		/// <param name="region">The clip region, or a null reference.</param>
+		/// <returns>The texture with the extracted clip region.</returns>
+		/// <exception cref="System.ArgumentException">Raised when the clip region is outside the texture bounds.</exception>
+		/// <exception cref="System.NotSupportedException">Raised when the number of bits per pixel in the texture is not supported.</exception>
+		internal static Texture ExtractClipRegion(Texture texture, TextureClipRegion region)
+		{
+		    if (region == null || region.Left == 0 && region.Top == 0 && region.Width == texture.Width && region.Height == texture.Height) {
+				return texture;
+			}
+		    if (region.Left < 0 || region.Top < 0 || region.Width <= 0 || region.Height <= 0 || region.Left + region.Width > texture.Width || region.Top + region.Height > texture.Height) {
+		        throw new ArgumentException();
+		    }
+		    int width = texture.Width;
+		    if (texture.Bytes == null)
+		    {
+			    texture.Origin.GetTexture(out texture);
+		    }
+		    
+		    byte[] bytes = texture.Bytes;
+
+			int clipLeft = region.Left;
+		    int clipTop = region.Top;
+		    int clipWidth = region.Width;
+		    int clipHeight = region.Height;
+		    byte[] newBytes;
+		    int i = 0;
+		    switch (texture.PixelFormat)
+		    {
+			    case PixelFormat.Grayscale:
+				    newBytes = new byte[clipWidth * clipHeight];
+				    for (int y = 0; y < clipHeight; y++)
+				    {
+					    int j = width * (clipTop + y) + clipLeft;
+					    for (int x = 0; x < clipWidth; x++)
+					    {
+						    newBytes[i] = bytes[j];
+						    i++;
+						    j++;
+					    }
+				    }
+				    return new Texture(clipWidth, clipHeight, PixelFormat.Grayscale, newBytes, texture.Palette);
+				case PixelFormat.Paletted:
+					newBytes = new byte[clipWidth * clipHeight];
+					for (int y = 0; y < clipHeight; y++)
+					{
+						int j = width * (clipTop + y) + clipLeft;
+						for (int x = 0; x < clipWidth; x++)
+						{
+							newBytes[i] = bytes[j];
+							i++;
+							j++;
+						}
+					}
+					if (texture.Palette32 != null) return new Texture(clipWidth, clipHeight, PixelFormat.Paletted, newBytes, texture.Palette32);
+					return new Texture(clipWidth, clipHeight, PixelFormat.Paletted, newBytes, texture.Palette);
+				case PixelFormat.GrayscaleAlpha:
+				    newBytes = new byte[2 * clipWidth * clipHeight];
+				    for (int y = 0; y < clipHeight; y++)
+				    {
+					    int j = 2 * width * (clipTop + y) + 2 * clipLeft;
+					    for (int x = 0; x < clipWidth; x++)
+					    {
+						    newBytes[i + 0] = bytes[j + 0];
+						    newBytes[i + 1] = bytes[j + 1];
+							i += 2;
+						    j += 2;
+					    }
+				    }
+				    return new Texture(clipWidth, clipHeight, PixelFormat.GrayscaleAlpha, newBytes, texture.Palette);
+				case PixelFormat.RGB:
+					newBytes = new byte[3 * clipWidth * clipHeight];
+					for (int y = 0; y < clipHeight; y++)
+					{
+						int j = 3 * width * (clipTop + y) + 3 * clipLeft;
+						for (int x = 0; x < clipWidth; x++)
+						{
+							newBytes[i + 0] = bytes[j + 0];
+							newBytes[i + 1] = bytes[j + 1];
+							newBytes[i + 2] = bytes[j + 2];
+							i += 3;
+							j += 3;
+						}
+					}
+					return new Texture(clipWidth, clipHeight, PixelFormat.RGB, newBytes, texture.Palette);
+				case PixelFormat.RGBAlpha:
+					newBytes = new byte[4 * clipWidth * clipHeight];
+					for (int y = 0; y < clipHeight; y++)
+					{
+						int j = 4 * width * (clipTop + y) + 4 * clipLeft;
+						for (int x = 0; x < clipWidth; x++)
+						{
+							newBytes[i + 0] = bytes[j + 0];
+							newBytes[i + 1] = bytes[j + 1];
+							newBytes[i + 2] = bytes[j + 2];
+							newBytes[i + 3] = bytes[j + 3];
+							i += 4;
+							j += 4;
+						}
+					}
+					return new Texture(clipWidth, clipHeight, PixelFormat.RGBAlpha, newBytes, texture.Palette);
+				
+				default:
+					throw new NotSupportedException();
+			}
+		    
+		}
+
+		private static Color24 GetClosestColor(Color24[] colorArray, Color24 baseColor)
+		{
+			if (colorArray.Contains(baseColor))
+			{
+				return baseColor;
+			}
+			int colorDiffs = colorArray.Select(n => GetDiff(n, baseColor)).Min(n => n);
+			Color24 c = colorArray[Array.FindIndex(colorArray,n => GetDiff(n, baseColor) == colorDiffs)];
+			return new Color24(c.R, c.G, c.B);
+		}
+
+		private static int GetDiff(Color24 c1, Color24 c2)
+		{
+			return (int)System.Math.Sqrt((c1.R - c2.R) * (c1.R - c2.R)
+			                      + (c1.G - c2.G) * (c1.G - c2.G)
+			                      + (c1.B - c2.B) * (c1.B - c2.B));
+		}
+
+		// --- apply transparent color ---
+
+		/// <summary>Applies a transparent color onto a texture.</summary>
+		/// <param name="texture">The original texture.</param>
+		/// <param name="color">The transparent color, or a null reference.</param>
+		/// <returns>The texture with the transparent color applied.</returns>
+		/// <exception cref="System.NotSupportedException">Raised when the number of bits per pixel in the texture is not supported.</exception>
+		internal static Texture ApplyTransparentColor(Texture texture, Color24? color)
+		{
+		    if (color == null) {
+				return texture;
+			}
+			if (texture.Palette != null && texture.CompatibleTransparencyMode)
+			{
+				switch (texture.Palette.Length)
+				{
+					case 0:
+						//ignore if no reduced palette
+						break;
+					default:
+						Color24 c = (Color24)color;
+						color = GetClosestColor(texture.Palette, c);
+						break;
+				}
+			}
+
+			// Paletted special handling: check palette index directly, modify palette alpha without iterating all frames
+			if (texture.PixelFormat == PixelFormat.Paletted && texture.Palette32 != null)
+			{
+				int matchIdx = -1;
+				for (int i = 0; i < texture.Palette32.Length; i++)
+				{
+					if (texture.Palette32[i].R == color.Value.R && texture.Palette32[i].G == color.Value.G && texture.Palette32[i].B == color.Value.B)
+					{ matchIdx = i; break; }
+				}
+			if (matchIdx == -1) return texture;
+			// For streaming GIFs check only the current frame for usage, as decoding every frame
+			// here would defeat on-demand loading; non-streaming textures hold all frames in memory, so scan them all
+			bool anyUse = false;
+			if (texture.MultipleFrames && !(texture.Origin is StreamingGifOrigin))
+			{
+				int savedFrame = texture.CurrentFrame;
+				for (int f = 0; f < texture.TotalFrames && !anyUse; f++)
+				{
+					texture.CurrentFrame = f;
+					byte[] frameData = texture.Bytes;
+					if (frameData == null) continue;
+					for (int i = 0; i < frameData.Length; i++) { if ((frameData[i] & 0xFF) == matchIdx) { anyUse = true; break; } }
+				}
+				texture.CurrentFrame = savedFrame;
+			}
+			else
+			{
+				byte[] curFrame = texture.Bytes;
+				if (curFrame != null)
+				{
+					for (int i = 0; i < curFrame.Length; i++) { if ((curFrame[i] & 0xFF) == matchIdx) { anyUse = true; break; } }
+				}
+			}
+			if (!anyUse) return texture;
+				Color32[] newPal = (Color32[])texture.Palette32.Clone();
+				newPal[matchIdx].A = 0;
+				if (texture.MultipleFrames)
+				{
+					// For streaming GIFs, create a new origin with modified palette, avoids decoding all frames
+					if (texture.Origin is StreamingGifOrigin sgo)
+					{
+						var newOrigin = sgo.WithModifiedPalette(newPal);
+						return new Texture(newOrigin);
+					}
+					// For non-streaming, share original frame references, palette index data doesn't change
+					byte[][] framesRef = new byte[texture.TotalFrames][];
+					int saved = texture.CurrentFrame;
+					for (int f = 0; f < texture.TotalFrames; f++)
+					{
+						texture.CurrentFrame = f;
+						byte[] frameData = texture.Bytes;
+						if (frameData == null) frameData = new byte[texture.Width * texture.Height];
+						framesRef[f] = frameData;
+					}
+					texture.CurrentFrame = saved;
+					return new Texture(texture.Width, texture.Height, PixelFormat.Paletted, framesRef, newPal, texture.FrameInterval);
+				}
+				else
+				{
+					return new Texture(texture.Width, texture.Height, PixelFormat.Paletted, (byte[])texture.Bytes.Clone(), newPal);
+				}
+			}
+
+			bool usedTransparentColor = false;
+			if (texture.MultipleFrames)
+			{
+				/*
+				 * Scan the frames for the transparent color first;
+				 * building the converted frames is expensive and pointless when the color does not occur
+				 */
+				int savedFrame = texture.CurrentFrame;
+				bool anyFrameContainsColor = false;
+				for (int i = 0; i < texture.TotalFrames && !anyFrameContainsColor; i++)
+				{
+					texture.CurrentFrame = i;
+					anyFrameContainsColor = ContainsColor(texture.Bytes, texture.PixelFormat, color.Value);
+				}
+				texture.CurrentFrame = savedFrame;
+				if (!anyFrameContainsColor)
+				{
+					return texture;
+				}
+
+				byte[][] newFrames = new byte[texture.TotalFrames][];
+				for (int i = 0; i < texture.TotalFrames; i++)
+				{
+					newFrames[i] = ApplyTransparentColor(texture.Bytes, texture.PixelFormat, texture.Width, texture.Height, color.Value, ref usedTransparentColor);
+					texture.CurrentFrame++;
+				}
+				texture.CurrentFrame = 0;
+
+				if (usedTransparentColor)
+				{
+					return new Texture(texture.Width, texture.Height, PixelFormat.RGBAlpha, newFrames, texture.FrameInterval);
+				}
+				return texture;
+
+			}
+
+			if (!ContainsColor(texture.Bytes, texture.PixelFormat, color.Value))
+			{
+				return texture;
+			}
+
+			byte[] newBytes = ApplyTransparentColor(texture.Bytes, texture.PixelFormat, texture.Width, texture.Height, color.Value, ref usedTransparentColor);
+			if (usedTransparentColor)
+			{
+				return new Texture(texture.Width, texture.Height, PixelFormat.RGBAlpha, newBytes, texture.Palette);
+			}
+			return texture;
+		}
+
+		private static byte[] ApplyTransparentTexture(byte[] source, PixelFormat pixelFormat, int width, int height, Texture transparencyTexture)
+		{
+			byte[] target = new byte[4 * width * height];
+
+
+			int targetIndex = 0;
+			switch (pixelFormat)
+			{
+				case PixelFormat.Paletted:
+					// Caller should have expanded to RGBA before calling this as a fallback, just apply transparency alpha to the source index treated as luminance
+					for (int i = 0; i < width * height; i++)
+					{
+						byte val = source[i];
+						target[i*4] = val;
+						target[i*4+1] = val;
+						target[i*4+2] = val;
+						if (transparencyTexture.PixelFormat == PixelFormat.Grayscale || transparencyTexture.PixelFormat == PixelFormat.RGB)
+						{
+							Color24 c = transparencyTexture.GetPixel(i);
+							target[i*4 + 3] = (byte)(255 * c.GetBrightness());
+						}
+						else
+						{
+							target[i*4 + 3] = transparencyTexture.GetAlpha(i);
+						}
+					}
+					break;
+				case PixelFormat.Grayscale:
+					for (int i = 0; i < source.Length; i++, targetIndex += 4)
+					{
+						
+						target[targetIndex] = source[i];
+						target[targetIndex + 1] = source[i];
+						target[targetIndex + 2] = source[i];
+						if (transparencyTexture.PixelFormat == PixelFormat.Grayscale || transparencyTexture.PixelFormat == PixelFormat.RGB)
+						{
+							Color24 c = transparencyTexture.GetPixel(i);
+							target[targetIndex + 3] = (byte)(255 * c.GetBrightness());
+						}
+						else
+						{
+							target[i + 3] = System.Math.Min(source[i + 1], transparencyTexture.GetAlpha(i));
+						}
+						
+					}
+					break;
+				case PixelFormat.GrayscaleAlpha:
+					for (int i = 0; i < source.Length; i += 2, targetIndex += 4)
+					{
+						int pix = i / 2;
+						target[targetIndex] = source[i];
+						target[targetIndex + 1] = source[i];
+						target[targetIndex + 2] = source[i];
+						if (transparencyTexture.PixelFormat == PixelFormat.Grayscale || transparencyTexture.PixelFormat == PixelFormat.RGB)
+						{
+							Color24 c = transparencyTexture.GetPixel(pix);
+							target[targetIndex + 3] = (byte)(255 * c.GetBrightness());
+						}
+						else
+						{
+							target[i + 3] = System.Math.Min(source[i + 1], transparencyTexture.GetAlpha(pix));
+						}
+					}
+					break;
+				case PixelFormat.RGB:
+					for (int i = 0; i < source.Length; i += 3, targetIndex += 4)
+					{
+						int pix = i / 3;
+						target[targetIndex] = source[i];
+						target[targetIndex + 1] = source[i + 1];
+						target[targetIndex + 2] = source[i + 2];
+						if (transparencyTexture.PixelFormat == PixelFormat.Grayscale ||
+						    transparencyTexture.PixelFormat == PixelFormat.RGB)
+						{
+							Color24 c = transparencyTexture.GetPixel(pix);
+							target[targetIndex + 3] = (byte)(255 * c.GetBrightness());
+						}
+						else
+						{
+							target[i + 3] = System.Math.Min(source[i + 3], transparencyTexture.GetAlpha(pix));
+						}
+					}
+					break;
+				case PixelFormat.RGBAlpha:
+					Color24 fc = transparencyTexture.GetPixel(0);
+					target[0] = source[0];
+					target[1] = source[1];
+					target[2] = source[2];
+					target[3] = (byte)(((double)fc.R + (double)fc.G + (double)fc.B) / 3.0);
+
+					for (int i = 4; i < source.Length; i += 4)
+					{
+						int pix = i / 4;
+						target[i + 0] = source[i + 0];
+						target[i + 1] = source[i + 1];
+						target[i + 2] = source[i + 2];
+						if (transparencyTexture.PixelFormat == PixelFormat.Grayscale || transparencyTexture.PixelFormat == PixelFormat.RGB)
+						{
+							Color24 c = transparencyTexture.GetPixel(pix);
+							target[i + 3] = (byte)(255 * c.GetBrightness());
+						}
+						else
+						{
+							target[i + 3] = System.Math.Min(source[i + 3], transparencyTexture.GetAlpha(pix));
+						}
+							
+					}
+					break;
+			}
+
+			return target;
+		}
+
+		/// <summary>Scans the pixel data for the given color, using the same matching rules as <see cref="ApplyTransparentColor"/>.</summary>
+		/// <param name="source">The source pixel data.</param>
+		/// <param name="pixelFormat">The pixel format of the data.</param>
+		/// <param name="color">The color to find.</param>
+		/// <returns>Whether the color occurs in the data. Unknown formats return true, so that the regular conversion path is taken.</returns>
+		private static bool ContainsColor(byte[] source, PixelFormat pixelFormat, Color24 color)
+		{
+			byte r = color.R;
+			byte g = color.G;
+			byte b = color.B;
+			switch (pixelFormat)
+			{
+				case PixelFormat.Grayscale:
+					if (r == g && g == b)
+					{
+						for (int i = 0; i < source.Length; i++)
+						{
+							if (source[i] == r)
+							{
+								return true;
+							}
+						}
+					}
+					return false;
+				case PixelFormat.GrayscaleAlpha:
+					for (int i = 0; i + 1 < source.Length; i += 2)
+					{
+						if (source[i] == r && source[i] == g && source[i] == b)
+						{
+							return true;
+						}
+					}
+					return false;
+				case PixelFormat.RGB:
+					for (int i = 0; i + 2 < source.Length; i += 3)
+					{
+						if (source[i] == r && source[i + 1] == g && source[i + 2] == b)
+						{
+							return true;
+						}
+					}
+					return false;
+				case PixelFormat.Paletted:
+					// Cannot determine without palette, just assume true to trigger palette path handled at higher level
+					return true;
+				case PixelFormat.RGBAlpha:
+					for (int i = 0; i + 2 < source.Length; i += 4)
+					{
+						if (source[i] == r && source[i + 1] == g && source[i + 2] == b)
+						{
+							return true;
+						}
+					}
+					return false;
+				default:
+					return true;
+			}
+		}
+
+		private static byte[] ApplyTransparentColor(byte[] source, PixelFormat pixelFormat, int width, int height, Color24 color, ref bool usedTransparentColor)
+		{
+			byte[] target = new byte[4 * width * height];
+			byte r = color.R;
+			byte g = color.G;
+			byte b = color.B;
+
+			int targetIndex = 0;
+			switch (pixelFormat)
+			{
+				case PixelFormat.Grayscale:
+					for (int i = 0; i < source.Length; i++, targetIndex += 4) {
+						if (source[i] == r && source[i] == g && source[i] == b)
+						{
+							target[targetIndex] = 0;
+							target[targetIndex + 1] = 0;
+							target[targetIndex + 2] = 0;
+							target[targetIndex + 3] = 0;
+							usedTransparentColor = true;
+						} else {
+							target[targetIndex] = source[i];
+							target[targetIndex + 1] = source[i];
+							target[targetIndex + 2] = source[i];
+							target[targetIndex + 3] = 255;
+						}
+					}
+					break;
+				case PixelFormat.GrayscaleAlpha:
+					for (int i = 0; i < source.Length; i += 2, targetIndex += 4) {
+						if (source[i] == r && source[i] == g && source[i] == b)
+						{
+							target[targetIndex] = 0;
+							target[targetIndex + 1] = 0;
+							target[targetIndex + 2] = 0;
+							target[targetIndex + 3] = 0;
+							usedTransparentColor = true;
+						} else {
+							target[targetIndex] = source[i];
+							target[targetIndex + 1] = source[i];
+							target[targetIndex + 2] = source[i];
+							target[targetIndex + 3] = source[i + 1];
+						}
+					}
+					break;
+				case PixelFormat.RGB:
+					for (int i = 0; i < source.Length; i += 3, targetIndex += 4) {
+						if (source[i] == r && source[i + 1] == g && source[i + 2] == b)
+						{
+							target[targetIndex] = 0;
+							target[targetIndex + 1] = 0;
+							target[targetIndex + 2] = 0;
+							target[targetIndex + 3] = 0;
+							usedTransparentColor = true;
+						} else {
+							target[targetIndex] = source[i];
+							target[targetIndex + 1] = source[i + 1];
+							target[targetIndex + 2] = source[i + 2];
+							target[targetIndex + 3] = 255;
+						}
+					}
+					break;
+				case PixelFormat.Paletted:
+					throw new NotSupportedException("Paletted ApplyTransparentColor should be handled at texture level with palette");
+				case PixelFormat.RGBAlpha:
+					if (source[0] == r && source[1] == g && source[2] == b) {
+						target[0] = 128;
+						target[1] = 128;
+						target[2] = 128;
+						target[3] = 0;
+						usedTransparentColor = true;
+					} else {
+						target[0] = source[0];
+						target[1] = source[1];
+						target[2] = source[2];
+						target[3] = source[3];
+					}
+					for (int i = 4; i < source.Length; i += 4) {
+						if (source[i] == r && source[i + 1] == g && source[i + 2] == b) {
+							target[i + 0] = target[i - 4];
+							target[i + 1] = target[i - 3];
+							target[i + 2] = target[i - 2];
+							target[i + 3] = 0;
+							usedTransparentColor = true;
+						} else {
+							target[i + 0] = source[i + 0];
+							target[i + 1] = source[i + 1];
+							target[i + 2] = source[i + 2];
+							target[i + 3] = source[i + 3];
+						}
+					}
+					break;
+			}
+			
+			return target;
+		}
+	}
+}

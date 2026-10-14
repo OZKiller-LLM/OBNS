@@ -11,8 +11,8 @@ dist/
 # Third-party routes and trains used for testing: their authors' terms forbid redistribution
 /content/
 
-# Upstream's own source archive (the tree is in OpenBVE-1.14.0.3/)
-/src-1.14.0.3.zip
+# Upstream's own source archives (the tree is in OpenBVE/)
+/src-*.zip
 
 # Signing keys never belong in the repository
 *.jks
