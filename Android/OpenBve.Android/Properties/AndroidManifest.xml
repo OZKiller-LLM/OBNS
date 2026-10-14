@@ -10,6 +10,8 @@
 	  allows on a system settings page; older versions use the storage permissions.
 	-->
 	<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+	<!-- Route microphone sounds (PLAY_MIC_SOUNDS): asked for only when the player switches them on. -->
+	<uses-permission android:name="android.permission.RECORD_AUDIO" />
 	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 	<application android:label="OpenBVE" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:allowBackup="false" android:hardwareAccelerated="true" android:requestLegacyExternalStorage="true" />

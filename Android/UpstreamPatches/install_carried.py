@@ -29,7 +29,7 @@ FILES = {
     "assets/Shaders/default.vert": ("LibRender2.Android",
         "float literals (GLSL ES has no implicit int to float conversion)"),
     "assets/Shaders/default.frag": ("LibRender2.Android",
-        "explicit vec2 around textureSize (GLSL ES has no implicit ivec2 to vec2 conversion)"),
+        "explicit vec2 around textureSize, float literals in the alpha test (GLSL ES has no implicit int or ivec2 to float conversion)"),
     "assets/Shaders/rectangle.frag": ("LibRender2.Android",
         "float literals in the alpha-test comparisons (GLSL ES has no implicit int to float conversion)"),
 }

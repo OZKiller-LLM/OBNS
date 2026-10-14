@@ -69,3 +69,4 @@ timetable_terminal = 종착
 vulkan_small_textures = 네이티브 Vulkan에서 텍스처 축소:
 vulkan_small_textures_note = RAM이 약 6GB 이하인 휴대전화에서 네이티브 Vulkan은 텍스처를 1024px, 16비트 색상으로 제한하여(해당 옵션이 자동인 경우) 무거운 노선에서 메모리가 부족하지 않게 합니다. 더 선명한 텍스처를 원하면 끄십시오.
 vulkan_small_textures_large = (이 기기는 메모리가 더 많아 여기서는 효과가 없습니다.)
+microphone_denied = 마이크 소리를 사용하려면 마이크 사용 권한이 필요합니다.

@@ -28,7 +28,9 @@ using LibRender2.Camera;
 using LibRender2.Cameras;
 using LibRender2.Trains;
 using LibRender2.Viewports;
+using OpenBveApi;
 using OpenBveApi.Graphics;
+using OpenBveApi.Hosts;
 using OpenBveApi.Interface;
 using OpenBveApi.Math;
 using OpenBveApi.Routes;
@@ -57,6 +59,14 @@ namespace OpenBve.Android
 	{
 		/// <summary>Seconds taken to glide between cars in exterior view, upstream's default.</summary>
 		private const double CarTransitionSeconds = 0.4;
+
+		/*
+		 * Upstream's camera transitions (Options: cameraInteriorTransition, cameraExteriorTransition,
+		 * cameraTransitionSpeed; on, on, 0.4 s by default): the glide between cars, and from the
+		 * exterior view into the cab.
+		 */
+		internal static bool InteriorTransition = true;
+		internal static bool ExteriorTransition = true;
 
 		private readonly AndroidRenderer renderer;
 		private readonly CurrentRoute route;
@@ -189,7 +199,19 @@ namespace OpenBve.Android
 				Camera.CameraCarTransitionTimer += timeElapsed;
 			}
 
-			double progress = mode == CameraViewMode.Exterior ? Math.Min(1.0, Camera.CameraCarTransitionTimer / CarTransitionSeconds) : 1.0;
+			if (Camera.ModeTransitionTimer < 1.0)
+			{
+				Camera.ModeTransitionTimer += timeElapsed / CarTransitionSeconds;
+			}
+
+			double progress = Math.Min(1.0, Camera.CameraCarTransitionTimer / CarTransitionSeconds);
+			if ((mode == CameraViewMode.Exterior && !ExteriorTransition) || (mode != CameraViewMode.Exterior && !InteriorTransition) || mode == CameraViewMode.Interior)
+			{
+				// As upstream: no transition here
+				progress = 1.0;
+				Camera.ModeTransitionTimer = 1.0;
+			}
+
 			if (progress >= 1.0)
 			{
 				Camera.IsTransitioning = false;
@@ -208,6 +230,29 @@ namespace OpenBve.Android
 				? Player.Cars[Camera.PreviousCameraCar]
 				: null;
 			Player.Cars[Player.CameraCar].UpdateCamera(previousCar, progress);
+
+			if (Camera.ModeTransitionTimer < 1.0)
+			{
+				// From the exterior view into the cab, as upstream's GameWindow: the track follower glides
+				// from where the camera was, and the view's turn and zoom ease back to straight ahead.
+				TrackFollower trackFollower = renderer.CameraTrackFollower;
+				double linear = Math.Min(1.0, Camera.ModeTransitionTimer);
+				double cosine = (1.0 - Math.Cos(linear * Math.PI)) / 2.0;
+				var start = Camera.ModeTransitionStart;
+				trackFollower.WorldPosition = Vector3.CosineInterpolate(start.Position, trackFollower.WorldPosition, linear);
+				trackFollower.WorldDirection = Vector3.CosineInterpolate(start.Direction, trackFollower.WorldDirection, linear);
+				trackFollower.WorldDirection.Normalize();
+				trackFollower.WorldUp = Vector3.CosineInterpolate(start.Up, trackFollower.WorldUp, linear);
+				trackFollower.WorldUp.Normalize();
+				trackFollower.WorldSide = Vector3.CosineInterpolate(start.Side, trackFollower.WorldSide, linear);
+				trackFollower.WorldSide.Normalize();
+				trackFollower.UpdateAbsolute(start.TrackPosition + (trackFollower.TrackPosition - start.TrackPosition) * cosine, false, false);
+				Camera.AlignmentDirection.Yaw = start.Alignment.Yaw * (1.0 - cosine);
+				Camera.AlignmentDirection.Pitch = start.Alignment.Pitch * (1.0 - cosine);
+				Camera.AlignmentDirection.Roll = start.Alignment.Roll * (1.0 - cosine);
+				Camera.AlignmentDirection.Position = start.Alignment.Position * (1.0 - cosine);
+				Camera.AlignmentDirection.Zoom = start.Alignment.Zoom + (0.0 - start.Alignment.Zoom) * cosine;
+			}
 		}
 
 		// --- controls ---
@@ -225,6 +270,9 @@ namespace OpenBve.Android
 				case Translations.Command.CameraPOINext:
 				case Translations.Command.CameraReset:
 				case Translations.Command.CameraRestriction:
+				case Translations.Command.CameraHeadOutLeft:
+				case Translations.Command.CameraHeadOutRight:
+				case Translations.Command.CameraInteriorNoPanel:
 					return true;
 				default:
 					return IsAnalog(command);
@@ -340,6 +388,17 @@ namespace OpenBve.Android
 					SaveSettings();
 					bool lookahead = Camera.CurrentMode != CameraViewMode.InteriorLookAhead && Camera.CurrentRestriction == CameraRestrictionMode.NotAvailable;
 					bool hasCab = train.Cars[0].InteriorCamera != null || train.Cars[0].HasInteriorView;
+					bool isAtCabCar = train.CameraCar == 0 || train.CameraCar == train.DriverCar;
+					if (Camera.CurrentMode == CameraViewMode.Exterior && isAtCabCar && hasCab && InteriorTransition)
+					{
+						// As upstream: glide from the exterior view into the cab
+						Camera.ModeTransitionStart = (Camera.AbsolutePosition, Camera.AbsoluteDirection, Camera.AbsoluteUp, Camera.AbsoluteSide,
+							renderer.CameraTrackFollower.TrackPosition,
+							new CameraAlignment(Camera.AlignmentDirection.Position, Camera.AlignmentDirection.Yaw, Camera.AlignmentDirection.Pitch,
+								Camera.AlignmentDirection.Roll, Camera.AlignmentDirection.TrackPosition, Camera.AlignmentDirection.Zoom));
+						Camera.ModeTransitionTimer = 0.0;
+					}
+
 					Camera.CurrentMode = CameraViewMode.Interior;
 					RestoreSettings();
 					bool returnToCab = false;
@@ -385,6 +444,11 @@ namespace OpenBve.Android
 
 					break;
 				}
+				case Translations.Command.CameraHeadOutLeft:
+				case Translations.Command.CameraHeadOutRight:
+				case Translations.Command.CameraInteriorNoPanel:
+					HeadOutOrNoPanel(train, command);
+					break;
 				case Translations.Command.CameraExterior:
 					SaveSettings();
 					Camera.CurrentMode = CameraViewMode.Exterior;
@@ -534,6 +598,93 @@ namespace OpenBve.Android
 		public bool Restricted => Camera.CurrentRestriction == CameraRestrictionMode.On || Camera.CurrentRestriction == CameraRestrictionMode.Restricted3D;
 
 		// --- saved views (upstream MainLoop.SaveCameraSettings / RestoreCameraSettings) ---
+
+		/// <summary>
+		/// The head-out views (a car's HeadOutLeft / HeadOutRight section) and the cab view without
+		/// its panel, as upstream's ProcessControls.
+		/// </summary>
+		private void HeadOutOrNoPanel(TrainBase train, Translations.Command command)
+		{
+			bool noPanel = command == Translations.Command.CameraInteriorNoPanel;
+			bool lookahead = false;
+			SaveSettings();
+			if (noPanel)
+			{
+				if (Camera.CurrentMode != CameraViewMode.InteriorLookAhead & Camera.CurrentRestriction == CameraRestrictionMode.NotAvailable)
+				{
+					MessageManager.AddMessage(Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "notification", "interior_lookahead" }),
+						RouteManager2.MessageManager.MessageDependency.CameraView, GameMode.Expert, OpenBveApi.Colors.MessageColor.White, 2, null);
+					lookahead = true;
+				}
+				else
+				{
+					MessageManager.AddMessage(Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "notification", "interior" }),
+						RouteManager2.MessageManager.MessageDependency.CameraView, GameMode.Expert, OpenBveApi.Colors.MessageColor.White, 2, null);
+				}
+			}
+
+			Camera.CurrentMode = CameraViewMode.Interior;
+			RestoreSettings();
+			bool returnToCab = false;
+			for (int j = 0; j < train.Cars.Length; j++)
+			{
+				CarBase car = train.Cars[j];
+				if (j != train.CameraCar)
+				{
+					car.ChangeCarSection(CarSectionType.NotVisible, true);
+				}
+				else if (command == Translations.Command.CameraHeadOutLeft && car.CarSections.ContainsKey(CarSectionType.HeadOutLeft))
+				{
+					car.ChangeCarSection(CarSectionType.HeadOutLeft);
+				}
+				else if (command == Translations.Command.CameraHeadOutRight && car.CarSections.ContainsKey(CarSectionType.HeadOutRight))
+				{
+					car.ChangeCarSection(CarSectionType.HeadOutRight);
+				}
+				else if (car.HasInteriorView)
+				{
+					car.ChangeCarSection(CarSectionType.Interior);
+					Camera.CurrentRestriction = car.CameraRestrictionMode;
+				}
+				else
+				{
+					car.ChangeCarSection(CarSectionType.NotVisible, true);
+					returnToCab = true;
+				}
+			}
+
+			if (returnToCab)
+			{
+				// The chosen car has no cab, so back to the driver's.
+				train.CameraCar = train.DriverCar;
+				train.Cars[train.DriverCar].ChangeCarSection(CarSectionType.Interior);
+			}
+
+			if (noPanel)
+			{
+				// The view from the cab with nothing of the train drawn: no panel, no interior, no bogies.
+				foreach (CarBase car in train.Cars)
+				{
+					car.ChangeCarSection(CarSectionType.NotVisible, true);
+				}
+			}
+
+			Camera.AlignmentDirection = new CameraAlignment();
+			Camera.AlignmentSpeed = new CameraAlignment();
+			renderer.UpdateViewport(ViewportChangeMode.NoChange);
+			PlaceInCar(0.0);
+			UpdateAbsolute();
+			renderer.UpdateViewingDistances(BackgroundDistance);
+			if (Camera.CurrentRestriction != CameraRestrictionMode.NotAvailable && !Camera.PerformRestrictionTest(Restriction))
+			{
+				InitializeRestriction();
+			}
+
+			if (lookahead)
+			{
+				Camera.CurrentMode = CameraViewMode.InteriorLookAhead;
+			}
+		}
 
 		private void SaveSettings()
 		{
@@ -832,6 +983,17 @@ namespace OpenBve.Android
 			Camera.AbsoluteDirection = dF;
 			Camera.AbsoluteUp = uF;
 			Camera.AbsoluteSide = sF;
+
+			if (Camera.ModeTransitionTimer < 1.0)
+			{
+				// As upstream's World.UpdateAbsoluteCamera: blend from where the transition started.
+				double progress = Camera.ModeTransitionTimer;
+				var start = Camera.ModeTransitionStart;
+				Camera.AbsolutePosition = Vector3.CosineInterpolate(start.Position, Camera.AbsolutePosition, progress);
+				Camera.AbsoluteDirection = Vector3.CosineInterpolate(start.Direction, Camera.AbsoluteDirection, progress);
+				Camera.AbsoluteUp = Vector3.CosineInterpolate(start.Up, Camera.AbsoluteUp, progress);
+				Camera.AbsoluteSide = Vector3.CosineInterpolate(start.Side, Camera.AbsoluteSide, progress);
+			}
 		}
 
 		/// <summary>The fly-by views: a fixed point by the track, turning to follow the nearest train.</summary>

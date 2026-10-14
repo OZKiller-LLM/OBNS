@@ -55,6 +55,9 @@ namespace OpenBve.Android
 		/// <summary>The in-game interface (HUD) layout folder under Data/In-game, as the desktop's option.</summary>
 		public string UserInterfaceFolder = "Default";
 
+		/// <summary>The time acceleration MISC_TIMEFACTOR switches to, as the desktop's option (default 5).</summary>
+		public int TimeAccelerationFactor = 5;
+
 		/// <summary>The game mode before the last change, which upstream's score log reports.</summary>
 		public OpenBveApi.GameMode PreviousGameMode = OpenBveApi.GameMode.Normal;
 

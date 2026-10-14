@@ -50,8 +50,7 @@ namespace OpenBve.Android
 	/// replaced by constructor arguments. Every frame it places the listener at the camera, works
 	/// out each source's gain from its distance, keeps only the loudest
 	/// <see cref="BaseOptions.SoundNumber"/> sources playing, and starts, moves and stops OpenAL
-	/// sources to match. Microphone playback (the route's mic sound feature) is not ported: it
-	/// would need the RECORD_AUDIO permission for a rarely used feature.
+	/// sources to match, then plays the route's microphone sounds (<see cref="RecAndPlay"/>).
 	/// </remarks>
 	public class AndroidSounds : SoundsBase
 	{
@@ -406,6 +405,96 @@ namespace OpenBve.Android
 					AL.Source(source.OpenAlSourceName, ALSourceb.Looping, source.Looped);
 					AL.SourcePlay(source.OpenAlSourceName);
 					source.State = SoundSourceState.Playing;
+				}
+			}
+
+			RecAndPlay(listenerPosition, clampFactor);
+		}
+
+		/// <summary>
+		/// The route's microphone sounds (Track.MicSound), as upstream's Sounds.RecAndPlay with the
+		/// inverse distance model: while PLAY_MIC_SOUNDS is on, what the phone's microphone hears is
+		/// played at each microphone position the listener is within range of. The microphone opens
+		/// only then, once the app has the RECORD_AUDIO permission (OpenTK.Audio.AudioCapture).
+		/// </summary>
+		private void RecAndPlay(Vector3 listenerPosition, double clampFactor)
+		{
+			if (OpenAlMic == null)
+			{
+				return;
+			}
+
+			if (!IsPlayingMicSounds)
+			{
+				if (OpenAlMic.IsRunning)
+				{
+					OpenAlMic.Stop();
+				}
+
+				return;
+			}
+
+			if (!OpenAlMic.IsRunning)
+			{
+				OpenAlMic.Start();
+				if (!OpenAlMic.IsRunning)
+				{
+					// No microphone yet (no permission, or none on the device)
+					return;
+				}
+			}
+
+			int[] states = new int[MicSources.Count];
+			for (int i = 0; i < MicSources.Count; i++)
+			{
+				AL.GetSource(MicSources[i].OpenAlSourceName, ALGetSourcei.BuffersProcessed, out states[i]);
+			}
+
+			int sample = OpenAlMic.AvailableSamples;
+			for (int i = 0; i < MicSources.Count; i++)
+			{
+				MicSource mic = MicSources[i];
+				if (listenerPosition.Z < mic.Position.Z - mic.BackwardTolerance || listenerPosition.Z > mic.Position.Z + mic.ForwardTolerance)
+				{
+					continue;
+				}
+
+				// When the last buffer has played and there is something recorded
+				if (sample <= 0 || states[i] != 1)
+				{
+					continue;
+				}
+
+				OpenAlMic.ReadSamples(MicStore, sample);
+				int buffer = AL.GenBuffer();
+				AL.BufferData(buffer, OpenAlMic.SampleFormat, MicStore, MicStore.Length, OpenAlMic.SampleFrequency);
+				AL.SourceQueueBuffer(mic.OpenAlSourceName, buffer);
+				UnloadMicBuffers(mic.OpenAlSourceName, states[i]);
+
+				Vector3 positionDifference = mic.Position - listenerPosition;
+				double distance = positionDifference.Norm();
+				double innerRadius = 15.0;
+				double gain = 0.0;
+				if (!GlobalMute)
+				{
+					CameraViewMode mode = renderer.Camera.CurrentMode;
+					if (mode == CameraViewMode.Interior | mode == CameraViewMode.InteriorLookAhead)
+					{
+						innerRadius *= 0.5;
+					}
+
+					gain = distance < 2.0 * innerRadius
+						? 1.0 - distance * distance * (4.0 * innerRadius - distance) / (16.0 * innerRadius * innerRadius * innerRadius)
+						: innerRadius / distance;
+					gain = Math.Max(0.0, gain);
+					gain = Math.Max(0.0, gain - clampFactor * distance * distance);
+				}
+
+				AL.Source(mic.OpenAlSourceName, ALSource3f.Position, (float)positionDifference.X, (float)positionDifference.Y, (float)positionDifference.Z);
+				AL.Source(mic.OpenAlSourceName, ALSourcef.Gain, (float)gain);
+				if (AL.GetSourceState(mic.OpenAlSourceName) != ALSourceState.Playing)
+				{
+					AL.SourcePlay(mic.OpenAlSourceName);
 				}
 			}
 		}

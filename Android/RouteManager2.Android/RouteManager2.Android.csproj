@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Builds the upstream RouteManager2 sources for Android. Upstream is not modified. -->
 
@@ -15,6 +15,9 @@
   <ItemGroup>
     <Compile Include="$(UpstreamSource)RouteManager2\**\*.cs" LinkBase="RouteManager2" />
     <Compile Remove="$(UpstreamSource)RouteManager2\Properties\AssemblyInfo.cs" />
+    <!-- ANDROID PORT copy of an upstream file (OpenBVE 1.14.1.2), compiled in its place; see Android/UpstreamPatches. -->
+    <Compile Remove="$(UpstreamSource)RouteManager2\Events\Transponder.cs" />
+    <Compile Include="Transponder.Android.cs" />
   </ItemGroup>
 
   <ItemGroup>

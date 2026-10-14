@@ -1,5 +1,5 @@
 //Simplified BSD License (BSD-2-Clause)
-// ANDROID PORT: a copy of upstream's assets/Shaders/default.frag (OpenBVE 1.14.1.2), used in its place (LibRender2.Android.csproj): explicit vec2 around textureSize (GLSL ES has no implicit ivec2 to vec2 conversion).
+// ANDROID PORT: a copy of upstream's assets/Shaders/default.frag (OpenBVE 1.14.1.2), used in its place (LibRender2.Android.csproj): explicit vec2 around textureSize, float literals in the alpha test (GLSL ES has no implicit int or ivec2 to float conversion).
 // On an upstream update: copy the file again and reapply the change (Android/UpstreamPatches).
 //
 //Copyright (c) 2024, Christopher Lees, S520, Aditiya Afrizal, The OpenBVE Project
@@ -288,21 +288,21 @@ void main(void)
 	 * Numbers used are those from the GL.AlphaFunction enum to allow
 	 * for direct casts
 	 */
-	if(uAlphaTest.x == 513) // Less
+	if(uAlphaTest.x == 513.0) // Less
 	{
 		if(finalColor.a >= uAlphaTest.y)
 		{
 			discard;
 		}
 	}
-	else if(uAlphaTest.x == 514) // Equal
+	else if(uAlphaTest.x == 514.0) // Equal
 	{
 		if(!(abs(finalColor.a - uAlphaTest.y) < 0.00001))
 		{
 			discard;
 		}
 	}
-	else if(uAlphaTest.x == 516) // Greater
+	else if(uAlphaTest.x == 516.0) // Greater
 	{
 		if(finalColor.a <= uAlphaTest.y)
 		{

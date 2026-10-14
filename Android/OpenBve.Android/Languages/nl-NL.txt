@@ -69,3 +69,4 @@ timetable_terminal = eindstation
 vulkan_small_textures = Kleinere texturen met native Vulkan:
 vulkan_small_textures_note = Op telefoons met ongeveer 6 GB RAM of minder houdt native Vulkan texturen op 1024 px en 16-bits kleur (waar die opties automatisch zijn), zodat zware routes niet zonder geheugen komen. Zet het uit voor scherpere texturen.
 vulkan_small_textures_large = (Dit apparaat heeft meer geheugen: hier geen effect.)
+microphone_denied = Microfoongeluiden hebben toestemming nodig om de microfoon te gebruiken.

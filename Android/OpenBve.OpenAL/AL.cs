@@ -171,6 +171,13 @@ namespace OpenTK.Audio.OpenAL
 			alSourcei(source, (int)param, value);
 		}
 
+		/// <summary>A source's playing state.</summary>
+		public static ALSourceState GetSourceState(int source)
+		{
+			alGetSourcei(source, (int)ALGetSourcei.SourceState, out int state);
+			return (ALSourceState)state;
+		}
+
 		/// <summary>Reads an integer source property.</summary>
 		public static void GetSource(int source, ALGetSourcei param, out int value)
 		{

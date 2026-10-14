@@ -559,7 +559,7 @@ namespace OpenBve.Android
 							}
 							else
 							{
-								driver?.Update(session.Train, elapsed);
+								driver?.Update(session.Train, elapsed * session.TimeFactor);
 								session.Update(elapsed);
 								Controls.UpdateTimetableScroll(elapsed);
 								// The frame rate the desktop HUD's fps element shows (upstream's game window keeps it).
@@ -575,7 +575,7 @@ namespace OpenBve.Android
 								BetaLog.Frame(elapsed, () => session.Train.FrontCarTrackPosition.ToString("0") + " m, " +
 								                             (session.Train.CurrentSpeed * 3.6).ToString("0") + " km/h, view " + renderer.Camera.CurrentMode +
 								                             ", " + width + "x" + height + ", " + GraphicsLibraries.Active + ", " + (DesktopInterface ? "desktop" : "touch"));
-								Game.CurrentScore.Update(elapsed);
+								Game.CurrentScore.Update(elapsed * session.TimeFactor);
 							}
 
 							// Messages time out in real time, as upstream (but not while paused).

@@ -69,3 +69,4 @@ timetable_terminal = capolinea
 vulkan_small_textures = Texture più piccole con Vulkan nativo:
 vulkan_small_textures_note = Sui telefoni con circa 6 GB di RAM o meno, Vulkan nativo limita le texture a 1024 px e colori a 16 bit (dove queste opzioni sono automatiche), così le linee pesanti non esauriscono la memoria. Disattivalo per texture più nitide.
 vulkan_small_textures_large = (Questo dispositivo ha più memoria: qui non ha effetto.)
+microphone_denied = I suoni del microfono richiedono il permesso di usare il microfono.

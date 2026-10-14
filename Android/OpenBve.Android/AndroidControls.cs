@@ -33,6 +33,7 @@ using OpenBveApi.Interface;
 using OpenBveApi.Motor;
 using OpenBveApi.Runtime;
 using TrainManager.Car;
+using TrainManager.Car.Systems;
 using TrainManager.Handles;
 using TrainManager.Motor;
 using TrainManager.SafetySystems;
@@ -151,6 +152,16 @@ namespace OpenBve.Android
 					continue;
 				}
 
+				if (IsGameCommand(item.Command))
+				{
+					if (item.Pressed)
+					{
+						GameCommand(session, item.Command);
+					}
+
+					continue;
+				}
+
 				if (item.Command == Translations.Command.MiscAI)
 				{
 					if (item.Pressed)
@@ -263,6 +274,59 @@ namespace OpenBve.Android
 			else
 			{
 				train.AI = null;
+			}
+		}
+
+		private static bool IsGameCommand(Translations.Command command)
+		{
+			switch (command)
+			{
+				case Translations.Command.MiscTimeFactor:
+				case Translations.Command.MiscMute:
+				case Translations.Command.MiscBackface:
+				case Translations.Command.PlayMicSounds:
+					return true;
+				default:
+					return false;
+			}
+		}
+
+		/// <summary>The game's own commands, as upstream's ProcessControls handles them.</summary>
+		private static void GameCommand(AndroidTrainSession session, Translations.Command command)
+		{
+			TrainBase train = session.Train;
+			switch (command)
+			{
+				case Translations.Command.MiscTimeFactor:
+					if (train.Plugin != null && train.Plugin.DisableTimeAcceleration)
+					{
+						break;
+					}
+
+					if (Interface.CurrentOptions.GameMode == GameMode.Expert)
+					{
+						MessageManager.AddMessage(Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "notification", "notavailableexpert" }),
+							RouteManager2.MessageManager.MessageDependency.None, GameMode.Expert, OpenBveApi.Colors.MessageColor.White, 5, null);
+						break;
+					}
+
+					session.TimeFactor = session.TimeFactor == 1 ? Math.Max(1, Interface.CurrentOptions.TimeAccelerationFactor) : 1;
+					MessageManager.AddMessage(session.TimeFactor.ToString(System.Globalization.CultureInfo.InvariantCulture) + "x",
+						RouteManager2.MessageManager.MessageDependency.None, GameMode.Expert, OpenBveApi.Colors.MessageColor.White, 5, null);
+					break;
+				case Translations.Command.MiscMute:
+					Program.Sounds.GlobalMute = !Program.Sounds.GlobalMute;
+					break;
+				case Translations.Command.PlayMicSounds:
+					Program.Sounds.IsPlayingMicSounds = !Program.Sounds.IsPlayingMicSounds;
+					break;
+				case Translations.Command.MiscBackface:
+					Program.Renderer.OptionBackFaceCulling = !Program.Renderer.OptionBackFaceCulling;
+					MessageManager.AddMessage(Translations.GetInterfaceString(HostApplication.OpenBve, Program.Renderer.OptionBackFaceCulling
+							? new[] { "notification", "backfaceculling_on" }
+							: new[] { "notification", "backfaceculling_off" }),
+						RouteManager2.MessageManager.MessageDependency.None, GameMode.Expert, OpenBveApi.Colors.MessageColor.White, 2, null);
+					break;
 			}
 		}
 
@@ -421,7 +485,124 @@ namespace OpenBve.Android
 				case Translations.Command.DoorsRight:
 					ToggleDoors(train, 1);
 					break;
+				case Translations.Command.DeviceConstSpeed:
+					if (train.Specs.HasConstSpeed)
+					{
+						train.Specs.CurrentConstSpeed = !train.Specs.CurrentConstSpeed;
+					}
+
+					break;
+				case Translations.Command.RaisePantograph:
+				case Translations.Command.LowerPantograph:
+					foreach (CarBase car in train.Cars)
+					{
+						if (car.TractionModel.Components.TryGetTypedValue(EngineComponent.Pantograph, out Pantograph pantograph))
+						{
+							if (control.Command == Translations.Command.RaisePantograph)
+							{
+								pantograph.Raise();
+							}
+							else
+							{
+								pantograph.Lower();
+							}
+						}
+					}
+
+					break;
+				case Translations.Command.GearUp:
+				case Translations.Command.GearDown:
+					foreach (CarBase car in train.Cars)
+					{
+						if (car.TractionModel.Components.TryGetTypedValue(EngineComponent.Gearbox, out Gearbox gearbox))
+						{
+							if (gearbox.OperationMode == GearboxOperation.Automatic)
+							{
+								break;
+							}
+
+							if (control.Command == Translations.Command.GearUp)
+							{
+								gearbox.GearUp();
+							}
+							else
+							{
+								gearbox.GearDown();
+							}
+						}
+					}
+
+					break;
+				case Translations.Command.Headlights:
+					train.SafetySystems.Headlights.ChangeState();
+					break;
+				case Translations.Command.MainBreaker:
+					// Upstream 1.14.1.2 has nothing here either: the breaker is the plugin's or the train's.
+					break;
+				case Translations.Command.Sanders:
+					SetSanders(train, true);
+					break;
+				case Translations.Command.UncoupleFront:
+				case Translations.Command.UncoupleRear:
+					Uncouple(train, control.Command == Translations.Command.UncoupleFront);
+					break;
+				case Translations.Command.AccessPermissiveSection:
+					train.ContactSignaller();
+					break;
 			}
+		}
+
+		/// <summary>SANDERS pressed or released, as upstream: press-and-hold sanders run while held, the others toggle on each press and release.</summary>
+		private static void SetSanders(TrainBase train, bool pressed)
+		{
+			foreach (CarBase car in train.Cars)
+			{
+				if (car.ReAdhesionDevice is Sanders sanders)
+				{
+					if (sanders.Type == SandersType.PressAndHold)
+					{
+						sanders.SetActive(pressed);
+					}
+					else
+					{
+						sanders.Toggle();
+					}
+				}
+			}
+		}
+
+		/// <summary>UNCOUPLE_FRONT / UNCOUPLE_REAR, as upstream: the camera car's coupler, from the exterior view.</summary>
+		private static void Uncouple(TrainBase train, bool front)
+		{
+			void Say(string key, string suffix = "")
+			{
+				MessageManager.AddMessage(Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "notification", key }) + suffix,
+					RouteManager2.MessageManager.MessageDependency.None, GameMode.Expert, OpenBveApi.Colors.MessageColor.White, 5, null);
+			}
+
+			if (Program.Renderer.Camera.CurrentMode != OpenBveApi.Runtime.CameraViewMode.Exterior)
+			{
+				Say("switchexterior_uncouple");
+				return;
+			}
+
+			int car = train.CameraCar;
+			if (front ? car == 0 : car == train.Cars.Length - 1)
+			{
+				Say("unable_uncouple");
+				return;
+			}
+
+			// The front coupler is the one on the rear of the car ahead.
+			int coupler = front ? car - 1 : car;
+			if (coupler >= train.Cars.Length || !train.Cars[coupler].Coupler.CanUncouple)
+			{
+				Say("fixed_uncouple");
+				return;
+			}
+
+			Say(front ? "exterior_uncouplefront" : "exterior_uncouplerear", " " + (car + 1));
+			train.Cars[car].Uncouple(front, !front);
 		}
 
 		private static void ControlUp(TrainBase train, Control control)
@@ -468,6 +649,9 @@ namespace OpenBve.Android
 					break;
 				case Translations.Command.DoorsRight:
 					driverCar.Doors[1].ButtonPressed = false;
+					break;
+				case Translations.Command.Sanders:
+					SetSanders(train, false);
 					break;
 			}
 		}

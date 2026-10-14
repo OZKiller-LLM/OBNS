@@ -69,3 +69,4 @@ timetable_terminal = 终点站
 vulkan_small_textures = 原生 Vulkan 使用较小纹理：
 vulkan_small_textures_note = 在内存约 6 GB 或以下的手机上，原生 Vulkan 会将纹理限制在 1024 px 及 16 位色（当这些选项为自动时），以免大型线路耗尽内存。关闭可获得更清晰的纹理。
 vulkan_small_textures_large = （此设备内存较多：此处无效。）
+microphone_denied = 麦克风声音需要使用麦克风的权限。

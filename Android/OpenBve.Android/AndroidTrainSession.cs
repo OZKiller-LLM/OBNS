@@ -696,8 +696,14 @@ namespace OpenBve.Android
 		}
 
 		/// <summary>Advances the simulation by one frame.</summary>
-		public void Update(double timeElapsed)
+		/// <summary>Upstream's time acceleration (MISC_TIMEFACTOR): 1, or the options' factor.</summary>
+		public int TimeFactor = 1;
+
+		/// <param name="realTimeElapsed">Real time since the last frame; the simulation runs TimeFactor times as fast.</param>
+		public void Update(double realTimeElapsed)
 		{
+			// As upstream's MainLoop: the world runs at the time factor, the camera in real time.
+			double timeElapsed = realTimeElapsed * TimeFactor;
 			route.SecondsSinceMidnight += timeElapsed;
 			trainManager.UpdateTrains(timeElapsed);
 			renderer.Profile.Mark("trains");
@@ -712,7 +718,7 @@ namespace OpenBve.Android
 
 			host.UpdateAnimatedWorldObjects(renderer, timeElapsed, false);
 			renderer.Profile.Mark("world objects");
-			UpdateView(timeElapsed, timeElapsed);
+			UpdateView(realTimeElapsed, timeElapsed);
 		}
 
 		/// <summary>

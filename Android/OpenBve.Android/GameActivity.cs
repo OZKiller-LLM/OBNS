@@ -175,6 +175,44 @@ namespace OpenBve.Android
 		private bool desktopInterface;
 		private KeyboardInput keyboard;
 
+		private const int MicrophoneRequest = 7301;
+		private bool askedForMicrophone;
+
+		/// <summary>The sound system wants the microphone (PLAY_MIC_SOUNDS on): ask once a game, on the UI thread.</summary>
+		private void AskForMicrophone()
+		{
+			if (askedForMicrophone)
+			{
+				return;
+			}
+
+			askedForMicrophone = true;
+			RunOnUiThread(() => RequestPermissions(new[] { global::Android.Manifest.Permission.RecordAudio }, MicrophoneRequest));
+		}
+
+		/// <inheritdoc />
+		public override void OnRequestPermissionsResult(int requestCode, string[] permissions, global::Android.Content.PM.Permission[] grantResults)
+		{
+			base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+			if (requestCode != MicrophoneRequest)
+			{
+				return;
+			}
+
+			bool granted = grantResults.Length > 0 && grantResults[0] == global::Android.Content.PM.Permission.Granted;
+			OpenTK.Audio.AudioCapture.Permitted = granted;
+			if (!granted)
+			{
+				// Without the microphone, microphone sounds go back off.
+				if (Program.Sounds != null)
+				{
+					Program.Sounds.IsPlayingMicSounds = false;
+				}
+
+				Toast.MakeText(this, Menu.T("android", "microphone_denied", "Microphone sounds need permission to use the microphone."), ToastLength.Long)?.Show();
+			}
+		}
+
 		protected override void OnCreate(Bundle savedInstanceState)
 		{
 			base.OnCreate(savedInstanceState);
@@ -195,6 +233,10 @@ namespace OpenBve.Android
 
 			Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
 			AndroidSettings.ApplyIntent(this, Intent);
+			// Microphone sounds (PLAY_MIC_SOUNDS): the microphone opens only with RECORD_AUDIO, asked for when first switched on.
+			OpenTK.Audio.AudioCapture.Permitted = CheckSelfPermission(global::Android.Manifest.Permission.RecordAudio) == global::Android.Content.PM.Permission.Granted;
+			OpenTK.Audio.AudioCapture.PermissionNeeded -= AskForMicrophone;
+			OpenTK.Audio.AudioCapture.PermissionNeeded += AskForMicrophone;
 			// For A/B checks of the renderer's draw-call merging (see AndroidRenderer.DrawOpaqueFaces).
 			AndroidRenderer.MergeOpaqueFaces = Intent?.GetBooleanExtra("merge_faces", true) ?? true;
 			AndroidRenderer.CheckMerging = Intent?.GetBooleanExtra("merge_check", false) ?? false;

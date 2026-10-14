@@ -145,6 +145,12 @@ namespace OpenBve.Android
 			return Sounds != null && Sounds.IsPlaying(soundSource);
 		}
 
+		/// <summary>A route's microphone position (Track.MicSound), as upstream's host: played while PLAY_MIC_SOUNDS is on (AndroidSounds.RecAndPlay).</summary>
+		public override void PlayMicSound(Vector3 position, double backwardTolerance, double forwardTolerance)
+		{
+			Program.Sounds?.PlayMicSound(position, backwardTolerance, forwardTolerance);
+		}
+
 		/// <inheritdoc />
 		public override object PlaySound(SoundHandle buffer, double pitch, double volume, Vector3 position, object parent, bool looped)
 		{

@@ -69,3 +69,4 @@ timetable_terminal = stacja końcowa
 vulkan_small_textures = Mniejsze tekstury z natywnym Vulkanem:
 vulkan_small_textures_note = Na telefonach z około 6 GB RAM lub mniej natywny Vulkan ogranicza tekstury do 1024 px i 16-bitowych kolorów (gdy te opcje są automatyczne), aby ciężkie trasy nie wyczerpały pamięci. Wyłącz, aby tekstury były ostrzejsze.
 vulkan_small_textures_large = (To urządzenie ma więcej pamięci: tutaj nie ma to wpływu.)
+microphone_denied = Dźwięki z mikrofonu wymagają uprawnienia do używania mikrofonu.
