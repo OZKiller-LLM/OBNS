@@ -1,0 +1,482 @@
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/assets/Shaders/default.frag b/assets/Shaders/default.frag
+--- a/assets/Shaders/default.frag	2026-08-11 01:26:18.000000000 +0930
++++ b/assets/Shaders/default.frag	2026-09-18 12:16:46.814138400 +0930
+@@ -108,7 +108,8 @@
+ 
+     // Tight 4-tap rotated grid PCF for sharper shadows.
+     // Each tap is bilinear-averaged by the hardware sampler2DShadow.
+-    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
++    // n.b. explicit vec2: GLSL ES has no implicit ivec2 to vec2 conversion
++    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
+     float shadow = 0.0;
+     
+     // Rotated grid offsets at a tight 0.5 texels
+@@ -222,21 +223,21 @@
+ 	 * Numbers used are those from the GL.AlphaFunction enum to allow
+ 	 * for direct casts
+ 	 */
+-	if(uAlphaTest.x == 513) // Less
++	if(uAlphaTest.x == 513.0) // Less
+ 	{
+ 		if(finalColor.a >= uAlphaTest.y)
+ 		{
+ 			discard;
+ 		}
+ 	}
+-	else if(uAlphaTest.x == 514) // Equal
++	else if(uAlphaTest.x == 514.0) // Equal
+ 	{
+ 		if(!(abs(finalColor.a - uAlphaTest.y) < 0.00001))
+ 		{
+ 			discard;
+ 		}
+ 	}
+-	else if(uAlphaTest.x == 516) // Greater
++	else if(uAlphaTest.x == 516.0) // Greater
+ 	{
+ 		if(finalColor.a <= uAlphaTest.y)
+ 		{
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/assets/Shaders/default.vert b/assets/Shaders/default.vert
+--- a/assets/Shaders/default.vert	2026-08-11 01:26:18.000000000 +0930
++++ b/assets/Shaders/default.vert	2026-09-16 21:05:16.171251100 +0930
+@@ -104,9 +104,10 @@
+ 	float Z = (initialVector.x * modelMatricies[matrixIndex][0].z) + (initialVector.y * modelMatricies[matrixIndex][1].z) + (initialVector.z * modelMatricies[matrixIndex][2].z);
+ 	// ignoreW per DirectX
+ 
+-	X += 1 * modelMatricies[matrixIndex][3].x;
+-	Y += 1 * modelMatricies[matrixIndex][3].y;
+-	Z += 1 * modelMatricies[matrixIndex][3].z;
++	// n.b. float literals: GLSL ES has no implicit int to float conversion
++	X += 1.0 * modelMatricies[matrixIndex][3].x;
++	Y += 1.0 * modelMatricies[matrixIndex][3].y;
++	Z += 1.0 * modelMatricies[matrixIndex][3].z;
+ 	return vec3(X, Y, Z);
+ }
+ 
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/assets/Shaders/rectangle.frag b/assets/Shaders/rectangle.frag
+--- a/assets/Shaders/rectangle.frag	2026-08-11 01:26:18.000000000 +0930
++++ b/assets/Shaders/rectangle.frag	2026-09-18 12:16:46.851683200 +0930
+@@ -22,21 +22,21 @@
+ 	 * Numbers used are those from the GL.AlphaFunction enum to allow
+ 	 * for direct casts
+ 	 */
+-	if(uAlphaTest.x == 513) // Less
++	if(uAlphaTest.x == 513.0) // Less
+ 	{
+ 		if(finalColor.a > uAlphaTest.y)
+ 		{
+ 			discard;
+ 		}
+ 	}
+-	else if(uAlphaTest.x == 514) // Equal
++	else if(uAlphaTest.x == 514.0) // Equal
+ 	{
+ 		if(!(abs(finalColor.a - 1.0) < 0.00001))
+ 		{
+ 			discard;
+ 		}
+ 	}
+-	else if(uAlphaTest.x == 516) // Greater
++	else if(uAlphaTest.x == 516.0) // Greater
+ 	{
+ 		if(finalColor.a <= uAlphaTest.y)
+ 		{
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/AssimpParser/Wavefront/ObjFileMtlImporter.cs b/source/AssimpParser/Wavefront/ObjFileMtlImporter.cs
+--- a/source/AssimpParser/Wavefront/ObjFileMtlImporter.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/AssimpParser/Wavefront/ObjFileMtlImporter.cs	2026-09-17 18:43:40.141395700 +0930
+@@ -81,7 +81,6 @@
+ using System.Collections.Generic;
+ using System.Diagnostics;
+ using System.Globalization;
+-using System.Runtime.Remoting.Channels;
+ using OpenBveApi;
+ using OpenBveApi.Colors;
+ 
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/LibRender2/BaseRenderer.cs b/source/LibRender2/BaseRenderer.cs
+--- a/source/LibRender2/BaseRenderer.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/LibRender2/BaseRenderer.cs	2026-09-18 00:09:03.447475000 +0930
+@@ -474,6 +474,9 @@
+ 			GL.CullFace(CullFaceMode.Front);
+ 			GL.Disable(EnableCap.Dither);
+ 			
++#if !OPENBVE_ANDROID
++			// Detecting ReShade means looking for a Windows DLL next to the executable, and
++			// Android has neither that DLL nor an entry assembly to locate it from.
+ 			// ReSharper disable once PossibleNullReferenceException
+ 			string openGLdll = Path.CombineFile(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location), "opengl32.dll");
+ 
+@@ -485,6 +488,7 @@
+ 					ReShadeInUse = true;
+ 				}
+ 			}
++#endif
+ 			// icons for use in GL menus
+ 			currentHost.RegisterTexture(Path.CombineFile(fileSystem.GetDataFolder("Menu"), "keyboard.png"), TextureParameters.NoChange, out KeyboardTexture);
+ 			currentHost.RegisterTexture(Path.CombineFile(fileSystem.GetDataFolder("Menu"), "gamepad.png"), TextureParameters.NoChange, out GamepadTexture);
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/LibRender2/Objects/ObjectLibrary.cs b/source/LibRender2/Objects/ObjectLibrary.cs
+--- a/source/LibRender2/Objects/ObjectLibrary.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/LibRender2/Objects/ObjectLibrary.cs	2026-09-22 22:19:28.245640700 +0930
+@@ -153,28 +153,19 @@
+ 					if (State.Prototype.Mesh.Materials[face.Material].DaytimeTexture != null)
+ 					{
+ 						// Have to load the texture bytes in order to determine transparency type
+-						Texture daytimeTexture; 
+-						if (TextureManager.textureCache.ContainsKey(State.Prototype.Mesh.Materials[face.Material].DaytimeTexture.Origin))
+-						{
+-							daytimeTexture = TextureManager.textureCache[State.Prototype.Mesh.Materials[face.Material].DaytimeTexture.Origin];
+-						}
+-						else
+-						{
+-							State.Prototype.Mesh.Materials[face.Material].DaytimeTexture.Origin.GetTexture(out daytimeTexture);
++						// ANDROID PORT PATCH: only the type is cached, not the decoded texture (see TextureManager.textureCache)
++						TextureTransparencyType transparencyType;
++						if (!TextureManager.textureCache.TryGetValue(State.Prototype.Mesh.Materials[face.Material].DaytimeTexture.Origin, out transparencyType))
++						{
++							State.Prototype.Mesh.Materials[face.Material].DaytimeTexture.Origin.GetTexture(out Texture daytimeTexture);
++							// as loading the texture may have failed, e.g. corrupt file etc
++							transparencyType = daytimeTexture != null ? daytimeTexture.GetTransparencyType() : TextureTransparencyType.Opaque;
+ 							if (!TextureManager.textureCache.ContainsKey(State.Prototype.Mesh.Materials[face.Material].DaytimeTexture.Origin)) // because getting the Origin may change the ref
+ 							{
+-								TextureManager.textureCache.Add(State.Prototype.Mesh.Materials[face.Material].DaytimeTexture.Origin, daytimeTexture);
++								TextureManager.textureCache.Add(State.Prototype.Mesh.Materials[face.Material].DaytimeTexture.Origin, transparencyType);
+ 							}
+-							
+ 						}
+ 
+-						TextureTransparencyType transparencyType = TextureTransparencyType.Opaque;
+-						if (daytimeTexture != null)
+-						{
+-							// as loading the cached texture may have failed, e.g. corrupt file etc
+-							transparencyType = daytimeTexture.GetTransparencyType();
+-						}
+-						
+ 						if (transparencyType == TextureTransparencyType.Alpha)
+ 						{
+ 							alpha = true;
+@@ -187,22 +178,16 @@
+ 
+ 					if (State.Prototype.Mesh.Materials[face.Material].NighttimeTexture != null)
+ 					{
+-						Texture nighttimeTexture; 
+-						if (TextureManager.textureCache.ContainsKey(State.Prototype.Mesh.Materials[face.Material].NighttimeTexture.Origin))
+-						{
+-							nighttimeTexture = TextureManager.textureCache[State.Prototype.Mesh.Materials[face.Material].NighttimeTexture.Origin];
+-						}
+-						else
+-						{
+-							State.Prototype.Mesh.Materials[face.Material].NighttimeTexture.Origin.GetTexture(out nighttimeTexture);
+-							TextureManager.textureCache.Add(State.Prototype.Mesh.Materials[face.Material].NighttimeTexture.Origin, nighttimeTexture);
+-						}
+-						TextureTransparencyType transparencyType = TextureTransparencyType.Opaque;
+-						if (nighttimeTexture != null)
+-						{
+-							// as loading the cached texture may have failed, e.g. corrupt file etc
+-							transparencyType = nighttimeTexture.GetTransparencyType();
++						// ANDROID PORT PATCH: only the type is cached, not the decoded texture (see TextureManager.textureCache)
++						TextureTransparencyType transparencyType;
++						if (!TextureManager.textureCache.TryGetValue(State.Prototype.Mesh.Materials[face.Material].NighttimeTexture.Origin, out transparencyType))
++						{
++							State.Prototype.Mesh.Materials[face.Material].NighttimeTexture.Origin.GetTexture(out Texture nighttimeTexture);
++							// as loading the texture may have failed, e.g. corrupt file etc
++							transparencyType = nighttimeTexture != null ? nighttimeTexture.GetTransparencyType() : TextureTransparencyType.Opaque;
++							TextureManager.textureCache[State.Prototype.Mesh.Materials[face.Material].NighttimeTexture.Origin] = transparencyType;
+ 						}
++
+ 						if (transparencyType == TextureTransparencyType.Alpha)
+ 						{
+ 							alpha = true;
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/LibRender2/Textures/TextureManager.cs b/source/LibRender2/Textures/TextureManager.cs
+--- a/source/LibRender2/Textures/TextureManager.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/LibRender2/Textures/TextureManager.cs	2026-09-22 22:19:16.002020700 +0930
+@@ -23,7 +23,14 @@
+ 		/// <summary>Holds all currently registered textures.</summary>
+ 		public static Texture[] RegisteredTextures;
+ 		/// <summary>Holds cached texture origins</summary>
+-		internal static Dictionary<TextureOrigin, Texture> textureCache = new Dictionary<TextureOrigin, Texture>();
++		/// <summary>The transparency type of each texture shown so far, by origin.</summary>
++		/// <remarks>
++		/// ANDROID PORT PATCH: this cached the whole decoded Texture, pixels included, although the
++		/// only thing ever read back is its transparency type - so every texture ever shown stayed
++		/// decoded in memory for the whole session (1.25 GB for one 9-car train on a phone, where
++		/// the low-memory killer then ends the app). It now caches just the type.
++		/// </remarks>
++		internal static Dictionary<TextureOrigin, TextureTransparencyType> textureCache = new Dictionary<TextureOrigin, TextureTransparencyType>();
+ 
+ 		private static Dictionary<TextureOrigin, Texture> animatedTextures;
+ 
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/LibRender2/openGL/VertexArrayObject.cs b/source/LibRender2/openGL/VertexArrayObject.cs
+--- a/source/LibRender2/openGL/VertexArrayObject.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/LibRender2/openGL/VertexArrayObject.cs	2026-09-25 05:21:24.936562000 +0930
+@@ -202,6 +202,34 @@
+ 		}
+ 
+ 		
++		/// <summary>Re-uploads a mesh whose vertices have changed since its VAO was created.</summary>
++		/// <remarks>
++		/// ANDROID PORT PATCH: LED-function elements (2D panel digital gauges) rewrite their mesh
++		/// every frame and ask for their VAO to be updated, but CreateVAO returns at once for a mesh
++		/// that already has one, so the gauge stayed frozen in its first shape. This rebuilds it.
++		/// </remarks>
++		public static void UpdateVAO(Mesh mesh, VertexLayout vertexLayout, BaseRenderer renderer)
++		{
++			if (!(mesh.VAO is VertexArrayObject))
++			{
++				CreateVAO(mesh, true, vertexLayout, renderer);
++				return;
++			}
++
++			if (!renderer.GameWindow.Context.IsCurrent)
++			{
++				renderer.RunInRenderThread(() =>
++				{
++					createVAO(mesh, true, vertexLayout, renderer);
++				}, 2000);
++			}
++			else
++			{
++				createVAO(mesh, true, vertexLayout, renderer);
++				renderer.lastVAO = -1;
++			}
++		}
++
+ 		private static void createVAO(Mesh mesh, bool isDynamic, VertexLayout vertexLayout, BaseRenderer renderer)
+ 		{
+ 			if (mesh == null)
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/OpenBveApi/Interface/Translations/LanguageFile.cs b/source/OpenBveApi/Interface/Translations/LanguageFile.cs
+--- a/source/OpenBveApi/Interface/Translations/LanguageFile.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/OpenBveApi/Interface/Translations/LanguageFile.cs	2026-09-16 20:21:24.962687900 +0930
+@@ -50,8 +50,21 @@
+ 		/// <summary>Loads the embedded default language</summary>
+ 		private static void LoadEmbeddedLanguage()
+ 		{
++#if OPENBVE_ANDROID
++			/*
++			 * Resource.en_US holds the *contents* of en-US.xlf, but the NewLanguage(string)
++			 * constructor opens its argument as a file, so the desktop line below always throws.
++			 * Android reaches this path on every launch, as there is no language folder on disk.
++			 */
++			using (MemoryStream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(Resource.en_US)))
++			{
++				NewLanguage l = new NewLanguage(stream, "en-US.xlf");
++				AvailableNewLanguages.Add("en-US", l);
++			}
++#else
+ 			NewLanguage l = new NewLanguage(Resource.en_US);
+ 			AvailableNewLanguages.Add("en-US", l);
++#endif
+ 			CurrentLanguageCode = "en-US";
+ 		}
+ 
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/OpenBveApi/Objects/ObjectTypes/AnimatedObject/AnimatedObject.cs b/source/OpenBveApi/Objects/ObjectTypes/AnimatedObject/AnimatedObject.cs
+--- a/source/OpenBveApi/Objects/ObjectTypes/AnimatedObject/AnimatedObject.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/OpenBveApi/Objects/ObjectTypes/AnimatedObject/AnimatedObject.cs	2026-09-25 05:21:24.937562100 +0930
+@@ -667,7 +667,9 @@
+ 					}
+ 				}
+ 
+-				for (int j = v; v < 11; v++)
++				// ANDROID PORT PATCH: the loop advanced v but wrote j, so only one unused vertex was
++				// collapsed to the centre and the rest kept a previous frame's positions.
++				for (int j = v; j < 11; j++)
+ 				{
+ 					States[CurrentState].Prototype.Mesh.Vertices[j].Coordinates = LEDVectors[4];
+ 				}
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/OpenBveApi/System/FileSystem.cs b/source/OpenBveApi/System/FileSystem.cs
+--- a/source/OpenBveApi/System/FileSystem.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/OpenBveApi/System/FileSystem.cs	2026-09-18 12:16:46.853686500 +0930
+@@ -74,12 +74,31 @@
+ 		
+ 		// --- constructors ---
+ 		
++		/*
++		 * Android has no managed entry assembly, and a single-file publish reports an empty
++		 * location, so these fall back to the base directory instead of dereferencing null.
++		 * On desktop the entry assembly always exists, so the values are unchanged there.
++		 */
++
++		/// <summary>The file the program was started from, or an empty string if that is unknown.</summary>
++		internal static string EntryAssemblyLocation => Assembly.GetEntryAssembly()?.Location ?? string.Empty;
++
++		/// <summary>The folder the program was started from.</summary>
++		internal static string EntryAssemblyFolder
++		{
++			get
++			{
++				string location = EntryAssemblyLocation;
++				return string.IsNullOrEmpty(location) ? AppContext.BaseDirectory : System.IO.Path.GetDirectoryName(location);
++			}
++		}
++
+ 		/// <summary>Creates a new instance of this class with default locations.</summary>
+ 		internal FileSystem(HostInterface Host)
+ 		{
+ 			currentHost = Host;
+-			string assemblyFile = Assembly.GetEntryAssembly().Location;
+-			string assemblyFolder = Path.GetDirectoryName(assemblyFile);
++			string assemblyFile = EntryAssemblyLocation;
++			string assemblyFolder = EntryAssemblyFolder;
+ 			//This copy of openBVE is a special string, and should not be localised
+ 			string userDataFolder = Path.CombineDirectory(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenBve");
+ 			if (currentHost != null && currentHost.Platform != HostPlatform.MicrosoftWindows)
+@@ -144,7 +163,7 @@
+ 					return FromConfigurationFile(arg.Substring(12), Host);
+ 				}
+ 			}
+-			string assemblyFolder = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
++			string assemblyFolder = EntryAssemblyFolder;
+ 			string configFile = Path.CombineFile(Path.CombineDirectory(Path.CombineDirectory(assemblyFolder, "UserData"), "Settings"), "filesystem.cfg");
+ 			if (File.Exists(configFile)) {
+ 				return FromConfigurationFile(configFile, Host);
+@@ -249,8 +268,8 @@
+ 		{
+ 			try
+ 			{
+-				line = line.Replace(Assembly.GetEntryAssembly().Location, "$[AssemblyFile]");
+-				line = line.Replace(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location), "$[AssemblyFolder]");
++				line = line.Replace(EntryAssemblyLocation, "$[AssemblyFile]");
++				line = line.Replace(EntryAssemblyFolder, "$[AssemblyFolder]");
+ 				line = line.Replace(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "$[ApplicationData]");
+ 				line = line.Replace(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+ 					"$[CommonApplicationData]");
+@@ -322,8 +341,8 @@
+ 		/// <param name="Host">The host program</param>
+ 		/// <returns>The file system.</returns>
+ 		private static FileSystem FromConfigurationFile(string file, HostInterface Host) {
+-			string assemblyFile = Assembly.GetEntryAssembly().Location;
+-			string assemblyFolder = Path.GetDirectoryName(assemblyFile);
++			string assemblyFile = EntryAssemblyLocation;
++			string assemblyFolder = EntryAssemblyFolder;
+ 			FileSystem system = new FileSystem(Host);
+ 			try
+ 			{
+@@ -383,8 +402,10 @@
+ 										*/
+ 										if (!(Type.GetType("Mono.Runtime") != null))
+ 										{
++#if !OPENBVE_ANDROID
+ 											//Mono doesn't reliably support AccessControl
+ 											Directory.GetAccessControl(folder);
++#endif
+ 										}
+ 
+ 										string settingsFile = Path.CombineFile(folder, "1.5.0\\options.cfg");
+@@ -462,8 +483,8 @@
+ 				folder = folder.Replace('/', System.IO.Path.DirectorySeparatorChar);
+ 				folder = folder.Replace('\\', System.IO.Path.DirectorySeparatorChar);
+ 			}
+-			folder = folder.Replace("$[AssemblyFile]", Assembly.GetEntryAssembly().Location);
+-			folder = folder.Replace("$[AssemblyFolder]", Path.GetDirectoryName(Assembly.GetEntryAssembly().Location));
++			folder = folder.Replace("$[AssemblyFile]", EntryAssemblyLocation);
++			folder = folder.Replace("$[AssemblyFolder]", EntryAssemblyFolder);
+ 			folder = folder.Replace("$[ApplicationData]", Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
+ 			folder = folder.Replace("$[CommonApplicationData]", Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
+ 			folder = folder.Replace("$[Personal]", Environment.GetFolderPath(Environment.SpecialFolder.Personal));
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/OpenBveApi/System/Hosts/HostInterface.cs b/source/OpenBveApi/System/Hosts/HostInterface.cs
+--- a/source/OpenBveApi/System/Hosts/HostInterface.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/OpenBveApi/System/Hosts/HostInterface.cs	2026-09-18 00:06:42.276447700 +0930
+@@ -703,11 +703,19 @@
+ 		 * Used for interop with the 32-bit plugin host
+ 		 */
+ 
++#if !OPENBVE_ANDROID
++		/*
++		 * Named synchronisation primitives do not exist on Android, and these are initialised by
++		 * the type initializer, so merely constructing a host would throw. Both are used only by
++		 * the Win32 plugin proxy, which is excluded from the Android build.
++		 */
++
+ 		/// <summary>The event raised when the 32-bit host application signals it is ready to accept connections from clients</summary>
+ 		public static readonly EventWaitHandle Win32PluginHostReady = new EventWaitHandle(false, EventResetMode.AutoReset, @"eventHostReady");
+ 
+ 		/// <summary>The event raised when the proxy client quits and the host should stop</summary>
+ 		public static readonly EventWaitHandle Win32PluginHostStopped = new EventWaitHandle(false, EventResetMode.AutoReset, @"eventHostShouldStop");
++#endif
+ 
+ 		/// <summary>The base pipe address</summary>
+ 		public const string pipeBaseAddress = @"net.pipe://localhost";
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/Plugins/Texture.BmpGifJpegPngTiff/PNG/PngDecoder.cs b/source/Plugins/Texture.BmpGifJpegPngTiff/PNG/PngDecoder.cs
+--- a/source/Plugins/Texture.BmpGifJpegPngTiff/PNG/PngDecoder.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/Plugins/Texture.BmpGifJpegPngTiff/PNG/PngDecoder.cs	2026-09-18 12:21:06.634992500 +0930
+@@ -65,6 +65,29 @@
+ 		/// <summary>The number of bytes per pixel</summary>
+ 		internal int BytesPerPixel;
+ 
++		/// <summary>Reads until the buffer holds the requested number of bytes, or the stream ends</summary>
++		/// <remarks>
++		/// Stream.Read may legitimately return fewer bytes than requested even when more are to
++		/// come. The .NET Framework and Mono DeflateStream happened to fill the buffer in a single
++		/// call, but the modern .NET implementation does not, so a single call reports a truncated
++		/// scanline on every PNG.
++		/// </remarks>
++		/// <returns>The number of bytes read</returns>
++		private static int ReadFully(Stream stream, byte[] buffer, int count)
++		{
++			int total = 0;
++			while (total < count)
++			{
++				int read = stream.Read(buffer, total, count - total);
++				if (read == 0)
++				{
++					break;
++				}
++				total += read;
++			}
++			return total;
++		}
++
+ 		/// <summary>Reads a PNG file using this decoder</summary>
+ 		/// <param name="fileName">The file to read</param>
+ 		/// <returns>Whether reading succeeded</returns>
+@@ -244,7 +267,7 @@
+ 									for (int i = 0; i < Height; i++)
+ 									{
+ 										ScanlineFilterAlgorithm scanlineFilterAlgorithm = (ScanlineFilterAlgorithm)deflate.ReadByte();
+-										if (deflate.Read(scanline, 0, ScanlineLength) != ScanlineLength)
++										if (ReadFully(deflate, scanline, ScanlineLength) != ScanlineLength)
+ 										{
+ 											Plugin.CurrentHost.ReportProblem(ProblemType.UnsupportedData, "Insufficient data decompressed from IDAT chunk in PNG file " + fileName);
+ 											return false;
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/TrainManager/Car/CarBase.cs b/source/TrainManager/Car/CarBase.cs
+--- a/source/TrainManager/Car/CarBase.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/TrainManager/Car/CarBase.cs	2026-09-25 05:21:24.937562100 +0930
+@@ -856,7 +856,8 @@
+ 			CarSection.Groups[GroupIndex].Elements[ElementIndex].Update(baseTrain, Index, FrontAxle.Follower.TrackPosition - FrontAxle.Position, p, Direction, Up, Side, updatefunctions, Show, timeDelta, EnableDamping, false, CarSection.Type == ObjectType.Overlay ? TrainManagerBase.Renderer.Camera : null);
+ 			if (CarSection.Groups[GroupIndex].Elements[ElementIndex].UpdateVAO)
+ 			{
+-				VAOExtensions.CreateVAO(CarSection.Groups[GroupIndex].Elements[ElementIndex].internalObject.Prototype.Mesh, true, TrainManagerBase.Renderer.DefaultShader.VertexLayout, TrainManagerBase.Renderer);
++				// ANDROID PORT PATCH: UpdateVAO, as CreateVAO ignores a mesh that already has a VAO
++				VAOExtensions.UpdateVAO(CarSection.Groups[GroupIndex].Elements[ElementIndex].internalObject.Prototype.Mesh, TrainManagerBase.Renderer.DefaultShader.VertexLayout, TrainManagerBase.Renderer);
+ 			}
+ 		}
+ 
+@@ -904,7 +905,8 @@
+ 			CarSection.Groups[GroupIndex].TouchElements[ElementIndex].Element.Update(baseTrain, Index, FrontAxle.Follower.TrackPosition - FrontAxle.Position, p, Direction, Up, Side, updatefunctions, Show, timeDelta, EnableDamping, true, CarSection.Type == ObjectType.Overlay ? TrainManagerBase.Renderer.Camera : null);
+ 			if (CarSection.Groups[GroupIndex].TouchElements[ElementIndex].Element.UpdateVAO)
+ 			{
+-				VAOExtensions.CreateVAO(CarSection.Groups[GroupIndex].TouchElements[ElementIndex].Element.internalObject.Prototype.Mesh, true, TrainManagerBase.Renderer.DefaultShader.VertexLayout, TrainManagerBase.Renderer);
++				// ANDROID PORT PATCH: UpdateVAO, as CreateVAO ignores a mesh that already has a VAO
++				VAOExtensions.UpdateVAO(CarSection.Groups[GroupIndex].TouchElements[ElementIndex].Element.internalObject.Prototype.Mesh, TrainManagerBase.Renderer.DefaultShader.VertexLayout, TrainManagerBase.Renderer);
+ 			}
+ 		}
+ 
+diff -ru --strip-trailing-cr -x bin -x obj OpenBVE-1.14.0.3/source/TrainManager/SafetySystems/Plugin/Plugin.Functions.cs b/source/TrainManager/SafetySystems/Plugin/Plugin.Functions.cs
+--- a/source/TrainManager/SafetySystems/Plugin/Plugin.Functions.cs	2026-08-11 01:26:18.000000000 +0930
++++ b/source/TrainManager/SafetySystems/Plugin/Plugin.Functions.cs	2026-09-17 18:34:24.913200600 +0930
+@@ -299,6 +299,9 @@
+ 						return false;
+ 					}
+ 					break;
++#if !OPENBVE_ANDROID
++				// The WCF plugin proxy runs a Windows .exe, so it is excluded from the Android build.
++				// Android takes the default case below, which refuses Win32 plugins outright.
+ 				case HostPlatform.MicrosoftWindows:
+ 					if (IntPtr.Size != 4)
+ 					{
+@@ -314,6 +317,7 @@
+ 						return false;
+ 					}
+ 					break;
++#endif
+ 				default:
+ 					TrainManagerBase.currentHost.AddMessage(MessageType.Warning, false, "Legacy Win32 train plugins " + pluginTitle + " can only be used on Microsoft Windows or compatible.");
+ 					return false;
