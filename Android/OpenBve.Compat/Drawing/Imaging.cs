@@ -73,6 +73,28 @@ namespace System.Drawing.Imaging
 		public PixelFormat PixelFormat { get; internal set; }
 	}
 
+	/// <summary>A dimension of an image's frames (time for animation, page, resolution).</summary>
+	public sealed class FrameDimension
+	{
+		/// <summary>Creates a frame dimension from its identifier.</summary>
+		public FrameDimension(Guid guid)
+		{
+			Guid = guid;
+		}
+
+		/// <summary>The dimension's identifier.</summary>
+		public Guid Guid { get; }
+
+		/// <summary>Frames in time (animated images), with GDI+'s identifier.</summary>
+		public static FrameDimension Time { get; } = new FrameDimension(new Guid("6aedbd6d-3fb5-418a-83a6-7f45229dc872"));
+
+		/// <summary>Pages, with GDI+'s identifier.</summary>
+		public static FrameDimension Page { get; } = new FrameDimension(new Guid("7462dc86-6180-4c7e-8e3f-ee7333a7a483"));
+
+		/// <summary>Resolutions, with GDI+'s identifier.</summary>
+		public static FrameDimension Resolution { get; } = new FrameDimension(new Guid("84236f7b-3bd3-428f-8dab-4ea1439ca315"));
+	}
+
 	/// <summary>Identifies an image file format.</summary>
 	public sealed class ImageFormat
 	{

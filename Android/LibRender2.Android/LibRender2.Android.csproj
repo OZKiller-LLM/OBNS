@@ -2,7 +2,7 @@
 
   <!--
     Builds the upstream LibRender2 sources against the GLES shim.
-    Nothing under ..\..\OpenBVE-1.14.0.3 is modified.
+    Nothing under ..\..\OpenBVE is modified: changed files are Android copies (Android/UpstreamPatches).
   -->
 
   <PropertyGroup>
@@ -18,6 +18,13 @@
   <ItemGroup>
     <Compile Include="$(UpstreamSource)LibRender2\**\*.cs" LinkBase="LibRender2" />
     <Compile Remove="$(UpstreamSource)LibRender2\Properties\AssemblyInfo.cs" />
+    <!-- ANDROID PORT copies of upstream files (OpenBVE 1.14.1.2), compiled in their place; see Android/UpstreamPatches. -->
+    <Compile Remove="$(UpstreamSource)LibRender2\BaseRenderer.cs" />
+    <Compile Include="BaseRenderer.Android.cs" />
+    <Compile Remove="$(UpstreamSource)LibRender2\Textures\TextureManager.cs" />
+    <Compile Include="TextureManager.Android.cs" />
+    <Compile Remove="$(UpstreamSource)LibRender2\Objects\ObjectLibrary.cs" />
+    <Compile Include="ObjectLibrary.Android.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,8 +32,11 @@
       Upstream loads shaders from embedded resources named LibRender2.<name>.<ext>
       (AbstractShader, isFromStream: true), not from disk. The logical names must match exactly.
     -->
-    <EmbeddedResource Include="$(UpstreamSource)..\assets\Shaders\*.vert" LogicalName="LibRender2.%(Filename).vert" />
-    <EmbeddedResource Include="$(UpstreamSource)..\assets\Shaders\*.frag" LogicalName="LibRender2.%(Filename).frag" />
+    <EmbeddedResource Include="$(UpstreamSource)..\assets\Shaders\*.vert" Exclude="$(UpstreamSource)..\assets\Shaders\default.vert" LogicalName="LibRender2.%(Filename).vert" />
+    <EmbeddedResource Include="$(UpstreamSource)..\assets\Shaders\*.frag" Exclude="$(UpstreamSource)..\assets\Shaders\default.frag;$(UpstreamSource)..\assets\Shaders\rectangle.frag" LogicalName="LibRender2.%(Filename).frag" />
+    <!-- ANDROID PORT copies of these upstream shaders (GLSL ES conversions); see Android/UpstreamPatches. -->
+    <EmbeddedResource Include="Shaders\default.vert" LogicalName="LibRender2.default.vert" />
+    <EmbeddedResource Include="Shaders\default.frag;Shaders\rectangle.frag" LogicalName="LibRender2.%(Filename).frag" />
   </ItemGroup>
 
   <ItemGroup>

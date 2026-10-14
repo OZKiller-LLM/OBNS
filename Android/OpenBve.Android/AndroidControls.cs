@@ -404,6 +404,12 @@ namespace OpenBve.Android
 					if (driverCar.Horns.Length > j)
 					{
 						driverCar.Horns[j].Play();
+						if (j == 1 && train.Specs.HornTriggersBell && driverCar.Horns.Length > 3)
+						{
+							// As upstream 1.14.1.1: MSTS lets the horn also trigger the bell (US trains)
+							driverCar.Horns[3].Play();
+						}
+
 						train.Plugin?.HornBlow(j == 0 ? HornTypes.Primary : j == 1 ? HornTypes.Secondary : HornTypes.Music);
 					}
 

@@ -909,7 +909,7 @@ namespace OpenBve.Android
 			prototype.Mesh.Vertices = vertices.ToArray();
 			prototype.Mesh.Materials = materials.ToArray();
 			prototype.Mesh.Faces = faces.ToArray();
-			VAOExtensions.CreateVAO(prototype.Mesh, false, renderer.DefaultShader.VertexLayout, renderer);
+			VAOExtensions.CreateOrUpdateVAO(prototype.Mesh, false, renderer.DefaultShader.VertexLayout, renderer);
 			if (!(prototype.Mesh.VAO is VertexArrayObject))
 			{
 				return null;

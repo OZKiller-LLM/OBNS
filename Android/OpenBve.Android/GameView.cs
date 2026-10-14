@@ -611,7 +611,7 @@ namespace OpenBve.Android
 							renderer.TextureManager.UnloadUnusedTextures(elapsed);
 						}
 						// After the scene, as upstream does: the listener follows the camera just placed.
-						sounds.Update(elapsed, SoundModels.Inverse);
+						sounds.Update(elapsed);
 						renderer.Profile.Mark("sound");
 						renderer.Profile.EndFrame();
 

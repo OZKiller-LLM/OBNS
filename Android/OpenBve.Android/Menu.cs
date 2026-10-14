@@ -53,7 +53,7 @@ namespace OpenBve.Android
 		/// in the chosen language. Safe to call more than once.
 		/// </summary>
 		/// <summary>The app's version name, e.g. 1.14.0.3-android.1 (set by Init).</summary>
-		public static string Version { get; private set; } = "1.14.0.3";
+		public static string Version { get; private set; } = "1.14.1.2";
 
 		public static void Init(Context context)
 		{

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Builds the upstream TrainManager sources for Android. Upstream is not modified. -->
 
@@ -15,6 +15,9 @@
   <ItemGroup>
     <Compile Include="AndroidInternals.cs" />
     <Compile Include="$(UpstreamSource)TrainManager\**\*.cs" LinkBase="TrainManager" />
+    <!-- ANDROID PORT copies of upstream files (OpenBVE 1.14.1.2), compiled in their place; see Android/UpstreamPatches. -->
+    <Compile Remove="$(UpstreamSource)TrainManager\SafetySystems\Plugin\Plugin.Functions.cs" />
+    <Compile Include="Plugin.Functions.Android.cs" />
     <Compile Remove="$(UpstreamSource)TrainManager\Properties\AssemblyInfo.cs" />
     <!--
       The out-of-process proxy for 32-bit Win32 ATS plugins: it talks WCF to a Windows .exe that

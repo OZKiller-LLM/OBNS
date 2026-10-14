@@ -60,6 +60,7 @@ namespace OpenTK.Graphics.OpenGL
 		void glTexParameteriv(int target, int pname, int[] parameters);
 		void glTexParameterfv(int target, int pname, float[] parameters);
 		void glTexImage2D(int target, int level, int internalFormat, int width, int height, int border, int format, int type, IntPtr pixels);
+		void glTexSubImage2D(int target, int level, int xoffset, int yoffset, int width, int height, int format, int type, IntPtr pixels);
 		void glCopyTexImage2D(int target, int level, int internalFormat, int x, int y, int width, int height, int border);
 		void glGenBuffers(int n, int[] buffers);
 		void glDeleteBuffers(int n, int[] buffers);
@@ -425,6 +426,18 @@ namespace OpenTK.Graphics.OpenGL
 			else
 			{
 				es_glTexImage2D(target, level, internalFormat, width, height, border, format, type, pixels);
+			}
+		}
+
+		private static void glTexSubImage2D(int target, int level, int xoffset, int yoffset, int width, int height, int format, int type, IntPtr pixels)
+		{
+			if (Device != null)
+			{
+				Device.glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, pixels);
+			}
+			else
+			{
+				es_glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, pixels);
 			}
 		}
 

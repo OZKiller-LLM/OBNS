@@ -337,7 +337,7 @@ namespace OpenBve.Android
 				return false;
 			}
 
-			texture = new ApiTexture(1, 1, PixelFormat.RGBAlpha, new byte[4], null);
+			texture = new ApiTexture(1, 1, PixelFormat.RGBAlpha, new byte[4], (OpenBveApi.Colors.Color24[])null);
 			return true;
 		}
 
@@ -413,10 +413,18 @@ namespace OpenBve.Android
 				}
 			}
 
-			int index = Renderer.TextureManager.GetNextFreeTexture();
+			// Upstream 1.14.1.2's Texture(path) keeps the decode it makes for the pixel format
+			// (DecodedTexture, to reuse at upload): dropped at once - the Android TextureManager
+			// never reuses it, and for the probed formats it is only the 1x1 stand-in.
 			ApiTexture texture = new ApiTexture(path, parameters, this);
-			LibRender2.Textures.TextureManager.RegisteredTextures[index] = texture;
-			Renderer.TextureManager.RegisteredTexturesCount++;
+			texture.DecodedTexture?.ReleaseBytes();
+			lock (LibRender2.Textures.TextureManager.RegistrationLock)
+			{
+				int index = Renderer.TextureManager.GetNextFreeTexture();
+				LibRender2.Textures.TextureManager.RegisteredTextures[index] = texture;
+				Renderer.TextureManager.RegisteredTexturesCount++;
+			}
+
 			return texture;
 		}
 

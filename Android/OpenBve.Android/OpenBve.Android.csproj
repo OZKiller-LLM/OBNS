@@ -16,7 +16,7 @@
       Android compares for updates is the upstream version's digits times 100 plus PortRelease -
       1.14.0.3 release 1 is 1140301 - so it rises with either; the name reads 1.14.0.3-android.1.
     -->
-    <UpstreamVersion>1.14.0.3</UpstreamVersion>
+    <UpstreamVersion>1.14.1.2</UpstreamVersion>
     <PortRelease Condition="'$(PortRelease)' == ''">1</PortRelease>
     <ApplicationVersion>$([MSBuild]::Add($([MSBuild]::Multiply($(UpstreamVersion.Replace('.', '')), 100)), $(PortRelease)))</ApplicationVersion>
     <ApplicationDisplayVersion>$(UpstreamVersion)-android.$(PortRelease)</ApplicationDisplayVersion>

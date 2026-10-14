@@ -138,7 +138,7 @@ namespace OpenBve.Android
 
 			Interlocked.Increment(ref reduced);
 			Interlocked.Add(ref bytesSaved, before - (long)width * height * channels);
-			return new ApiTexture(width, height, texture.PixelFormat, pixels, null)
+			return new ApiTexture(width, height, texture.PixelFormat, pixels, (OpenBveApi.Colors.Color24[])null)
 			{
 				CompatibleTransparencyMode = texture.CompatibleTransparencyMode
 			};

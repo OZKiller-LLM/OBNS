@@ -1,4 +1,4 @@
-// ANDROID PORT: a copy of upstream's SoundManager/Sounds.CarSound.cs (OpenBVE 1.14.0.3), compiled in
+// ANDROID PORT: a copy of upstream's SoundManager/Sounds.CarSound.cs (OpenBVE 1.14.1.2), compiled in
 // its place (SoundManager.Android.csproj). The only change is the file-existence check in the
 // constructor, answered from the loading-time listing cache (see OpenBveApi.Android/Path.Android.cs).
 // On an upstream update: copy the file again and reapply that one line.

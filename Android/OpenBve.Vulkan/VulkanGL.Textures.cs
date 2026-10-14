@@ -42,6 +42,8 @@ namespace OpenBve.Vulkan
 		private const int GL_NEAREST = 0x2600, GL_LINEAR = 0x2601;
 		private const int GL_NEAREST_MIPMAP_NEAREST = 0x2700, GL_LINEAR_MIPMAP_NEAREST = 0x2701, GL_NEAREST_MIPMAP_LINEAR = 0x2702, GL_LINEAR_MIPMAP_LINEAR = 0x2703;
 		private const int GL_REPEAT = 0x2901, GL_MIRRORED_REPEAT = 0x8370;
+		private const int GL_TEXTURE_SWIZZLE_R = 0x8E42, GL_TEXTURE_SWIZZLE_RGBA = 0x8E46;
+		private const int GL_GREEN = 0x1904, GL_BLUE = 0x1905;
 		private const int GL_ALPHA = 0x1906, GL_RGB = 0x1907, GL_RGBA = 0x1908, GL_LUMINANCE = 0x1909, GL_LUMINANCE_ALPHA = 0x190A, GL_RED = 0x1903, GL_RG = 0x8227;
 		private const int GL_UNSIGNED_BYTE = 0x1401, GL_UNSIGNED_SHORT_5_6_5 = 0x8363, GL_UNSIGNED_SHORT_4_4_4_4 = 0x8033, GL_UNSIGNED_SHORT_5_5_5_1 = 0x8034;
 
@@ -57,6 +59,8 @@ namespace OpenBve.Vulkan
 			internal int Width, Height;
 			internal Format Format;
 			internal ComponentMapping Swizzle;
+			// GL's own swizzle (GL_TEXTURE_SWIZZLE_R..A), on top of the format's; null for none.
+			internal int[] GLSwizzle;
 
 			// On the GPU.
 			internal Image Image;
@@ -237,6 +241,16 @@ namespace OpenBve.Vulkan
 
 		public void glTexParameteriv(int target, int pname, int[] parameters)
 		{
+			if (pname == GL_TEXTURE_SWIZZLE_RGBA && parameters.Length >= 4)
+			{
+				for (int i = 0; i < 4; i++)
+				{
+					TexParameter(GL_TEXTURE_SWIZZLE_R + i, parameters[i]);
+				}
+
+				return;
+			}
+
 			if (parameters.Length > 0)
 			{
 				TexParameter(pname, parameters[0]);
@@ -276,7 +290,69 @@ namespace OpenBve.Vulkan
 				case GL_TEXTURE_MAX_ANISOTROPY:
 					texture.Anisotropy = Math.Max(1.0f, value);
 					break;
+				case GL_TEXTURE_SWIZZLE_R:
+				case GL_TEXTURE_SWIZZLE_R + 1:
+				case GL_TEXTURE_SWIZZLE_R + 2:
+				case GL_TEXTURE_SWIZZLE_R + 3:
+					// Upstream 1.14.1.2 shows R8 grayscale as (R, R, R, 1), set after the upload.
+					if (texture.Image.Handle != 0 && !texture.Pending)
+					{
+						ReportOnce("a texture swizzle set on a texture already drawn with is not supported by the Vulkan renderer");
+					}
+
+					texture.GLSwizzle = texture.GLSwizzle ?? new[] { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
+					texture.GLSwizzle[pname - GL_TEXTURE_SWIZZLE_R] = (int)value;
+					break;
 			}
+		}
+
+		/// <summary>The view's components: GL's swizzle (if any) read through the format's own.</summary>
+		private static ComponentMapping ViewComponents(GLTexture texture)
+		{
+			if (texture.GLSwizzle == null)
+			{
+				return texture.Swizzle;
+			}
+
+			ComponentSwizzle[] format =
+			{
+				Resolve(texture.Swizzle.R, ComponentSwizzle.R), Resolve(texture.Swizzle.G, ComponentSwizzle.G),
+				Resolve(texture.Swizzle.B, ComponentSwizzle.B), Resolve(texture.Swizzle.A, ComponentSwizzle.A)
+			};
+			ComponentSwizzle Pick(int gl)
+			{
+				switch (gl)
+				{
+					case GL_RED: return format[0];
+					case GL_GREEN: return format[1];
+					case GL_BLUE: return format[2];
+					case GL_ALPHA: return format[3];
+					case GL_ONE: return ComponentSwizzle.One;
+					default: return ComponentSwizzle.Zero;
+				}
+			}
+
+			return new ComponentMapping(Pick(texture.GLSwizzle[0]), Pick(texture.GLSwizzle[1]), Pick(texture.GLSwizzle[2]), Pick(texture.GLSwizzle[3]));
+		}
+
+		private static ComponentSwizzle Resolve(ComponentSwizzle swizzle, ComponentSwizzle identity) => swizzle == ComponentSwizzle.Identity ? identity : swizzle;
+
+		/// <summary>Replaces a texture's image: only the whole of level 0 (an animated GIF's next frame), as a new upload.</summary>
+		public void glTexSubImage2D(int target, int level, int xoffset, int yoffset, int width, int height, int format, int type, IntPtr pixels)
+		{
+			GLTexture texture = units[activeUnit];
+			if (texture == null || target != GL_TEXTURE_2D)
+			{
+				return;
+			}
+
+			if (level != 0 || xoffset != 0 || yoffset != 0 || width != texture.Width || height != texture.Height)
+			{
+				ReportOnce("glTexSubImage2D other than the whole of level 0 is not supported by the Vulkan renderer");
+				return;
+			}
+
+			glTexImage2D(target, level, format, width, height, 0, format, type, pixels);
 		}
 
 		public void glTexImage2D(int target, int level, int internalFormat, int width, int height, int border, int format, int type, IntPtr pixels)
@@ -575,7 +651,7 @@ namespace OpenBve.Vulkan
 				Image = image,
 				ViewType = ImageViewType.Type2D,
 				Format = texture.Format,
-				Components = texture.Swizzle,
+				Components = ViewComponents(texture),
 				SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, levels, 0, 1)
 			};
 			Check(vk.CreateImageView(device, in viewInfo, null, out texture.View), "vkCreateImageView");

@@ -1,4 +1,4 @@
-// ANDROID PORT: a copy of upstream's Plugins/Train.OpenBve/Train/XML/TrainXmlParser.cs (OpenBVE 1.14.0.3), compiled in
+// ANDROID PORT: a copy of upstream's Plugins/Train.OpenBve/Train/XML/TrainXmlParser.cs (OpenBVE 1.14.1.2), compiled in
 // its place (Train.OpenBve.Android.csproj). The only change: the static fields a train load
 // fills in are [ThreadStatic], so that scripted trains can load on several threads at once,
 // each with its own plugin instance (ScriptedTrainLoader). On an upstream update: copy the file

@@ -37,6 +37,14 @@ namespace System.Windows.Forms
 	}
 
 	/// <summary>
+	/// Stands in for the ActiveX host control. Upstream 1.14.1.2's Objects/Mesh.cs imports its static
+	/// members (<c>using static System.Windows.Forms.AxHost;</c>) without using any; nothing else does.
+	/// </summary>
+	public class AxHost
+	{
+	}
+
+	/// <summary>
 	/// Minimal stand-in for the Windows Forms combo box.
 	/// Upstream helpers such as Translations.ListLanguages take one; on Android the in-game
 	/// menu reads the language list directly, so these instances are never displayed.

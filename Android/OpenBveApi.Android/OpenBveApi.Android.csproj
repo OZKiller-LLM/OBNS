@@ -2,7 +2,7 @@
 
   <!--
     Builds the upstream OpenBveApi sources for Android.
-    The upstream files are compiled in place; nothing under ..\..\OpenBVE-1.14.0.3 is modified.
+    The upstream files are compiled in place; nothing under ..\..\OpenBVE is modified (changed files are Android copies).
   -->
 
   <PropertyGroup>
@@ -35,6 +35,15 @@
     <!-- Path.cs: replaced by Path.Android.cs (the same, with folder listings remembered while a game loads). -->
     <Compile Remove="$(UpstreamSource)OpenBveApi\System\Path.cs" />
     <Compile Include="Path.Android.cs" />
+    <!-- ANDROID PORT copies of upstream files (OpenBVE 1.14.1.2), compiled in their place; see Android/UpstreamPatches. -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Interface\Translations\LanguageFile.cs" />
+    <Compile Include="LanguageFile.Android.cs" />
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Objects\ObjectTypes\AnimatedObject\AnimatedObject.cs" />
+    <Compile Include="AnimatedObject.Android.cs" />
+    <Compile Remove="$(UpstreamSource)OpenBveApi\System\FileSystem.cs" />
+    <Compile Include="FileSystem.Android.cs" />
+    <Compile Remove="$(UpstreamSource)OpenBveApi\System\Hosts\HostInterface.cs" />
+    <Compile Include="HostInterface.Android.cs" />
   </ItemGroup>
 
   <ItemGroup>

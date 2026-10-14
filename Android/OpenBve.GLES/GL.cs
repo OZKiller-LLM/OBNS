@@ -81,6 +81,7 @@ namespace OpenTK.Graphics.OpenGL
 		[DllImport(Library, EntryPoint = "glTexParameteriv")] private static extern void es_glTexParameteriv(int target, int pname, int[] parameters);
 		[DllImport(Library, EntryPoint = "glTexParameterfv")] private static extern void es_glTexParameterfv(int target, int pname, float[] parameters);
 		[DllImport(Library, EntryPoint = "glTexImage2D")] private static extern void es_glTexImage2D(int target, int level, int internalFormat, int width, int height, int border, int format, int type, IntPtr pixels);
+		[DllImport(Library, EntryPoint = "glTexSubImage2D")] private static extern void es_glTexSubImage2D(int target, int level, int xoffset, int yoffset, int width, int height, int format, int type, IntPtr pixels);
 		[DllImport(Library, EntryPoint = "glCopyTexImage2D")] private static extern void es_glCopyTexImage2D(int target, int level, int internalFormat, int x, int y, int width, int height, int border);
 
 		[DllImport(Library, EntryPoint = "glGenBuffers")] private static extern void es_glGenBuffers(int n, int[] buffers);
@@ -395,6 +396,16 @@ namespace OpenTK.Graphics.OpenGL
 		/// <summary>Sets a texture parameter from an array.</summary>
 		public static void TexParameter(TextureTarget target, TextureParameterName pname, int[] parameters)
 		{
+			if (pname == TextureParameterName.TextureSwizzleRgba && parameters != null && parameters.Length >= 4)
+			{
+				// GLES 3 has the per-channel swizzles only.
+				glTexParameteri((int)target, (int)TextureParameterName.TextureSwizzleR, parameters[0]);
+				glTexParameteri((int)target, (int)TextureParameterName.TextureSwizzleG, parameters[1]);
+				glTexParameteri((int)target, (int)TextureParameterName.TextureSwizzleB, parameters[2]);
+				glTexParameteri((int)target, (int)TextureParameterName.TextureSwizzleA, parameters[3]);
+				return;
+			}
+
 			if (IsUnsupportedTextureParameter(pname))
 			{
 				return;
@@ -416,12 +427,26 @@ namespace OpenTK.Graphics.OpenGL
 
 		/// <summary>
 		/// GLES has no border colour and no combined RGBA swizzle. Setting them would raise
-		/// GL_INVALID_ENUM, so they are dropped; the visible effect is that ClampToBorder
-		/// behaves as ClampToEdge.
+		/// GL_INVALID_ENUM, so they are dropped (the swizzle, from an int array, is set channel by
+		/// channel instead); the visible effect is that ClampToBorder behaves as ClampToEdge.
 		/// </summary>
 		private static bool IsUnsupportedTextureParameter(TextureParameterName pname)
 		{
 			return pname == TextureParameterName.TextureBorderColor || pname == TextureParameterName.TextureSwizzleRgba;
+		}
+
+		/// <summary>Replaces part of a texture image.</summary>
+		public static void TexSubImage2D(TextureTarget target, int level, int xoffset, int yoffset, int width, int height, PixelFormat format, PixelType type, byte[] pixels)
+		{
+			GCHandle pin = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+			try
+			{
+				glTexSubImage2D((int)target, level, xoffset, yoffset, width, height, (int)format, (int)type, pin.AddrOfPinnedObject());
+			}
+			finally
+			{
+				pin.Free();
+			}
 		}
 
 		/// <summary>Uploads a texture image.</summary>

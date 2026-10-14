@@ -449,7 +449,7 @@ namespace OpenBve.Android
 			}
 
 			string name = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
-			if (Array.IndexOf(NullFiles, name) < 0)
+			if (!NullFiles.Contains(name))
 			{
 				ReportOnce(FailedObjects, path, new FileInfo(path).Length == 0
 					? "Zero-byte object file encountered at " + path
@@ -534,17 +534,16 @@ namespace OpenBve.Android
 		private readonly object visibilityLock = new object();
 
 		/// <summary>Reports a failure for a file only the first time it happens, as upstream does.</summary>
-		private void ReportOnce(List<string> failures, string path, string message)
+		private void ReportOnce(HashSet<string> failures, string path, string message)
 		{
 			// Streamed textures are decoded on worker threads, so failures can arrive concurrently.
 			lock (failures)
 			{
-				if (failures.Contains(path))
+				if (!failures.Add(path))
 				{
 					return;
 				}
 
-				failures.Add(path);
 				AddMessage(MessageType.Error, false, message);
 			}
 		}

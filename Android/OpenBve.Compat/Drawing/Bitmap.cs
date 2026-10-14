@@ -56,6 +56,20 @@ namespace System.Drawing
 		{
 			return new Bitmap(stream);
 		}
+
+		/*
+		 * Frames (upstream 1.14.1.2's StreamingGifOrigin): the shim decodes the first frame of an
+		 * animated image only, so every image has one frame, in the time dimension.
+		 */
+
+		/// <summary>The image's frame dimensions: the time dimension only.</summary>
+		public Guid[] FrameDimensionsList => new[] { Imaging.FrameDimension.Time.Guid };
+
+		/// <summary>The number of frames in a dimension: one.</summary>
+		public int GetFrameCount(Imaging.FrameDimension dimension) => 1;
+
+		/// <summary>Selects a frame: there is only the first.</summary>
+		public int SelectActiveFrame(Imaging.FrameDimension dimension, int frameIndex) => 0;
 	}
 
 	/// <summary>A SkiaSharp-backed replacement for System.Drawing.Bitmap.</summary>
@@ -118,6 +132,18 @@ namespace System.Drawing
 		public Bitmap(Stream stream)
 		{
 			Native = Decode(stream, "<stream>");
+		}
+
+		/// <summary>A copy of an image.</summary>
+		public Bitmap(Image original)
+		{
+			if (!(original is Bitmap bitmap))
+			{
+				throw new ArgumentException("Only Bitmap is supported by the Android graphics shim.", nameof(original));
+			}
+
+			bitmap.Sync();
+			Native = bitmap.Native.Copy();
 		}
 
 		/*

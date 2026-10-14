@@ -130,6 +130,9 @@ namespace System.Drawing
 		/// <summary>The name of the font family in use.</summary>
 		public string Name { get; }
 
+		/// <summary>The font family in use.</summary>
+		public FontFamily FontFamily => new FontFamily(Name);
+
 		/// <summary>The em size of this font, in the unit it was created with.</summary>
 		public float Size { get; }
 
@@ -510,6 +513,12 @@ namespace System.Drawing
 		public void DrawImage(Image image, int x, int y)
 		{
 			DrawImage(image, new Rectangle(x, y, image.Width, image.Height), new Rectangle(0, 0, image.Width, image.Height), GraphicsUnit.Pixel);
+		}
+
+		/// <summary>Draws a whole image into a destination rectangle.</summary>
+		public void DrawImage(Image image, Rectangle destRect)
+		{
+			DrawImage(image, destRect, new Rectangle(0, 0, image.Width, image.Height), GraphicsUnit.Pixel);
 		}
 
 		/// <summary>Draws a region of an image into a destination rectangle.</summary>

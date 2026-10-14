@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Builds the upstream AssimpParser sources for Android. Upstream is not modified. -->
 
@@ -14,6 +14,9 @@
 
   <ItemGroup>
     <Compile Include="$(UpstreamSource)AssimpParser\**\*.cs" LinkBase="AssimpParser" />
+    <!-- ANDROID PORT copies of upstream files (OpenBVE 1.14.1.2), compiled in their place; see Android/UpstreamPatches. -->
+    <Compile Remove="$(UpstreamSource)AssimpParser\Wavefront\ObjFileMtlImporter.cs" />
+    <Compile Include="ObjFileMtlImporter.Android.cs" />
     <Compile Remove="$(UpstreamSource)AssimpParser\Properties\AssemblyInfo.cs" />
 
   </ItemGroup>

@@ -98,6 +98,8 @@ namespace OpenBve.Android
 			 * creation during the parse reads its disposal mode and block length.
 			 */
 			CurrentRoute currentRoute = new CurrentRoute(host, renderer);
+			// As upstream 1.14.1.2's Loading: the route map and gradient profile are drawn in the game's font.
+			currentRoute.Information.Font = renderer.Fonts?.NormalFont?.Font;
 			host.Route = currentRoute;
 			// Upstream sets this once at startup; the train and signal code reads it statically.
 			global::TrainManager.TrainManagerBase.CurrentRoute = currentRoute;

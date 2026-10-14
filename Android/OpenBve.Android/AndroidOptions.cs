@@ -82,7 +82,6 @@ namespace OpenBve.Android
 			 * the transparent pass alone, none of which can share a call).
 			 */
 			ObjectOptimizationBasicThreshold = 10000;
-			ObjectOptimizationFullThreshold = 250;
 			VerticalSynchronization = true;
 			// Upstream's default and minimum: the loudest 16 sources play, the rest are culled.
 			SoundNumber = 16;

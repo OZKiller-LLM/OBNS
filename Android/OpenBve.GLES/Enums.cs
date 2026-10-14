@@ -65,8 +65,13 @@ namespace OpenTK.Graphics.OpenGL
 		TextureWrapT = 0x2803,
 		TextureCompareMode = 0x884C,
 		TextureCompareFunc = 0x884D,
-		// Desktop-only: GLES 3 swizzles each channel separately (0x8E42..0x8E45).
+		// Desktop-only: GLES has no border colour.
 		TextureBorderColor = 0x1004,
+		// GLES 3 swizzles each channel separately: GL.TexParameter turns the combined one into these four.
+		TextureSwizzleR = 0x8E42,
+		TextureSwizzleG = 0x8E43,
+		TextureSwizzleB = 0x8E44,
+		TextureSwizzleA = 0x8E45,
 		TextureSwizzleRgba = 0x8E46
 	}
 
@@ -175,6 +180,8 @@ namespace OpenTK.Graphics.OpenGL
 	public enum PixelType
 	{
 		UnsignedByte = 0x1401,
+		UnsignedShort = 0x1403,
+		UnsignedInt = 0x1405,
 		Float = 0x1406
 	}
 
@@ -455,7 +462,14 @@ namespace OpenTK.Graphics.OpenGL
 		Notequal = 0x0205,
 		Gequal = 0x0206,
 		Always = 0x0207,
-		None = 0
+		None = 0,
+		// Texture swizzle values (upstream 1.14.1.2 shows R8 grayscale as Red, Red, Red, One).
+		Zero = 0,
+		One = 1,
+		Red = 0x1903,
+		Green = 0x1904,
+		Blue = 0x1905,
+		Alpha = 0x1906
 	}
 
 	/// <summary>Tokens from the EXT_texture_filter_anisotropic extension, which GLES also exposes.</summary>
