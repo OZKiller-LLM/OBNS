@@ -6,7 +6,7 @@
 # plugin regression (plugin_regression.sh). Phones run in parallel; each writes its own files:
 #   results/all_<model>_<serial>.txt   prepare, content location, benchmark, plugin regression
 # then a summary of every phone's frame rates (results/all_summary.txt).
-# NO_TML is set per phone with about 2 GB of RAM or less (the A04s, 3 GB, runs it). Install failures (another signature) stop
+# NO_TML=1 skips the Tuen Ma Line on every phone of the run (little storage); it is also set per phone with about 2 GB of RAM or less (the A04s, 3 GB, runs it). Install failures (another signature) stop
 # that phone only; nothing is uninstalled.
 A="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"
 D="$(cd "$(dirname "$0")" && pwd)"
@@ -36,7 +36,7 @@ one() {
   eval "$(bash "$D/content_base.sh" "$s")"
   base="$BASE"; tml="$TML"; where="$WHERE"
   ram=$(MSYS_NO_PATHCONV=1 "$A" -s "$s" shell "grep MemTotal /proc/meminfo" | awk '{print $2}')
-  notml=""; [ -n "$ram" ] && [ "$ram" -lt 2300000 ] && notml=1
+  notml="$NO_TML"; [ -n "$ram" ] && [ "$ram" -lt 2300000 ] && notml=1
   echo "=== $model ($s): content in $base ($where), Tuen Ma Line in $tml${notml:+ (skipped: little RAM)} ===" >> "$out"
   if [ -z "$SKIP_PREPARE" ]; then
     BASE="$base" TML="$tml" NO_TML="$notml" bash "$D/prepare_device.sh" "$s" $APK >> "$out" 2>&1 || { echo "STOPPED at prepare" >> "$out"; return; }

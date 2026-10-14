@@ -522,7 +522,8 @@ Native Vulkan renderer (uncommitted, 2026-10-07; see PORTING.md "Native Vulkan r
   upload flush, waiting textures realized past 64 MB) and release of empty buffer blocks added -
   it gets further but still closes. Note: the A73's screen-off timeout was set to 30 min by
   mistake during the run (original value not recorded) - the user to set it back.
-- Second round done (A55, Tab A9, S24 Ultra, A71 5G, A35, A23 5G SCG18): 17 phones in the tables.
+- Second round done (A55, Tab A9, S24 Ultra, A71 5G, A35, A23 5G SCG18), third (A14 5G, C31, Z Flip5):
+  20 phones in the tables.
   To look into: the A23 5G's GPU-bound Vulkan, and the texture-reduction count gap.
 - Not yet: FBOs (shadows/picking/motion blur), glReadPixels, points. Next: fast paths, multi-threaded recording, pipeline cache on disk,
   then pipelining.
