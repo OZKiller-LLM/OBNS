@@ -75,6 +75,10 @@
     <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.HUD.cs" Link="Upstream\Overlays\Overlays.HUD.cs" />
     <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.Lamp.cs" Link="Upstream\Overlays\Overlays.Lamp.cs" />
     <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.ScoreMessages.cs" Link="Upstream\Overlays\Overlays.ScoreMessages.cs" />
+    <!-- The developer overlays (MISC_INTERFACE, DEBUG_ATS, DEBUG_BRAKE). -->
+    <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Overlays.Debug.cs" Link="Upstream\Overlays\Overlays.Debug.cs" />
+    <!-- The track's events as cubes (SHOW_EVENTS). -->
+    <Compile Include="$(UpstreamSource)OpenBVE\Graphics\Renderers\Events.cs" Link="Upstream\Events.cs" />
     <Compile Include="$(UpstreamSource)OpenBVE\Game\MessageManager.cs" Link="Upstream\MessageManager.cs" />
     <Compile Include="$(UpstreamSource)OpenBVE\Game\MessageManager.TextualMessages.cs" Link="Upstream\MessageManager.TextualMessages.cs" />
     <Compile Include="$(UpstreamSource)OpenBVE\Game\Score\*.cs" LinkBase="Upstream\Score" />

@@ -679,7 +679,37 @@ namespace OpenBve.Vulkan
 				return;
 			}
 
+			if (mode == GL_LINE_LOOP)
+			{
+				uint[] loop = new uint[count + 1];
+				for (int i = 0; i < count; i++)
+				{
+					loop[i] = (uint)(first + i);
+				}
+
+				loop[count] = (uint)first;
+				DrawLoop(loop);
+				return;
+			}
+
 			AddDraw((uint)count, (uint)Math.Max(0, first), null, default, false);
+		}
+
+		/// <summary>
+		/// A line loop (the wireframe view's polygon outlines): Vulkan has none, so its indices, closed
+		/// back to the first, go in a scratch index buffer freed once the frame has run, drawn as a strip.
+		/// </summary>
+		private void DrawLoop(uint[] indices)
+		{
+			BufferHeap.Allocation memory = bufferHeap.Allocate((ulong)indices.Length * 4, 4);
+			fixed (uint* source = indices)
+			{
+				System.Buffer.MemoryCopy(source, memory.Pointer, indices.Length * 4, indices.Length * 4);
+			}
+
+			GLBuffer scratch = new GLBuffer { Memory = memory, Size = indices.Length * 4 };
+			AddDraw((uint)indices.Length, 0, scratch, IndexType.Uint32, false);
+			context.Defer(() => bufferHeap.Free(memory));
 		}
 
 		private void DrawElements(int mode, int count, int type, IntPtr indices)
@@ -719,6 +749,25 @@ namespace OpenBve.Vulkan
 				return;
 			}
 
+			if (mode == GL_LINE_LOOP)
+			{
+				if (offset + (long)count * indexBytes > elements.Size)
+				{
+					return;
+				}
+
+				uint[] loop = new uint[count + 1];
+				byte* source = elements.Memory.Pointer + offset;
+				for (int i = 0; i < count; i++)
+				{
+					loop[i] = indexBytes == 2 ? ((ushort*)source)[i] : ((uint*)source)[i];
+				}
+
+				loop[count] = loop[0];
+				DrawLoop(loop);
+				return;
+			}
+
 			AddDraw((uint)count, (uint)(offset / indexBytes), elements, indexType, false);
 		}
 
@@ -739,11 +788,6 @@ namespace OpenBve.Vulkan
 			{
 				ReportOnce("points are not supported by the Vulkan renderer");
 				return false;
-			}
-
-			if (mode == GL_LINE_LOOP)
-			{
-				ReportOnce("line loops are drawn as line strips by the Vulkan renderer");
 			}
 
 			array ??= CurrentVertexArray;

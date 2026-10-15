@@ -493,7 +493,8 @@ namespace OpenBve.Android
 		{
 			visible.Clear();
 			frame++;
-			if (!Enabled)
+			// The debug views draw face by face, through upstream's RenderFace.
+			if (!Enabled || renderer.OptionWireFrame || renderer.OptionNormals)
 			{
 				return;
 			}

@@ -615,6 +615,7 @@ namespace OpenBve.Android
 
 		protected override void OnDestroy()
 		{
+			Speech.Stop();
 			if (deviceListener != null)
 			{
 				inputDevices?.UnregisterInputDeviceListener(deviceListener);

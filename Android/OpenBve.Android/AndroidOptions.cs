@@ -58,6 +58,9 @@ namespace OpenBve.Android
 		/// <summary>The time acceleration MISC_TIMEFACTOR switches to, as the desktop's option (default 5).</summary>
 		public int TimeAccelerationFactor = 5;
 
+		/// <summary>Whether the track's events are shown as cubes (SHOW_EVENTS), as the desktop's option.</summary>
+		public bool ShowEvents;
+
 		/// <summary>The game mode before the last change, which upstream's score log reports.</summary>
 		public OpenBveApi.GameMode PreviousGameMode = OpenBveApi.GameMode.Normal;
 

@@ -442,6 +442,12 @@ namespace OpenBve.Android
 			options.Interpolation = GetInterpolation(context);
 			options.TransparencyMode = TransparencyOverride ?? GetTransparency(context);
 			options.LanguageCode = GetLanguage(context);
+			// As upstream with a screen reader running: messages, menus and the pause title are spoken (Speech).
+			options.ScreenReaderAvailable = Speech.ScreenReaderRunning(context);
+			if (options.ScreenReaderAvailable)
+			{
+				Speech.Start(context, options.LanguageCode);
+			}
 			options.GameMode = GetGameMode(context);
 			options.PreviousGameMode = options.GameMode;
 			// Upstream's panel2 extended mode: a 2D panel's power, brake and reverser indicators become touch areas.

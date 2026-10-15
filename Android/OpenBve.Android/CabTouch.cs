@@ -23,6 +23,7 @@
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using OpenBveApi.Runtime;
 using LibRender2.Trains;
@@ -70,6 +71,7 @@ namespace OpenBve.Android
 			}
 
 			group = add;
+			renderer.TouchAreaStates = elements.Select(e => e.Element.internalObject).Where(s => s?.Prototype?.Mesh?.Faces != null).ToArray();
 			List<Area> projected = new List<Area>();
 			for (int i = 0; i < elements.Length; i++)
 			{

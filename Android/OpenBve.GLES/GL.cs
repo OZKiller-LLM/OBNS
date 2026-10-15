@@ -811,9 +811,83 @@ namespace OpenTK.Graphics.OpenGL
 		 * Winding, and so back-face culling, is preserved in each case.
 		 */
 
+		/*
+		 * The wireframe view (PolygonMode.Line, which GL ES does not have): each polygon is drawn as
+		 * the loop of its edges instead - a triangle list triangle by triangle, a fan, polygon or quad
+		 * as its outline, a strip as its zig-zag. Upstream's desktop wireframe also shows the
+		 * diagonals a driver splits a polygon into; the outline is the face as the object defines it.
+		 */
+		private static bool DrawWireFrameArrays(PrimitiveType mode, int first, int count)
+		{
+			switch (mode)
+			{
+				case PrimitiveType.Triangles:
+					for (int i = 0; i + 3 <= count; i += 3)
+					{
+						glDrawArrays((int)PrimitiveType.LineLoop, first + i, 3);
+					}
+
+					return true;
+				case PrimitiveType.Quads:
+					for (int i = 0; i + 4 <= count; i += 4)
+					{
+						glDrawArrays((int)PrimitiveType.LineLoop, first + i, 4);
+					}
+
+					return true;
+				case PrimitiveType.TriangleFan:
+				case PrimitiveType.Polygon:
+					glDrawArrays((int)PrimitiveType.LineLoop, first, count);
+					return true;
+				case PrimitiveType.TriangleStrip:
+				case PrimitiveType.QuadStrip:
+					glDrawArrays((int)PrimitiveType.LineStrip, first, count);
+					return true;
+				default:
+					return false;
+			}
+		}
+
+		private static bool DrawWireFrameElements(PrimitiveType mode, int count, DrawElementsType type, IntPtr offset)
+		{
+			long size = IndexSize(type);
+			switch (mode)
+			{
+				case PrimitiveType.Triangles:
+					for (int i = 0; i + 3 <= count; i += 3)
+					{
+						glDrawElements((int)PrimitiveType.LineLoop, 3, (int)type, new IntPtr(offset.ToInt64() + i * size));
+					}
+
+					return true;
+				case PrimitiveType.Quads:
+					for (int i = 0; i + 4 <= count; i += 4)
+					{
+						glDrawElements((int)PrimitiveType.LineLoop, 4, (int)type, new IntPtr(offset.ToInt64() + i * size));
+					}
+
+					return true;
+				case PrimitiveType.TriangleFan:
+				case PrimitiveType.Polygon:
+					glDrawElements((int)PrimitiveType.LineLoop, count, (int)type, offset);
+					return true;
+				case PrimitiveType.TriangleStrip:
+				case PrimitiveType.QuadStrip:
+					glDrawElements((int)PrimitiveType.LineStrip, count, (int)type, offset);
+					return true;
+				default:
+					return false;
+			}
+		}
+
 		/// <summary>Draws primitives from array data.</summary>
 		public static void DrawArrays(PrimitiveType mode, int first, int count)
 		{
+			if (WireFrame && DrawWireFrameArrays(mode, first, count))
+			{
+				return;
+			}
+
 			if (mode == PrimitiveType.Quads)
 			{
 				for (int quad = 0; quad + 4 <= count; quad += 4)
@@ -836,6 +910,11 @@ namespace OpenTK.Graphics.OpenGL
 		/// <summary>Draws indexed primitives.</summary>
 		public static void DrawElements(PrimitiveType mode, int count, DrawElementsType type, IntPtr offset)
 		{
+			if (WireFrame && DrawWireFrameElements(mode, count, type, offset))
+			{
+				return;
+			}
+
 			if (mode == PrimitiveType.Quads)
 			{
 				long stride = 4L * IndexSize(type);
@@ -1571,7 +1650,17 @@ namespace OpenTK.Graphics.OpenGL
 		public static void Ortho(double left, double right, double bottom, double top, double zNear, double zFar) => throw Legacy("Ortho");
 
 		/// <summary>Not available on GLES.</summary>
-		public static void PolygonMode(MaterialFace face, PolygonMode mode) => throw Legacy("PolygonMode");
+		/// <summary>
+		/// The polygon mode: GLES has none (no glPolygonMode). Upstream sets Line for its wireframe and
+		/// touch-area debug views; the mode is recorded for the drawing calls (WireFrame).
+		/// </summary>
+		public static void PolygonMode(MaterialFace face, PolygonMode mode)
+		{
+			WireFrame = mode == OpenTK.Graphics.OpenGL.PolygonMode.Line;
+		}
+
+		/// <summary>Whether upstream asked for lines (PolygonMode.Line) rather than filled polygons.</summary>
+		public static bool WireFrame { get; private set; }
 	}
 
 	/// <summary>Renderbuffer storage formats.</summary>

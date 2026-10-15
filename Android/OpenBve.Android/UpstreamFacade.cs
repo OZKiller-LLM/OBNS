@@ -130,37 +130,31 @@ namespace OpenBve.Graphics
 		internal DistanceToNextStationDisplayMode OptionDistanceToNextStation = DistanceToNextStationDisplayMode.None;
 		internal bool OptionFrameRates = false;
 		internal bool OptionBrakeSystems = false;
+		internal bool DebugTouchMode = false;
 	}
 }
 
-namespace OpenBve.Graphics.Renderers
+namespace OpenBve
 {
-	/// <summary>
-	/// The developer overlays of upstream's Overlays.Debug.cs (frame statistics, the ATS plugin's
-	/// panel values, brake system gauges), which read desktop-only renderer and option state and
-	/// are not compiled here. The HUD, messages, score, timetable and route information are.
-	/// </summary>
-	internal partial class Overlays
+	/// <summary>Upstream's MainLoop: what its debug overlay reads (Overlays.Debug.cs).</summary>
+	internal static class MainLoop
 	{
-		private void RenderDebugOverlays()
-		{
-		}
+		/// <summary>The time acceleration in effect (AndroidTrainSession.TimeFactor).</summary>
+		internal static int TimeFactor = 1;
+	}
 
-		private void RenderATSDebugOverlay()
-		{
-		}
-
-		private void RenderBrakeSystemDebug()
-		{
-		}
+	/// <summary>Upstream's ObjectManager: the count its debug overlay shows, from the host that holds the animated world objects.</summary>
+	internal static class ObjectManager
+	{
+		internal static int AnimatedWorldObjectsUsed => Program.CurrentHost?.AnimatedWorldObjectsUsed ?? 0;
 	}
 }
 
 namespace DavyKager
 {
-	/// <summary>Upstream's screen-reader bridge (Windows only). There is no screen reader to speak to here.</summary>
+	/// <summary>Upstream's screen-reader bridge: on Android, the phone's text-to-speech while a screen reader runs (OpenBve.Android.Speech).</summary>
 	internal static class Tolk
 	{
-		internal static bool Output(string text, bool interrupt = false) => false;
+		internal static bool Output(string text, bool interrupt = false) => OpenBve.Android.Speech.Say(text, interrupt);
 	}
 }

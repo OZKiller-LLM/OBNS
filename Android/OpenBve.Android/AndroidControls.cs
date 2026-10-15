@@ -27,11 +27,13 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using LibRender2.Overlays;
+using LibRender2.Screens;
 using OpenBveApi;
 using OpenBveApi.Hosts;
 using OpenBveApi.Interface;
 using OpenBveApi.Motor;
 using OpenBveApi.Runtime;
+using RouteManager2.Stations;
 using TrainManager.Car;
 using TrainManager.Car.Systems;
 using TrainManager.Handles;
@@ -285,6 +287,17 @@ namespace OpenBve.Android
 				case Translations.Command.MiscMute:
 				case Translations.Command.MiscBackface:
 				case Translations.Command.PlayMicSounds:
+				case Translations.Command.MiscInterface:
+				case Translations.Command.DebugATS:
+				case Translations.Command.DebugBrakeSystems:
+				case Translations.Command.ShowEvents:
+				case Translations.Command.DebugWireframe:
+				case Translations.Command.DebugNormals:
+				case Translations.Command.DebugTouchMode:
+				case Translations.Command.AccessibilityCurrentSpeed:
+				case Translations.Command.AccessibilityNextSignal:
+				case Translations.Command.AccessibilityNextStation:
+				case Translations.Command.AccessibilityNextLimit:
 					return true;
 				default:
 					return false;
@@ -311,6 +324,7 @@ namespace OpenBve.Android
 					}
 
 					session.TimeFactor = session.TimeFactor == 1 ? Math.Max(1, Interface.CurrentOptions.TimeAccelerationFactor) : 1;
+					MainLoop.TimeFactor = session.TimeFactor;
 					MessageManager.AddMessage(session.TimeFactor.ToString(System.Globalization.CultureInfo.InvariantCulture) + "x",
 						RouteManager2.MessageManager.MessageDependency.None, GameMode.Expert, OpenBveApi.Colors.MessageColor.White, 5, null);
 					break;
@@ -320,12 +334,123 @@ namespace OpenBve.Android
 				case Translations.Command.PlayMicSounds:
 					Program.Sounds.IsPlayingMicSounds = !Program.Sounds.IsPlayingMicSounds;
 					break;
+				case Translations.Command.MiscInterface:
+				{
+					// The interface and the developer overlay, as upstream: default, debug, none
+					OpenBve.Graphics.NewRenderer renderer = Program.Renderer;
+					switch (renderer.CurrentOutputMode)
+					{
+						case OutputMode.Default:
+							renderer.CurrentOutputMode = Interface.CurrentOptions.GameMode == GameMode.Expert ? OutputMode.None : OutputMode.Debug;
+							break;
+						case OutputMode.Debug:
+							renderer.CurrentOutputMode = OutputMode.None;
+							break;
+						case OutputMode.DebugATS:
+							renderer.CurrentOutputMode = renderer.PreviousOutputMode;
+							break;
+						default:
+							renderer.CurrentOutputMode = OutputMode.Default;
+							break;
+					}
+
+					renderer.PreviousOutputMode = renderer.CurrentOutputMode;
+					break;
+				}
+				case Translations.Command.DebugATS:
+				{
+					OpenBve.Graphics.NewRenderer renderer = Program.Renderer;
+					if (renderer.CurrentOutputMode == OutputMode.DebugATS)
+					{
+						renderer.CurrentOutputMode = renderer.PreviousOutputMode;
+					}
+					else
+					{
+						renderer.PreviousOutputMode = renderer.CurrentOutputMode;
+						renderer.CurrentOutputMode = OutputMode.DebugATS;
+					}
+
+					break;
+				}
+				case Translations.Command.DebugBrakeSystems:
+					if (Interface.CurrentOptions.GameMode == GameMode.Expert)
+					{
+						MessageManager.AddMessage(Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "notification", "notavailableexpert" }),
+							RouteManager2.MessageManager.MessageDependency.None, GameMode.Expert, OpenBveApi.Colors.MessageColor.White, 5, null);
+					}
+					else
+					{
+						Program.Renderer.OptionBrakeSystems = !Program.Renderer.OptionBrakeSystems;
+					}
+
+					break;
+				case Translations.Command.ShowEvents:
+					Interface.CurrentOptions.ShowEvents = !Interface.CurrentOptions.ShowEvents;
+					break;
+				case Translations.Command.DebugWireframe:
+					Program.Renderer.OptionWireFrame = !Program.Renderer.OptionWireFrame;
+					break;
+				case Translations.Command.DebugNormals:
+					Program.Renderer.OptionNormals = !Program.Renderer.OptionNormals;
+					break;
+				case Translations.Command.DebugTouchMode:
+					Program.Renderer.DebugTouchMode = !Program.Renderer.DebugTouchMode;
+					break;
+				case Translations.Command.AccessibilityCurrentSpeed:
+				case Translations.Command.AccessibilityNextSignal:
+				case Translations.Command.AccessibilityNextStation:
+				case Translations.Command.AccessibilityNextLimit:
+					Announce(train, command);
+					break;
 				case Translations.Command.MiscBackface:
 					Program.Renderer.OptionBackFaceCulling = !Program.Renderer.OptionBackFaceCulling;
 					MessageManager.AddMessage(Translations.GetInterfaceString(HostApplication.OpenBve, Program.Renderer.OptionBackFaceCulling
 							? new[] { "notification", "backfaceculling_on" }
 							: new[] { "notification", "backfaceculling_off" }),
 						RouteManager2.MessageManager.MessageDependency.None, GameMode.Expert, OpenBveApi.Colors.MessageColor.White, 2, null);
+					break;
+			}
+		}
+
+		/// <summary>The accessibility read-outs, as upstream: shown, and spoken while a screen reader runs (Speech).</summary>
+		private static void Announce(TrainBase train, Translations.Command command)
+		{
+			void Say(string text)
+			{
+				Program.CurrentHost.AddMessage(text, RouteManager2.MessageManager.MessageDependency.AccessibilityHelper, GameMode.Normal, OpenBveApi.Colors.MessageColor.White, 10.0, null);
+			}
+
+			switch (command)
+			{
+				case Translations.Command.AccessibilityCurrentSpeed:
+					Say(Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "message", "train_currentspeed" }).Replace("[speed]", $"{train.CurrentSpeed * 3.6:0.0}") + "km/h");
+					break;
+				case Translations.Command.AccessibilityNextSignal:
+				{
+					RouteManager2.SignalManager.Section nextSection = global::TrainManager.TrainManagerBase.CurrentRoute.NextSection(train.FrontCarTrackPosition);
+					if (nextSection != null)
+					{
+						double distance = nextSection.TrackPosition - train.FrontCarTrackPosition;
+						// Upstream 1.14.1.2 replaces [aspect] in the "m" alone (as it did [name] for stations before 1.14.1.1): here, in the text.
+						Say(Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "message", "route_nextsection_aspect" }).Replace("[distance]", $"{distance:0.0}m").Replace("[aspect]", nextSection.CurrentAspect.ToString()));
+					}
+
+					break;
+				}
+				case Translations.Command.AccessibilityNextStation:
+				{
+					RouteStation nextStation = global::TrainManager.TrainManagerBase.CurrentRoute.NextStation(train.FrontCarTrackPosition);
+					if (nextStation != null)
+					{
+						double distance = nextStation.DefaultTrackPosition - train.FrontCarTrackPosition;
+						Say(Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "message", "route_nextstation" }).Replace("[distance]", $"{distance:0.0}m").Replace("[name]", nextStation.Name));
+						nextStation.AccessibilityAnnounced = true;
+					}
+
+					break;
+				}
+				case Translations.Command.AccessibilityNextLimit:
+					Say(Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "message", "route_nextlimit" }));
 					break;
 			}
 		}

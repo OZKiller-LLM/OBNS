@@ -72,7 +72,8 @@ namespace OpenBve.Android
 		internal void DrawFace(Shader shader, ObjectState state, MeshFace face)
 		{
 			VulkanGL device = NativeFaces ? GL.Device as VulkanGL : null;
-			if (device == null || shader != DefaultShader || OptionWireFrame || !device.CanDrawFaces || !(state.Prototype.Mesh.VAO is VertexArrayObject vao))
+			// The debug views (wireframe, normals) are upstream's RenderFace's own.
+			if (device == null || shader != DefaultShader || OptionWireFrame || OptionNormals || !device.CanDrawFaces || !(state.Prototype.Mesh.VAO is VertexArrayObject vao))
 			{
 				RenderFace(shader, state, face);
 				return;

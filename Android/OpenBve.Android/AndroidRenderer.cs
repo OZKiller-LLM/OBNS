@@ -22,6 +22,7 @@
 //(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using LibRender2;
@@ -333,10 +334,55 @@ namespace OpenBve.Android
 			AlphaDrawCalls = DrawAlphaFaces(alphaFaces, unsortedAlphaFaces, batcher);
 			Profile.Mark("alpha faces");
 
+			// Particle sources (MSTS exhaust, steam), as upstream's NewRenderer: updated and drawn after the world
+			if (Program.TrainManager != null)
+			{
+				SetBlendFunc();
+				SetAlphaFunc(AlphaFunction.Greater, 0.0f);
+				foreach (global::TrainManager.Trains.TrainBase train in Program.TrainManager.Trains)
+				{
+					train.UpdateParticleSources(timeElapsed);
+				}
+
+				foreach (global::TrainManager.Trains.ScriptedTrain scriptedTrain in Program.TrainManager.TFOs)
+				{
+					scriptedTrain.UpdateParticleSources(timeElapsed);
+				}
+
+				ResetOpenGlState();
+				Profile.Mark("particles");
+			}
+
+			if (Interface.CurrentOptions.ShowEvents)
+			{
+				// The track's events as textured cubes, as upstream's NewRenderer (Events.cs): found again every 50 m
+				events ??= new OpenBve.Graphics.Renderers.Events(this);
+				if (Math.Abs(CameraTrackFollower.TrackPosition - events.LastTrackPosition) > 50)
+				{
+					events.LastTrackPosition = CameraTrackFollower.TrackPosition;
+					CubesToDraw.Clear();
+					foreach (int railIndex in Program.CurrentRoute.Tracks.Keys.ToArray())
+					{
+						events.FindEvents(railIndex);
+					}
+				}
+
+				foreach (KeyValuePair<OpenBveApi.Textures.Texture, HashSet<Vector3>> cubes in CubesToDraw.ToArray())
+				{
+					foreach (Vector3 v in cubes.Value)
+					{
+						Cube.Draw(v, Camera.AbsoluteDirection, Camera.AbsoluteUp, Camera.AbsoluteSide, 0.2, Camera.AbsolutePosition, cubes.Key);
+					}
+				}
+
+				ResetOpenGlState();
+			}
+
 			DrawingCab = true;
 			try
 			{
 				RenderCab(overlayOpaqueFaces, overlayAlphaFaces);
+				DrawTouchAreas();
 			}
 			finally
 			{
@@ -379,6 +425,41 @@ namespace OpenBve.Android
 		}
 
 		private OpenBve.Graphics.Renderers.Overlays overlays;
+
+		/// <summary>The cab's touch areas on show, for the touch debug view (set by CabTouch each frame).</summary>
+		internal ObjectState[] TouchAreaStates;
+
+		/// <summary>
+		/// DEBUG_TOUCH_MODE, as upstream's Touch.RenderScene: the cab's touch areas outlined over the
+		/// cab, unlit and without depth (RenderFace's debug touch mode: lines in the area's colour).
+		/// </summary>
+		private void DrawTouchAreas()
+		{
+			ObjectState[] states = TouchAreaStates;
+			if (!DebugTouchMode || states == null || states.Length == 0)
+			{
+				return;
+			}
+
+			GL.DepthMask(false);
+			GL.Disable(EnableCap.DepthTest);
+			DefaultShader.Activate();
+			ResetShader(DefaultShader);
+			DefaultShader.SetCurrentProjectionMatrix(CurrentProjectionMatrix);
+			foreach (ObjectState state in states)
+			{
+				foreach (MeshFace face in state.Prototype.Mesh.Faces)
+				{
+					RenderFace(DefaultShader, state, face, true);
+				}
+			}
+
+			GL.DepthMask(true);
+			ResetOpenGlState();
+		}
+
+		/// <summary>Upstream's event finder (SHOW_EVENTS), made when first shown.</summary>
+		private OpenBve.Graphics.Renderers.Events events;
 
 		/// <inheritdoc />
 		public override void ResetOpenGlState()
