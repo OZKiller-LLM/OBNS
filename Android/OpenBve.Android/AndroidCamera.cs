@@ -50,15 +50,13 @@ namespace OpenBve.Android
 	/// <remarks>
 	/// A port of upstream's World.UpdateAbsoluteCamera and InitializeCameraRestriction, the camera
 	/// cases of MainLoop.ProcessDigitalControl and ProcessAnalogControl, MainLoop's
-	/// Save/RestoreCameraSettings, and the per-frame camera part of GameWindow.OnRenderFrame.
-	/// The only omission is the animated interior/exterior mode transition (the moving between
-	/// cars in exterior view is kept): it is off in upstream's options for many users, and it
-	/// replaces the camera's own motion for its duration, which on a touch screen reads as lag.
+	/// Save/RestoreCameraSettings, and the per-frame camera part of GameWindow.OnRenderFrame,
+	/// with its transitions (between cars, and from the exterior view into the cab), set in Options.
 	/// </remarks>
 	public class AndroidCamera
 	{
-		/// <summary>Seconds taken to glide between cars in exterior view, upstream's default.</summary>
-		private const double CarTransitionSeconds = 0.4;
+		/// <summary>Seconds a camera transition takes (Options; upstream's default 0.4).</summary>
+		internal static double TransitionSeconds = 0.4;
 
 		/*
 		 * Upstream's camera transitions (Options: cameraInteriorTransition, cameraExteriorTransition,
@@ -201,10 +199,10 @@ namespace OpenBve.Android
 
 			if (Camera.ModeTransitionTimer < 1.0)
 			{
-				Camera.ModeTransitionTimer += timeElapsed / CarTransitionSeconds;
+				Camera.ModeTransitionTimer += timeElapsed / TransitionSeconds;
 			}
 
-			double progress = Math.Min(1.0, Camera.CameraCarTransitionTimer / CarTransitionSeconds);
+			double progress = Math.Min(1.0, Camera.CameraCarTransitionTimer / TransitionSeconds);
 			if ((mode == CameraViewMode.Exterior && !ExteriorTransition) || (mode != CameraViewMode.Exterior && !InteriorTransition) || mode == CameraViewMode.Interior)
 			{
 				// As upstream: no transition here

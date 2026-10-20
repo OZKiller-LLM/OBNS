@@ -70,6 +70,9 @@ namespace OpenBve.Android
 		/// <summary>Raised on the UI thread when the pause button is pressed.</summary>
 		public event System.Action PauseRequested;
 
+		/// <summary>Raised on the UI thread when the switch map button is pressed.</summary>
+		public event System.Action SwitchMapRequested;
+
 		public ControlOverlay(Context context, AndroidControls controls, System.Func<TimetableSnapshot> timetableSource,
 			System.Func<(RouteGeometry, RouteLive)> routeSource) : base(context)
 		{
@@ -121,6 +124,8 @@ namespace OpenBve.Android
 			Color displayColor = Color.Argb(150, 30, 60, 60);
 			camera.AddView(Action("TT", displayColor, ToggleTimetable), Spaced());
 			camera.AddView(Action("MAP", displayColor, () => timetable.Toggle(TimetablePanel.Tab.Map)), Spaced());
+			// The switch map (upstream's SWITCH_MENU, Ctrl+F9 on a keyboard): SwitchMapPanel.
+			camera.AddView(Action("SW", displayColor, () => SwitchMapRequested?.Invoke()), Spaced());
 			// A little smaller than the other buttons, so the row stays clear of the emergency brake.
 			for (int i = 0; i < camera.ChildCount; i++)
 			{

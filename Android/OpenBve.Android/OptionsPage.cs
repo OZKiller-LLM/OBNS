@@ -144,6 +144,21 @@ namespace OpenBve.Android
 			Slider(Menu.T("options", "misc_sound_number", "Number of allowed sounds:"), 16, 128, 4,
 				AndroidSettings.GetSoundNumber(activity), v => v.ToString(), v => AndroidSettings.SetSoundNumber(activity, v));
 
+			// --- camera and time, as upstream's Options (camera options; advanced: time acceleration) ---
+			Section(Menu.T("options", "camera", "Camera options"));
+			string[] onOff = { Menu.T("android", "on", "On"), Menu.T("android", "off", "Off") };
+			Dropdown(Menu.T("options", "camera_interior_transition", "Smooth interior transition"), onOff,
+				AndroidSettings.GetCameraInteriorTransition(activity) ? 0 : 1,
+				i => AndroidSettings.SetCameraInteriorTransition(activity, i == 0));
+			Dropdown(Menu.T("options", "camera_exterior_transition", "Smooth exterior transition"), onOff,
+				AndroidSettings.GetCameraExteriorTransition(activity) ? 0 : 1,
+				i => AndroidSettings.SetCameraExteriorTransition(activity, i == 0));
+			Slider(Menu.T("options", "camera_transition_duration", "Transition duration (sec):"), 1, 50, 1,
+				AndroidSettings.GetCameraTransitionTenths(activity), v => (v / 10.0).ToString("0.0", System.Globalization.CultureInfo.CurrentCulture),
+				v => AndroidSettings.SetCameraTransitionTenths(activity, v));
+			Slider(Menu.T("options", "advanced_timefactor", "Time acceleration factor:"), 1, 5, 1,
+				AndroidSettings.GetTimeAccelerationFactor(activity), v => "×" + v, v => AndroidSettings.SetTimeAccelerationFactor(activity, v));
+
 			// --- content folders ---
 			Section(Menu.T("panel", "packages", "Package Management"));
 			Info(Menu.T("options", "package_route_directory", "Route installation directory:") + "\n" + Menu.FileSystem.RouteInstallationDirectory);

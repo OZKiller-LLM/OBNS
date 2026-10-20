@@ -70,3 +70,14 @@ vulkan_small_textures = Textures plus petites avec Vulkan natif :
 vulkan_small_textures_note = Sur les téléphones d'environ 6 Go de RAM ou moins, Vulkan natif limite les textures à 1024 px et en couleurs 16 bits (lorsque ces options sont automatiques), afin que les lignes lourdes ne manquent pas de mémoire. Désactivez-le pour des textures plus nettes.
 vulkan_small_textures_large = (Cet appareil a plus de mémoire : sans effet ici.)
 microphone_denied = Les sons du microphone nécessitent l'autorisation d'utiliser le microphone.
+
+# The switch map (SwitchMapPanel).
+switch_way = Le parcours de votre train est mis en évidence. Touchez un aiguillage pour le choisir.
+switches_nearby = Aiguillages à proximité
+switch_change = Changer la position
+switch_fixed = Itinéraire fixe : cet aiguillage ne peut pas être changé.
+switch_run_through = Un train a talonné cet aiguillage : changez-le pour le réinitialiser.
+switch_ahead = à {0} m devant
+switch_behind = à {0} m derrière
+switches_none = Aucun aiguillage à moins de {0} m du train.
+switch_unnamed = Aiguillage {0}

@@ -75,6 +75,7 @@ namespace OpenBve.Android
 		private ControlOverlay overlay;
 		private LoadingScreen loading;
 		private PauseMenu pauseMenu;
+		private SwitchMapPanel switchMap;
 		private GameView view;
 		private bool started;
 		private FrameLayout layout;
@@ -104,7 +105,27 @@ namespace OpenBve.Android
 				Visibility = ViewStates.Gone
 			};
 			created.PauseRequested += OpenPauseMenu;
+			created.SwitchMapRequested += ToggleSwitchMap;
 			return created;
+		}
+
+		/// <summary>The switch map (SWITCH_MENU): over the touch controls, under the pause menu.</summary>
+		private SwitchMapPanel CreateSwitchMap()
+		{
+			SwitchMapPanel created = new SwitchMapPanel(this, () => view.Session?.GetSwitchMap(SwitchMapPanel.Radius))
+			{
+				Visibility = ViewStates.Gone
+			};
+			created.ChangeRequested += id => view.Controls.Post(s => s.ToggleSwitch(id));
+			return created;
+		}
+
+		private void ToggleSwitchMap()
+		{
+			if (started && view.Session != null && pauseMenu.Visibility != ViewStates.Visible)
+			{
+				switchMap.Toggle();
+			}
 		}
 
 		private PauseMenu CreatePauseMenu()
@@ -166,6 +187,18 @@ namespace OpenBve.Android
 			if (menuOpen)
 			{
 				pauseMenu.Open();
+			}
+
+			// The switch map likewise, open again if it was.
+			bool mapOpen = switchMap.IsOpen;
+			index = layout.IndexOfChild(switchMap);
+			switchMap.Hide();
+			layout.RemoveView(switchMap);
+			switchMap = CreateSwitchMap();
+			layout.AddView(switchMap, index, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+			if (mapOpen)
+			{
+				switchMap.Show();
 			}
 
 			StyleStatus();
@@ -304,6 +337,9 @@ namespace OpenBve.Android
 			                                         AndroidSettings.DesktopModeDetail(this) + ")");
 			overlay = CreateOverlay();
 			pauseMenu = CreatePauseMenu();
+			switchMap = CreateSwitchMap();
+			// SWITCH_MENU from a keyboard or controller (Ctrl+F9 by default), raised on the render thread.
+			view.Controls.SwitchMenuRequested += () => RunOnUiThread(ToggleSwitchMap);
 			builtDensity = Resources?.DisplayMetrics?.Density ?? 1.0f;
 			loading = new LoadingScreen(this, launch);
 
@@ -323,6 +359,7 @@ namespace OpenBve.Android
 			layout = new FrameLayout(this);
 			layout.AddView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 			layout.AddView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+			layout.AddView(switchMap, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 			layout.AddView(pauseMenu, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 			layout.AddView(loading, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 			layout.AddView(status, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Center));
@@ -388,7 +425,12 @@ namespace OpenBve.Android
 			}
 
 			// As upstream's Escape: back opens the pause menu, and inside it goes back a level.
-			if (pauseMenu.Visibility == ViewStates.Visible)
+			// The switch map is closed first, as a dialog would be.
+			if (switchMap.IsOpen && pauseMenu.Visibility != ViewStates.Visible)
+			{
+				switchMap.Hide();
+			}
+			else if (pauseMenu.Visibility == ViewStates.Visible)
 			{
 				pauseMenu.Back();
 			}
@@ -432,6 +474,16 @@ namespace OpenBve.Android
 
 		public override bool DispatchKeyEvent(KeyEvent e)
 		{
+			// Escape closes the switch map before it would open the pause menu.
+			if (started && switchMap.IsOpen && pauseMenu.Visibility != ViewStates.Visible && e.KeyCode == Keycode.Escape)
+			{
+				if (e.Action == KeyEventActions.Down && e.RepeatCount == 0)
+				{
+					switchMap.Hide();
+				}
+
+				return true;
+			}
 
 			if (started && pauseMenu.Visibility == ViewStates.Visible)
 			{

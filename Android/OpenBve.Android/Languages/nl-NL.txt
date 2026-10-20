@@ -70,3 +70,14 @@ vulkan_small_textures = Kleinere texturen met native Vulkan:
 vulkan_small_textures_note = Op telefoons met ongeveer 6 GB RAM of minder houdt native Vulkan texturen op 1024 px en 16-bits kleur (waar die opties automatisch zijn), zodat zware routes niet zonder geheugen komen. Zet het uit voor scherpere texturen.
 vulkan_small_textures_large = (Dit apparaat heeft meer geheugen: hier geen effect.)
 microphone_denied = Microfoongeluiden hebben toestemming nodig om de microfoon te gebruiken.
+
+# The switch map (SwitchMapPanel).
+switch_way = De rijweg van uw trein is gemarkeerd. Tik op een wissel om die te kiezen.
+switches_nearby = Wissels in de buurt
+switch_change = Omzetten
+switch_fixed = Vaste rijweg: deze wissel kan niet worden omgezet.
+switch_run_through = Een trein is door deze wissel opengereden: zet hem om om hem te herstellen.
+switch_ahead = {0} m vooruit
+switch_behind = {0} m achter
+switches_none = Geen wissels binnen {0} m van de trein.
+switch_unnamed = Wissel {0}

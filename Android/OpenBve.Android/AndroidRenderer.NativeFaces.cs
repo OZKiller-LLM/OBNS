@@ -200,6 +200,9 @@ namespace OpenBve.Android
 				return;
 			}
 
+			// The device bound the texture itself: upstream's draws (RenderFace, text, rectangles) must bind theirs again.
+			LastBoundTexture = null;
+
 			// Nighttime polygon, blended over it.
 			if (blendFactor != 0 && material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && currentHost.LoadTexture(ref material.NighttimeTexture, wrap))
 			{

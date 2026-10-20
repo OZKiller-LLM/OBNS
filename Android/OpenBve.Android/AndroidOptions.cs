@@ -81,6 +81,8 @@ namespace OpenBve.Android
 			ViewingDistance = 400;
 			QuadTreeLeafSize = 200;
 			ObjectDisposalMode = ObjectDisposalMode.Accurate;
+			// Upstream's default: its in-game buttons (the switch change map's) are sized by it, and 0 leaves them no size.
+			UserInterfaceScaleFactor = 1;
 			/*
 			 * Upstream's desktop default. OptimizeObject leaves objects of this many faces (up to
 			 * 20,000) as they are - polygons and all, one draw call per face; at 1,000 that was

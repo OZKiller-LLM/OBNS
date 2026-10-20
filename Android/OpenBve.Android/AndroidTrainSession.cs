@@ -985,6 +985,185 @@ namespace OpenBve.Android
 			return geometry = new RouteGeometry(position, x, y, z, pitch, stations, limits);
 		}
 
+		/// <summary>
+		/// The switch map's view of the line around the train (upstream's switch change map, drawn by
+		/// the Android interface): every track within the radius, the way the train will go through
+		/// the switches as they are set now, the switches, and the stations. Read on the UI thread, as
+		/// the touch map's data is: the track is fixed after loading, and the rest are single reads.
+		/// </summary>
+		public SwitchMapSnapshot GetSwitchMap(double radius)
+		{
+			OpenBveApi.Routes.TrackFollower follower = Train.Cars[0].FrontAxle.Follower;
+			int playerTrack = route.Tracks.ContainsKey(follower.TrackIndex) ? follower.TrackIndex : 0;
+			double at = follower.TrackPosition;
+			double from = at - radius, to = at + radius;
+
+			// The tracks: the main line throughout, the others where a train can run on them.
+			List<float[]> tracks = new List<float[]>();
+			List<float> points = new List<float>();
+			foreach (KeyValuePair<int, Track> pair in route.Tracks)
+			{
+				TrackElement[] elements = pair.Value.Elements;
+				if (elements == null || elements.Length == 0)
+				{
+					continue;
+				}
+
+				int first = Math.Max(0, ElementAt(elements, from) - 1), last = Math.Min(elements.Length - 1, ElementAt(elements, to) + 1);
+				points.Clear();
+				for (int i = first; i <= last; i++)
+				{
+					if (pair.Key == 0 || elements[i].IsDriveable)
+					{
+						points.Add((float)elements[i].WorldPosition.X);
+						points.Add((float)elements[i].WorldPosition.Z);
+					}
+					else
+					{
+						AddTrackPiece(tracks, points);
+					}
+				}
+
+				AddTrackPiece(tracks, points);
+			}
+
+			// The way ahead: along the train's track, onto whichever track each switch sends it.
+			List<float> way = new List<float> { (float)follower.WorldPosition.X, (float)follower.WorldPosition.Z };
+			HashSet<Guid> onWay = new HashSet<Guid>();
+			int key = playerTrack;
+			for (int i = ElementAt(route.Tracks[key].Elements, at) + 1; ; i++)
+			{
+				TrackElement[] elements = route.Tracks[key].Elements;
+				if (i >= elements.Length || !elements[i].IsDriveable || elements[i].StartingTrackPosition > to)
+				{
+					break;
+				}
+
+				way.Add((float)elements[i].WorldPosition.X);
+				way.Add((float)elements[i].WorldPosition.Z);
+				bool ended = false;
+				foreach (GeneralEvent e in elements[i].Events)
+				{
+					if (e is RouteManager2.Events.SwitchEvent switchEvent && route.Switches.TryGetValue(switchEvent.Index, out RouteManager2.Tracks.Switch onTheWay))
+					{
+						onWay.Add(switchEvent.Index);
+						if (onTheWay.Direction == TrackDirection.Forwards && onTheWay.CurrentlySetTrack != key && route.Tracks.ContainsKey(onTheWay.CurrentlySetTrack))
+						{
+							key = onTheWay.CurrentlySetTrack;
+						}
+					}
+					else if (e is RouteManager2.Events.TrackEndEvent)
+					{
+						ended = true;
+					}
+				}
+
+				if (ended)
+				{
+					break;
+				}
+			}
+
+			// The switches in range, placed at their own position on their toe rail.
+			List<SwitchMark> switches = new List<SwitchMark>();
+			HashSet<Guid> seen = new HashSet<Guid>();
+			foreach (KeyValuePair<int, Track> pair in route.Tracks)
+			{
+				TrackElement[] elements = pair.Value.Elements;
+				if (elements == null || elements.Length == 0)
+				{
+					continue;
+				}
+
+				int first = Math.Max(0, ElementAt(elements, from)), last = Math.Min(elements.Length - 1, ElementAt(elements, to));
+				for (int i = first; i <= last; i++)
+				{
+					foreach (GeneralEvent e in elements[i].Events)
+					{
+						if (!(e is RouteManager2.Events.SwitchEvent switchEvent) || !seen.Add(switchEvent.Index) ||
+						    !route.Switches.TryGetValue(switchEvent.Index, out RouteManager2.Tracks.Switch found))
+						{
+							continue;
+						}
+
+						TrackElement[] toe = route.Tracks.TryGetValue(found.ToeRail, out Track toeTrack) && toeTrack.Elements?.Length > 0 ? toeTrack.Elements : elements;
+						OpenBveApi.Math.Vector3 where = PositionOn(toe, found.TrackPosition);
+						switches.Add(new SwitchMark(switchEvent.Index, found.Name, where.X, where.Z, found.TrackPosition - at, found.CurrentSetting,
+							found.FixedRoute, found.RunThrough, onWay.Contains(switchEvent.Index)));
+					}
+				}
+			}
+
+			// Ahead first, nearest first; then those behind, nearest first.
+			switches.Sort((a, b) => a.Distance >= 0 != b.Distance >= 0 ? (a.Distance >= 0 ? -1 : 1) : Math.Abs(a.Distance).CompareTo(Math.Abs(b.Distance)));
+
+			List<(string Name, double X, double Z)> stations = new List<(string, double, double)>();
+			foreach (RouteStationMark station in GetRouteGeometry().Stations)
+			{
+				if (station.Position >= from && station.Position <= to)
+				{
+					stations.Add((station.Name, station.X, station.Z));
+				}
+			}
+
+			return new SwitchMapSnapshot(tracks, way.ToArray(), switches, stations, follower.WorldPosition.X, follower.WorldPosition.Z, radius);
+		}
+
+		private static void AddTrackPiece(List<float[]> tracks, List<float> points)
+		{
+			if (points.Count >= 4)
+			{
+				tracks.Add(points.ToArray());
+			}
+
+			points.Clear();
+		}
+
+		/// <summary>The index of the last element starting at or before a track position (0 before the first).</summary>
+		private static int ElementAt(TrackElement[] elements, double position)
+		{
+			int low = 0, high = elements.Length - 1;
+			while (low < high)
+			{
+				int middle = (low + high + 1) >> 1;
+				if (elements[middle].StartingTrackPosition <= position)
+				{
+					low = middle;
+				}
+				else
+				{
+					high = middle - 1;
+				}
+			}
+
+			return low;
+		}
+
+		/// <summary>The world position of a track position, between the elements either side of it.</summary>
+		private static OpenBveApi.Math.Vector3 PositionOn(TrackElement[] elements, double position)
+		{
+			int i = ElementAt(elements, position);
+			if (i + 1 >= elements.Length)
+			{
+				return elements[i].WorldPosition;
+			}
+
+			double length = elements[i + 1].StartingTrackPosition - elements[i].StartingTrackPosition;
+			double t = length > 0 ? Math.Max(0.0, Math.Min(1.0, (position - elements[i].StartingTrackPosition) / length)) : 0.0;
+			OpenBveApi.Math.Vector3 a = elements[i].WorldPosition, b = elements[i + 1].WorldPosition;
+			return new OpenBveApi.Math.Vector3(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t, a.Z + (b.Z - a.Z) * t);
+		}
+
+		/// <summary>Changes a switch to its next setting, as upstream's switch change map does. Call on the game's thread.</summary>
+		public void ToggleSwitch(Guid id)
+		{
+			if (route.Switches.TryGetValue(id, out RouteManager2.Tracks.Switch found))
+			{
+				found.Toggle();
+				Log.Info(Tag, "switch " + found.Name + " set to " + found.CurrentSetting);
+			}
+		}
+
 		/// <summary>Where the trains are now, for the touch map and gradient chart.</summary>
 		public RouteLive GetRouteLive()
 		{
@@ -1191,6 +1370,15 @@ namespace OpenBve.Android
 	/// <param name="NextStation">The route index of the next stop, or -1.</param>
 	public sealed record RouteLive(double Position, double X, double Y, double Z, IReadOnlyList<(double X, double Z, bool Player)> Trains,
 		int NextStation, double Kmh);
+
+	/// <summary>A switch on the switch map.</summary>
+	/// <param name="Distance">Metres ahead of the train along the line (negative: behind).</param>
+	/// <param name="OnWay">Whether the train's way ahead runs through it.</param>
+	public sealed record SwitchMark(Guid Id, string Name, double X, double Z, double Distance, string Setting, bool Fixed, bool RunThrough, bool OnWay);
+
+	/// <summary>The switch map's contents at one moment: tracks and the way ahead as (x, z) pairs.</summary>
+	public sealed record SwitchMapSnapshot(IReadOnlyList<float[]> Tracks, float[] Way, IReadOnlyList<SwitchMark> Switches,
+		IReadOnlyList<(string Name, double X, double Z)> Stations, double X, double Z, double Radius);
 
 	/// <summary>The touch timetable's contents at one moment.</summary>
 	/// <param name="Clock">The in-game time (hh:mm:ss).</param>

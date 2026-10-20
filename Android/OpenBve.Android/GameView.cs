@@ -527,6 +527,11 @@ namespace OpenBve.Android
 						renderer.GameWindow.Height = height;
 						renderer.Camera.HorizontalViewingAngle = 2.0 * Math.Atan(Math.Tan(0.5 * renderer.Camera.VerticalViewingAngle) * renderer.Screen.AspectRatio);
 						Log.Info(Tag, "surface now " + width + " x " + height);
+						renderer.Screen.Width = width;
+						renderer.Screen.Height = height;
+						// As upstream's window resize: the 2D shaders keep the projection they were given.
+						renderer.Rectangle.Update();
+						renderer.OpenGlString.Update();
 					}
 
 					renderer.Screen.Width = width;

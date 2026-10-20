@@ -70,3 +70,14 @@ vulkan_small_textures = Mniejsze tekstury z natywnym Vulkanem:
 vulkan_small_textures_note = Na telefonach z około 6 GB RAM lub mniej natywny Vulkan ogranicza tekstury do 1024 px i 16-bitowych kolorów (gdy te opcje są automatyczne), aby ciężkie trasy nie wyczerpały pamięci. Wyłącz, aby tekstury były ostrzejsze.
 vulkan_small_textures_large = (To urządzenie ma więcej pamięci: tutaj nie ma to wpływu.)
 microphone_denied = Dźwięki z mikrofonu wymagają uprawnienia do używania mikrofonu.
+
+# The switch map (SwitchMapPanel).
+switch_way = Droga przebiegu pociągu jest wyróżniona. Dotknij zwrotnicy, aby ją wybrać.
+switches_nearby = Pobliskie zwrotnice
+switch_change = Przełóż
+switch_fixed = Stały przebieg: tej zwrotnicy nie można przełożyć.
+switch_run_through = Pociąg rozprół tę zwrotnicę: przełóż ją, aby ją przywrócić.
+switch_ahead = {0} m przed
+switch_behind = {0} m za
+switches_none = Brak zwrotnic w promieniu {0} m od pociągu.
+switch_unnamed = Zwrotnica {0}

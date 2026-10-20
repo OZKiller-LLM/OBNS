@@ -70,3 +70,14 @@ vulkan_small_textures = 네이티브 Vulkan에서 텍스처 축소:
 vulkan_small_textures_note = RAM이 약 6GB 이하인 휴대전화에서 네이티브 Vulkan은 텍스처를 1024px, 16비트 색상으로 제한하여(해당 옵션이 자동인 경우) 무거운 노선에서 메모리가 부족하지 않게 합니다. 더 선명한 텍스처를 원하면 끄십시오.
 vulkan_small_textures_large = (이 기기는 메모리가 더 많아 여기서는 효과가 없습니다.)
 microphone_denied = 마이크 소리를 사용하려면 마이크 사용 권한이 필요합니다.
+
+# The switch map (SwitchMapPanel).
+switch_way = 열차의 진로가 강조 표시됩니다. 선로전환기를 탭하여 선택하세요.
+switches_nearby = 근처 선로전환기
+switch_change = 전환하기
+switch_fixed = 고정 진로: 이 선로전환기는 전환할 수 없습니다.
+switch_run_through = 열차가 이 선로전환기를 할출했습니다. 전환하여 재설정하세요.
+switch_ahead = 전방 {0} m
+switch_behind = 후방 {0} m
+switches_none = 열차에서 {0} m 이내에 선로전환기가 없습니다.
+switch_unnamed = 선로전환기 {0}

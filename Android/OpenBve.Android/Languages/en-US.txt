@@ -72,3 +72,14 @@ vulkan_small_textures = Smaller textures with native Vulkan:
 vulkan_small_textures_note = On phones with about 6 GB of RAM or less, native Vulkan keeps textures to 1024 px and 16-bit colour (where those options are automatic), so heavy routes do not run out of memory. Turn it off for sharper textures.
 vulkan_small_textures_large = (This device has more memory: it has no effect here.)
 microphone_denied = Microphone sounds need permission to use the microphone.
+
+# The switch map (SwitchMapPanel).
+switch_way = Your train's way ahead is highlighted. Tap a switch to choose it.
+switches_nearby = Nearby switches
+switch_change = Change setting
+switch_fixed = Fixed route: this switch cannot be changed.
+switch_run_through = A train has run through this switch: change it to reset it.
+switch_ahead = {0} m ahead
+switch_behind = {0} m behind
+switches_none = No switches within {0} m of the train.
+switch_unnamed = Switch {0}

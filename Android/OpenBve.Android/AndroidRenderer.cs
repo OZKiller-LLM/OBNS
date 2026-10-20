@@ -405,6 +405,27 @@ namespace OpenBve.Android
 			 * the text grow together and still line up (DPI-scaling the fonts alone, as upstream
 			 * does on Windows, leaves the text spilling out of the HUD's boxes).
 			 */
+			OnOverlayScreen(() =>
+			{
+				/*
+				 * Upstream's rectangle and text shaders (1.14.1.x) keep the projection they were last
+				 * given: upstream updates them when its window is resized. Here the screen changes
+				 * size for the overlays every frame, so they are updated to it and back again.
+				 */
+				Rectangle.Update();
+				OpenGlString.Update();
+				// Textures uploaded or bound natively during the scene leave upstream's record of the bound texture stale.
+				LastBoundTexture = null;
+				overlays.Render(timeElapsed);
+			});
+			Rectangle.Update();
+			OpenGlString.Update();
+			Profile.Mark("overlays");
+		}
+
+		/// <summary>Runs upstream's overlay drawing on the overlays' virtual screen (Screen made OverlayScale times smaller while it runs).</summary>
+		private void OnOverlayScreen(Action action)
+		{
 			int screenWidth = Screen.Width, screenHeight = Screen.Height;
 			if (OverlayScale > 1.0)
 			{
@@ -414,14 +435,13 @@ namespace OpenBve.Android
 
 			try
 			{
-				overlays.Render(timeElapsed);
+				action();
 			}
 			finally
 			{
 				Screen.Width = screenWidth;
 				Screen.Height = screenHeight;
 			}
-			Profile.Mark("overlays");
 		}
 
 		private OpenBve.Graphics.Renderers.Overlays overlays;

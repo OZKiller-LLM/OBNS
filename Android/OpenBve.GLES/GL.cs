@@ -452,6 +452,17 @@ namespace OpenTK.Graphics.OpenGL
 		/// <summary>Uploads a texture image.</summary>
 		public static void TexImage2D(TextureTarget target, int level, PixelInternalFormat internalFormat, int width, int height, int border, PixelFormat format, PixelType type, IntPtr pixels)
 		{
+			/*
+			 * Upstream (1.14.1.x) uploads an opaque RGBA image straight into RGB8, which desktop GL
+			 * allows and GLES 3 refuses (GL_INVALID_OPERATION: RGB8 takes RGB data only), leaving the
+			 * texture without an image - black. The fonts' glyph atlases are such images. RGBA8
+			 * takes the same data; an opaque image's alpha is 255 throughout, so it samples the same.
+			 */
+			if (internalFormat == PixelInternalFormat.Rgb8 && format == PixelFormat.Rgba && type == PixelType.UnsignedByte)
+			{
+				internalFormat = PixelInternalFormat.Rgba8;
+			}
+
 			glTexImage2D((int)target, level, (int)internalFormat, width, height, border, (int)format, (int)TranslateDepthType(internalFormat, type, pixels), pixels);
 		}
 
@@ -506,14 +517,15 @@ namespace OpenTK.Graphics.OpenGL
 
 		private static bool TryUpload16(TextureTarget target, int level, PixelInternalFormat internalFormat, int width, int height, PixelFormat format, PixelType type, byte[] pixels)
 		{
-			bool rgb = internalFormat == PixelInternalFormat.Rgb8 && format == PixelFormat.Rgb;
+			// RGB8 from RGBA data: upstream's opaque RGBA images (see TexImage2D), packed as RGB565 from four channels.
+			bool rgb = internalFormat == PixelInternalFormat.Rgb8 && (format == PixelFormat.Rgb || format == PixelFormat.Rgba);
 			bool rgba = internalFormat == PixelInternalFormat.Rgba8 && format == PixelFormat.Rgba;
 			if (!Texture16Bit || target != TextureTarget.Texture2D || level != 0 || type != PixelType.UnsignedByte || !(rgb || rgba) || width <= 0 || height <= 0)
 			{
 				return false;
 			}
 
-			int channels = rgb ? 3 : 4;
+			int channels = format == PixelFormat.Rgb ? 3 : 4;
 			int alignment = Math.Max(1, unpackAlignment);
 			int stride = (width * channels + alignment - 1) / alignment * alignment;
 			if (pixels.Length < stride * (height - 1) + width * channels)
@@ -592,7 +604,7 @@ namespace OpenTK.Graphics.OpenGL
 				handle.Free();
 			}
 
-			Interlocked.Add(ref bytesSaved16, (long)width * height * (channels - 2));
+			Interlocked.Add(ref bytesSaved16, (long)width * height * (rgb ? 1 : 2));
 			Interlocked.Increment(ref uploads16);
 			return true;
 		}

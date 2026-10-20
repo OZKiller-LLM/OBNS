@@ -70,3 +70,14 @@ vulkan_small_textures = ネイティブ Vulkan でテクスチャを縮小:
 vulkan_small_textures_note = RAM が約 6 GB 以下の端末では、ネイティブ Vulkan はテクスチャを 1024 px・16 ビットカラーに抑え（これらの設定が自動の場合）、重い路線でメモリ不足にならないようにします。より鮮明なテクスチャにするにはオフにしてください。
 vulkan_small_textures_large = （この端末はメモリが多いため、ここでは効果がありません。）
 microphone_denied = マイク音声にはマイクの使用許可が必要です。
+
+# The switch map (SwitchMapPanel).
+switch_way = 列車の進路が強調表示されています。分岐器をタップして選択します。
+switches_nearby = 付近の分岐器
+switch_change = 切り替える
+switch_fixed = 固定進路：この分岐器は切り替えられません。
+switch_run_through = 列車がこの分岐器を割り出しました。切り替えてリセットしてください。
+switch_ahead = {0} m 前方
+switch_behind = {0} m 後方
+switches_none = 列車から {0} m 以内に分岐器はありません。
+switch_unnamed = 分岐器 {0}

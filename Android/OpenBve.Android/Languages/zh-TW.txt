@@ -70,3 +70,14 @@ vulkan_small_textures = 原生 Vulkan 使用較小材質：
 vulkan_small_textures_note = 在記憶體約 6 GB 或以下的手機上，原生 Vulkan 會將材質限制在 1024 px 及 16 位元色彩（當這些選項為自動時），以免大型路線耗盡記憶體。關閉可獲得更清晰的材質。
 vulkan_small_textures_large = （此裝置記憶體較多：此處無效。）
 microphone_denied = 麥克風聲音需要使用麥克風的權限。
+
+# The switch map (SwitchMapPanel).
+switch_way = 列車的進路已醒目標示。點選道岔即可選取。
+switches_nearby = 附近的道岔
+switch_change = 轉換道岔
+switch_fixed = 固定進路：此道岔無法轉換。
+switch_run_through = 有列車擠過此道岔：轉換道岔即可復位。
+switch_ahead = 前方 {0} 公尺
+switch_behind = 後方 {0} 公尺
+switches_none = 列車 {0} 公尺範圍內沒有道岔。
+switch_unnamed = 道岔 {0}

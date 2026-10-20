@@ -64,6 +64,9 @@ namespace OpenBve.Android
 		/// <summary>The cab's touch areas, shared by the touch overlay and the desktop view.</summary>
 		public CabTouch Cab { get; } = new CabTouch();
 
+		/// <summary>Raised on the render thread for SWITCH_MENU: the interface opens or closes its switch map (SwitchMapPanel).</summary>
+		public event Action SwitchMenuRequested;
+
 		/// <summary>Runs an action against the session on the render thread, before the next frame. Safe to call from any thread.</summary>
 		public void Post(Action<AndroidTrainSession> action)
 		{
@@ -159,6 +162,16 @@ namespace OpenBve.Android
 					if (item.Pressed)
 					{
 						GameCommand(session, item.Command);
+					}
+
+					continue;
+				}
+
+				if (item.Command == Translations.Command.SwitchMenu)
+				{
+					if (item.Pressed)
+					{
+						SwitchMenuRequested?.Invoke();
 					}
 
 					continue;

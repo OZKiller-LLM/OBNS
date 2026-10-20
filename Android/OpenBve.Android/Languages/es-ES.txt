@@ -70,3 +70,14 @@ vulkan_small_textures = Texturas más pequeñas con Vulkan nativo:
 vulkan_small_textures_note = En teléfonos con unos 6 GB de RAM o menos, Vulkan nativo limita las texturas a 1024 px y color de 16 bits (donde esas opciones son automáticas), para que las rutas pesadas no agoten la memoria. Desactívelo para texturas más nítidas.
 vulkan_small_textures_large = (Este dispositivo tiene más memoria: aquí no tiene efecto.)
 microphone_denied = Los sonidos de micrófono necesitan permiso para usar el micrófono.
+
+# The switch map (SwitchMapPanel).
+switch_way = El recorrido de su tren está resaltado. Toque un desvío para elegirlo.
+switches_nearby = Desvíos cercanos
+switch_change = Cambiar posición
+switch_fixed = Ruta fija: este desvío no se puede cambiar.
+switch_run_through = Un tren ha talonado este desvío: cámbielo para restablecerlo.
+switch_ahead = a {0} m por delante
+switch_behind = a {0} m por detrás
+switches_none = No hay desvíos a menos de {0} m del tren.
+switch_unnamed = Desvío {0}

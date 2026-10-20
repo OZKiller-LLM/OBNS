@@ -70,3 +70,14 @@ vulkan_small_textures = Kleinere Texturen mit nativem Vulkan:
 vulkan_small_textures_note = Auf Telefonen mit etwa 6 GB RAM oder weniger begrenzt natives Vulkan Texturen auf 1024 px und 16-Bit-Farbe (wo diese Optionen automatisch sind), damit schwere Strecken nicht den Speicher erschöpfen. Ausschalten für schärfere Texturen.
 vulkan_small_textures_large = (Dieses Gerät hat mehr Speicher: hier ohne Wirkung.)
 microphone_denied = Mikrofonklänge brauchen die Berechtigung, das Mikrofon zu verwenden.
+
+# The switch map (SwitchMapPanel).
+switch_way = Der Fahrweg Ihres Zuges ist hervorgehoben. Tippen Sie auf eine Weiche, um sie auszuwählen.
+switches_nearby = Weichen in der Nähe
+switch_change = Umstellen
+switch_fixed = Fester Fahrweg: Diese Weiche kann nicht umgestellt werden.
+switch_run_through = Diese Weiche wurde aufgefahren: Stellen Sie sie um, um sie zurückzusetzen.
+switch_ahead = {0} m voraus
+switch_behind = {0} m zurück
+switches_none = Keine Weichen im Umkreis von {0} m um den Zug.
+switch_unnamed = Weiche {0}

@@ -453,7 +453,38 @@ namespace OpenBve.Android
 			// Upstream's panel2 extended mode: a 2D panel's power, brake and reverser indicators become touch areas.
 			options.Panel2ExtendedMode = GetTouchHandles(context);
 			options.Panel2ExtendedMinSize = 128;
+			options.TimeAccelerationFactor = GetTimeAccelerationFactor(context);
+			AndroidCamera.InteriorTransition = GetCameraInteriorTransition(context);
+			AndroidCamera.ExteriorTransition = GetCameraExteriorTransition(context);
+			AndroidCamera.TransitionSeconds = GetCameraTransitionTenths(context) / 10.0;
 		}
+
+		/*
+		 * Upstream's camera transitions (cameraInteriorTransition, cameraExteriorTransition: on;
+		 * cameraTransitionSpeed: 0.4 s, 0.1 to 5.0) and its time acceleration factor
+		 * (acceleratedtimefactor: 5, at most 5 in its Options).
+		 */
+		private const string InteriorTransitionKey = "camera_interior_transition";
+		private const string ExteriorTransitionKey = "camera_exterior_transition";
+		private const string TransitionTenthsKey = "camera_transition_tenths";
+		private const string TimeFactorKey = "time_acceleration_factor";
+
+		public static bool GetCameraInteriorTransition(Context context) => Prefs(context)?.GetBoolean(InteriorTransitionKey, true) ?? true;
+
+		public static void SetCameraInteriorTransition(Context context, bool value) => PutBool(context, InteriorTransitionKey, value);
+
+		public static bool GetCameraExteriorTransition(Context context) => Prefs(context)?.GetBoolean(ExteriorTransitionKey, true) ?? true;
+
+		public static void SetCameraExteriorTransition(Context context, bool value) => PutBool(context, ExteriorTransitionKey, value);
+
+		/// <summary>The transition's duration in tenths of a second (1 to 50).</summary>
+		public static int GetCameraTransitionTenths(Context context) => Math.Clamp(Prefs(context)?.GetInt(TransitionTenthsKey, 4) ?? 4, 1, 50);
+
+		public static void SetCameraTransitionTenths(Context context, int value) => PutInt(context, TransitionTenthsKey, value);
+
+		public static int GetTimeAccelerationFactor(Context context) => Math.Clamp(Prefs(context)?.GetInt(TimeFactorKey, 5) ?? 5, 1, 5);
+
+		public static void SetTimeAccelerationFactor(Context context, int value) => PutInt(context, TimeFactorKey, value);
 
 		/// <summary>Upstream's game mode (Arcade, Normal, Expert), chosen on the Start page as on the desktop.</summary>
 		private const string GameModeKey = "game_mode";
@@ -564,6 +595,13 @@ namespace OpenBve.Android
 		{
 			ISharedPreferencesEditor editor = Prefs(context)?.Edit();
 			editor?.PutString(key, value);
+			editor?.Commit();
+		}
+
+		private static void PutBool(Context context, string key, bool value)
+		{
+			ISharedPreferencesEditor editor = Prefs(context)?.Edit();
+			editor?.PutBoolean(key, value);
 			editor?.Commit();
 		}
 

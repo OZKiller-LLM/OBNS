@@ -70,3 +70,14 @@ vulkan_small_textures = Texturas menores com Vulkan nativo:
 vulkan_small_textures_note = Em celulares com cerca de 6 GB de RAM ou menos, o Vulkan nativo limita as texturas a 1024 px e cores de 16 bits (quando essas opções são automáticas), para que rotas pesadas não fiquem sem memória. Desative para texturas mais nítidas.
 vulkan_small_textures_large = (Este aparelho tem mais memória: aqui não tem efeito.)
 microphone_denied = Os sons do microfone precisam de permissão para usar o microfone.
+
+# The switch map (SwitchMapPanel).
+switch_way = O percurso do seu trem está destacado. Toque em um AMV para escolhê-lo.
+switches_nearby = AMVs próximos
+switch_change = Mudar posição
+switch_fixed = Rota fixa: este AMV não pode ser mudado.
+switch_run_through = Um trem talonou este AMV: mude-o para restaurá-lo.
+switch_ahead = {0} m à frente
+switch_behind = {0} m atrás
+switches_none = Nenhum AMV a menos de {0} m do trem.
+switch_unnamed = AMV {0}
