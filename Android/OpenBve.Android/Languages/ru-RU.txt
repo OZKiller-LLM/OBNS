@@ -81,3 +81,8 @@ switch_ahead = {0} м впереди
 switch_behind = {0} м позади
 switches_none = Нет стрелок в пределах {0} м от поезда.
 switch_unnamed = Стрелка {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = Переведите стик или рукоятку в крайнее положение тяги (или вперёд).
+controls_move_axis_half = Переведите курок, стик или рукоятку до упора.
+axis_reversed = обратный

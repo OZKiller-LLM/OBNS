@@ -81,3 +81,8 @@ switch_ahead = {0} m vooruit
 switch_behind = {0} m achter
 switches_none = Geen wissels binnen {0} m van de trein.
 switch_unnamed = Wissel {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = Beweeg de stick of hendel naar de tractie- (of vooruit-)stand.
+controls_move_axis_half = Beweeg de trekker, stick of hendel helemaal.
+axis_reversed = omgekeerd

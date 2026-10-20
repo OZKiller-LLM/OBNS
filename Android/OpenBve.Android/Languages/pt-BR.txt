@@ -81,3 +81,8 @@ switch_ahead = {0} m à frente
 switch_behind = {0} m atrás
 switches_none = Nenhum AMV a menos de {0} m do trem.
 switch_unnamed = AMV {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = Mova o direcional ou a alavanca até a ponta de tração (ou para frente).
+controls_move_axis_half = Mova o gatilho, o direcional ou a alavanca até o fim.
+axis_reversed = invertido

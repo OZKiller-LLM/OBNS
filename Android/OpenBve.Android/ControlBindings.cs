@@ -36,6 +36,13 @@ namespace OpenBve.Android
 	/// <summary>A key bound to a command: upstream's key name (OpenBveApi.Input.Key) and modifiers (Shift 1, Ctrl 2, Alt 4).</summary>
 	public sealed record KeyBinding(Translations.Command Command, string Key, int Modifiers);
 
+	/// <summary>
+	/// A controller axis bound to one of upstream's axis commands (POWER_HALFAXIS and the rest):
+	/// a trigger, a stick's direction, or a train controller's lever. Reversed, the axis reads the
+	/// other way (a lever whose power end gives -1).
+	/// </summary>
+	public sealed record PadAxisBinding(Translations.Command Command, Axis Axis, bool Reversed);
+
 	/// <summary>A controller button (an Android key code) bound to a command.</summary>
 	public sealed record PadBinding(Translations.Command Command, Keycode Button);
 
@@ -57,6 +64,9 @@ namespace OpenBve.Android
 		public List<KeyBinding> Keys { get; } = new List<KeyBinding>();
 
 		public List<PadBinding> Pad { get; } = new List<PadBinding>();
+
+		/// <summary>Controller axes bound to the handles' axis commands; none by default (the triggers notch).</summary>
+		public List<PadAxisBinding> Axes { get; } = new List<PadAxisBinding>();
 
 		/// <summary>Where the keyboard bindings came from, for the log.</summary>
 		public string KeysSource { get; private set; } = "none";
@@ -146,9 +156,15 @@ namespace OpenBve.Android
 
 			StringBuilder pad = new StringBuilder();
 			pad.AppendLine("; Controller buttons for OpenBVE for Android: COMMAND, pad, Android button name");
+			pad.AppendLine("; and axes: COMMAND, axis, Android axis name (with - before it when reversed)");
 			foreach (PadBinding binding in Pad)
 			{
 				pad.AppendLine(Name(binding.Command) + ", pad, " + binding.Button);
+			}
+
+			foreach (PadAxisBinding binding in Axes)
+			{
+				pad.AppendLine(Name(binding.Command) + ", axis, " + (binding.Reversed ? "-" : string.Empty) + binding.Axis);
 			}
 
 			Directory.CreateDirectory(Path.GetDirectoryName(PadFile(settingsFolder)));
@@ -187,6 +203,15 @@ namespace OpenBve.Android
 				    Commands.TryGetValue(parts[0], out Translations.Command command) && Enum.TryParse(parts[2], true, out Keycode button))
 				{
 					Pad.Add(new PadBinding(command, button));
+				}
+				else if (parts.Length >= 3 && parts[1].Equals("axis", StringComparison.OrdinalIgnoreCase) &&
+				         Commands.TryGetValue(parts[0], out Translations.Command axisCommand) && IsAxisCommand(axisCommand))
+				{
+					bool reversed = parts[2].StartsWith("-", StringComparison.Ordinal);
+					if (Enum.TryParse(parts[2].TrimStart('-'), true, out Axis axis))
+					{
+						Axes.Add(new PadAxisBinding(axisCommand, axis, reversed));
+					}
 				}
 			}
 		}
@@ -349,6 +374,32 @@ namespace OpenBve.Android
 			}
 
 			return names;
+		}
+
+		/// <summary>Whether a command takes an axis (upstream's AnalogHalf and AnalogFull commands) rather than a button.</summary>
+		public static bool IsAxisCommand(Translations.Command command) =>
+			Translations.CommandInfos.TryGetValue(command, out Translations.CommandInfo info) && info.Type != Translations.CommandType.Digital;
+
+		/// <summary>An axis as the player reads it: "Right trigger", "Left stick ↕ (reversed)".</summary>
+		public static string Describe(PadAxisBinding binding)
+		{
+			string name;
+			switch (binding.Axis)
+			{
+				case Axis.X: name = "Left stick ↔"; break;
+				case Axis.Y: name = "Left stick ↕"; break;
+				case Axis.Z: name = "Right stick ↔"; break;
+				case Axis.Rz: name = "Right stick ↕"; break;
+				case Axis.Ltrigger:
+				case Axis.Brake: name = "LT"; break;
+				case Axis.Rtrigger:
+				case Axis.Gas: name = "RT"; break;
+				case Axis.HatX: name = "D-pad ↔"; break;
+				case Axis.HatY: name = "D-pad ↕"; break;
+				default: name = binding.Axis.ToString(); break;
+			}
+
+			return binding.Reversed ? name + " (" + Menu.T("android", "axis_reversed", "reversed") + ")" : name;
 		}
 
 		/// <summary>Whether a key code is a controller button (not a keyboard key or the D-pad).</summary>

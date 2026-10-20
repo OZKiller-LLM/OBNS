@@ -81,3 +81,8 @@ switch_ahead = {0} m avanti
 switch_behind = {0} m indietro
 switches_none = Nessun deviatoio entro {0} m dal treno.
 switch_unnamed = Deviatoio {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = Porta la levetta o la leva all'estremo di trazione (o in avanti).
+controls_move_axis_half = Muovi il grilletto, la levetta o la leva fino in fondo.
+axis_reversed = invertito

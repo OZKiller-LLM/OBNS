@@ -81,3 +81,8 @@ switch_ahead = 前方 {0} 公尺
 switch_behind = 後方 {0} 公尺
 switches_none = 列車 {0} 公尺範圍內沒有道岔。
 switch_unnamed = 道岔 {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = 請將搖桿或手把推到牽引（或向前）一端。
+controls_move_axis_half = 請將扳機、搖桿或手把移到底。
+axis_reversed = 反向

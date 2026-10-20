@@ -61,6 +61,9 @@ namespace OpenBve.Android
 		/// <summary>Whether the track's events are shown as cubes (SHOW_EVENTS), as the desktop's option.</summary>
 		public bool ShowEvents;
 
+		/// <summary>Whether a brake axis at its end applies the emergency brake, as the desktop's option (default on).</summary>
+		public bool AllowAxisEB = true;
+
 		/// <summary>The game mode before the last change, which upstream's score log reports.</summary>
 		public OpenBveApi.GameMode PreviousGameMode = OpenBveApi.GameMode.Normal;
 

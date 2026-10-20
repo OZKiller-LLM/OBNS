@@ -81,3 +81,8 @@ switch_ahead = a {0} m por delante
 switch_behind = a {0} m por detrás
 switches_none = No hay desvíos a menos de {0} m del tren.
 switch_unnamed = Desvío {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = Mueva la palanca o el stick hasta su extremo de tracción (o hacia delante).
+controls_move_axis_half = Mueva el gatillo, el stick o la palanca hasta el final.
+axis_reversed = invertido

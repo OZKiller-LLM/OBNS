@@ -82,6 +82,17 @@ namespace OpenBve.Android
 			pending.Enqueue((command, strength > 0.0, strength, false));
 		}
 
+		private readonly ConcurrentQueue<(Translations.Command Command, double State)> axes = new ConcurrentQueue<(Translations.Command, double)>();
+
+		/// <summary>
+		/// Sets one of upstream's axis commands (POWER_HALFAXIS and the rest) to an axis's position:
+		/// 0 to 1 for a half axis, -1 to 1 for a full one. Safe to call from any thread.
+		/// </summary>
+		public void Axis(Translations.Command command, double state)
+		{
+			axes.Enqueue((command, state));
+		}
+
 		/// <summary>Queues a press. Safe to call from any thread.</summary>
 		/// <param name="exact">
 		/// Whether the command is applied as given. Otherwise the on-screen levers' power and brake
@@ -214,6 +225,158 @@ namespace OpenBve.Android
 			if (heldOver != null)
 			{
 				deferredReleases.AddRange(heldOver);
+			}
+
+			// Controller axes on the handles: the latest position of each, as it moved.
+			if (!axes.IsEmpty)
+			{
+				Dictionary<Translations.Command, double> latest = new Dictionary<Translations.Command, double>();
+				while (axes.TryDequeue(out (Translations.Command Command, double State) axis))
+				{
+					latest[axis.Command] = axis.State;
+				}
+
+				if (train.Plugin == null || !train.Plugin.BlockingInput)
+				{
+					foreach (KeyValuePair<Translations.Command, double> axis in latest)
+					{
+						HandleAxis(train, axis.Key, axis.Value);
+					}
+				}
+			}
+		}
+
+		/*
+		 * Upstream's ProcessAnalogControl for the handles (OpenBVE 1.14.1.2, MainLoop's
+		 * ProcessControls.Analog.cs), where an axis sets a handle's position outright. Upstream
+		 * applies an axis every frame and none at exactly 0; here it is applied when it moves,
+		 * 0 included - so a lever or stick at rest leaves the touch levers and keys their say, and
+		 * a trigger let go returns its handle to 0.
+		 */
+		private static void HandleAxis(TrainBase train, Translations.Command command, double state)
+		{
+			if (train.AI != null)
+			{
+				// As upstream: the AI driver would fight the axis.
+				return;
+			}
+
+			ref CabHandles handles = ref train.Handles;
+			bool allowAxisEB = Interface.CurrentOptions.AllowAxisEB;
+			switch (command)
+			{
+				case Translations.Command.PowerHalfAxis:
+				case Translations.Command.PowerFullAxis:
+					if (handles.HandleType != HandleType.SingleHandle)
+					{
+						double a = command == Translations.Command.PowerFullAxis ? 0.5 * (state + 1.0) : state;
+						handles.Power.ApplyState((int)Math.Round(a * handles.Power.MaximumNotch), false);
+					}
+
+					break;
+				case Translations.Command.BrakeHalfAxis:
+				case Translations.Command.BrakeFullAxis:
+					if (handles.HandleType == HandleType.SingleHandle)
+					{
+						break;
+					}
+
+					double brake = command == Translations.Command.BrakeFullAxis ? 0.5 * (state + 1.0) : state;
+					if (handles.Brake is AirBrakeHandle)
+					{
+						switch ((int)Math.Round(3.0 * brake))
+						{
+							case 0:
+								handles.EmergencyBrake.Driver = false;
+								handles.Brake.ApplyState(AirBrakeHandleState.Release);
+								break;
+							case 1:
+								handles.EmergencyBrake.Driver = false;
+								handles.Brake.ApplyState(AirBrakeHandleState.Lap);
+								break;
+							case 2:
+								handles.EmergencyBrake.Driver = false;
+								handles.Brake.ApplyState(AirBrakeHandleState.Service);
+								break;
+							case 3:
+								if (allowAxisEB)
+								{
+									handles.EmergencyBrake.Apply();
+								}
+
+								break;
+						}
+					}
+					else if (handles.HasHoldBrake)
+					{
+						int b = (int)Math.Round(brake * (handles.Brake.MaximumNotch + 2.0));
+						bool hold = b == 1;
+						if (b > 0)
+						{
+							b--;
+						}
+
+						if (b <= handles.Brake.MaximumNotch)
+						{
+							handles.EmergencyBrake.Release();
+							handles.Brake.ApplyState(b, false);
+						}
+						else
+						{
+							handles.EmergencyBrake.Apply();
+						}
+
+						handles.HoldBrake.ApplyState(hold);
+					}
+					else
+					{
+						int b = (int)Math.Round(brake * (handles.Brake.MaximumNotch + 1.0));
+						if (b <= handles.Brake.MaximumNotch)
+						{
+							handles.EmergencyBrake.Release();
+							handles.Brake.ApplyState(b, false);
+						}
+						else if (allowAxisEB)
+						{
+							handles.EmergencyBrake.Apply();
+						}
+					}
+
+					break;
+				case Translations.Command.SingleFullAxis:
+					if (handles.HandleType != HandleType.SingleHandle)
+					{
+						break;
+					}
+
+					int p = Math.Max(0, (int)Math.Round(state * handles.Power.MaximumNotch));
+					int single = Math.Max(0, (int)Math.Round(-state * (handles.Brake.MaximumNotch + (handles.HasHoldBrake ? 2.0 : 1.0))));
+					bool singleHold = handles.HasHoldBrake && single == 1;
+					if (handles.HasHoldBrake && single > 0)
+					{
+						single--;
+					}
+
+					if (single <= handles.Brake.MaximumNotch)
+					{
+						handles.EmergencyBrake.Release();
+						handles.Brake.ApplyState(single, false);
+						handles.Power.ApplyState(p, false);
+					}
+					else if (allowAxisEB)
+					{
+						handles.EmergencyBrake.Apply();
+					}
+
+					if (handles.HasHoldBrake)
+					{
+						handles.HoldBrake.ApplyState(singleHold);
+					}
+
+					break;
+				case Translations.Command.ReverserFullAxis:
+					handles.Reverser.ApplyState((ReverserPosition)(int)Math.Round(state));
+					break;
 			}
 		}
 

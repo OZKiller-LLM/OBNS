@@ -81,3 +81,8 @@ switch_ahead = {0} m 前方
 switch_behind = {0} m 後方
 switches_none = 列車から {0} m 以内に分岐器はありません。
 switch_unnamed = 分岐器 {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = スティックまたはレバーを力行（または前進）側の端まで動かしてください。
+controls_move_axis_half = トリガー、スティック、またはレバーをいっぱいまで動かしてください。
+axis_reversed = 反転

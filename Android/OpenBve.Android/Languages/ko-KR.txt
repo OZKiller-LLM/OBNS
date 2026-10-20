@@ -81,3 +81,8 @@ switch_ahead = 전방 {0} m
 switch_behind = 후방 {0} m
 switches_none = 열차에서 {0} m 이내에 선로전환기가 없습니다.
 switch_unnamed = 선로전환기 {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = 스틱이나 레버를 역행(또는 전진) 쪽 끝까지 움직이세요.
+controls_move_axis_half = 트리거, 스틱 또는 레버를 끝까지 움직이세요.
+axis_reversed = 반전

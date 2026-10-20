@@ -81,3 +81,8 @@ switch_ahead = {0} m przed
 switch_behind = {0} m za
 switches_none = Brak zwrotnic w promieniu {0} m od pociągu.
 switch_unnamed = Zwrotnica {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = Przesuń drążek lub nastawnik do końca w stronę jazdy (lub do przodu).
+controls_move_axis_half = Przesuń spust, drążek lub nastawnik do końca.
+axis_reversed = odwrócone

@@ -108,14 +108,24 @@ namespace OpenBve.Android
 			keyboardTab.Background = Ui.Panel(activity, controller ? Ui.SurfaceRaised : Ui.Selection, 8);
 			controllerTab.Background = Ui.Panel(activity, controller ? Ui.Selection : Ui.SurfaceRaised, 8);
 			list.RemoveAllViews();
-			// Keys and buttons are on or off: the analog axis commands belong to sticks and levers.
-			foreach (Translations.CommandInfo info in Translations.CommandInfos.Values.Where(i => i.Type == Translations.CommandType.Digital))
+			// Keys are on or off: the analog axis commands (the handles' axes) are the controller's, for its sticks, triggers and levers.
+			foreach (Translations.CommandInfo info in Translations.CommandInfos.Values.Where(i => i.Type == Translations.CommandType.Digital || controller))
 			{
 				Translations.Command command = info.Command;
 				Button row = Ui.Button(activity, string.Empty);
 				row.Gravity = GravityFlags.CenterVertical | GravityFlags.Start;
 				row.Text = Label(command);
-				row.Click += (s, e) => Capture(command, row);
+				row.Click += (s, e) =>
+				{
+					if (controller && ControlBindings.IsAxisCommand(command))
+					{
+						CaptureAxis(command, row);
+					}
+					else
+					{
+						Capture(command, row);
+					}
+				};
 				list.AddView(row, Ui.Stacked(activity, top: 2, bottom: 2));
 			}
 		}
@@ -124,7 +134,9 @@ namespace OpenBve.Android
 		private string Label(Translations.Command command)
 		{
 			string bound = controller
-				? string.Join(", ", bindings.Pad.Where(b => b.Command == command).Select(b => ControlBindings.Describe(b.Button)))
+				? ControlBindings.IsAxisCommand(command)
+					? string.Join(", ", bindings.Axes.Where(b => b.Command == command).Select(ControlBindings.Describe))
+					: string.Join(", ", bindings.Pad.Where(b => b.Command == command).Select(b => ControlBindings.Describe(b.Button)))
 				: string.Join(", ", bindings.Keys.Where(b => b.Command == command).Select(ControlBindings.Describe));
 			return ControlBindings.Describe(command) + "\n" + (bound.Length > 0 ? bound : "—");
 		}
@@ -196,6 +208,105 @@ namespace OpenBve.Android
 				dialog.Dismiss();
 			};
 			dialog.Show();
+		}
+
+		/*
+		 * An axis command (POWER_HALFAXIS and the rest) waits for an axis to move: the trigger,
+		 * stick or lever is taken to its full position - for a full axis, its power or forward
+		 * end - and the axis that moved furthest from where it rested is bound, reversed if it
+		 * moved down. A command has one axis; choosing another replaces it.
+		 */
+		private void CaptureAxis(Translations.Command command, Button row)
+		{
+			bool full = Translations.CommandInfos[command].Type == Translations.CommandType.AnalogFull;
+			AlertDialog dialog = null;
+			AxisCatcher catcher = new AxisCatcher(activity);
+			catcher.Moved += (axis, reversed) =>
+			{
+				bindings.Axes.RemoveAll(b => b.Command == command);
+				bindings.Axes.Add(new PadAxisBinding(command, axis, reversed));
+				Save(row, command);
+				dialog?.Dismiss();
+			};
+			TextView message = Ui.Label(activity, full
+				? Menu.T("android", "controls_move_axis_full", "Move the stick or lever to its power (or forward) end.")
+				: Menu.T("android", "controls_move_axis_half", "Move the trigger, stick or lever all the way."), 15.0f);
+			int pad = Ui.Dp(activity, 20);
+			message.SetPadding(pad, pad, pad, 0);
+			catcher.AddView(message);
+			dialog = new AlertDialog.Builder(activity)
+				.SetTitle(ControlBindings.Describe(command))
+				.SetView(catcher)
+				.SetNeutralButton(Menu.T("android", "controls_clear", "Clear"), (s, e) =>
+				{
+					bindings.Axes.RemoveAll(b => b.Command == command);
+					Save(row, command);
+				})
+				.SetNegativeButton(global::Android.Resource.String.Cancel, (s, e) => { })
+				.Create();
+			// A controller's axes go to the focused view: the catcher keeps the focus.
+			dialog.ShowEvent += (s, e) => catcher.RequestFocus();
+			dialog.Show();
+		}
+
+		/// <summary>Takes a controller's axis movements in the axis dialog.</summary>
+		private sealed class AxisCatcher : FrameLayout
+		{
+			private readonly Dictionary<global::Android.Views.Axis, float> rest = new Dictionary<global::Android.Views.Axis, float>();
+			private bool done;
+
+			/// <summary>Raised once, with the axis moved and whether it moved down.</summary>
+			public event Action<global::Android.Views.Axis, bool> Moved;
+
+			public AxisCatcher(Activity activity) : base(activity)
+			{
+				Focusable = true;
+				FocusableInTouchMode = true;
+				DescendantFocusability = DescendantFocusability.BlockDescendants;
+			}
+
+			public override bool OnGenericMotionEvent(MotionEvent e)
+			{
+				if (done || (e.Source & InputSourceType.Joystick) != InputSourceType.Joystick || e.Device == null)
+				{
+					return base.OnGenericMotionEvent(e);
+				}
+
+				global::Android.Views.Axis best = default;
+				float bestMove = 0.0f, bestValue = 0.0f;
+				foreach (InputDevice.MotionRange range in e.Device.MotionRanges)
+				{
+					if ((range.Source & InputSourceType.Joystick) != InputSourceType.Joystick)
+					{
+						continue;
+					}
+
+					global::Android.Views.Axis axis = (global::Android.Views.Axis)range.Axis;
+					float value = e.GetAxisValue(axis);
+					if (!rest.TryGetValue(axis, out float resting))
+					{
+						// The first reading is where the axis rests (a lever may rest at an end).
+						rest[axis] = value;
+						continue;
+					}
+
+					float move = Math.Abs(value - resting);
+					if (move > bestMove)
+					{
+						best = axis;
+						bestMove = move;
+						bestValue = value - resting;
+					}
+				}
+
+				if (bestMove > 0.6f)
+				{
+					done = true;
+					Moved?.Invoke(best, bestValue < 0);
+				}
+
+				return true;
+			}
 		}
 
 		private void Save(Button row, Translations.Command command)

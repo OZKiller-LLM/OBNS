@@ -70,6 +70,11 @@ namespace OpenBve.Android
 		/// <summary>The controller buttons and what they do (ControlBindings.Pad).</summary>
 		private readonly Dictionary<Keycode, Translations.Command[]> pad;
 
+		/// <summary>Controller axes bound to the handles (ControlBindings.Axes), and the axes they take from the camera.</summary>
+		private readonly PadAxisBinding[] handleAxes;
+		private readonly HashSet<global::Android.Views.Axis> boundAxes;
+		private readonly Dictionary<PadAxisBinding, double> axisSent = new Dictionary<PadAxisBinding, double>();
+
 		public KeyboardInput(string settingsFolder, string dataFolder)
 		{
 			// The player's bindings from the Controls page, or upstream's defaults and the built-in pad layout.
@@ -87,7 +92,10 @@ namespace OpenBve.Android
 			}
 
 			pad = loaded.Pad.GroupBy(b => b.Button).ToDictionary(g => g.Key, g => g.Select(b => b.Command).ToArray());
-			Log.Info(Tag, "read " + Count + " key bindings from " + loaded.KeysSource + ", " + loaded.Pad.Count + " controller bindings");
+			handleAxes = loaded.Axes.ToArray();
+			boundAxes = new HashSet<global::Android.Views.Axis>(handleAxes.Select(b => b.Axis));
+			Log.Info(Tag, "read " + Count + " key bindings from " + loaded.KeysSource + ", " + loaded.Pad.Count + " controller bindings, " +
+			              handleAxes.Length + " controller axes");
 		}
 
 		/// <summary>
@@ -203,12 +211,55 @@ namespace OpenBve.Android
 				return false;
 			}
 
-			Axis(controls, e.GetAxisValue(global::Android.Views.Axis.Z), Translations.Command.CameraRotateRight, Translations.Command.CameraRotateLeft);
-			Axis(controls, e.GetAxisValue(global::Android.Views.Axis.Rz), Translations.Command.CameraRotateDown, Translations.Command.CameraRotateUp);
-			Axis(controls, e.GetAxisValue(global::Android.Views.Axis.X), Translations.Command.CameraMoveRight, Translations.Command.CameraMoveLeft);
-			Axis(controls, e.GetAxisValue(global::Android.Views.Axis.Y), Translations.Command.CameraMoveBackward, Translations.Command.CameraMoveForward);
+			// The sticks move the camera, unless the player gave one to a handle.
+			CameraAxis(controls, e, global::Android.Views.Axis.Z, Translations.Command.CameraRotateRight, Translations.Command.CameraRotateLeft);
+			CameraAxis(controls, e, global::Android.Views.Axis.Rz, Translations.Command.CameraRotateDown, Translations.Command.CameraRotateUp);
+			CameraAxis(controls, e, global::Android.Views.Axis.X, Translations.Command.CameraMoveRight, Translations.Command.CameraMoveLeft);
+			CameraAxis(controls, e, global::Android.Views.Axis.Y, Translations.Command.CameraMoveBackward, Translations.Command.CameraMoveForward);
 			HatAndTriggers(e, controls);
+			HandleAxes(e, controls);
 			return true;
+		}
+
+		private void CameraAxis(AndroidControls controls, MotionEvent e, global::Android.Views.Axis axis, Translations.Command positive, Translations.Command negative)
+		{
+			if (!boundAxes.Contains(axis))
+			{
+				Axis(controls, e.GetAxisValue(axis), positive, negative);
+			}
+		}
+
+		/*
+		 * The axes bound to the handles (POWER_HALFAXIS and the rest): a half axis reads 0 at rest
+		 * to 1 (a trigger pulled, a lever at its end), a full axis -1 to 1. Each goes to the train
+		 * when it moves, as upstream's ProcessAnalogControl applies it.
+		 */
+		private void HandleAxes(MotionEvent e, AndroidControls controls)
+		{
+			foreach (PadAxisBinding binding in handleAxes)
+			{
+				double value = e.GetAxisValue(binding.Axis);
+				if (binding.Reversed)
+				{
+					value = -value;
+				}
+
+				bool half = Translations.CommandInfos[binding.Command].Type == Translations.CommandType.AnalogHalf;
+				value = Math.Max(half ? 0.0 : -1.0, Math.Min(1.0, value));
+				// A lever at rest rarely reads exactly its end.
+				if (Math.Abs(value) < 0.04)
+				{
+					value = 0.0;
+				}
+
+				if (axisSent.TryGetValue(binding, out double sent) && Math.Abs(sent - value) < 0.01)
+				{
+					continue;
+				}
+
+				axisSent[binding] = value;
+				controls.Axis(binding.Command, value);
+			}
 		}
 
 		/*
@@ -221,12 +272,16 @@ namespace OpenBve.Android
 			float hatX = e.GetAxisValue(global::Android.Views.Axis.HatX), hatY = e.GetAxisValue(global::Android.Views.Axis.HatY);
 			float right = Math.Max(e.GetAxisValue(global::Android.Views.Axis.Rtrigger), e.GetAxisValue(global::Android.Views.Axis.Gas));
 			float left = Math.Max(e.GetAxisValue(global::Android.Views.Axis.Ltrigger), e.GetAxisValue(global::Android.Views.Axis.Brake));
-			Digital(controls, Keycode.DpadLeft, hatX < -0.5f, PadCommands(Keycode.DpadLeft));
-			Digital(controls, Keycode.DpadRight, hatX > 0.5f, PadCommands(Keycode.DpadRight));
-			Digital(controls, Keycode.DpadUp, hatY < -0.5f, PadCommands(Keycode.DpadUp));
-			Digital(controls, Keycode.DpadDown, hatY > 0.5f, PadCommands(Keycode.DpadDown));
-			Digital(controls, Keycode.ButtonR2, right > 0.5f, PadCommands(Keycode.ButtonR2));
-			Digital(controls, Keycode.ButtonL2, left > 0.5f, PadCommands(Keycode.ButtonL2));
+			// An axis given to a handle is that handle's alone: its button presses are not sent as well.
+			bool hatXFree = !boundAxes.Contains(global::Android.Views.Axis.HatX), hatYFree = !boundAxes.Contains(global::Android.Views.Axis.HatY);
+			bool rightFree = !boundAxes.Contains(global::Android.Views.Axis.Rtrigger) && !boundAxes.Contains(global::Android.Views.Axis.Gas);
+			bool leftFree = !boundAxes.Contains(global::Android.Views.Axis.Ltrigger) && !boundAxes.Contains(global::Android.Views.Axis.Brake);
+			Digital(controls, Keycode.DpadLeft, hatXFree && hatX < -0.5f, PadCommands(Keycode.DpadLeft));
+			Digital(controls, Keycode.DpadRight, hatXFree && hatX > 0.5f, PadCommands(Keycode.DpadRight));
+			Digital(controls, Keycode.DpadUp, hatYFree && hatY < -0.5f, PadCommands(Keycode.DpadUp));
+			Digital(controls, Keycode.DpadDown, hatYFree && hatY > 0.5f, PadCommands(Keycode.DpadDown));
+			Digital(controls, Keycode.ButtonR2, rightFree && right > 0.5f, PadCommands(Keycode.ButtonR2));
+			Digital(controls, Keycode.ButtonL2, leftFree && left > 0.5f, PadCommands(Keycode.ButtonL2));
 		}
 
 		private readonly HashSet<Keycode> axisHeld = new HashSet<Keycode>();
@@ -299,6 +354,12 @@ namespace OpenBve.Android
 
 		private List<Translations.Command> Lookup(KeyEvent e)
 		{
+			// A trigger or D-pad given to a handle as an axis: its key presses are its axis's.
+			if (FromController(e) && AxisBound(e.KeyCode))
+			{
+				return new List<Translations.Command>();
+			}
+
 			// Controller buttons; a controller's D-pad arrives as the arrow keys, and has its own meaning.
 			if ((ControlBindings.IsPadButton(e.KeyCode) || FromController(e)) && pad.TryGetValue(e.KeyCode, out Translations.Command[] commands))
 			{
@@ -321,6 +382,25 @@ namespace OpenBve.Android
 		}
 
 		/// <summary>What a controller button (or D-pad direction) does, or nothing.</summary>
+		private bool AxisBound(Keycode code)
+		{
+			switch (code)
+			{
+				case Keycode.ButtonR2:
+					return boundAxes.Contains(global::Android.Views.Axis.Rtrigger) || boundAxes.Contains(global::Android.Views.Axis.Gas);
+				case Keycode.ButtonL2:
+					return boundAxes.Contains(global::Android.Views.Axis.Ltrigger) || boundAxes.Contains(global::Android.Views.Axis.Brake);
+				case Keycode.DpadLeft:
+				case Keycode.DpadRight:
+					return boundAxes.Contains(global::Android.Views.Axis.HatX);
+				case Keycode.DpadUp:
+				case Keycode.DpadDown:
+					return boundAxes.Contains(global::Android.Views.Axis.HatY);
+				default:
+					return false;
+			}
+		}
+
 		private Translations.Command[] PadCommands(Keycode code)
 		{
 			return pad.TryGetValue(code, out Translations.Command[] commands) ? commands : Array.Empty<Translations.Command>();

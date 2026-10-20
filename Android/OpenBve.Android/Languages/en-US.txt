@@ -83,3 +83,8 @@ switch_ahead = {0} m ahead
 switch_behind = {0} m behind
 switches_none = No switches within {0} m of the train.
 switch_unnamed = Switch {0}
+
+# Controller axes (the Controls page).
+controls_move_axis_full = Move the stick or lever to its power (or forward) end.
+controls_move_axis_half = Move the trigger, stick or lever all the way.
+axis_reversed = reversed
