@@ -91,3 +91,4 @@ axis_reversed = reversed
 
 # Shadows (the Options page).
 shadows_note = Shadows draw the scene again from the sun, which lowers the frame rate. They are drawn with OpenGL ES and Vulkan (ANGLE), not yet with native Vulkan. The change applies from the next game.
+motion_blur_note = Drawn with OpenGL ES and Vulkan (ANGLE), not yet with native Vulkan.

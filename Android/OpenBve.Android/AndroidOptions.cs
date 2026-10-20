@@ -64,6 +64,9 @@ namespace OpenBve.Android
 		/// <summary>Whether a brake axis at its end applies the emergency brake, as the desktop's option (default on).</summary>
 		public bool AllowAxisEB = true;
 
+		/// <summary>Motion blur at speed, as the desktop's option (default none): AndroidMotionBlur.</summary>
+		public LibRender2.MotionBlurs.MotionBlurMode MotionBlur = LibRender2.MotionBlurs.MotionBlurMode.None;
+
 		/// <summary>The game mode before the last change, which upstream's score log reports.</summary>
 		public OpenBveApi.GameMode PreviousGameMode = OpenBveApi.GameMode.Normal;
 

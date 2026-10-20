@@ -139,6 +139,22 @@ namespace OpenBve.Android
 				AndroidSettings.GetViewingDistance(activity), v => v + " " + Menu.T("options", "quality_distance_viewingdistance_meters", "m"),
 				v => AndroidSettings.SetViewingDistance(activity, v));
 
+			// Motion blur, as upstream's (its fixed-function quad redrawn in a shader: AndroidMotionBlur).
+			LibRender2.MotionBlurs.MotionBlurMode[] blurModes =
+			{
+				LibRender2.MotionBlurs.MotionBlurMode.None, LibRender2.MotionBlurs.MotionBlurMode.Low,
+				LibRender2.MotionBlurs.MotionBlurMode.Medium, LibRender2.MotionBlurs.MotionBlurMode.High
+			};
+			Dropdown(Menu.T("options", "quality_distance_motionblur", "Motion blur:"),
+				new[]
+				{
+					Menu.T("options", "quality_distance_motionblur_none", "None"), Menu.T("options", "quality_distance_motionblur_low", "Low"),
+					Menu.T("options", "quality_distance_motionblur_medium", "Medium"), Menu.T("options", "quality_distance_motionblur_high", "High")
+				},
+				Math.Max(0, Array.IndexOf(blurModes, AndroidSettings.GetMotionBlur(activity))),
+				i => AndroidSettings.SetMotionBlur(activity, blurModes[i]));
+			Info(Menu.T("android", "motion_blur_note", "Drawn with OpenGL ES and Vulkan (ANGLE), not yet with native Vulkan."));
+
 			// --- shadows, as upstream's Options ---
 			Section(Menu.T("options", "shadows_header", "Shadows"));
 			OpenBveApi.Interface.ShadowMapResolution[] resolutions =

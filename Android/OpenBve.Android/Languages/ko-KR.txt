@@ -89,3 +89,4 @@ axis_reversed = 반전
 
 # Shadows (the Options page).
 shadows_note = 그림자는 태양 쪽에서 장면을 한 번 더 그리므로 프레임 속도가 낮아집니다. OpenGL ES와 Vulkan(ANGLE)에서 그려지며, 네이티브 Vulkan에서는 아직 그려지지 않습니다. 변경 사항은 다음 게임부터 적용됩니다.
+motion_blur_note = OpenGL ES와 Vulkan(ANGLE)에서 그려지며, 네이티브 Vulkan에서는 아직 그려지지 않습니다.

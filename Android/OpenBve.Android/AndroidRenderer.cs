@@ -357,6 +357,16 @@ namespace OpenBve.Android
 			AlphaDrawCalls = DrawAlphaFaces(alphaFaces, unsortedAlphaFaces, batcher);
 			Profile.Mark("alpha faces");
 
+			// Motion blur, where upstream's NewRenderer draws it: over the world, under the cab.
+			if (Interface.CurrentOptions != null && Interface.CurrentOptions.MotionBlur != LibRender2.MotionBlurs.MotionBlurMode.None &&
+			    !(GL.Device is OpenBve.Vulkan.VulkanGL))
+			{
+				motionBlur ??= new AndroidMotionBlur();
+				motionBlur.Render(this, Interface.CurrentOptions.MotionBlur, FrameRate, Math.Abs(Camera.CurrentSpeed));
+				GlCheck("motion blur");
+				Profile.Mark("motion blur");
+			}
+
 			// Particle sources (MSTS exhaust, steam), as upstream's NewRenderer: updated and drawn after the world
 			if (Program.TrainManager != null)
 			{
@@ -468,6 +478,8 @@ namespace OpenBve.Android
 		}
 
 		private OpenBve.Graphics.Renderers.Overlays overlays;
+
+		private AndroidMotionBlur motionBlur;
 
 		/// <summary>The cab's touch areas on show, for the touch debug view (set by CabTouch each frame).</summary>
 		internal ObjectState[] TouchAreaStates;

@@ -89,3 +89,4 @@ axis_reversed = odwrócone
 
 # Shadows (the Options page).
 shadows_note = Cienie rysują scenę ponownie z perspektywy słońca, co obniża liczbę klatek na sekundę. Są rysowane w OpenGL ES i Vulkan (ANGLE), jeszcze nie w natywnym Vulkanie. Zmiana obowiązuje od następnej gry.
+motion_blur_note = Rysowane w OpenGL ES i Vulkan (ANGLE), jeszcze nie w natywnym Vulkanie.

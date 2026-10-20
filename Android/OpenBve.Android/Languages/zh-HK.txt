@@ -89,3 +89,4 @@ axis_reversed = 反向
 
 # Shadows (the Options page).
 shadows_note = 陰影需要從太陽方向再繪製一次場景，會降低幀率。陰影在 OpenGL ES 和 Vulkan（ANGLE）下繪製，原生 Vulkan 暫不支援。更改將從下一局遊戲開始生效。
+motion_blur_note = 在 OpenGL ES 和 Vulkan（ANGLE）下繪製，原生 Vulkan 暫不支援。

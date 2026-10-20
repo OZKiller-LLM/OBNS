@@ -89,3 +89,4 @@ axis_reversed = invertito
 
 # Shadows (the Options page).
 shadows_note = Le ombre ridisegnano la scena dal sole, riducendo la frequenza dei fotogrammi. Vengono disegnate con OpenGL ES e Vulkan (ANGLE), non ancora con Vulkan nativo. La modifica si applica dalla prossima partita.
+motion_blur_note = Disegnato con OpenGL ES e Vulkan (ANGLE), non ancora con Vulkan nativo.

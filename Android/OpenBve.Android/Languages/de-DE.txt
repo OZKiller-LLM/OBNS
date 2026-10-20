@@ -89,3 +89,4 @@ axis_reversed = umgekehrt
 
 # Shadows (the Options page).
 shadows_note = Schatten zeichnen die Szene ein weiteres Mal aus Sicht der Sonne, was die Bildrate senkt. Sie werden mit OpenGL ES und Vulkan (ANGLE) gezeichnet, mit nativem Vulkan noch nicht. Die Änderung gilt ab dem nächsten Spiel.
+motion_blur_note = Wird mit OpenGL ES und Vulkan (ANGLE) gezeichnet, mit nativem Vulkan noch nicht.

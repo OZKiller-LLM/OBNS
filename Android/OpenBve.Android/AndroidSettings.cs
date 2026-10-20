@@ -454,6 +454,7 @@ namespace OpenBve.Android
 			options.Panel2ExtendedMode = GetTouchHandles(context);
 			options.Panel2ExtendedMinSize = 128;
 			options.TimeAccelerationFactor = GetTimeAccelerationFactor(context);
+			options.MotionBlur = GetMotionBlur(context);
 			options.ShadowResolution = GetShadowResolution(context);
 			options.ShadowDrawDistance = GetShadowDistance(context);
 			options.ShadowCascades = GetShadowCascades(context);
@@ -526,6 +527,17 @@ namespace OpenBve.Android
 		public static int GetShadowStrength(Context context) => Math.Clamp(Prefs(context)?.GetInt(ShadowStrengthKey, 70) ?? 70, 0, 100);
 
 		public static void SetShadowStrength(Context context, int value) => PutInt(context, ShadowStrengthKey, value);
+
+		/// <summary>Upstream's motion blur: none (the default), low, medium or high.</summary>
+		private const string MotionBlurKey = "motion_blur";
+
+		public static LibRender2.MotionBlurs.MotionBlurMode GetMotionBlur(Context context)
+		{
+			string value = Prefs(context)?.GetString(MotionBlurKey, null);
+			return Enum.TryParse(value, out LibRender2.MotionBlurs.MotionBlurMode mode) ? mode : LibRender2.MotionBlurs.MotionBlurMode.None;
+		}
+
+		public static void SetMotionBlur(Context context, LibRender2.MotionBlurs.MotionBlurMode mode) => PutString(context, MotionBlurKey, mode.ToString());
 
 		/// <summary>Upstream's game mode (Arcade, Normal, Expert), chosen on the Start page as on the desktop.</summary>
 		private const string GameModeKey = "game_mode";

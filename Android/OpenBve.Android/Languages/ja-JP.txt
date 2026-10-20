@@ -89,3 +89,4 @@ axis_reversed = 反転
 
 # Shadows (the Options page).
 shadows_note = 影は太陽の位置からシーンをもう一度描画するため、フレームレートが下がります。OpenGL ES と Vulkan（ANGLE）で描画され、ネイティブ Vulkan ではまだ描画されません。変更は次のゲームから適用されます。
+motion_blur_note = OpenGL ES と Vulkan（ANGLE）で描画されます。ネイティブ Vulkan ではまだ描画されません。
