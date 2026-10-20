@@ -91,11 +91,33 @@ Write-Host 'Restoring upstream NuGet packages'
 Invoke-MSBuild @($solution, '-t:restore', '-p:RestorePackagesConfig=true', "-p:Configuration=$Configuration", '-v:minimal', '-nologo')
 if ($LASTEXITCODE -ne 0) { throw "Restoring the packages failed ($LASTEXITCODE)" }
 
+# Upstream's plugin projects move their output into Data\Plugins (or Data\InputDevicePlugins) after
+# building. The .NET SDK's Move will not replace the copy a previous build left there (Visual Studio's
+# does), so those copies are removed first; each project then copies its output out again and moves it.
+$output = Join-Path $mirror ('bin_' + $Configuration.ToLowerInvariant())
+if (Test-Path $output) {
+    Get-ChildItem (Join-Path $mirror 'source') -Recurse -Filter *.csproj | ForEach-Object {
+        $project = Get-Content -Raw $_.FullName
+        $move = [regex]::Match($project, 'DestinationFolder="\$\(TargetDir\)(Data\\[^"]+?)\\?"')
+        $name = [regex]::Match($project, '<AssemblyName>([^<]+)</AssemblyName>')
+        if ($move.Success -and $name.Success) {
+            $folder = Join-Path $output $move.Groups[1].Value
+            if (Test-Path $folder) {
+                # Only what the project moves (its .dll, .pdb and .xml): the .dll.config files beside them are
+                # upstream's assets, copied by several projects at once.
+                foreach ($extension in '.dll', '.pdb', '.xml') {
+                    $file = Join-Path $folder ($name.Groups[1].Value + $extension)
+                    if (Test-Path $file) { Remove-Item -Force $file }
+                }
+            }
+        }
+    }
+}
+
 Write-Host "Building OpenBVE ($Configuration)"
 Invoke-MSBuild @($solution, "-p:Configuration=$Configuration", '-p:Platform=Any CPU', '-m', '-v:minimal', '-nologo')
 if ($LASTEXITCODE -ne 0) { throw "The build failed ($LASTEXITCODE)" }
 
-$output = Join-Path $mirror ('bin_' + $Configuration.ToLowerInvariant())
 $exe = Join-Path $output 'OpenBve.exe'
 Write-Host "Built: $exe"
 
