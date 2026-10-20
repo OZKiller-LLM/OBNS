@@ -139,6 +139,48 @@ namespace OpenBve.Android
 				AndroidSettings.GetViewingDistance(activity), v => v + " " + Menu.T("options", "quality_distance_viewingdistance_meters", "m"),
 				v => AndroidSettings.SetViewingDistance(activity, v));
 
+			// --- shadows, as upstream's Options ---
+			Section(Menu.T("options", "shadows_header", "Shadows"));
+			OpenBveApi.Interface.ShadowMapResolution[] resolutions =
+			{
+				OpenBveApi.Interface.ShadowMapResolution.Off, OpenBveApi.Interface.ShadowMapResolution.Low,
+				OpenBveApi.Interface.ShadowMapResolution.Medium, OpenBveApi.Interface.ShadowMapResolution.High
+			};
+			Dropdown(Menu.T("options", "shadows_resolution", "Shadow Resolution:"),
+				new[]
+				{
+					Menu.T("options", "shadows_resolution_off", "Off"), Menu.T("options", "shadows_resolution_low", "Low (512×512)"),
+					Menu.T("options", "shadows_resolution_medium", "Medium (1024×1024)"), Menu.T("options", "shadows_resolution_high", "High (2048×2048)")
+				},
+				Math.Max(0, Array.IndexOf(resolutions, AndroidSettings.GetShadowResolution(activity))),
+				i => AndroidSettings.SetShadowResolution(activity, resolutions[i]));
+			OpenBveApi.Interface.ShadowDistance[] distances =
+			{
+				OpenBveApi.Interface.ShadowDistance.Near, OpenBveApi.Interface.ShadowDistance.Medium, OpenBveApi.Interface.ShadowDistance.Far,
+				OpenBveApi.Interface.ShadowDistance.VeryFar, OpenBveApi.Interface.ShadowDistance.ViewingDistance
+			};
+			Dropdown(Menu.T("options", "shadows_distance", "Shadow Distance:"),
+				new[]
+				{
+					Menu.T("options", "shadows_distance_near", "Near (150m)"), Menu.T("options", "shadows_distance_medium", "Medium (300m)"),
+					Menu.T("options", "shadows_distance_far", "Far (500m)"), Menu.T("options", "shadows_distance_veryfar", "Very Far (800m)"),
+					Menu.T("options", "shadows_distance_viewingdistance", "Follow Viewing Distance")
+				},
+				Math.Max(0, Array.IndexOf(distances, AndroidSettings.GetShadowDistance(activity))),
+				i => AndroidSettings.SetShadowDistance(activity, distances[i]));
+			Dropdown(Menu.T("options", "shadows_cascades", "Shadow Cascades:"),
+				new[]
+				{
+					Menu.T("options", "shadows_cascades_2", "2 Cascades (Fastest)"), Menu.T("options", "shadows_cascades_3", "3 Cascades (Balanced)"),
+					Menu.T("options", "shadows_cascades_4", "4 Cascades (Best Quality)")
+				},
+				(int)AndroidSettings.GetShadowCascades(activity) - 2,
+				i => AndroidSettings.SetShadowCascades(activity, (OpenBveApi.Interface.ShadowCascadeCount)(i + 2)));
+			Slider(Menu.T("options", "shadows_strength", "Shadow Strength:"), 0, 100, 5,
+				AndroidSettings.GetShadowStrength(activity), v => v + "%", v => AndroidSettings.SetShadowStrength(activity, v));
+			Info(Menu.T("android", "shadows_note",
+				"Shadows draw the scene again from the sun, which lowers the frame rate. They are drawn with OpenGL ES and Vulkan (ANGLE), not yet with native Vulkan. The change applies from the next game."));
+
 			// --- sound ---
 			Section(Menu.T("options", "misc_sound", "Sound"));
 			Slider(Menu.T("options", "misc_sound_number", "Number of allowed sounds:"), 16, 128, 4,

@@ -454,6 +454,10 @@ namespace OpenBve.Android
 			options.Panel2ExtendedMode = GetTouchHandles(context);
 			options.Panel2ExtendedMinSize = 128;
 			options.TimeAccelerationFactor = GetTimeAccelerationFactor(context);
+			options.ShadowResolution = GetShadowResolution(context);
+			options.ShadowDrawDistance = GetShadowDistance(context);
+			options.ShadowCascades = GetShadowCascades(context);
+			options.ShadowStrength = GetShadowStrength(context) / 100.0;
 			AndroidCamera.InteriorTransition = GetCameraInteriorTransition(context);
 			AndroidCamera.ExteriorTransition = GetCameraExteriorTransition(context);
 			AndroidCamera.TransitionSeconds = GetCameraTransitionTenths(context) / 10.0;
@@ -485,6 +489,43 @@ namespace OpenBve.Android
 		public static int GetTimeAccelerationFactor(Context context) => Math.Clamp(Prefs(context)?.GetInt(TimeFactorKey, 5) ?? 5, 1, 5);
 
 		public static void SetTimeAccelerationFactor(Context context, int value) => PutInt(context, TimeFactorKey, value);
+
+		/*
+		 * Upstream's shadows (Options: resolution, distance, cascades, strength). Off by default,
+		 * as upstream: a phone draws the scene again into each cascade, which costs frame rate,
+		 * and Ultra's three 4096 px maps alone would take 200 MB.
+		 */
+		private const string ShadowResolutionKey = "shadow_resolution";
+		private const string ShadowDistanceKey = "shadow_distance";
+		private const string ShadowCascadesKey = "shadow_cascades";
+		private const string ShadowStrengthKey = "shadow_strength";
+
+		/// <summary>The shadow maps' size: 0 (off), 512, 1024 or 2048.</summary>
+		public static OpenBveApi.Interface.ShadowMapResolution GetShadowResolution(Context context)
+		{
+			int value = Prefs(context)?.GetInt(ShadowResolutionKey, 0) ?? 0;
+			return value == 512 || value == 1024 || value == 2048 ? (OpenBveApi.Interface.ShadowMapResolution)value : OpenBveApi.Interface.ShadowMapResolution.Off;
+		}
+
+		public static void SetShadowResolution(Context context, OpenBveApi.Interface.ShadowMapResolution value) => PutInt(context, ShadowResolutionKey, (int)value);
+
+		public static OpenBveApi.Interface.ShadowDistance GetShadowDistance(Context context)
+		{
+			int value = Prefs(context)?.GetInt(ShadowDistanceKey, 300) ?? 300;
+			return Enum.IsDefined(typeof(OpenBveApi.Interface.ShadowDistance), value) ? (OpenBveApi.Interface.ShadowDistance)value : OpenBveApi.Interface.ShadowDistance.Medium;
+		}
+
+		public static void SetShadowDistance(Context context, OpenBveApi.Interface.ShadowDistance value) => PutInt(context, ShadowDistanceKey, (int)value);
+
+		public static OpenBveApi.Interface.ShadowCascadeCount GetShadowCascades(Context context) =>
+			(OpenBveApi.Interface.ShadowCascadeCount)Math.Clamp(Prefs(context)?.GetInt(ShadowCascadesKey, 3) ?? 3, 2, 4);
+
+		public static void SetShadowCascades(Context context, OpenBveApi.Interface.ShadowCascadeCount value) => PutInt(context, ShadowCascadesKey, (int)value);
+
+		/// <summary>How dark shadows are, in percent (upstream's 0.7 by default).</summary>
+		public static int GetShadowStrength(Context context) => Math.Clamp(Prefs(context)?.GetInt(ShadowStrengthKey, 70) ?? 70, 0, 100);
+
+		public static void SetShadowStrength(Context context, int value) => PutInt(context, ShadowStrengthKey, value);
 
 		/// <summary>Upstream's game mode (Arcade, Normal, Expert), chosen on the Start page as on the desktop.</summary>
 		private const string GameModeKey = "game_mode";

@@ -86,3 +86,6 @@ switch_unnamed = Weiche {0}
 controls_move_axis_full = Bewegen Sie den Stick oder Hebel an sein Fahr- (oder Vorwärts-)Ende.
 controls_move_axis_half = Bewegen Sie Trigger, Stick oder Hebel ganz durch.
 axis_reversed = umgekehrt
+
+# Shadows (the Options page).
+shadows_note = Schatten zeichnen die Szene ein weiteres Mal aus Sicht der Sonne, was die Bildrate senkt. Sie werden mit OpenGL ES und Vulkan (ANGLE) gezeichnet, mit nativem Vulkan noch nicht. Die Änderung gilt ab dem nächsten Spiel.

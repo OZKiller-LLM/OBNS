@@ -86,3 +86,6 @@ switch_unnamed = AMV {0}
 controls_move_axis_full = Mova o direcional ou a alavanca até a ponta de tração (ou para frente).
 controls_move_axis_half = Mova o gatilho, o direcional ou a alavanca até o fim.
 axis_reversed = invertido
+
+# Shadows (the Options page).
+shadows_note = As sombras desenham a cena de novo a partir do sol, o que reduz a taxa de quadros. Elas são desenhadas com OpenGL ES e Vulkan (ANGLE), ainda não com o Vulkan nativo. A mudança vale a partir do próximo jogo.

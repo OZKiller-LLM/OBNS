@@ -86,3 +86,6 @@ switch_unnamed = Wissel {0}
 controls_move_axis_full = Beweeg de stick of hendel naar de tractie- (of vooruit-)stand.
 controls_move_axis_half = Beweeg de trekker, stick of hendel helemaal.
 axis_reversed = omgekeerd
+
+# Shadows (the Options page).
+shadows_note = Schaduwen tekenen de scène nogmaals vanuit de zon, wat de framerate verlaagt. Ze worden getekend met OpenGL ES en Vulkan (ANGLE), nog niet met native Vulkan. De wijziging geldt vanaf het volgende spel.

@@ -86,3 +86,6 @@ switch_unnamed = Zwrotnica {0}
 controls_move_axis_full = Przesuń drążek lub nastawnik do końca w stronę jazdy (lub do przodu).
 controls_move_axis_half = Przesuń spust, drążek lub nastawnik do końca.
 axis_reversed = odwrócone
+
+# Shadows (the Options page).
+shadows_note = Cienie rysują scenę ponownie z perspektywy słońca, co obniża liczbę klatek na sekundę. Są rysowane w OpenGL ES i Vulkan (ANGLE), jeszcze nie w natywnym Vulkanie. Zmiana obowiązuje od następnej gry.

@@ -86,3 +86,6 @@ switch_unnamed = Aiguillage {0}
 controls_move_axis_full = Amenez le stick ou le levier à sa position de traction (ou avant).
 controls_move_axis_half = Actionnez la gâchette, le stick ou le levier jusqu'au bout.
 axis_reversed = inversé
+
+# Shadows (the Options page).
+shadows_note = Les ombres redessinent la scène depuis le soleil, ce qui réduit la fréquence d'images. Elles sont dessinées avec OpenGL ES et Vulkan (ANGLE), pas encore avec Vulkan natif. Le changement s'applique à la prochaine partie.

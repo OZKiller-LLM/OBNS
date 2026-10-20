@@ -86,3 +86,6 @@ switch_unnamed = Desvío {0}
 controls_move_axis_full = Mueva la palanca o el stick hasta su extremo de tracción (o hacia delante).
 controls_move_axis_half = Mueva el gatillo, el stick o la palanca hasta el final.
 axis_reversed = invertido
+
+# Shadows (the Options page).
+shadows_note = Las sombras vuelven a dibujar la escena desde el sol, lo que reduce los fotogramas por segundo. Se dibujan con OpenGL ES y Vulkan (ANGLE), aún no con Vulkan nativo. El cambio se aplica a partir de la próxima partida.

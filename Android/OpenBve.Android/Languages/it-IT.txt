@@ -86,3 +86,6 @@ switch_unnamed = Deviatoio {0}
 controls_move_axis_full = Porta la levetta o la leva all'estremo di trazione (o in avanti).
 controls_move_axis_half = Muovi il grilletto, la levetta o la leva fino in fondo.
 axis_reversed = invertito
+
+# Shadows (the Options page).
+shadows_note = Le ombre ridisegnano la scena dal sole, riducendo la frequenza dei fotogrammi. Vengono disegnate con OpenGL ES e Vulkan (ANGLE), non ancora con Vulkan nativo. La modifica si applica dalla prossima partita.

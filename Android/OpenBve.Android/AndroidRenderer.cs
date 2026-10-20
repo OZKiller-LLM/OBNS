@@ -246,6 +246,19 @@ namespace OpenBve.Android
 			UpdateViewport(ViewportChangeMode.ChangeToScenery);
 			GlCheck("UpdateViewport");
 
+			/*
+			 * Upstream's shadows (cascaded shadow maps, off unless chosen in Options): the visible
+			 * faces drawn into each cascade's depth map from the sun, as NewRenderer does, before
+			 * the scene. They need off-screen depth targets, which OpenGL ES (and Vulkan through
+			 * ANGLE) has; the native Vulkan renderer has not, and GameView leaves them off there.
+			 */
+			bool shadows = ShadowsEnabled;
+			if (shadows)
+			{
+				PerformCSMShadowPass();
+				GlCheck("shadow pass");
+			}
+
 			if (Lighting.ShouldInitialize)
 			{
 				Lighting.Initialize();
@@ -256,6 +269,14 @@ namespace OpenBve.Android
 			GlCheck("DefaultShader.Activate");
 			BindAnimationBlockFallback();
 			GlCheck("BindAnimationBlockFallback");
+			if (shadows)
+			{
+				// The maps on texture units 4 on, the cascades' matrices and the shadows' look.
+				BindCSMToDefaultShader();
+				GlCheck("BindCSMToDefaultShader");
+			}
+
+			// The background has no shadows, as upstream's.
 			DefaultShader.SetShadowEnabled(false);
 			GlCheck("SetShadowEnabled");
 			Fog.Enabled = false;
@@ -270,6 +291,8 @@ namespace OpenBve.Android
 				UpdateFog();
 				DefaultShader.Activate();
 			}
+
+			DefaultShader.SetShadowEnabled(shadows);
 
 			Profile.Mark("background");
 
