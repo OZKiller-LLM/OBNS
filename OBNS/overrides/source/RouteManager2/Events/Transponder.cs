@@ -1,6 +1,7 @@
-// ANDROID PORT: a copy of upstream's RouteManager2/Events/Transponder.cs (OpenBVE 1.14.1.2), compiled in its
-// place (RouteManager2.Android.csproj): a section reference past the last section counts as none (see Trigger).
-// On an upstream update: copy the file again and reapply the change (Android/UpstreamPatches).
+﻿// OBNS: a copy of upstream's RouteManager2/Events/Transponder.cs (OpenBVE 1.14.1.2), used in its place by the
+// desktop build (laid over the mirror by OBNS/build-desktop.ps1) and by Android (RouteManager2.Android.csproj):
+// a section reference past the last section counts as none (see Trigger).
+// On an upstream update: copy the file again and reapply the change.
 using System;
 using OpenBveApi.Routes;
 
@@ -46,7 +47,7 @@ namespace RouteManager2.Events
 				int s = SectionIndex;
 				if (s >= currentRoute.Sections.Length)
 				{
-					// ANDROID PORT: upstream 1.14.1.x keeps an orphaned transponder's section reference
+					// OBNS: upstream 1.14.1.x keeps an orphaned transponder's section reference
 					// (CsvRwRouteParser.ApplyRouteData), which can lie past the last section that exists;
 					// such a reference counts as none, as 1.14.0.3 had it (-1), instead of throwing.
 					s = -1;

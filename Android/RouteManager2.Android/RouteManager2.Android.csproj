@@ -15,9 +15,9 @@
   <ItemGroup>
     <Compile Include="$(UpstreamSource)RouteManager2\**\*.cs" LinkBase="RouteManager2" />
     <Compile Remove="$(UpstreamSource)RouteManager2\Properties\AssemblyInfo.cs" />
-    <!-- ANDROID PORT copy of an upstream file (OpenBVE 1.14.1.2), compiled in its place; see Android/UpstreamPatches. -->
+    <!-- Upstream's Transponder.cs (OpenBVE 1.14.1.2) replaced by OBNS's copy with the orphaned-section fix, shared with the desktop build. -->
     <Compile Remove="$(UpstreamSource)RouteManager2\Events\Transponder.cs" />
-    <Compile Include="Transponder.Android.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\RouteManager2\Events\Transponder.cs" Link="Transponder.cs" />
   </ItemGroup>
 
   <ItemGroup>

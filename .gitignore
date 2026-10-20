@@ -20,3 +20,6 @@ dist/
 
 # Device benchmark results (Android/tools/benchmark) - per-run output, not source
 /Android/tools/benchmark/results/
+
+# The OBNS desktop build mirror (OBNS/build-desktop.ps1)
+/OBNS/build/

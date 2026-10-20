@@ -23,5 +23,36 @@ Linux later), and the libraries the Android port and the desktop build share.
 4. The Android port's features on the desktop: the native Vulkan renderer, per-frame updates on all
    cores, pipelined frames, then the Win32 plugin layer (x86) for macOS and Linux.
 
+## The desktop build (Windows x64)
+
+`OBNS/build-desktop.ps1` builds upstream's program without touching `OpenBVE/`:
+
+1. `OpenBVE/` is mirrored into `OBNS/build/upstream/` (ignored by git; packages, `obj` and `bin`
+   folders are kept between runs, so later builds are incremental);
+2. `OBNS/overrides/` is laid over the mirror - each file there replaces upstream's at the same path,
+   and starts with "OBNS: a copy of upstream's ...";
+3. upstream's NuGet packages are restored (from nuget.org on the first build) and `OpenBVE.sln` is
+   built: with Visual Studio's MSBuild if it has the C# compiler (the .NET desktop workload), else
+   with the .NET SDK's (`dotnet msbuild`). Upstream targets .NET Framework 4.8, whose reference
+   assemblies come from Windows' targeting pack or the restored packages.
+
+```
+powershell -ExecutionPolicy Bypass -File OBNS\build-desktop.ps1 [-Configuration Debug] [-Clean]
+```
+
+The program is `OBNS/build/upstream/bin_release/OpenBve.exe`: AnyCPU without "prefer 32-bit", as
+upstream, so a 64-bit process on Windows x64 (32-bit train plugins run in upstream's
+Win32PluginProxy). Upstream's tools are built beside it (Object Viewer, Route Viewer, the train
+editors, ObjectBender, CarXmlConvertor). Its assembly version is upstream's source default; upstream's
+release pipeline stamps the release number, which the OBNS build does not do yet.
+
+### OBNS's replacements for upstream files
+
+| File | Change | Also used by |
+|---|---|---|
+| `source/RouteManager2/Events/Transponder.cs` | a transponder's section reference past the last section counts as none (1.14.1.x keeps orphaned references, and the Tuen Ma Line threw at its first station) | Android (`RouteManager2.Android.csproj`) |
+| `source/CarXMLConvertor/CarXMLConvertor.csproj`, `packages.config` | Windows Forms resources built preserialized with System.Resources.Extensions (as upstream's TrainEditor), so the .NET SDK's MSBuild builds it | - |
+| `source/ObjectBender/ObjectBender.csproj`, `packages.config` | the same | - |
+
 Shared libraries (moving here from `Android/` as each is taken up): the GL-on-Vulkan renderer core,
 the x86 plugin layer, the BVE5 train plugin, the parallel-update helpers.
