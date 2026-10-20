@@ -22,11 +22,16 @@
 
 .PARAMETER Clean
     Deletes the mirror first, for a build from nothing.
+
+.PARAMETER Package
+    Also zips the program (without debug symbols) into OBNS/build/dist/, named after the release in
+    OBNS's AssemblyInfo.tt: OpenBVE-<release>-OBNS-win-x64.zip.
 #>
 param(
     [ValidateSet('Release', 'Debug')]
     [string]$Configuration = 'Release',
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$Package
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,5 +95,22 @@ Write-Host "Building OpenBVE ($Configuration)"
 Invoke-MSBuild @($solution, "-p:Configuration=$Configuration", '-p:Platform=Any CPU', '-m', '-v:minimal', '-nologo')
 if ($LASTEXITCODE -ne 0) { throw "The build failed ($LASTEXITCODE)" }
 
-$exe = Join-Path $mirror ('bin_' + $Configuration.ToLowerInvariant() + '\OpenBve.exe')
+$output = Join-Path $mirror ('bin_' + $Configuration.ToLowerInvariant())
+$exe = Join-Path $output 'OpenBve.exe'
 Write-Host "Built: $exe"
+
+if ($Package) {
+    $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe).ProductVersion
+    $dist = Join-Path $build 'dist'
+    $staging = Join-Path $build 'package'
+    $zip = Join-Path $dist "OpenBVE-$version-win-x64.zip"
+    if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
+    New-Item -ItemType Directory -Force $dist | Out-Null
+    # The program and its data, as built; debug symbols stay behind.
+    robocopy $output $staging /E /XF *.pdb /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "Staging the package failed (robocopy $LASTEXITCODE)" }
+    if (Test-Path $zip) { Remove-Item -Force $zip }
+    Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip
+    Remove-Item -Recurse -Force $staging
+    Write-Host ("Packaged: $zip ({0:N0} MB)" -f ((Get-Item $zip).Length / 1MB))
+}
