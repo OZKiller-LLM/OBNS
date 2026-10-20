@@ -37,19 +37,27 @@ Linux later), and the libraries the Android port and the desktop build share.
    assemblies come from Windows' targeting pack or the restored packages.
 
 ```
-powershell -ExecutionPolicy Bypass -File OBNS\build-desktop.ps1 [-Configuration Debug] [-Clean]
+powershell -ExecutionPolicy Bypass -File OBNS\build-desktop.ps1 [-Configuration Debug] [-Clean] [-Package]
 ```
 
 The program is `OBNS/build/upstream/bin_release/OpenBve.exe`: AnyCPU without "prefer 32-bit", as
 upstream, so a 64-bit process on Windows x64 (32-bit train plugins run in upstream's
 Win32PluginProxy). Upstream's tools are built beside it (Object Viewer, Route Viewer, the train
-editors, ObjectBender, CarXmlConvertor). Its assembly version is upstream's source default; upstream's
-release pipeline stamps the release number, which the OBNS build does not do yet.
+editors, ObjectBender, CarXmlConvertor). It is stamped 1.14.1.2-OBNS (OBNS's `AssemblyInfo.tt`), and
+`-Package` zips it, without debug symbols, as `OBNS/build/dist/OpenBVE-1.14.1.2-OBNS-win-x64.zip`.
+
+Run it from its own folder, as a double-click does: upstream starts Win32PluginProxy.exe by name.
+For a test that leaves the installed OpenBVE's settings alone, upstream's `/filesystem=<file>` takes a
+filesystem.cfg naming another settings folder (`version = 2`, `settings = <folder>`).
+
+Tried (2026-10-21): East Rail with the R-Train loads and runs as a 64-bit process, its 32-bit
+DetailManager.dll plugin through the proxy.
 
 ### OBNS's replacements for upstream files
 
 | File | Change | Also used by |
 |---|---|---|
+| `source/OpenBVE/Properties/AssemblyInfo.tt` | the release stamped as 1.14.1.2-OBNS (upstream takes it from the git tag being built, which the mirror does not have) | - |
 | `source/RouteManager2/Events/Transponder.cs` | a transponder's section reference past the last section counts as none (1.14.1.x keeps orphaned references, and the Tuen Ma Line threw at its first station) | Android (`RouteManager2.Android.csproj`) |
 | `source/CarXMLConvertor/CarXMLConvertor.csproj`, `packages.config` | Windows Forms resources built preserialized with System.Resources.Extensions (as upstream's TrainEditor), so the .NET SDK's MSBuild builds it | - |
 | `source/ObjectBender/ObjectBender.csproj`, `packages.config` | the same | - |
