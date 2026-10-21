@@ -42,21 +42,36 @@ namespace Train.OpenBve
 	{
 		internal static void Apply(TrainBase train, Bve5Vehicle vehicle)
 		{
-			if (string.IsNullOrEmpty(vehicle.MotorNoise) || !System.IO.File.Exists(vehicle.MotorNoise))
+			Apply(train, vehicle.MotorNoise, vehicle.Sound, vehicle.FileName);
+		}
+
+		/// <summary>
+		/// Gives a train's motor cars a motor noise file's sound. The motor sounds are the sound file's [Motor]
+		/// section: a BVE5 vehicle sound file's, or a BVE4 sound.cfg's, which lists them the same way (a train.dat
+		/// train with BVE5 motor noise, Bve5SoundAddOn).
+		/// </summary>
+		/// <param name="owner">The file the noise belongs to, for messages.</param>
+		/// <param name="defaultMotorFolder">
+		/// Where the motor sounds are when the sound file lists none: Motor0.wav, Motor1.wav ... in this folder, as
+		/// BVE2's and upstream's defaults are (a train.dat train without a sound.cfg); null for none.
+		/// </param>
+		internal static void Apply(TrainBase train, string motorNoise, string soundFile, string owner, string defaultMotorFolder = null)
+		{
+			if (string.IsNullOrEmpty(motorNoise) || !System.IO.File.Exists(motorNoise))
 			{
 				return;
 			}
 
-			Dictionary<string, Dictionary<string, string>> noise = Bve5Text.Read(vehicle.MotorNoise).Sections();
+			Dictionary<string, Dictionary<string, string>> noise = Bve5Text.Read(motorNoise).Sections();
 			string Table(string section, string key) =>
-				noise.TryGetValue(section, out Dictionary<string, string> keys) && keys.TryGetValue(key, out string value) ? Bve5Text.ResolvePath(vehicle.MotorNoise, value) : null;
+				noise.TryGetValue(section, out Dictionary<string, string> keys) && keys.TryGetValue(key, out string value) ? Bve5Text.ResolvePath(motorNoise, value) : null;
 			string powerFrequency = Table("Power", "Frequency"), powerVolume = Table("Power", "Volume");
 			string brakeFrequency = Table("Brake", "Frequency"), brakeVolume = Table("Brake", "Volume");
 
 			// The motor sounds, by index, from the sound file's [Motor].
 			SoundBuffer[] buffers = new SoundBuffer[0];
-			if (!string.IsNullOrEmpty(vehicle.Sound) && System.IO.File.Exists(vehicle.Sound) &&
-			    Bve5Text.Read(vehicle.Sound).Sections().TryGetValue("Motor", out Dictionary<string, string> motor))
+			if (!string.IsNullOrEmpty(soundFile) && System.IO.File.Exists(soundFile) &&
+			    Bve5Text.Read(soundFile).Sections().TryGetValue("Motor", out Dictionary<string, string> motor))
 			{
 				foreach (KeyValuePair<string, string> entry in motor)
 				{
@@ -65,10 +80,10 @@ namespace Train.OpenBve
 						continue;
 					}
 
-					string file = Bve5Text.ResolvePath(vehicle.Sound, entry.Value);
+					string file = Bve5Text.ResolvePath(soundFile, entry.Value);
 					if (file == null || !System.IO.File.Exists(file))
 					{
-						Plugin.CurrentHost.AddMessage(MessageType.Warning, true, "Motor sound " + entry.Value + " was not found in " + vehicle.Sound);
+						Plugin.CurrentHost.AddMessage(MessageType.Warning, true, "Motor sound " + entry.Value + " was not found in " + soundFile);
 						continue;
 					}
 
@@ -77,6 +92,22 @@ namespace Train.OpenBve
 						Array.Resize(ref buffers, index + 1);
 					}
 
+					Plugin.CurrentHost.RegisterSound(file, SoundCfgParser.mediumRadius, out var handle);
+					buffers[index] = handle as SoundBuffer;
+				}
+			}
+
+			if (buffers.Length == 0 && !string.IsNullOrEmpty(defaultMotorFolder))
+			{
+				for (int index = 0; index < 256; index++)
+				{
+					string file = OpenBveApi.Path.CombineFile(defaultMotorFolder, "Motor" + index + ".wav");
+					if (!System.IO.File.Exists(file))
+					{
+						continue;
+					}
+
+					Array.Resize(ref buffers, index + 1);
 					Plugin.CurrentHost.RegisterSound(file, SoundCfgParser.mediumRadius, out var handle);
 					buffers[index] = handle as SoundBuffer;
 				}
@@ -92,8 +123,8 @@ namespace Train.OpenBve
 				try
 				{
 					BVE5MotorSound sound = Bve5MotorSoundTableParser.Parse(train.Cars[i], powerFrequency, powerVolume, brakeFrequency, brakeVolume);
-					// Upstream's sound reads the tables' first entries unchecked: without tables, the car keeps no motor sound.
-					if (sound.MotorSoundTable.Length == 0 || sound.BrakeSoundTable.Length == 0)
+					// Without either table, the car keeps no motor sound (OBNS's BVE5MotorSound plays one without the other).
+					if (sound.MotorSoundTable.Length == 0 && sound.BrakeSoundTable.Length == 0)
 					{
 						continue;
 					}
@@ -103,7 +134,7 @@ namespace Train.OpenBve
 				}
 				catch (Exception ex)
 				{
-					Plugin.CurrentHost.AddMessage(MessageType.Error, false, "The motor noise of " + vehicle.FileName + " could not be read: " + ex.Message);
+					Plugin.CurrentHost.AddMessage(MessageType.Error, false, "The motor noise of " + owner + " could not be read: " + ex.Message);
 					return;
 				}
 			}

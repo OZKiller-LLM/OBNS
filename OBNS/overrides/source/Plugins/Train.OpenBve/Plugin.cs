@@ -134,6 +134,20 @@ namespace Train.OpenBve
 			"Templates"
 		};
 
+		/// <summary>OBNS: whether a train's train.xml gave any motor car its motor sound (none has one before the sound files are read).</summary>
+		private static bool HasXmlMotorSound(TrainBase train)
+		{
+			for (int i = 0; i < train.Cars.Length; i++)
+			{
+				if (train.Cars[i].TractionModel.ProvidesPower && train.Cars[i].TractionModel.MotorSounds != null)
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		public override bool CanLoadTrain(string path)
 		{
 			if (string.IsNullOrEmpty(path))
@@ -449,6 +463,26 @@ namespace Train.OpenBve
 						FileSystem.AppendToLogFile("Loading train plugin: " + atsPlugin);
 						FileSystem.AppendToLogFile(currentTrain.LoadPlugin(atsPlugin, currentTrain.TrainFolder) ? "Train plugin loaded successfully." : "The train plugin " + atsPlugin + " failed to load.");
 					}
+				}
+				else if (!HasXmlMotorSound(currentTrain) && Bve5SoundAddOn.Find(currentTrain.TrainFolder, out string addOnNoise, out string addOnSound))
+				{
+					// OBNS: a train.dat train with BVE5 motor noise (Bve5SoundAddOn): that noise, and the BVE5 sound file in
+					// place of sound.cfg if there is one; its motor sounds are the [Motor] of whichever sound file it uses.
+					// A train.xml that gives its cars their motor sound is the author's choice, and is kept.
+					string soundFile = addOnSound;
+					if (soundFile != null)
+					{
+						FileSystem.AppendToLogFile("Loading BVE5 sound for this train: " + soundFile);
+						BVE4SoundParser.Parse(soundFile, Path.GetDirectoryName(soundFile), currentTrain);
+					}
+					else
+					{
+						SoundCfgParser.ParseSoundConfig(currentTrain);
+						soundFile = Path.CombineFile(currentTrain.TrainFolder, "sound.cfg");
+					}
+
+					FileSystem.AppendToLogFile("Loading BVE5 motor noise for this train: " + addOnNoise);
+					Bve5MotorNoise.Apply(currentTrain, addOnNoise, soundFile, addOnNoise, currentTrain.TrainFolder);
 				}
 				else
 				{
