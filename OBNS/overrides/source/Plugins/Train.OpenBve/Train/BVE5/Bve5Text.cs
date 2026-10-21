@@ -71,19 +71,33 @@ namespace Train.OpenBve
 		internal static Bve5Text Read(string fileName)
 		{
 			byte[] bytes = File.ReadAllBytes(fileName);
-			int start = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? 3 : 0;
-
-			// The header is ASCII, whatever the file's encoding.
-			int end = start;
-			while (end < bytes.Length && bytes[end] != '\n' && bytes[end] != '\r')
+			string text;
+			string kind;
+			double version;
+			Encoding unicode = Utf16(bytes);
+			if (unicode != null)
 			{
-				end++;
+				// A UTF-16 file (ported cabs saved by Notepad): its byte order mark decides, whatever its header says.
+				text = unicode.GetString(bytes, 2, bytes.Length - 2);
+				ParseHeader(FirstLine(text), out kind, out version, out _);
+			}
+			else
+			{
+				int start = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? 3 : 0;
+
+				// The header is ASCII, whatever the file's encoding.
+				int end = start;
+				while (end < bytes.Length && bytes[end] != '\n' && bytes[end] != '\r')
+				{
+					end++;
+				}
+
+				string header = Encoding.ASCII.GetString(bytes, start, end - start).Trim();
+				ParseHeader(header, out kind, out version, out string encodingName);
+				Encoding encoding = ChooseEncoding(bytes, start, encodingName);
+				text = encoding.GetString(bytes, start, bytes.Length - start);
 			}
 
-			string header = Encoding.ASCII.GetString(bytes, start, end - start).Trim();
-			ParseHeader(header, out string kind, out double version, out string encodingName);
-			Encoding encoding = ChooseEncoding(bytes, start, encodingName);
-			string text = encoding.GetString(bytes, start, bytes.Length - start);
 			string[] all = text.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
 			int first = kind != null ? 1 : 0;
 			string[] lines = new string[Math.Max(0, all.Length - first)];
@@ -105,6 +119,13 @@ namespace Train.OpenBve
 				{
 					byte[] buffer = new byte[128];
 					int read = stream.Read(buffer, 0, buffer.Length);
+					Encoding unicode = Utf16(buffer);
+					if (unicode != null)
+					{
+						ParseHeader(FirstLine(unicode.GetString(buffer, 2, (read - 2) & ~1)), out string unicodeKind, out version, out _);
+						return unicodeKind;
+					}
+
 					int start = read >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF ? 3 : 0;
 					int end = start;
 					while (end < read && buffer[end] != '\n' && buffer[end] != '\r')
@@ -120,6 +141,23 @@ namespace Train.OpenBve
 			{
 				return null;
 			}
+		}
+
+		/// <summary>The encoding a UTF-16 byte order mark names, or null.</summary>
+		private static Encoding Utf16(byte[] bytes)
+		{
+			if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+			{
+				return Encoding.Unicode;
+			}
+
+			return bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF ? Encoding.BigEndianUnicode : null;
+		}
+
+		private static string FirstLine(string text)
+		{
+			int end = text.IndexOfAny(new[] { '\r', '\n' });
+			return (end >= 0 ? text.Substring(0, end) : text).Trim();
 		}
 
 		private static void ParseHeader(string header, out string kind, out double version, out string encodingName)
@@ -218,7 +256,7 @@ namespace Train.OpenBve
 		private static string StripComment(string line)
 		{
 			int cut = line.Length;
-			int hash = line.IndexOf('#');
+			int hash = CommentHash(line);
 			if (hash >= 0)
 			{
 				cut = hash;
@@ -231,6 +269,29 @@ namespace Train.OpenBve
 			}
 
 			return line.Substring(0, cut);
+		}
+
+		/// <summary>
+		/// Where a '#' starts a comment, or -1: not where it begins a value, after '=' or ',' - a colour such as
+		/// TransparentColor = #0000FF is a value, and reading it as a comment left the key empty.
+		/// </summary>
+		private static int CommentHash(string line)
+		{
+			for (int i = line.IndexOf('#'); i >= 0; i = line.IndexOf('#', i + 1))
+			{
+				int before = i - 1;
+				while (before >= 0 && char.IsWhiteSpace(line[before]))
+				{
+					before--;
+				}
+
+				if (before < 0 || line[before] != '=' && line[before] != ',')
+				{
+					return i;
+				}
+			}
+
+			return -1;
 		}
 
 		/// <summary>The file as INI sections ("" for keys before any section), names and keys ignoring case. A repeated key keeps its last value.</summary>
