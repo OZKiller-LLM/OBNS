@@ -1,6 +1,14 @@
 // OBNS: a copy of upstream's source/Plugins/Train.OpenBve/Train/BVE5/MotorSoundTable.cs (OpenBVE 1.14.1.2), laid over
-// the desktop build's mirror (OBNS/build-desktop.ps1): a motor noise table giving a speed twice no longer fails.
-// On an upstream update: copy the file again and reapply the parts marked OBNS.
+// the desktop build's mirror (OBNS/build-desktop.ps1) and compiled by Android. The parser is rewritten so that BVE5
+// motor noise tables are read as BVE5 reads them; it uses nothing beyond upstream's own types, for upstream to take:
+// - comments ('#', '//') are removed from each line (upstream's string[] TrimBVE5Comments drops its results, so
+//   the column heading row and notes were read as rows and reported as invalid speeds);
+// - a blank cell is the value interpolated from its column's rows either side (upstream read it as 1, a full
+//   volume where the table meant to fade between its rows);
+// - the frequency and volume tables are each read on their own, then both are taken at every speed either names
+//   (upstream merged their rows by speed, so a speed only one table named had no volume, or pitch 0, in the other);
+// - a speed given twice takes its later row (upstream's Add threw, and the train lost its motor noise).
+// On an upstream update: copy the file again and reapply this parser, or drop this copy if upstream has fixed these.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -24,206 +32,175 @@ namespace Train.OpenBve
 		internal static BVE5MotorSound Parse(CarBase car, string motorSoundPitch, string motorSoundGain, string brakeSoundPitch, string brakeSoundGain)
 		{
 			BVE5MotorSound motorSound = new BVE5MotorSound(car);
-			// temp working lists
-			SortedDictionary<double, BVE5MotorSoundTableEntry> motorSoundTable = new SortedDictionary<double, BVE5MotorSoundTableEntry>();
-			SortedDictionary<double, BVE5MotorSoundTableEntry> brakeSoundTable = new SortedDictionary<double, BVE5MotorSoundTableEntry>();
-			if (File.Exists(motorSoundPitch) && File.Exists(motorSoundGain))
-			{
-				ParsePitchTable(motorSoundPitch, ref motorSoundTable);
-				ParseVolumeTable(motorSoundGain, ref motorSoundTable);
-			}
-			else
-			{
-				Plugin.CurrentHost.AddMessage("Missing BVE5 MotorSound table file.");
-			}
-
-			if (File.Exists(brakeSoundPitch) && File.Exists(brakeSoundGain))
-			{
-				ParsePitchTable(brakeSoundPitch, ref brakeSoundTable);
-				ParseVolumeTable(brakeSoundGain, ref brakeSoundTable);
-			}
-			else
-			{
-				Plugin.CurrentHost.AddMessage("Missing BVE5 BrakeSound table file.");
-			}
-			
-			
-			Array.Resize(ref motorSound.MotorSoundTable, motorSoundTable.Count);
-			for (int i = 0; i < motorSoundTable.Count; i++)
-			{
-				motorSound.MotorSoundTable[i] = motorSoundTable.ElementAt(i).Value;
-			}
-			Array.Resize(ref motorSound.BrakeSoundTable, brakeSoundTable.Count);
-			for (int i = 0; i < brakeSoundTable.Count; i++)
-			{
-				motorSound.BrakeSoundTable[i] = brakeSoundTable.ElementAt(i).Value;
-			}
+			motorSound.MotorSoundTable = BuildTable(motorSoundPitch, motorSoundGain, "MotorSound");
+			motorSound.BrakeSoundTable = BuildTable(brakeSoundPitch, brakeSoundGain, "BrakeSound");
 			return motorSound;
 		}
 
-		private static void ParsePitchTable(string pitchFile, ref SortedDictionary<double, BVE5MotorSoundTableEntry> soundTable)
+		/// <summary>The motor sound table from a frequency (pitch) table and a volume (gain) table.</summary>
+		private static BVE5MotorSoundTableEntry[] BuildTable(string pitchFile, string gainFile, string name)
 		{
-			Encoding encoding = Text.DetermineBVE5FileEncoding(pitchFile);
-			string[] Lines = File.ReadAllLines(pitchFile, encoding).TrimBVE5Comments();
-			string[] format = Lines[0].Split(':');
-			if (!format[0].StartsWith("BveTs Motor Noise Table", StringComparison.InvariantCultureIgnoreCase))
+			if (!File.Exists(pitchFile) || !File.Exists(gainFile))
 			{
-				throw new Exception("Expected a BveTs Motor Noise Table, got: " + format[0]);
+				Plugin.CurrentHost.AddMessage("Missing BVE5 " + name + " table file.");
+				return new BVE5MotorSoundTableEntry[0];
 			}
 
-			SortedDictionary<double, double[]> setPoints = new SortedDictionary<double, double[]>();
-			int maxPitchValues = 0;
-			for (int i = 1; i < Lines.Length; i++)
+			// A sound the frequency table leaves out plays at its own pitch; one the volume table leaves out is silent.
+			NoiseTable pitch = NoiseTable.Read(pitchFile, 1.0);
+			NoiseTable gain = NoiseTable.Read(gainFile, 0.0);
+			double[] speeds = pitch.Speeds.Union(gain.Speeds).OrderBy(speed => speed).ToArray();
+			int sounds = Math.Max(pitch.Columns, gain.Columns);
+			BVE5MotorSoundTableEntry[] table = new BVE5MotorSoundTableEntry[speeds.Length];
+			for (int i = 0; i < speeds.Length; i++)
 			{
-				if (!string.IsNullOrEmpty(Lines[i]))
+				table[i] = new BVE5MotorSoundTableEntry(speeds[i]) { Sounds = new SoundState[sounds] };
+				for (int j = 0; j < sounds; j++)
 				{
-					string[] splitString = Lines[i].TrimEnd(',', ' ').Split(',');
-					if (!double.TryParse(splitString[0], out double speed))
-					{
-						Plugin.CurrentHost.AddMessage(MessageType.Error, false, "Invalid speed encountered at Line " + i + " in BveTs Motor Noise table " + pitchFile);
-						continue;
-					}
-
-					if (splitString.Length > maxPitchValues)
-					{
-						maxPitchValues = splitString.Length;
-					}
-
-					double[] pitchValues = new double[maxPitchValues];
-					for (int j = 1; j < splitString.Length; j++)
-					{
-						// default for unspecified pitch is 1.0 (original pitch)
-						if (string.IsNullOrEmpty(splitString[j]))
-						{
-							pitchValues[j - 1] = 1;
-						}
-						if (!double.TryParse(splitString[j], out pitchValues[j - 1]))
-						{
-							pitchValues[j - 1] = 1;
-							if (!string.IsNullOrEmpty(splitString[j]))
-							{
-								Plugin.CurrentHost.AddMessage(MessageType.Error, false, "Invalid pitch encountered at Line " + i + " Index " + (j - 1) + " in BveTs Motor Noise table " + pitchFile);
-							}
-						}
-					}
-					// OBNS: a speed given twice takes its later row (upstream's Add threw, and the train lost its motor noise).
-					setPoints[speed] = pitchValues;
+					table[i].Sounds[j].Pitch = pitch.ValueAt(j, speeds[i]);
+					table[i].Sounds[j].Gain = gain.ValueAt(j, speeds[i]);
 				}
 			}
 
-			for (int i = 0; i < setPoints.Count; i++)
-			{
-				double speed = setPoints.ElementAt(i).Key;
-				if (soundTable.ContainsKey(speed))
-				{
-					BVE5MotorSoundTableEntry entryToUpdate = soundTable[speed];
-					double[] pitchValues = setPoints.ElementAt(i).Value;
-					if (pitchValues.Length > entryToUpdate.Sounds.Length)
-					{
-						Array.Resize(ref entryToUpdate.Sounds, pitchValues.Length);
-					}
-					for (int k = 0; k < pitchValues.Length; k++)
-					{
-						entryToUpdate.Sounds[k].Pitch = pitchValues[k];
-					}
-					soundTable[speed] = entryToUpdate;
-				}
-				else
-				{
-					BVE5MotorSoundTableEntry newEntry = new BVE5MotorSoundTableEntry(speed);
-					double[] pitchValues = setPoints.ElementAt(i).Value;
-					Array.Resize(ref newEntry.Sounds, pitchValues.Length);
-					for (int k = 0; k < pitchValues.Length; k++)
-					{
-						newEntry.Sounds[k].Pitch = pitchValues[k];
-					}
-					soundTable.Add(speed, newEntry);
-				}
-			}
+			return table;
 		}
 
-		private static void ParseVolumeTable(string volumeFile, ref SortedDictionary<double, BVE5MotorSoundTableEntry> soundTable)
+		/// <summary>One BVE5 motor noise table: a column of values per sound, against speed.</summary>
+		private class NoiseTable
 		{
-			Encoding encoding = Text.DetermineBVE5FileEncoding(volumeFile);
-			string[] Lines = File.ReadAllLines(volumeFile, encoding).TrimBVE5Comments();
-			string[] format = Lines[0].Split(':');
-			if (!format[0].StartsWith("BveTs Motor Noise Table", StringComparison.InvariantCultureIgnoreCase))
-			{
-				throw new Exception("Expected a BveTs Motor Noise Table, got: " + format[0]);
-			}
+			/// <summary>The rows' speeds, in km/h, ascending.</summary>
+			internal double[] Speeds;
 
-			SortedDictionary<double, double[]> setPoints = new SortedDictionary<double, double[]>();
+			/// <summary>The values: Values[sound][row].</summary>
+			private double[][] values;
 
-			int maxGainValues = 0;
-			for (int i = 1; i < Lines.Length; i++)
+			/// <summary>The value of a sound with no column in the table.</summary>
+			private double missing;
+
+			internal int Columns => values.Length;
+
+			/// <summary>Reads a table: after the header, rows of a speed and a value per sound, blank cells interpolated.</summary>
+			internal static NoiseTable Read(string fileName, double missing)
 			{
-				if (!string.IsNullOrEmpty(Lines[i]))
+				Encoding encoding = Text.DetermineBVE5FileEncoding(fileName);
+				string[] lines = File.ReadAllLines(fileName, encoding);
+				if (lines.Length == 0 || !lines[0].TrimStart().StartsWith("BveTs Motor Noise Table", StringComparison.InvariantCultureIgnoreCase))
 				{
-					string[] splitString = Lines[i].TrimEnd(',', ' ').Split(',');
-					if (!double.TryParse(splitString[0], out double speed))
+					throw new Exception("Expected a BveTs Motor Noise Table, got: " + (lines.Length > 0 ? lines[0].Split(':')[0] : "an empty file"));
+				}
+
+				SortedDictionary<double, double[]> rows = new SortedDictionary<double, double[]>();
+				int columns = 0;
+				for (int i = 1; i < lines.Length; i++)
+				{
+					string line = lines[i].TrimBVE5Comments().Trim();
+					if (line.Length == 0)
 					{
-						Plugin.CurrentHost.AddMessage(MessageType.Error, false, "Invalid speed encountered at Line " + i + " in BveTs Motor Noise table " + volumeFile);
 						continue;
 					}
 
-					if (splitString.Length > maxGainValues)
+					string[] cells = line.Split(',');
+					if (!double.TryParse(cells[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double speed))
 					{
-						maxGainValues = splitString.Length;
+						Plugin.CurrentHost.AddMessage(MessageType.Error, false, "Invalid speed encountered at Line " + (i + 1) + " in BveTs Motor Noise table " + fileName);
+						continue;
 					}
 
-					double[] gainValues = new double[maxGainValues];
-					for (int j = 1; j < splitString.Length; j++)
+					double[] row = new double[cells.Length - 1];
+					for (int j = 1; j < cells.Length; j++)
 					{
-						// default for unspecified gain is 1.0 (original gain)
-						if (string.IsNullOrEmpty(splitString[j]))
+						string cell = cells[j].Trim();
+						row[j - 1] = double.NaN;
+						if (cell.Length != 0 && !double.TryParse(cell, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out row[j - 1]))
 						{
-							gainValues[j - 1] = 1;
-						}
-
-						if (!double.TryParse(splitString[j], out gainValues[j - 1]))
-						{
-							gainValues[j - 1] = 1;
-							if(!string.IsNullOrEmpty(splitString[j]))
-							{
-								Plugin.CurrentHost.AddMessage(MessageType.Error, false, "Invalid gain encountered at Line " + i + " Index " + (j - 1) + " in BveTs Motor Noise table " + volumeFile);
-							}
+							row[j - 1] = double.NaN;
+							Plugin.CurrentHost.AddMessage(MessageType.Error, false, "Invalid value encountered at Line " + (i + 1) + " Index " + (j - 1) + " in BveTs Motor Noise table " + fileName);
 						}
 					}
 
-					
-					// OBNS: a speed given twice takes its later row (upstream's Add threw, and the train lost its motor noise).
-					setPoints[speed] = gainValues;
+					columns = Math.Max(columns, row.Length);
+					// A speed given twice takes its later row.
+					rows[speed] = row;
+				}
+
+				NoiseTable table = new NoiseTable { Speeds = rows.Keys.ToArray(), values = new double[columns][], missing = missing };
+				double[][] byRow = rows.Values.ToArray();
+				for (int j = 0; j < columns; j++)
+				{
+					table.values[j] = new double[byRow.Length];
+					for (int r = 0; r < byRow.Length; r++)
+					{
+						table.values[j][r] = j < byRow[r].Length ? byRow[r][j] : double.NaN;
+					}
+
+					FillBlanks(table.Speeds, table.values[j]);
+				}
+
+				return table;
+			}
+
+			/// <summary>
+			/// Fills a column's blank cells: between two values, linearly by speed; before the first value or after
+			/// the last, with that value; a column with no values at all is silent (0).
+			/// </summary>
+			private static void FillBlanks(double[] speeds, double[] column)
+			{
+				int previous = -1;
+				for (int r = 0; r <= column.Length; r++)
+				{
+					if (r < column.Length && double.IsNaN(column[r]))
+					{
+						continue;
+					}
+
+					// Rows previous+1 .. r-1 are blank, between the values at previous and r (either may be missing).
+					for (int b = previous + 1; b < r; b++)
+					{
+						if (previous < 0 && r >= column.Length)
+						{
+							column[b] = 0.0;
+						}
+						else if (previous < 0)
+						{
+							column[b] = column[r];
+						}
+						else if (r >= column.Length || speeds[r] <= speeds[previous])
+						{
+							column[b] = column[previous];
+						}
+						else
+						{
+							column[b] = column[previous] + (column[r] - column[previous]) * (speeds[b] - speeds[previous]) / (speeds[r] - speeds[previous]);
+						}
+					}
+
+					previous = r;
 				}
 			}
 
-			for (int i = 0; i < setPoints.Count; i++)
+			/// <summary>A sound's value at a speed: interpolated between the rows either side, the end rows' beyond them.</summary>
+			internal double ValueAt(int column, double speed)
 			{
-				double speed = setPoints.ElementAt(i).Key;
-				if (soundTable.ContainsKey(speed))
+				if (column >= values.Length || Speeds.Length == 0)
 				{
-					BVE5MotorSoundTableEntry entryToUpdate = soundTable[speed];
-					double[] gainValues = setPoints.ElementAt(i).Value;
-					if (gainValues.Length > entryToUpdate.Sounds.Length)
-					{
-						Array.Resize(ref entryToUpdate.Sounds, gainValues.Length);
-					}
-					for (int k = 0; k < gainValues.Length; k++)
-					{
-						entryToUpdate.Sounds[k].Gain = gainValues[k];
-					}
-					soundTable[speed] = entryToUpdate;
+					return missing;
 				}
-				else
+
+				double[] value = values[column];
+				if (speed <= Speeds[0])
 				{
-					BVE5MotorSoundTableEntry newEntry = new BVE5MotorSoundTableEntry(speed);
-					double[] gainValues = setPoints.ElementAt(i).Value;
-					Array.Resize(ref newEntry.Sounds, gainValues.Length);
-					for (int k = 0; k < gainValues.Length; k++)
-					{
-						newEntry.Sounds[k].Gain = gainValues[k];
-					}
-					soundTable.Add(speed, newEntry);
+					return value[0];
 				}
+
+				for (int r = 1; r < Speeds.Length; r++)
+				{
+					if (speed <= Speeds[r])
+					{
+						return value[r - 1] + (value[r] - value[r - 1]) * (speed - Speeds[r - 1]) / (Speeds[r] - Speeds[r - 1]);
+					}
+				}
+
+				return value[value.Length - 1];
 			}
 		}
 	}

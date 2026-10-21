@@ -19,6 +19,9 @@
     <Compile Remove="$(UpstreamSource)TrainManager\SafetySystems\Plugin\Plugin.Functions.cs" />
     <Compile Include="Plugin.Functions.Android.cs" />
     <Compile Remove="$(UpstreamSource)TrainManager\Properties\AssemblyInfo.cs" />
+    <!-- OBNS's copy, shared with the desktop build: BVE5 motor noise as its tables say (see the file's header). -->
+    <Compile Remove="$(UpstreamSource)TrainManager\Motor\BVE5\MotorSound.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\TrainManager\Motor\BVE5\MotorSound.cs" Link="OBNS\BVE5MotorSound.cs" />
     <!--
       The out-of-process proxy for 32-bit Win32 ATS plugins: it talks WCF to a Windows .exe that
       loads x86 machine code, so it can never run on Android. Trains relying on such a plugin
