@@ -119,7 +119,15 @@ namespace OpenBve.Android
 				// A full load, not a preview: objects are created and registered with the renderer.
 				LoadProgress.Route = plugin.Route;
 				ScriptedTrainLoader.Reset();
-				bool loaded = plugin.Route.LoadRoute(file, encoding, null, objectFolder, soundFolder, false, ref routeObject);
+				// As upstream, the route is given the train's folder (a CSV route's timetable images can be there);
+				// a train that is a file (a BVE5 vehicle, an MSTS consist) gives the folder it is in.
+				string trainFolder = host.CurrentTrainFolder;
+				if (!string.IsNullOrEmpty(trainFolder) && File.Exists(trainFolder))
+				{
+					trainFolder = Path.GetDirectoryName(trainFolder);
+				}
+
+				bool loaded = plugin.Route.LoadRoute(file, encoding, string.IsNullOrEmpty(trainFolder) ? null : trainFolder, objectFolder, soundFolder, false, ref routeObject);
 				// The scripted trains the route asked for, still loading on other cores.
 				ScriptedTrainLoader.Finish(Program.TrainManager?.TFOs);
 				double seconds = (DateTime.UtcNow - started).TotalSeconds;

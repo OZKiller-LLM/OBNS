@@ -54,7 +54,8 @@ namespace Train.OpenBve
 		/// <summary>Whether a file is a BVE5 vehicle file (by its header).</summary>
 		internal static bool IsVehicleFile(string fileName)
 		{
-			return File.Exists(fileName) && string.Equals(Bve5Text.ReadKind(fileName, out _), "Vehicle", StringComparison.OrdinalIgnoreCase);
+			// BVE5 names its text files .txt; train browsers ask about every file in a folder, so others are not opened.
+			return fileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) && File.Exists(fileName) && string.Equals(Bve5Text.ReadKind(fileName, out _), "Vehicle", StringComparison.OrdinalIgnoreCase);
 		}
 
 		/// <summary>

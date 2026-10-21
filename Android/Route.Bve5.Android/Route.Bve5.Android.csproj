@@ -15,6 +15,9 @@
   <ItemGroup>
     <Compile Include="$(UpstreamSource)Plugins\Route.Bve5\**\*.cs" LinkBase="Route.Bve5" />
     <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\Properties\AssemblyInfo.cs" />
+    <!-- OBNS's copy, shared with the desktop build: the scenario's vehicle is the route's suggested train. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\ScenarioParser.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\ScenarioParser.cs" Link="OBNS\ScenarioParser.cs" />
 
   </ItemGroup>
 

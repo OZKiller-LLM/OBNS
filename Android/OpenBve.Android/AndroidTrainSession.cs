@@ -158,6 +158,11 @@ namespace OpenBve.Android
 				// A Win32 plugin, identified and run as a managed translation.
 				pluginSummary = translated;
 			}
+			else if (train.Plugin != null)
+			{
+				// A BVE5 train loads its own plugin with the train (OBNS/BVE5.md); a .NET one runs here as it is.
+				pluginSummary = "the train's own plugin, loaded with the train";
+			}
 			else if (train.LoadCustomPlugin(trainFolder, encoding))
 			{
 				pluginSummary = "the train's own plugin";

@@ -22,6 +22,7 @@
 //(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+extern alias ContentPlugins;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -62,6 +63,12 @@ namespace OpenBve.Android.NativePlugins
 			if (file == null)
 			{
 				return false;
+			}
+
+			// A BVE5 train may be its vehicle file rather than its folder; the plugin's surroundings are the folder.
+			if (File.Exists(trainFolder))
+			{
+				trainFolder = Path.GetDirectoryName(trainFolder);
 			}
 
 			NativePluginImage image = NativePluginImage.Read(file);
@@ -239,6 +246,27 @@ namespace OpenBve.Android.NativePlugins
 		}
 
 		/// <summary>
+		/// A BVE5 train's safety plugin (OBNS/BVE5.md): its vehicle file's 32-bit plugin, which the x86 layer runs,
+		/// else its 64-bit one; null if the train is not a BVE5 train or names neither. The train plugin's own
+		/// call to load it fails on Android, as every Win32 plugin's does, so it comes here as an ats.cfg's would.
+		/// </summary>
+		private static string Bve5Plugin(string trainFolder)
+		{
+			try
+			{
+				string vehicleFile = ContentPlugins::Train.OpenBve.Bve5Vehicle.Find(trainFolder);
+				ContentPlugins::Train.OpenBve.Bve5Vehicle vehicle = vehicleFile != null ? ContentPlugins::Train.OpenBve.Bve5Vehicle.Load(vehicleFile) : null;
+				string file = vehicle?.Ats32 ?? vehicle?.Ats64;
+				return file != null && File.Exists(file) ? file : null;
+			}
+			catch (Exception ex)
+			{
+				Log.Warn(Tag, "BVE5 vehicle in " + trainFolder + " could not be read: " + ex.Message);
+				return null;
+			}
+		}
+
+		/// <summary>
 		/// The plugin file named by the train's ats.cfg, or null if there is none.
 		/// </summary>
 		/// <remarks>
@@ -247,6 +275,17 @@ namespace OpenBve.Android.NativePlugins
 		/// </remarks>
 		private static string ResolvePlugin(string trainFolder, Encoding encoding)
 		{
+			string bve5Plugin = Bve5Plugin(trainFolder);
+			if (bve5Plugin != null)
+			{
+				return bve5Plugin;
+			}
+
+			if (File.Exists(trainFolder))
+			{
+				return null;
+			}
+
 			string config = OpenBveApi.Path.CombineFile(trainFolder, "ats.cfg");
 			if (!File.Exists(config))
 			{

@@ -169,6 +169,40 @@ namespace OpenBve.Android
 			}
 		}
 
+		/// <summary>
+		/// Whether a file is a train, by upstream's rule for its train list: a train plugin can load it (an MSTS
+		/// consist, a BVE5 vehicle file), except MSTS's AI consists, whose names start with '#'.
+		/// </summary>
+		public static bool IsTrainFile(string file)
+		{
+			string name = System.IO.Path.GetFileName(file);
+			if (string.IsNullOrEmpty(name) || name[0] == '.' || name[0] == '#' && name.EndsWith(".con", StringComparison.OrdinalIgnoreCase))
+			{
+				return false;
+			}
+
+			lock (Sync)
+			{
+				EnsurePlugins();
+				foreach (ContentLoadingPlugin plugin in Menu.Host.Plugins)
+				{
+					try
+					{
+						if (plugin.Train != null && plugin.Train.CanLoadTrain(file))
+						{
+							return true;
+						}
+					}
+					catch (Exception)
+					{
+						// A plugin that cannot tell is not accepting it.
+					}
+				}
+
+				return false;
+			}
+		}
+
 		/// <summary>Whether a folder is a train, by upstream's rule (it holds train.dat or train.xml).</summary>
 		public static bool IsTrainFolder(string folder)
 		{
@@ -309,6 +343,12 @@ namespace OpenBve.Android
 			if (string.IsNullOrEmpty(routeFile) || string.IsNullOrEmpty(trainName))
 			{
 				return null;
+			}
+
+			// A BVE5 scenario suggests its vehicle by its full path (OBNS's Route.Bve5 ScenarioParser).
+			if (System.IO.Path.IsPathRooted(trainName) && (File.Exists(trainName) || Directory.Exists(trainName)))
+			{
+				return trainName;
 			}
 
 			string currentFolder;

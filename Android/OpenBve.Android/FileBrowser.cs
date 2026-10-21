@@ -365,6 +365,10 @@ namespace OpenBve.Android
 					case Mode.Route when RouteInfo.IsRouteFile(file):
 						entries.Add(new Entry { Kind = EntryKind.Route, Name = name, Path = file });
 						break;
+					case Mode.Train when RouteInfo.IsTrainFile(file):
+						// As upstream's train list: a file a train plugin loads (an MSTS consist, a BVE5 vehicle).
+						entries.Add(new Entry { Kind = EntryKind.Train, Name = name, Path = file });
+						break;
 					case Mode.Package when PackageExtensions.Contains(System.IO.Path.GetExtension(file).ToLowerInvariant()):
 						entries.Add(new Entry { Kind = EntryKind.Package, Name = name, Path = file });
 						break;

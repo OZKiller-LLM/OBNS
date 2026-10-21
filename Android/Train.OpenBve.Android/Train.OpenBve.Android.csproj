@@ -28,6 +28,8 @@
     <Compile Include="$(ObnsTrainPlugin)Plugin.cs" Link="OBNS\Plugin.cs" />
     <Compile Include="$(ObnsTrainPlugin)Panel\Panel2CfgParser.cs" Link="OBNS\Panel2CfgParser.cs" />
     <Compile Include="$(ObnsTrainPlugin)Train\BVE5\*.cs" LinkBase="OBNS\BVE5" />
+    <!-- The app finds a BVE5 vehicle's safety plugin with OBNS's reader (NativePluginBridge.ResolvePlugin). -->
+    <InternalsVisibleTo Include="OpenBve.Android" />
 
   </ItemGroup>
 
