@@ -1,6 +1,6 @@
 // OBNS: a copy of upstream's source/Plugins/Train.OpenBve/Panel/Panel2CfgParser.cs (OpenBVE 1.14.1.2), laid over
-// the desktop build's mirror (OBNS/build-desktop.ps1): for BVE5 instrument panels, the default view is kept
-// within the panel's displayable limits, as BVE5 keeps it (see ClampDefaultView). Panel2.cfg panels are unchanged.
+// the desktop build's mirror (OBNS/build-desktop.ps1): for BVE5 trains' panels, the default view is kept within
+// the panel's displayable limits, as BVE5 keeps it (see ClampDefaultView). BVE4 trains' panels are unchanged.
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 using System;
 using System.Collections.Generic;
@@ -40,11 +40,11 @@ namespace Train.OpenBve
 		Vector2 PanelCenter = new Vector2(0, 512);
 
 		/// <summary>
-		/// OBNS: whether the default view is kept within the panel's limits (BVE5 instrument panels). BVE5's
+		/// OBNS: whether the default view is kept within the panel's limits (a BVE5 train's panel, in either format). BVE5's
 		/// Center is the point at the screen's center "at the default viewpoint", and Left, Top, Right and Bottom
 		/// are the limits the view can be moved to; BVE5 keeps the default view within them too, so a Center
-		/// near a limit (the E233's, at its Top) puts the view's center further in. Upstream's panel2.cfg has
-		/// no such rule, and its panels are left as they are.
+		/// near a limit (the E233's, at its Top) puts the view's center further in. Upstream, for BVE4 trains,
+		/// has no such rule, and their panels are left as they are.
 		/// </summary>
 		internal bool ClampDefaultView;
 		Vector2 PanelOrigin = new Vector2(0, 512);
@@ -95,7 +95,15 @@ namespace Train.OpenBve
 					ApplyGlobalHacks();
 					if (ClampDefaultView)
 					{
-						// OBNS: the screen's half width and half height, in panel pixels.
+						/*
+						 * OBNS: BVE5 trains' panels are laid out for a 4:3 view: on a wider screen the panel keeps the
+						 * height a 4:3 screen shows (Resolution x 3/4 panel pixels), and more of its sides show, rather
+						 * than being cut to the width's scale. (Their Centers sit low and their vanishing points well
+						 * above, which on a 16:10 screen cut to width put the horizon at the top edge - the JR pack's
+						 * H102 looked down at its gauges.)
+						 */
+						PanelResolution *= Math.Max(1.0, 0.75 * Plugin.Renderer.Screen.AspectRatio);
+						// The screen's half width and half height, in panel pixels.
 						double halfWidth = 0.5 * PanelResolution, halfHeight = 0.5 * PanelResolution / Plugin.Renderer.Screen.AspectRatio;
 						PanelCenter.X = Clamp(PanelCenter.X, PanelLeft + halfWidth, PanelRight - halfWidth);
 						PanelCenter.Y = Clamp(PanelCenter.Y, PanelTop + halfHeight, PanelBottom - halfHeight);

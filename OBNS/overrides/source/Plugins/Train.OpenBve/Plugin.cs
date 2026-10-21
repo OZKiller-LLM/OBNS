@@ -309,8 +309,8 @@ namespace Train.OpenBve
 			    currentTrain.Cars[currentTrain.DriverCar].CarSections = new Dictionary<CarSectionType, CarSection>();
 			    currentTrain.Cars[currentTrain.DriverCar].CarSections.Add(CarSectionType.Interior, new CarSection(CurrentHost, ObjectType.Overlay, true));
 			    FileSystem.AppendToLogFile("Loading train panel: " + bve5Vehicle.Panel);
-			    // A BVE5 instrument panel keeps its default view within its limits, as BVE5 does; a panel2.cfg as upstream.
-			    Panel2CfgParser.ClampDefaultView = string.Equals(Bve5Text.ReadKind(bve5Vehicle.Panel, out _), "Instrument Panel", StringComparison.OrdinalIgnoreCase);
+			    // BVE5 keeps the default view within the panel's limits, whichever format the panel is in.
+			    Panel2CfgParser.ClampDefaultView = true;
 			    Panel2CfgParser.ParsePanel2Config(Path.GetFileName(bve5Vehicle.Panel), Path.GetDirectoryName(bve5Vehicle.Panel), currentTrain.Cars[currentTrain.DriverCar]);
 			    Panel2CfgParser.ClampDefaultView = false;
 			    currentTrain.Cars[currentTrain.DriverCar].CameraRestrictionMode = CameraRestrictionMode.On;
