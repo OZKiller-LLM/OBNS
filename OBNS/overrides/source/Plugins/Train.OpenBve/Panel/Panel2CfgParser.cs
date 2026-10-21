@@ -56,7 +56,9 @@ namespace Train.OpenBve
 		///   which holds it at its first angle; BVE5 trains set 0 on most of their needles (the E233's
 		///   speedometer), and BVE5 moves them;
 		/// - a pilot lamp is lit by any value but 0. Upstream lights it at 1 only; BVE5 plugins light lamps with
-		///   other values (KO-ATC's speed-code lamps take 2, 4, 8 and so on).
+		///   other values (KO-ATC's speed-code lamps take 2, 4, 8 and so on);
+		/// - the file is read as BVE5 reads it (Bve5Text): in the encoding its header names, with '#' starting a
+		///   comment as ';' does. Upstream takes a '#' line for a malformed key and reports it.
 		/// Upstream, for BVE4 trains, has none of these rules, and their panels are left as they are.
 		/// </summary>
 		private bool bve5Rules;
@@ -97,6 +99,22 @@ namespace Train.OpenBve
 			return false;
 		}
 
+		/// <summary>OBNS: a panel file's lines as BVE5 reads them, without comments, numbered as in the file.</summary>
+		private static string[] Bve5Lines(string fileName)
+		{
+			Bve5Text text = Bve5Text.Read(fileName);
+			if (text.Kind == null)
+			{
+				return text.Lines;
+			}
+
+			// Bve5Text leaves out the header line; an empty one keeps the numbers in messages.
+			string[] lines = new string[text.Lines.Length + 1];
+			lines[0] = string.Empty;
+			Array.Copy(text.Lines, 0, lines, 1, text.Lines.Length);
+			return lines;
+		}
+
 		/// <summary>OBNS: a value within limits; their midpoint where they are closer together than nothing.</summary>
 		private static double Clamp(double value, double low, double high)
 		{
@@ -113,9 +131,9 @@ namespace Train.OpenBve
 			trainName = new DirectoryInfo(trainPath).Name.ToUpperInvariant();
 			System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.InvariantCulture;
 			string fileName = Path.CombineFile(trainPath, panelFile);
-			ConfigFile<Panel2Sections, Panel2Key> cfg = new ConfigFile<Panel2Sections, Panel2Key>(fileName, Plugin.CurrentHost);
 			// OBNS: a BVE5 train's panel, or a ported BVE5 cab, is read as BVE5 reads it.
 			bve5Rules = Bve5Train || MarkedBve5(fileName);
+			ConfigFile<Panel2Sections, Panel2Key> cfg = bve5Rules ? new ConfigFile<Panel2Sections, Panel2Key>(Bve5Lines(fileName), fileName, Plugin.CurrentHost) : new ConfigFile<Panel2Sections, Panel2Key>(fileName, Plugin.CurrentHost);
 
 			if (cfg.ReadBlock(Panel2Sections.This, out var Block))
 			{
