@@ -1,60 +1,68 @@
-# BVE5 trains in OpenBVE (plan)
+# BVE5 trains in OBNS
 
-BVE Trainsim 5 trains, and their safety plugins, for the desktop build and Android. A BVE5 train is a
-folder with a vehicle file (`BveTs Vehicle 2.00`) naming its other files. Upstream's train plugin
-recognises the header (`Plugin.CanLoadTrain`) and notes that BVE5 is not implemented; upstream already
-has the BVE5 motor noise tables (`Train/BVE5/MotorSoundTable.cs`, used from train.xml).
+BVE Trainsim 5 trains, and their safety plugins, on the desktop build and on Android. A BVE5 train is a
+vehicle file (`BveTs Vehicle 2.00`) naming its other files. OBNS reads it in upstream's own train plugin
+(`Train.OpenBve`): its OBNS copy of `Plugin.cs` claims BVE5 vehicles in `CanLoadTrain`, as upstream's
+comments there say it should once BVE5 is supported, and builds them in `LoadTrain` (`Train/BVE5`). The
+same files are compiled by the desktop build and by Android.
 
-Status: formats gathered (below); loader not written yet. **Needs real BVE5 trains to check against**
-- the motor noise file's header and keys, and the step logic of the performance tables, are not
-fully documented in what could be read.
+Checked against real trains: JR E233-7000 (cocoa; Kazuma's, on the BVE5 TWR Rinkai Line and the Saikyo
+Line), Eidan 02, Metro 02B, Keio 8000, JR 103 and H102 (RockOn's JR pack), JRW 103.
 
 ## Files
 
-Every file: first line `BveTs <kind> <version>[:encoding]` (UTF-8 if no encoding), `#` or `;` comments,
-INI sections and `Key = Value`, paths relative to the file.
+Every file: first line `BveTs <kind> <version>[:encoding]` (UTF-8 if no encoding, else Shift_JIS where
+not valid UTF-8; older trains write `Bvets`), `#` or `;` comments, INI sections and `Key = Value`, paths
+relative to the file. The vehicle performance file and the motor noise file have no header line.
 
 | File | Header | Contents |
 |---|---|---|
-| Vehicle | `BveTs Vehicle 2.00` | `PerformanceCurve`, `Parameters`, `Panel`, `Sound`, `MotorNoise`, `Ats32`, `Ats64` |
-| Parameters | `BveTs Vehicle Parameters 2.01` | general (`FirstCar`, `LoadCompensating`); `Cab`/`OneLeverCab` (notch counts, holding speed, ATS cancel notch, texts); `ConstantSpeedControl`; `MainCircuit`; `PowerReAdhesion`; brake system `Ecb`/`Smee`/`Cl` with `Sap`, `Er`, `Bp`, `AirSupplement`/`LockoutValve`, `Bc`/`BcServo`, `Brake`, `BrakeReAdhesion`; `Compressor`; `Dynamics` (masses, counts, inertia, car length, resistance); `Passengers`; `Door`; `ViewPoint` |
-| Performance | (vehicle performance file; header not confirmed) | `[Power]` and `[Brake]`, each: `Force`, `MaxForce`, `Current`, `MaxCurrent`, `NoLoadCurrent`, `Params` - paths to performance tables |
-| Performance table | `BveTs Vehicle Performance Table 2.01` | a grid: column 1 the speed (km/h, ascending), each further column one curve (a "notch" or "step"); force in N per motor car, current in A; linear between speeds. The `Params` table has rows `BreakerDelay_On/Off`, `ResetTime`, `CurrentReducingTime`, `JerkRegulation_Up/Down`, `RequiredNotch_Up/Down`, `StepDelay_Up/Down`, `CurrentLimitingValue_Empty/Full` |
-| Sound | `BveTs Vehicle Sound 3.01` | `[Run]`, `[Flange]`, `[Motor]`, `[Joint]` (indexed), `[Brake]`, `[Compressor]`, `[AirSpring]`, `[Breaker]`, `[Horn]`, `[Door]`, `[Ats]` (0-255), `[Buzzer]`, `[PilotLamp]`, `[BrakeHandle]`, `[MasterController]`, `[Reverser]`, `[Others]` |
-| Motor noise | `BveTs Motor Noise ...` (not confirmed) | the power and brake pitch and volume tables (`BveTs Motor Noise Table`), as upstream's XML `PowerFreq`, `PowerVol`, `BrakeFreq`, `BrakeVol` |
-| Panel | `BveTs Instrument Panel 2.01` | `[This]`, `[PilotLamp]`, `[Needle]`, `[DigitalGauge]`, `[DigitalNumber]`; subjects `kmph`, `bc`, `mr`, `sap`, `bp`, `er`, `am`, `door`, `csc`, `ats0`-`ats255`, `power`, `brake`, `hour`/`min`/`sec` and digits |
-| Safety plugin | Win32 DLL, the BVE4 ATS interface (16 functions) | `Ats32` (x86), `Ats64` (x64) |
+| Vehicle | `BveTs Vehicle 0.03`-`2.00` | `PerformanceCurve`, `Parameters`, `Panel`, `Sound`, `MotorNoise`, `Ats` (old) / `Ats32`, `Ats64` |
+| Parameters | `BveTs Vehicle Parameters 0.04`-`2.01` | `Cab`/`OneLeverCab`, `Ecb`/`Smee`/`Cl` with `Sap`, `Er`, `Bp`, `AirSupplement`/`LockoutValve`, `Bc`, `Brake`, `Compressor`, `Dynamics`, ... |
+| Performance | (none) | `[Power]` and `[Brake]`: `Force`, `MaxForce`, `Current`, `MaxCurrent`, `NoLoadCurrent`, `Params` tables |
+| Performance table | `BveTs Vehicle Performance Table 0.01`-`2.01` | speed (km/h) then a column per step; trailing commas and `#` rows |
+| Sound | `BveTs Vehicle Sound 3.01` | BVE4's sound.cfg sections (`[Motor]` indexed sounds and the rest) |
+| Motor noise | (none) | `[Power]` and `[Brake]`, each `Volume` and `Frequency`: motor noise tables |
+| Motor noise table | `BveTs Motor Noise Table 0.01` | speed (km/h) then a column per `[Motor]` sound; blank cells interpolated |
+| Panel | `BveTs Instrument Panel 2.01`, or panel2.cfg `Version 1.0` | panel2.cfg's sections and subjects |
+| Safety plugin | Win32 DLL, the BVE4 ATS interface | `Ats32` (x86), `Ats64` (x64) |
 
-## Mapping onto OpenBVE
+## How OBNS reads them
 
-- **Cars**: `Dynamics` counts and masses, `FirstCar`; motor cars get the traction model.
-- **Handles**: `Cab` notch counts, holding-speed brake as hold brake, `OneLeverCab` as a single handle.
-- **Brakes**: `Ecb` → electric command brake, `Smee` → electromagnetic straight air brake,
-  `Cl` → automatic air brake - OpenBVE's own three, which follow BVE4's, with the pressures,
-  rates and volume ratios from `Bc`, `Bp`, `Sap`, `Er`, `Compressor`, `Brake`.
-- **Traction**: a BVE5 acceleration model per motor car - force from the active curve at the
-  speed, scaled by load (`MaxForce`) - with BVE5's step state (advance while the handle is at
-  `RequiredNotch_Up` or above and the current under `CurrentLimitingValue`, after `StepDelay`;
-  return likewise), jerk regulation, the regeneration limits and the breaker delays. The current
-  tables feed the `am` panel subject and motor sound.
-- **Panel**: a BVE5 panel parser onto OpenBVE's 2D panel elements (the same element kinds as
-  panel2.cfg), its subjects mapped to OpenBVE's. A BVE5 train's panel, in either format, is read
-  as BVE5 reads it: laid out for a 4:3 view, with the default view kept within the panel's
-  limits; a needle with `NaturalFreq = 0` follows its value undamped (upstream holds such a
-  needle at its first angle; most BVE5 needles set 0, the E233's speedometer among them); and a
-  pilot lamp is lit by any value but 0 (upstream: 1 only; KO-ATC's speed-code lamps take 2, 4,
-  8 and so on). A BVE5 cab ported to a BVE4 train's panel2.cfg gets the same rules with
-  `Bve5 = true` in its `[This]` section (an OBNS key; upstream reports it as unknown and reads
-  the panel as before).
-- **Sound**: the vehicle sound file onto OpenBVE's car sounds; motor noise through upstream's
-  `Bve5MotorSoundTableParser`.
-- **Safety plugin**: `Ats64` on the desktop (a 64-bit process loads it directly); `Ats32` through
-  upstream's Win32PluginProxy, and on Android through the x86 plugin layer. An `Ats64`-only train
-  on Android needs an x64 layer, which does not exist yet.
+- **Choosing the train**: a folder with a BVE5 vehicle file (its `vehicle.txt`, else the first by name),
+  or a vehicle file itself - a formation of several in one folder is chosen by its file, which the train
+  lists show as upstream's lists show MSTS consists (desktop and Android) and the command line accepts.
+  A BVE5 scenario's `Vehicle` (chosen by weight, as its route is) is the route's suggested train
+  (OBNS's copies of `Route.Bve5/ScenarioParser.cs`, `OpenBVE/System/Loading.cs` and `Program.cs`).
+- **Cars, handles, brakes, traction**: `Dynamics` counts and masses; `Cab` notch counts; `Ecb`/`Smee`/
+  `Cl` as OpenBVE's electric command, electromagnetic straight air and automatic air brakes; a BVE5
+  traction model per motor car with BVE5's step logic (a step advances while the handle is at
+  `RequiredNotch_Up` or above and the current at or under `CurrentLimitingValue`).
+- **Panel**: both formats through upstream's panel2.cfg parser (OBNS copy), read as BVE5 reads them: laid
+  out for a 4:3 view with the default view kept within the panel's limits; a needle with
+  `NaturalFreq = 0` undamped (upstream holds it at its first angle); a pilot lamp lit by any value but 0
+  (upstream: 1 only; KO-ATC's speed-code lamps take 2, 4, 8 ...); `#` comments. A BVE5 cab ported to a
+  BVE4 train's panel2.cfg asks for the same with `Bve5 = true` in `[This]` (an OBNS key; upstream reports
+  it as unknown and reads the panel as before).
+- **Sound**: the vehicle sound file through BVE4's sound.cfg parser; the motor noise as BVE5 plays it,
+  through OBNS copies of upstream's BVE5 motor sound (`TrainManager/Motor/BVE5/MotorSound.cs`) and table
+  parser (`Train/BVE5/MotorSoundTable.cs`), which fix upstream's: comments read as rows, blank cells read
+  as full volume, pitch and volume rows at different speeds, interpolation running backwards, the brake
+  table silent and the last sound left playing when coasting. Both copies use only upstream's types.
+- **A train.dat train with BVE5 motor noise**: a train.dat train whose folder (or two levels below) holds
+  a BVE5 motor noise file plays that noise in place of its own motor sound, and a BVE5 vehicle sound file
+  there, if any, in place of its sound.cfg; its physics stay train.dat's (`Bve5SoundAddOn`).
+- **Exterior**: as any train's - the vehicle file's folder's `train.xml` or `extensions.cfg`, else white
+  boxes.
+- **Safety plugin**: `Ats32` (or `Ats64` if it has no `Ats32`) through upstream's Win32PluginProxy on the
+  desktop; on Android through the x86 plugin layer (`NativePluginBridge`, which reads the vehicle file
+  as an ats.cfg would be read). A plugin under a path the system's ANSI code page cannot name (a Japanese
+  train on a Chinese Windows) is loaded through an ASCII-named junction (`%LOCALAPPDATA%\OBNS\PluginPaths`),
+  so that it can open its own files (OBNS copy of `TrainManager/SafetySystems/Plugin/Plugin.Functions.cs`).
 
-## Where it goes
+## Not yet
 
-A BVE5 train plugin in OBNS (a new upstream-style train plugin project, `Train.Bve5`), built into
-the desktop build and compiled for Android like the other plugins. Upstream's `Train.OpenBve`
-claims BVE5 files in `CanLoadTrain`; an OBNS copy of its `Plugin.cs` gives them up, as the comment
-there says it should once a BVE5 plugin exists.
+- Physics calibration: some trains accelerate and brake harder than the real ones.
+- `Ats64` loaded directly in the 64-bit process (upstream supports 32-bit plugins only, through its
+  proxy); an `Ats64`-only train on Android needs an x64 layer.
+- BVE5-only plugins that read BVE5's memory (AtsEx and the like) cannot work outside BVE5.
