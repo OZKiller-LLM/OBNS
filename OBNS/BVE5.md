@@ -53,7 +53,9 @@ relative to the file. The vehicle performance file and the motor noise file have
   a BVE5 motor noise file plays that noise in place of its own motor sound, and a BVE5 vehicle sound file
   there, if any, in place of its sound.cfg; its physics stay train.dat's (`Bve5SoundAddOn`).
 - **Exterior**: as any train's - the vehicle file's folder's `train.xml` or `extensions.cfg`, else white
-  boxes.
+  boxes. Only that folder is looked in, not the folders above it: a formation whose vehicle file is in a
+  subfolder (`formation\hae\116_TWR.txt`) has its own `extensions.cfg` in that subfolder, written for
+  its own cars, as each formation's car count and order may differ.
 - **Safety plugin**: `Ats32` (or `Ats64` if it has no `Ats32`) through upstream's Win32PluginProxy on the
   desktop; on Android through the x86 plugin layer (`NativePluginBridge`, which reads the vehicle file
   as an ats.cfg would be read). A plugin under a path the system's ANSI code page cannot name (a Japanese
