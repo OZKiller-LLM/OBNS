@@ -1,6 +1,6 @@
 // OBNS: a copy of upstream's source/Plugins/Train.OpenBve/Panel/Panel2CfgParser.cs (OpenBVE 1.14.1.2), laid over
-// the desktop build's mirror (OBNS/build-desktop.ps1): for BVE5 trains' panels, the default view is kept within
-// the panel's displayable limits, as BVE5 keeps it (see ClampDefaultView). BVE4 trains' panels are unchanged.
+// the desktop build's mirror (OBNS/build-desktop.ps1) and compiled by Android: BVE5 trains' panels are read as BVE5
+// reads them (see Bve5Train). BVE4 trains' panels are unchanged.
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 using System;
 using System.Collections.Generic;
@@ -40,27 +40,31 @@ namespace Train.OpenBve
 		Vector2 PanelCenter = new Vector2(0, 512);
 
 		/// <summary>
-		/// OBNS: whether the default view is kept within the panel's limits (a BVE5 train's panel, in either format). BVE5's
-		/// Center is the point at the screen's center "at the default viewpoint", and Left, Top, Right and Bottom
-		/// are the limits the view can be moved to; BVE5 keeps the default view within them too, so a Center
-		/// near a limit (the E233's, at its Top) puts the view's center further in. Upstream, for BVE4 trains,
-		/// has no such rule, and their panels are left as they are.
+		/// OBNS: whether the panel is a BVE5 train's (in either format), read as BVE5 reads it:
+		/// - the default view is kept within the panel's limits. BVE5's Center is the point at the screen's center
+		///   "at the default viewpoint", and Left, Top, Right and Bottom are the limits the view can be moved to;
+		///   BVE5 keeps the default view within them too, so a Center near a limit (the E233's, at its Top) puts
+		///   the view's center further in;
+		/// - a needle whose NaturalFreq is 0 follows its value undamped. Upstream damps it with no spring at all,
+		///   which holds it at its first angle; BVE5 trains set 0 on most of their needles (the E233's
+		///   speedometer), and BVE5 moves them.
+		/// Upstream, for BVE4 trains, has neither rule, and their panels are left as they are.
 		/// </summary>
-		internal bool ClampDefaultView;
+		internal bool Bve5Train;
 		Vector2 PanelOrigin = new Vector2(0, 512);
 		
 		private string trainName;
 
-		/// <summary>Parses a BVE2 / openBVE panel.cfg file</summary>
-		/// <param name="panelFile">The relative path of the panel configuration file from the train</param>
-		/// <param name="trainPath">The on-disk path to the train</param>
-		/// <param name="Car">The car to add the panel to</param>
 		/// <summary>OBNS: a value within limits; their midpoint where they are closer together than nothing.</summary>
 		private static double Clamp(double value, double low, double high)
 		{
 			return low > high ? 0.5 * (low + high) : Math.Max(low, Math.Min(high, value));
 		}
 
+		/// <summary>Parses a BVE2 / openBVE panel.cfg file</summary>
+		/// <param name="panelFile">The relative path of the panel configuration file from the train</param>
+		/// <param name="trainPath">The on-disk path to the train</param>
+		/// <param name="Car">The car to add the panel to</param>
 		internal void ParsePanel2Config(string panelFile, string trainPath, CarBase Car)
 		{
 			//Train name, used for hacks detection
@@ -93,7 +97,7 @@ namespace Train.OpenBve
 					Block.TryGetVector2(Panel2Key.Center, ',', ref PanelCenter);
 					Block.TryGetVector2(Panel2Key.Origin, ',', ref PanelOrigin);
 					ApplyGlobalHacks();
-					if (ClampDefaultView)
+					if (Bve5Train)
 					{
 						/*
 						 * OBNS: BVE5 trains' panels are laid out for a 4:3 view: on a wider screen the panel keeps the
@@ -266,7 +270,8 @@ namespace Train.OpenBve
 							double a0 = (InitialAngle * Maximum - LastAngle * Minimum) / (Maximum - Minimum);
 							double a1 = (LastAngle - InitialAngle) / (Maximum - Minimum);
 							f += " " + a1.ToString(Culture) + " * " + a0.ToString(Culture) + " +";
-							if (NaturalFrequency >= 0.0 & DampingRatio >= 0.0)
+							// OBNS: a BVE5 train's needle with no natural frequency is undamped (see Bve5Train).
+							if (NaturalFrequency >= 0.0 & DampingRatio >= 0.0 && !(Bve5Train && NaturalFrequency == 0.0))
 							{
 								Car.CarSections[CarSectionType.Interior].Groups[GroupIndex].Elements[j].RotateZDamping = new Damping(NaturalFrequency, DampingRatio);
 							}

@@ -38,7 +38,10 @@ INI sections and `Key = Value`, paths relative to the file.
   return likewise), jerk regulation, the regeneration limits and the breaker delays. The current
   tables feed the `am` panel subject and motor sound.
 - **Panel**: a BVE5 panel parser onto OpenBVE's 2D panel elements (the same element kinds as
-  panel2.cfg), its subjects mapped to OpenBVE's.
+  panel2.cfg), its subjects mapped to OpenBVE's. A BVE5 train's panel, in either format, is read
+  as BVE5 reads it: laid out for a 4:3 view, with the default view kept within the panel's
+  limits; and a needle with `NaturalFreq = 0` follows its value undamped (upstream holds such a
+  needle at its first angle; most BVE5 needles set 0, the E233's speedometer among them).
 - **Sound**: the vehicle sound file onto OpenBVE's car sounds; motor noise through upstream's
   `Bve5MotorSoundTableParser`.
 - **Safety plugin**: `Ats64` on the desktop (a 64-bit process loads it directly); `Ats32` through

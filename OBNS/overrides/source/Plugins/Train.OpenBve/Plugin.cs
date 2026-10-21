@@ -1,6 +1,9 @@
 // OBNS: a copy of upstream's source/Plugins/Train.OpenBve/Plugin.cs (OpenBVE 1.14.1.2), laid over the desktop
-// build's mirror (OBNS/build-desktop.ps1): BVE Trainsim 5 trains (OBNS/BVE5.md) - CanLoadTrain claims them, as
-// upstream's comments say it should once they are supported, and LoadTrain builds them (Train/BVE5).
+// build's mirror (OBNS/build-desktop.ps1) and compiled by Android (Train.OpenBve.Android.csproj):
+// - BVE Trainsim 5 trains (OBNS/BVE5.md): CanLoadTrain claims them, as upstream's comments say it should once
+//   they are supported, and LoadTrain builds them (Train/BVE5);
+// - the static fields a train load fills in are [ThreadStatic], so that trains can load on several threads at
+//   once, each with its own plugin instance (Android's scripted trains); each is set and read within one load.
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 using System;
 using System.Collections.Generic;
@@ -64,9 +67,10 @@ namespace Train.OpenBve
 
 	    internal double LastProgress;
 
-	    internal static BVEMotorSoundTable[] MotorSoundTables;
-	    internal static BveAccelerationCurve[] AccelerationCurves;
-	    internal static double MaximumAcceleration;
+	    // OBNS: [ThreadStatic] (see the header).
+	    [ThreadStatic] internal static BVEMotorSoundTable[] MotorSoundTables;
+	    [ThreadStatic] internal static BveAccelerationCurve[] AccelerationCurves;
+	    [ThreadStatic] internal static double MaximumAcceleration;
 
 		public Plugin()
 	    {
@@ -309,10 +313,10 @@ namespace Train.OpenBve
 			    currentTrain.Cars[currentTrain.DriverCar].CarSections = new Dictionary<CarSectionType, CarSection>();
 			    currentTrain.Cars[currentTrain.DriverCar].CarSections.Add(CarSectionType.Interior, new CarSection(CurrentHost, ObjectType.Overlay, true));
 			    FileSystem.AppendToLogFile("Loading train panel: " + bve5Vehicle.Panel);
-			    // BVE5 keeps the default view within the panel's limits, whichever format the panel is in.
-			    Panel2CfgParser.ClampDefaultView = true;
+			    // Read as BVE5 reads it, whichever format the panel is in.
+			    Panel2CfgParser.Bve5Train = true;
 			    Panel2CfgParser.ParsePanel2Config(Path.GetFileName(bve5Vehicle.Panel), Path.GetDirectoryName(bve5Vehicle.Panel), currentTrain.Cars[currentTrain.DriverCar]);
-			    Panel2CfgParser.ClampDefaultView = false;
+			    Panel2CfgParser.Bve5Train = false;
 			    currentTrain.Cars[currentTrain.DriverCar].CameraRestrictionMode = CameraRestrictionMode.On;
 			    Renderer.Camera.CurrentRestriction = CameraRestrictionMode.On;
 			    FileSystem.AppendToLogFile("Train panel loaded successfully.");
