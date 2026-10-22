@@ -1,6 +1,7 @@
 // OBNS: a copy of upstream's source/TrainManager/SafetySystems/Plugin/Plugin.Functions.cs (OpenBVE 1.14.1.2), laid
 // over the desktop build's mirror (OBNS/build-desktop.ps1): a Win32 plugin is loaded by a path the plugin can read
-// in the system's code page (see AnsiSafePluginPath). Android has its own copy (TrainManager.Android).
+// in the system's code page (see AnsiSafePluginPath), and a 64-bit one is loaded directly (Win64Plugin). Android has
+// its own copy (TrainManager.Android).
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 #pragma warning disable CS0618 // Type or member is obsolete
 
@@ -280,6 +281,20 @@ namespace TrainManager.Trains
 			 * Check if the plugin is a Win32 plugin.
 			 * 
 			 */
+			// OBNS: a 64-bit plugin (BVE5's Ats64, BVE6's), in the 64-bit program on Windows, is loaded directly.
+			if (IntPtr.Size == 8 && TrainManagerBase.currentHost.Platform == HostPlatform.MicrosoftWindows && Win64Plugin.CheckHeader(pluginFile))
+			{
+				Plugin = new Win64Plugin(AnsiSafePluginPath(pluginFile), this);
+				if (Plugin.Load(GetVehicleSpecs(), mode))
+				{
+					return true;
+				}
+
+				Plugin = null;
+				TrainManagerBase.currentHost.AddMessage(MessageType.Error, false, "The train plugin " + pluginTitle + " failed to load.");
+				return false;
+			}
+
 			try
 			{
 				if (!Win32Plugin.CheckHeader(pluginFile))
