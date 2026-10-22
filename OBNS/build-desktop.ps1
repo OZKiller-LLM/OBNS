@@ -118,7 +118,18 @@ Write-Host "Building OpenBVE ($Configuration)"
 Invoke-MSBuild @($solution, "-p:Configuration=$Configuration", '-p:Platform=Any CPU', '-m', '-v:minimal', '-nologo')
 if ($LASTEXITCODE -ne 0) { throw "The build failed ($LASTEXITCODE)" }
 
+# Upstream's OpenBve project writes a 32-bit copy, OpenBve-32.exe, after building, and reports a failure without
+# failing the build. Just after OpenBve.exe is rewritten it is often still open elsewhere (a virus scan), and the
+# copy is not written; building again, once it is free, writes it.
 $exe = Join-Path $output 'OpenBve.exe'
+$exe32 = Join-Path $output 'OpenBve-32.exe'
+if ((Test-Path $exe) -and (-not (Test-Path $exe32) -or (Get-Item $exe32).LastWriteTime -lt (Get-Item $exe).LastWriteTime)) {
+    Write-Host 'OpenBve-32.exe was not written; building again'
+    Start-Sleep -Seconds 5
+    Invoke-MSBuild @($solution, "-p:Configuration=$Configuration", '-p:Platform=Any CPU', '-m', '-v:minimal', '-nologo')
+    if ($LASTEXITCODE -ne 0) { throw "The build failed ($LASTEXITCODE)" }
+}
+
 Write-Host "Built: $exe"
 
 if ($Package) {
