@@ -38,6 +38,13 @@ relative to the file. The vehicle performance file and the motor noise file have
   `Cl` as OpenBVE's electric command, electromagnetic straight air and automatic air brakes; a BVE5
   traction model per motor car with BVE5's step logic (a step advances while the handle is at
   `RequiredNotch_Up` or above and the current at or under `CurrentLimitingValue`).
+  `[AirSupplement]` with an `InitialPressure` is delay-filling control (the electric brake stands in
+  for the air); without one, the air keeps the full command and the electric brake adds to it
+  (37 of the 57 such files met), as BVE does by Rinkin's logs (`D:\dev\Rinkin\docs\sim.md`).
+- **Checked against Rinkin's simulator** (`rinkin-sim-run`, its model compared with BVE 5/6 runs):
+  peak acceleration E233 cocoa 2.57 / 2.53 km/h/s (OBNS / Rinkin), TWR E233 2.54 / 2.50, E235
+  3.06 / 3.02, JR 103 HK609 about 3.3 / 3.13; full service brake E233 cocoa 5.45 / 5.50, TWR E233
+  4.51 / 4.65, E235 3.62 + 3.59 electric (both act) / 6.98.
 - **Panel**: both formats through upstream's panel2.cfg parser (OBNS copy), read as BVE5 reads them: laid
   out for a 4:3 view with the default view kept within the panel's limits; a needle with
   `NaturalFreq = 0` undamped (upstream holds it at its first angle); a pilot lamp lit by any value but 0
@@ -68,7 +75,8 @@ relative to the file. The vehicle performance file and the motor noise file have
 
 ## Not yet
 
-- Physics calibration: some trains accelerate and brake harder than the real ones.
+- Passenger load (BVE starts the train at its first stop's load, the current limit between `_Empty`
+  and `_Full` by it): OBNS's trains are empty.
 - An `Ats64`-only train on Android needs an x64 layer (the x86 layer runs 32-bit plugins).
 - Upstream's BVE5 map parser (the `Bve5_Parsing` package) rejects some map 2.02 statements, such as
   `Track[...].Position(x, y, radius)`; such routes load without them.

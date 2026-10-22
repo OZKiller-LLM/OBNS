@@ -45,7 +45,11 @@ namespace Train.OpenBve
 	internal enum Bve5Blending
 	{
 		None,
-		/// <summary>[AirSupplement]: the air brake makes up what the electric brake does not give (delay-filling control).</summary>
+		/// <summary>
+		/// [AirSupplement]. With an InitialPressure, the air brake makes up what the electric brake does not give
+		/// (delay-filling control); without one, the air keeps the full command and the electric brake adds to it
+		/// (BlendingHasInitialPressure).
+		/// </summary>
 		AirSupplement,
 		/// <summary>[LockoutValve]: the air brake is shut off while the electric brake works.</summary>
 		LockoutValve
@@ -88,6 +92,12 @@ namespace Train.OpenBve
 		internal Bve5Blending Blending = Bve5Blending.None;
 		internal double BlendingMaximumPressure = 440000;
 		internal double BlendingRegenerationLimit = 5;
+		/// <summary>
+		/// Whether [AirSupplement] gives an InitialPressure. BVE logs (Rinkin's docs/sim.md): with it, the electric
+		/// brake stands in for the air, which holds at InitialPressure (JR Central 315, BVE 6); without it, the air
+		/// keeps the full command and the electric brake adds to it (E217, BVE 5).
+		/// </summary>
+		internal bool BlendingHasInitialPressure;
 
 		// [Bc] or [BcServo], [Brake]
 		internal double BcApplySpeed = 500;
@@ -163,6 +173,7 @@ namespace Train.OpenBve
 				p.Blending = blending == "AirSupplement" ? Bve5Blending.AirSupplement : Bve5Blending.LockoutValve;
 				p.BlendingMaximumPressure = Number(blending, "MaximumPressure", 440000);
 				p.BlendingRegenerationLimit = Number(blending, "RegenerationLimit", 5);
+				p.BlendingHasInitialPressure = s[blending].ContainsKey("InitialPressure");
 			}
 
 			string bc = s.ContainsKey("BcServo") ? "BcServo" : "Bc";

@@ -127,7 +127,9 @@ namespace Train.OpenBve
 			// The electric brake's deceleration on a motor car (m/s²), at its strongest.
 			double electricForce = brake.Force.Curves > 0 ? brake.Force.Max(0) : 0;
 			double motorDeceleration = electricForce * tractionScale;
-			EletropneumaticBrakeType blending = p.Blending == Bve5Blending.AirSupplement ? EletropneumaticBrakeType.DelayFillingControl
+			// [AirSupplement] without an InitialPressure adds the electric brake to the full air brake (Bve5Parameters):
+			// upstream's brake with no blending, where both act together.
+			EletropneumaticBrakeType blending = p.Blending == Bve5Blending.AirSupplement ? (p.BlendingHasInitialPressure ? EletropneumaticBrakeType.DelayFillingControl : EletropneumaticBrakeType.None)
 				: p.Blending == Bve5Blending.LockoutValve ? EletropneumaticBrakeType.ClosingElectromagneticValve
 				: EletropneumaticBrakeType.None;
 			if (electricForce <= 0)
@@ -277,9 +279,9 @@ namespace Train.OpenBve
 			Plugin.AccelerationCurves = new BveAccelerationCurve[0];
 			Plugin.MaximumAcceleration = maximumAcceleration;
 			Plugin.FileSystem.AppendToLogFile(string.Format(culture,
-				"BVE5 train {0}: {1} motor and {2} trailer cars, {3} power and {4} brake notches, {5} brake; full power from rest {6:0.00} km/h/s, full service brake {7:0.00} km/h/s (electric {8:0.00})",
+				"BVE5 train {0}: {1} motor and {2} trailer cars, {3} power and {4} brake notches, {5} brake; full power from rest {6:0.00} km/h/s, full service brake {7:0.00} km/h/s (electric {8:0.00}, blending {9})",
 				vehicle.FileName, motorCars, trailerCars, powerNotches, brakeNotches, p.BrakeSystem, maximumAcceleration * motorCars * p.MotorcarWeight / mass * 3.6,
-				brakeDeceleration * 3.6, motorDeceleration * motorCars * p.MotorcarWeight / mass * 3.6));
+				brakeDeceleration * 3.6, motorDeceleration * motorCars * p.MotorcarWeight / mass * 3.6, blending));
 		}
 
 		/// <summary>Which cars are motor cars: upstream's spread (TrainDatParser), from the front car or the second.</summary>
