@@ -61,6 +61,9 @@ relative to the file. The vehicle performance file and the motor noise file have
   as an ats.cfg would be read). A plugin under a path the system's ANSI code page cannot name (a Japanese
   train on a Chinese Windows) is loaded through an ASCII-named junction (`%LOCALAPPDATA%\OBNS\PluginPaths`),
   so that it can open its own files (OBNS copy of `TrainManager/SafetySystems/Plugin/Plugin.Functions.cs`).
+  Each plugin proxy is started with a name of its own (OBNS copies of `ProxyPlugin.cs` and
+  `Win32PluginProxy.cs`), so two games open at once each reach their own plugins; upstream's proxies
+  all used one pipe and one ready event, and the second game waited forever.
 
 ## Not yet
 
