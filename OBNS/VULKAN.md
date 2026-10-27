@@ -114,8 +114,16 @@ OBNS's `NewRenderer.cs` calls it after the background; `GameWindow.cs` sets it u
    | Exterior | 18.5 | 19.5 |
 
    Vulkan submits the world in about 1.3 ms, but gathering the faces (upstream's per-face work, every face every
-   frame) takes 2.2 ms in the cab and 5.4 ms outside: next, each face's draw record kept between frames (only the
-   objects' matrices change), and the gathering moved off the main thread.
+   frame) took 2.2 ms in the cab and 5.4 ms outside. Since then the gathering is done on every core (in chunks
+   merged in order; what needs OpenGL, such as first texture uploads, done first on the main thread), and texture
+   loads are skipped for loaded textures, with each face's texture place kept: 1.3 ms in the cab and 2.7 ms
+   outside. On a loaded machine (another run, OpenGL at 36 ms a frame outside) the Vulkan world layer was a third
+   faster outside (25 ms) and level in the cab. Frame times vary a lot between runs, so comparisons are made
+   within one run (`OBNS_FRAMESTATS` also splits RenderScene into before, world and after).
+
+   What is left is the GPU running OpenGL's background, Vulkan's world and OpenGL's overlays in turn, idle while
+   the CPU makes the Vulkan frame: the frame's start waits about 2 ms longer with Vulkan on. Overlapping the
+   Vulkan frame's making with OpenGL's work is the next step.
 3. Pipelined frames.
 4. The overlay layer (cab).
 5. Shadows.

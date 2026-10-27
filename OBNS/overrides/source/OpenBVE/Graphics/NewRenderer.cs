@@ -92,6 +92,8 @@ namespace OpenBve.Graphics
 		
 		internal void RenderScene(double TimeElapsed, double RealTimeElapsed)
 		{
+			// OBNS: the frame's parts timed for the frame statistics (OBNS_FRAMESTATS).
+			long sceneStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			ReleaseResources();
 			// initialize
 			ResetOpenGlState();
@@ -209,6 +211,7 @@ namespace OpenBve.Graphics
             DefaultShader.SetCurrentProjectionMatrix(CurrentProjectionMatrix);
 
             ResetOpenGlState();
+			long worldStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			List<FaceState> opaqueFaces, alphaFaces, overlayOpaqueFaces, overlayAlphaFaces, unsortedAlphaFaces;
 			lock (VisibleObjects.LockObject)
 			{
@@ -304,6 +307,8 @@ namespace OpenBve.Graphics
 			}
 
 			}
+
+			long worldEnd = System.Diagnostics.Stopwatch.GetTimestamp();
 
 			// motion blur
 			ResetOpenGlState();
@@ -498,6 +503,29 @@ namespace OpenBve.Graphics
 					break;
 			}
 			OptionLighting = true;
+			SceneParts.Add(worldStart - sceneStart, worldEnd - worldStart, System.Diagnostics.Stopwatch.GetTimestamp() - worldEnd);
+		}
+
+		/// <summary>OBNS: RenderScene's time before the world layer (background, fog), in it, and after it (cab, overlays), for the log.</summary>
+		internal static class SceneParts
+		{
+			private static long before, world, after, frames;
+
+			internal static void Add(long beforeTicks, long worldTicks, long afterTicks)
+			{
+				before += beforeTicks;
+				world += worldTicks;
+				after += afterTicks;
+				frames++;
+			}
+
+			internal static string Take()
+			{
+				double f = Math.Max(1, frames), ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+				string text = string.Format(System.Globalization.CultureInfo.InvariantCulture, "before {0:0.00}, world {1:0.00}, after {2:0.00} ms", before * ms / f, world * ms / f, after * ms / f);
+				before = world = after = frames = 0;
+				return text;
+			}
 		}
 
 		public NewRenderer(HostInterface currentHost, BaseOptions CurrentOptions, FileSystem fileSystem) : base(currentHost, CurrentOptions, fileSystem)
@@ -586,6 +614,8 @@ namespace OpenBve.Graphics
 				vulkanGathering = false;
 			}
 
+			// The faces' records, made on every core.
+			scene.Build();
 			long drawStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			int[] viewport = new int[4];
 			GL.GetInteger(GetPName.Viewport, viewport);

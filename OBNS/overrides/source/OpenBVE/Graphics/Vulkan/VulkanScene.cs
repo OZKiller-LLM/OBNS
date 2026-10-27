@@ -61,7 +61,7 @@ namespace OpenBve.Graphics.Vulkan
 		{
 			public long Key;
 			public uint FirstIndex, IndexCount;
-			public int VertexBase, Draw;
+			public int VertexBase, Draw, Pass;
 		}
 
 		/// <summary>OpenGL's alpha functions as upstream's shader numbers them; Never means none.</summary>
@@ -86,7 +86,7 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly HostBuffer[] matrixBuffers = new HostBuffer[FramesInFlight];
 		private readonly HostBuffer[] indirectBuffers = new HostBuffer[FramesInFlight];
 
-		// The frame being gathered.
+		// The frame's records, merged from the chunks they were made in.
 		private ObjectData[] objects = new ObjectData[1024];
 		private int objectCount;
 		private DrawData[] draws = new DrawData[4096];
@@ -99,17 +99,48 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly List<int> segmentStarts = new List<int>();
 		private readonly List<bool> segmentOrdered = new List<bool>();
 		private FrameData frameData;
-
 		private BaseRenderer renderer;
-		private ObjectState lastState;
-		private Matrix4D lastModelMatrix;
-		private int lastObject;
 
-		// The pass being gathered (upstream's GL state between faces).
-		private Blend passBlend;
-		private int passAlphaFunction;
-		private float passAlphaReference;
-		private bool passDepthWrite, passOrdered;
+		/// <summary>A face to draw, as upstream's passes give it, with the alpha test in force for it.</summary>
+		private struct Item
+		{
+			public ObjectState State;
+			public MeshFace Face;
+			public int Pass, AlphaFunction;
+			public float AlphaReference;
+		}
+
+		/// <summary>A pass's state: blending, depth writes, and whether its faces are drawn in the order given.</summary>
+		private struct PassInfo
+		{
+			public Blend Blend;
+			public bool DepthWrite, Ordered;
+		}
+
+		private Item[] items = new Item[8192];
+		private int itemCount;
+		private readonly List<PassInfo> passes = new List<PassInfo>();
+		private int currentAlphaFunction;
+		private float currentAlphaReference;
+
+		/// <summary>The records one chunk of the faces makes, on whichever thread builds it.</summary>
+		private sealed class Chunk
+		{
+			public ObjectData[] Objects = new ObjectData[256];
+			public int ObjectCount;
+			public DrawData[] Draws = new DrawData[512];
+			public int DrawCount;
+			public DrawCommand[] Commands = new DrawCommand[512];
+			public int CommandCount;
+			public float[] Matrices = new float[16 * 16];
+			public int MatrixCount;
+			public int Skipped;
+			public long ObjectTicks;
+		}
+
+		private readonly List<Chunk> chunks = new List<Chunk>();
+		private int chunkCount;
+		private readonly Action<int, int> buildChunks;
 
 		/// <summary>Draw records and indirect draws in the last frame, for the log.</summary>
 		internal int LastDraws { get; private set; }
@@ -119,6 +150,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal VulkanScene(VulkanDevice device, Uploader uploader, BaseRenderer renderer)
 		{
 			this.device = device;
+			buildChunks = BuildChunks;
 			CreateDescriptors();
 			Textures = new VulkanTextures(device, uploader, DescriptorSets, TextureBinding, Interface.CurrentOptions.Interpolation, Interface.CurrentOptions.AnisotropicFilteringLevel);
 			Meshes = new VulkanMeshes(device, uploader);
@@ -388,17 +420,14 @@ namespace OpenBve.Graphics.Vulkan
 			return new Vk.VertexInputAttributeDescription { Location = location, Binding = 0, Format = format, Offset = (uint)Marshal.OffsetOf(typeof(LibRenderVertex), field) };
 		}
 
-		// --- gathering the frame (on the main thread, as upstream draws it) ---
+		// --- gathering the frame: upstream's passes give their faces (main thread), then Build makes the records ---
 
 		/// <summary>Starts a frame's world layer with upstream's renderer state: camera, lighting and fog.</summary>
 		internal void Begin(BaseRenderer baseRenderer)
 		{
 			renderer = baseRenderer;
-			objectCount = drawCount = matrixCount = commandCount = 0;
-			segmentStarts.Clear();
-			segmentOrdered.Clear();
-			lastState = null;
-			skippedFaces = 0;
+			itemCount = 0;
+			passes.Clear();
 
 			FrameData data = new FrameData();
 			Store(renderer.CurrentProjectionMatrix, data.Projection);
@@ -447,64 +476,153 @@ namespace OpenBve.Graphics.Vulkan
 		/// </summary>
 		internal void Pass(Blend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered)
 		{
-			passBlend = blend;
-			passAlphaFunction = alphaFunction;
-			passAlphaReference = alphaReference;
-			passDepthWrite = depthWrite;
-			passOrdered = ordered;
-			segmentStarts.Add(commandCount);
-			segmentOrdered.Add(ordered);
+			passes.Add(new PassInfo { Blend = blend, DepthWrite = depthWrite, Ordered = ordered });
+			currentAlphaFunction = alphaFunction;
+			currentAlphaReference = alphaReference;
 		}
 
 		/// <summary>Changes the pass's alpha function (upstream's additive faces have none) without starting a new pass.</summary>
 		internal void SetAlphaFunction(int alphaFunction, float alphaReference)
 		{
-			passAlphaFunction = alphaFunction;
-			passAlphaReference = alphaReference;
+			currentAlphaFunction = alphaFunction;
+			currentAlphaReference = alphaReference;
+		}
+
+		/// <summary>A face for the pass, drawn as upstream's RenderFace would draw it.</summary>
+		internal void Face(ObjectState state, MeshFace face)
+		{
+			if (itemCount == items.Length)
+			{
+				Array.Resize(ref items, items.Length * 2);
+			}
+
+			items[itemCount++] = new Item { State = state, Face = face, Pass = passes.Count - 1, AlphaFunction = currentAlphaFunction, AlphaReference = currentAlphaReference };
 		}
 
 		private const float Inv255 = 1.0f / 255.0f;
 
-		/// <summary>A face, as upstream's RenderFace would draw it in this pass.</summary>
-		internal void Face(ObjectState state, MeshFace face)
+		/// <summary>
+		/// Makes the frame's records from the faces given: first, on this (the main) thread, what needs OpenGL or changes
+		/// shared state (missing VAOs, textures not loaded yet or animated, objects' cached matrices); then the records,
+		/// in chunks on every core; then the chunks merged, in order (blended faces keep upstream's order).
+		/// </summary>
+		internal void Build()
 		{
+			ObjectState last = null;
+			for (int i = 0; i < itemCount; i++)
+			{
+				ObjectState state = items[i].State;
+				Mesh mesh = state.Prototype.Mesh;
+				if (mesh.Vertices.Length < 1)
+				{
+					continue;
+				}
+
+				if (mesh.VAO == null)
+				{
+					VAOExtensions.CreateOrUpdateVAO(mesh, state.Prototype.Dynamic, renderer.DefaultShader.VertexLayout, renderer);
+				}
+
+				if (state != last)
+				{
+					// ObjectState works its model matrix out when first asked, so it is asked here, not on the workers.
+					Matrix4D model = state.ModelMatrix;
+					last = state;
+				}
+
+				ref MeshMaterial material = ref mesh.Materials[items[i].Face.Material];
+				OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
+				EnsureLoaded(material.DaytimeTexture, wrap);
+				if (material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && BlendFactor(state) != 0)
+				{
+					EnsureLoaded(material.NighttimeTexture, wrap);
+				}
+			}
+
+			chunkCount = itemCount == 0 ? 0 : Math.Min(Math.Max(1, itemCount / 128), FrameWorkers.Shared.Threads * 4);
+			while (chunks.Count < chunkCount)
+			{
+				chunks.Add(new Chunk());
+			}
+
+			FrameWorkers.Shared.Run(chunkCount, buildChunks);
+			Merge();
+		}
+
+		/// <summary>Upstream's load for a texture not loaded yet (the first upload) or animated (its frames); else nothing to do.</summary>
+		private static void EnsureLoaded(Texture texture, OpenGlTextureWrapMode wrap)
+		{
+			if (texture != null && (!texture.OpenGlTextures[(int)wrap].Valid || texture.MultipleFrames))
+			{
+				// As upstream: through a copy of the handle, so the material is not changed.
+				Texture handle = texture;
+				Program.CurrentHost.LoadTexture(ref handle, wrap);
+			}
+		}
+
+		private float BlendFactor(ObjectState state)
+		{
+			float blendFactor = Inv255 * state.DaytimeNighttimeBlend + 1.0f - renderer.Lighting.OptionLightingResultingAmount;
+			return blendFactor > 1.0f ? 1.0f : blendFactor;
+		}
+
+		private void BuildChunks(int first, int last)
+		{
+			for (int c = first; c < last; c++)
+			{
+				BuildChunk(chunks[c], (int)((long)itemCount * c / chunkCount), (int)((long)itemCount * (c + 1) / chunkCount));
+			}
+		}
+
+		/// <summary>A chunk's records (on a worker): read-only use of upstream's state, writes only to the chunk.</summary>
+		private void BuildChunk(Chunk chunk, int start, int end)
+		{
+			chunk.ObjectCount = chunk.DrawCount = chunk.CommandCount = chunk.MatrixCount = chunk.Skipped = 0;
+			chunk.ObjectTicks = 0;
+			ObjectState lastState = null;
+			Matrix4D lastModelMatrix = Matrix4D.Identity;
+			int lastObject = 0;
+			for (int i = start; i < end; i++)
+			{
+				BuildFace(chunk, ref items[i], ref lastState, ref lastModelMatrix, ref lastObject);
+			}
+		}
+
+		/// <summary>A face's records, as upstream's RenderFace would draw it in its pass.</summary>
+		private void BuildFace(Chunk chunk, ref Item item, ref ObjectState lastState, ref Matrix4D lastModelMatrix, ref int lastObject)
+		{
+			ObjectState state = item.State;
 			Mesh mesh = state.Prototype.Mesh;
 			if (mesh.Vertices.Length < 1)
 			{
 				return;
 			}
 
-			if (mesh.VAO == null)
+			if (!((mesh.VAO as VertexArrayObject)?.ObnsVulkanMesh is VulkanMesh vulkanMesh) || !vulkanMesh.Find(item.Face.IboStartIndex, out int slot, out uint firstIndex, out uint indexCount))
 			{
-				VAOExtensions.CreateOrUpdateVAO(mesh, state.Prototype.Dynamic, renderer.DefaultShader.VertexLayout, renderer);
-			}
-
-			if (!((mesh.VAO as VertexArrayObject)?.ObnsVulkanMesh is VulkanMesh vulkanMesh) || !vulkanMesh.Find(face.IboStartIndex, out uint firstIndex, out uint indexCount))
-			{
-				skippedFaces++;
+				chunk.Skipped++;
 				return;
 			}
 
 			// The object: its matrices, once per object as upstream sends them.
 			if (state != lastState || state.Prototype.Dynamic)
 			{
+				long objectStart = System.Diagnostics.Stopwatch.GetTimestamp();
 				lastModelMatrix = state.ModelMatrix * renderer.Camera.TranslationMatrix;
-				lastObject = AddObject(state, lastModelMatrix * renderer.CurrentViewMatrix);
+				lastObject = AddObject(chunk, state, lastModelMatrix * renderer.CurrentViewMatrix);
 				lastState = state;
+				chunk.ObjectTicks += System.Diagnostics.Stopwatch.GetTimestamp() - objectStart;
 			}
 
-			MeshMaterial material = mesh.Materials[face.Material];
-			bool cull = renderer.OptionBackFaceCulling && (face.Flags & FaceFlags.Face2Mask) == 0;
+			PassInfo pass = passes[item.Pass];
+			ref MeshMaterial material = ref mesh.Materials[item.Face.Material];
+			bool cull = renderer.OptionBackFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0;
 			OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
 
 			float distanceFactor = material.GlowAttenuationData != 0
-				? (float)Glow.GetDistanceFactor(lastModelMatrix, mesh.Vertices, ref face, material.GlowAttenuationData)
+				? (float)Glow.GetDistanceFactor(lastModelMatrix, mesh.Vertices, ref item.Face, material.GlowAttenuationData)
 				: 1.0f;
-			float blendFactor = Inv255 * state.DaytimeNighttimeBlend + 1.0f - renderer.Lighting.OptionLightingResultingAmount;
-			if (blendFactor > 1.0f)
-			{
-				blendFactor = 1.0f;
-			}
+			float blendFactor = BlendFactor(state);
 
 			DrawData draw = new DrawData
 			{
@@ -513,8 +631,8 @@ namespace OpenBve.Graphics.Vulkan
 				Object = lastObject,
 				Sampler = (int)wrap & 3,
 				Fog = renderer.Fog.Enabled ? 1 : 0,
-				AlphaFunction = passAlphaFunction,
-				AlphaReference = passAlphaReference,
+				AlphaFunction = item.AlphaFunction,
+				AlphaReference = item.AlphaReference,
 				Shininess = 1.0f
 			};
 			Color24 specular = (material.Flags & MaterialFlags.Specular) != 0 ? material.SpecularColor : new Color24(material.Color.R, material.Color.G, material.Color.B);
@@ -527,11 +645,13 @@ namespace OpenBve.Graphics.Vulkan
 			draw.EmissionB = material.EmissiveColor.B * Inv255;
 
 			// Daytime texture, else white.
-			draw.Texture = material.DaytimeTexture != null && Program.CurrentHost.LoadTexture(ref material.DaytimeTexture, wrap)
-				? Textures.IndexOf(material.DaytimeTexture.OpenGlTextures[(int)wrap])
-				: VulkanTextures.White;
+			draw.Texture = TextureIndex(material.DaytimeTexture, wrap, vulkanMesh.DaySlots, slot);
+			if (draw.Texture < 0)
+			{
+				draw.Texture = VulkanTextures.White;
+			}
 
-			Blend blend = passBlend;
+			Blend blend = pass.Blend;
 			bool additive = material.BlendMode == MeshMaterialBlendMode.Additive;
 			float factor;
 			if (additive)
@@ -557,24 +677,54 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			draw.Opacity = Inv255 * material.Color.A * alphaFactor;
-			AddDraw(draw, blend, cull, firstIndex, indexCount, vulkanMesh, false);
+			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, vulkanMesh, false);
 
 			// Nighttime texture, blended over the daytime one.
-			if (blendFactor != 0 && material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && Program.CurrentHost.LoadTexture(ref material.NighttimeTexture, wrap))
+			int night;
+			if (blendFactor != 0 && material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture &&
+			    (night = TextureIndex(material.NighttimeTexture, wrap, vulkanMesh.NightSlots, slot)) >= 0)
 			{
-				draw.Texture = Textures.IndexOf(material.NighttimeTexture.OpenGlTextures[(int)wrap]);
+				draw.Texture = night;
 				draw.AlphaFunction = AlphaGreater;
 				draw.AlphaReference = 0.0f;
 				draw.Opacity = Inv255 * material.Color.A * distanceFactor * blendFactor;
-				AddDraw(draw, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, vulkanMesh, true);
+				AddDraw(chunk, draw, pass, item.Pass, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, vulkanMesh, true);
 			}
 		}
 
-		private int AddObject(ObjectState state, Matrix4D modelView)
+		/// <summary>
+		/// A loaded texture's place in the bindless array (Build has loaded what needed it), or -1 if it is not loaded.
+		/// The place is kept per face, for as long as it is the same OpenGL texture and nothing has moved.
+		/// </summary>
+		private int TextureIndex(Texture texture, OpenGlTextureWrapMode wrap, TextureSlot[] slots, int slot)
 		{
-			if (objectCount == objects.Length)
+			if (texture == null)
 			{
-				Array.Resize(ref objects, objects.Length * 2);
+				return -1;
+			}
+
+			OpenGlTexture gl = texture.OpenGlTextures[(int)wrap];
+			if (!gl.Valid)
+			{
+				return -1;
+			}
+
+			int generation = Textures.Generation;
+			TextureSlot cached = slots[slot];
+			if (cached == null || !ReferenceEquals(cached.Texture, gl) || cached.Generation != generation)
+			{
+				cached = new TextureSlot(gl, Textures.IndexOf(gl), generation);
+				slots[slot] = cached;
+			}
+
+			return cached.Index;
+		}
+
+		private int AddObject(Chunk chunk, ObjectState state, Matrix4D modelView)
+		{
+			if (chunk.ObjectCount == chunk.Objects.Length)
+			{
+				Array.Resize(ref chunk.Objects, chunk.Objects.Length * 2);
 			}
 
 			ObjectData data = new ObjectData();
@@ -596,51 +746,120 @@ namespace OpenBve.Graphics.Vulkan
 			data.Normal[4] = (float)i01; data.Normal[5] = (float)i11; data.Normal[6] = (float)i21;
 			data.Normal[8] = (float)i02; data.Normal[9] = (float)i12; data.Normal[10] = (float)i22;
 
-			if (state.Matricies != null && state.Matricies.Length > 0)
+			Matrix4D[] animation = state.Matricies;
+			if (animation != null && animation.Length > 0)
 			{
-				data.MatrixBase = matrixCount;
-				int needed = (matrixCount + state.Matricies.Length) * 16;
-				if (needed > matrices.Length)
+				// Pad0 marks an object with animation matrices: their base is moved when the chunks are merged.
+				data.MatrixBase = chunk.MatrixCount;
+				data.Pad0 = 1;
+				int needed = (chunk.MatrixCount + animation.Length) * 16;
+				if (needed > chunk.Matrices.Length)
 				{
-					Array.Resize(ref matrices, Math.Max(needed, matrices.Length * 2));
+					Array.Resize(ref chunk.Matrices, Math.Max(needed, chunk.Matrices.Length * 2));
 				}
 
-				fixed (float* to = matrices)
+				fixed (float* to = chunk.Matrices)
 				{
-					for (int m = 0; m < state.Matricies.Length; m++)
+					for (int m = 0; m < animation.Length; m++)
 					{
-						Store(state.Matricies[m], to + (matrixCount + m) * 16);
+						Store(animation[m], to + (chunk.MatrixCount + m) * 16);
 					}
 				}
 
-				matrixCount += state.Matricies.Length;
+				chunk.MatrixCount += animation.Length;
 			}
 
-			objects[objectCount] = data;
-			return objectCount++;
+			chunk.Objects[chunk.ObjectCount] = data;
+			return chunk.ObjectCount++;
 		}
 
-		private void AddDraw(DrawData draw, Blend blend, bool cull, uint firstIndex, uint indexCount, VulkanMesh mesh, bool night)
+		private static void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, VulkanMesh mesh, bool night)
 		{
-			if (drawCount == draws.Length)
+			if (chunk.DrawCount == chunk.Draws.Length)
 			{
-				Array.Resize(ref draws, draws.Length * 2);
+				Array.Resize(ref chunk.Draws, chunk.Draws.Length * 2);
 			}
 
-			if (commandCount == commands.Length)
+			if (chunk.CommandCount == chunk.Commands.Length)
 			{
-				Array.Resize(ref commands, commands.Length * 2);
+				Array.Resize(ref chunk.Commands, chunk.Commands.Length * 2);
 			}
 
 			// Grouped passes cull in the pipeline; ordered ones draw both sides and discard OpenGL's front faces.
-			bool pipelineCull = cull && !passOrdered;
-			draw.CullFront = cull && passOrdered ? 1 : 0;
-			int pipelineKey = (int)blend | (passDepthWrite ? 4 : 0) | (pipelineCull ? 8 : 0);
+			bool pipelineCull = cull && !pass.Ordered;
+			draw.CullFront = cull && pass.Ordered ? 1 : 0;
+			int pipelineKey = (int)blend | (pass.DepthWrite ? 4 : 0) | (pipelineCull ? 8 : 0);
 			// Grouped by: nighttime draws after daytime ones (they blend over them), then pipeline, then vertex and index blocks.
 			long key = ((night ? 1L : 0L) << 62) | ((long)pipelineKey << 32) | ((long)(mesh.VertexBlock & 0xFFFF) << 16) | (long)(mesh.IndexBlock & 0xFFFF);
-			draws[drawCount] = draw;
-			commands[commandCount++] = new DrawCommand { Key = key, FirstIndex = firstIndex, IndexCount = indexCount, VertexBase = mesh.VertexBase, Draw = drawCount };
-			drawCount++;
+			chunk.Draws[chunk.DrawCount] = draw;
+			chunk.Commands[chunk.CommandCount++] = new DrawCommand { Key = key, FirstIndex = firstIndex, IndexCount = indexCount, VertexBase = mesh.VertexBase, Draw = chunk.DrawCount, Pass = passIndex };
+			chunk.DrawCount++;
+		}
+
+		/// <summary>The chunks' records joined in order, their indices moved to the joined arrays, and the passes' ranges found.</summary>
+		private void Merge()
+		{
+			objectCount = drawCount = matrixCount = commandCount = 0;
+			skippedFaces = 0;
+			for (int c = 0; c < chunkCount; c++)
+			{
+				Chunk chunk = chunks[c];
+				int objectBase = objectCount, drawBase = drawCount, matrixBase = matrixCount;
+				Grow(ref objects, objectCount + chunk.ObjectCount);
+				Grow(ref draws, drawCount + chunk.DrawCount);
+				Grow(ref commands, commandCount + chunk.CommandCount);
+				Grow(ref matrices, (matrixCount + chunk.MatrixCount) * 16);
+				for (int k = 0; k < chunk.ObjectCount; k++)
+				{
+					ObjectData data = chunk.Objects[k];
+					if (data.Pad0 != 0)
+					{
+						data.MatrixBase += matrixBase;
+					}
+
+					objects[objectCount++] = data;
+				}
+
+				Array.Copy(chunk.Matrices, 0, matrices, matrixCount * 16, chunk.MatrixCount * 16);
+				matrixCount += chunk.MatrixCount;
+				for (int k = 0; k < chunk.DrawCount; k++)
+				{
+					DrawData draw = chunk.Draws[k];
+					draw.Object += objectBase;
+					draws[drawCount++] = draw;
+				}
+
+				for (int k = 0; k < chunk.CommandCount; k++)
+				{
+					DrawCommand command = chunk.Commands[k];
+					command.Draw += drawBase;
+					commands[commandCount++] = command;
+				}
+
+				skippedFaces += chunk.Skipped;
+				ObjectTicks += chunk.ObjectTicks;
+			}
+
+			segmentStarts.Clear();
+			segmentOrdered.Clear();
+			int lastPass = -1;
+			for (int i = 0; i < commandCount; i++)
+			{
+				if (commands[i].Pass != lastPass)
+				{
+					lastPass = commands[i].Pass;
+					segmentStarts.Add(i);
+					segmentOrdered.Add(passes[lastPass].Ordered);
+				}
+			}
+		}
+
+		private static void Grow<T>(ref T[] array, int needed)
+		{
+			if (needed > array.Length)
+			{
+				Array.Resize(ref array, Math.Max(needed, array.Length * 2));
+			}
 		}
 
 		// --- recording ---
@@ -800,6 +1019,12 @@ namespace OpenBve.Graphics.Vulkan
 			buffer = new HostBuffer(device, Math.Max(size + size / 2, 64UL << 10), usage);
 			return true;
 		}
+
+		/// <summary>Time making object records (matrices, on all threads) since the statistics were last taken, for the log.</summary>
+		internal long ObjectTicks;
+
+		/// <summary>Object records in the last frame, for the log.</summary>
+		internal int LastObjects => objectCount;
 
 		/// <summary>Faces skipped this frame because their mesh had no Vulkan copy, for the log.</summary>
 		internal int SkippedFaces => skippedFaces;

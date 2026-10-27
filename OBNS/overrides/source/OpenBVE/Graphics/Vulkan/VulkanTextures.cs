@@ -132,6 +132,9 @@ namespace OpenBve.Graphics.Vulkan
 			WriteDescriptor(white);
 		}
 
+		/// <summary>Changes whenever a texture's place in the array may have changed (one deleted or made again).</summary>
+		internal int Generation { get; private set; } = 1;
+
 		/// <summary>The array index of a texture OpenGL has, or the white texture's if it has none here.</summary>
 		internal int IndexOf(OpenGlTexture texture)
 		{
@@ -166,6 +169,7 @@ namespace OpenBve.Graphics.Vulkan
 			CreateImage(entry, (uint)width, (uint)height, r8, alphaOne, true);
 			WriteDescriptor(entry);
 			entries[key] = entry;
+			Generation++;
 			return new ObnsSharedMemory { GLMemory = heap.GLMemory(entry.Memory.Block), Offset = entry.Memory.Offset, Owner = entry };
 		}
 
@@ -267,6 +271,7 @@ namespace OpenBve.Graphics.Vulkan
 			{
 				entries.Remove(key);
 				written.Remove(entry);
+				Generation++;
 				entry.FreedAt = frame;
 				freed.Add(entry);
 			}

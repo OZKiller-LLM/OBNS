@@ -22,19 +22,39 @@ namespace OpenBve.Graphics.Vulkan
 		internal WeakReference Owner;
 		internal long FreedAt;
 
-		/// <summary>The triangle indices of the face starting at a vertex: false if the mesh has no such face.</summary>
-		internal bool Find(int iboStart, out uint firstIndex, out uint indexCount)
+		/// <summary>Each face's textures' places in the bindless array as last looked up (daytime, nighttime).</summary>
+		internal TextureSlot[] DaySlots, NightSlots;
+
+		/// <summary>The face starting at a vertex (its slot here) and its triangle indices: false if the mesh has no such face.</summary>
+		internal bool Find(int iboStart, out int slot, out uint firstIndex, out uint indexCount)
 		{
-			int i = Array.BinarySearch(FaceStarts, iboStart);
-			if (i < 0 || FaceIndexCount[i] == 0)
+			slot = Array.BinarySearch(FaceStarts, iboStart);
+			if (slot < 0 || FaceIndexCount[slot] == 0)
 			{
 				firstIndex = indexCount = 0;
 				return false;
 			}
 
-			firstIndex = (uint)FaceFirstIndex[i];
-			indexCount = (uint)FaceIndexCount[i];
+			firstIndex = (uint)FaceFirstIndex[slot];
+			indexCount = (uint)FaceIndexCount[slot];
 			return true;
+		}
+	}
+
+	/// <summary>
+	/// A face's texture's place in the bindless array, with the OpenGL texture and the texture table's generation it
+	/// was looked up in. Never changed once made, so threads see a whole one or none (it is replaced, not updated).
+	/// </summary>
+	internal sealed class TextureSlot
+	{
+		internal readonly OpenBveApi.Textures.OpenGlTexture Texture;
+		internal readonly int Index, Generation;
+
+		internal TextureSlot(OpenBveApi.Textures.OpenGlTexture texture, int index, int generation)
+		{
+			Texture = texture;
+			Index = index;
+			Generation = generation;
 		}
 	}
 
@@ -146,6 +166,8 @@ namespace OpenBve.Graphics.Vulkan
 				FaceStarts = new int[faceCount],
 				FaceFirstIndex = new int[faceCount],
 				FaceIndexCount = new int[faceCount],
+				DaySlots = new TextureSlot[faceCount],
+				NightSlots = new TextureSlot[faceCount],
 				Owner = new WeakReference(vao)
 			};
 			bool sorted = true;

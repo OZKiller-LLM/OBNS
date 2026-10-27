@@ -189,9 +189,11 @@ namespace OpenBve.Graphics.Vulkan
 				}
 
 				double frames = Math.Max(1, world.timedFrames);
-				string times = string.Format(System.Globalization.CultureInfo.InvariantCulture, "gathering {0:0.00} ms, drawing {1:0.00} ms a frame",
-					world.gatherTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames, world.drawTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames);
+				string times = string.Format(System.Globalization.CultureInfo.InvariantCulture, "gathering {0:0.00} ms ({2} objects, {3:0.00} ms), drawing {1:0.00} ms a frame",
+					world.gatherTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames, world.drawTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames,
+					world.Scene.LastObjects, world.Scene.ObjectTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames);
 				world.gatherTicks = world.drawTicks = world.timedFrames = 0;
+				world.Scene.ObjectTicks = 0;
 				return "on (" + times + "; " + world.Scene.LastDraws + " draws in " + world.Scene.LastIndirectCalls + " indirect calls; " + world.Scene.Textures.Describe() + "; " + world.Scene.Meshes.Describe() +
 				       (world.Scene.SkippedFaces > 0 ? "; " + world.Scene.SkippedFaces + " faces without a copy" : "") + ")";
 			}
