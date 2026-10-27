@@ -55,6 +55,8 @@
       FunctionScripts.cs is the evaluator for every animation function (doors, needles, cab
       displays, signals): the API hands evaluation to the host, whose base does nothing.
     -->
+    <!-- OBNS's shared parallel-update helpers (the desktop build compiles them too). -->
+    <Compile Include="..\..\OBNS\shared\*.cs" LinkBase="OBNS" />
     <Compile Include="$(UpstreamSource)OpenBVE\Game\ObjectManager\AnimatedObjects\FunctionScripts.cs" Link="Upstream\FunctionScripts.cs" />
     <!--
       The AI drivers: SimpleHumanDriverAI drives preceding trains (Train.RunInterval, and

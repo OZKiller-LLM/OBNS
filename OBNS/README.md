@@ -64,3 +64,42 @@ DetailManager.dll plugin through the proxy.
 
 Shared libraries (moving here from `Android/` as each is taken up): the GL-on-Vulkan renderer core,
 the x86 plugin layer, the BVE5 train plugin, the parallel-update helpers.
+
+## Backports to the desktop
+
+Measured with `OBNS_FRAMESTATS=1`, which logs where a frame's time goes every 10 s (OBNS's copy of
+`GameWindow.cs`): the animated world objects, the trains' objects, the scene's rendering, the buffer
+swap (the wait for the GPU and vertical sync) and the rest. The benchmark is Android's heavy one:
+the Tuen Ma Line (`TMLDN 20144.csv`) with the SP1900 (private pack, used from its local copy, never
+committed), 30 s in the cab, then 30 s in the exterior view (F2), on a 12-thread PC at 60 Hz.
+
+### 1. Animated objects on all cores (done)
+
+`OBNS/shared/FrameWorkers.cs` and `ParallelUpdates.cs`, moved here from the Android port and compiled
+by both (on the desktop into TrainManager). The desktop hooks are OBNS copies of upstream's
+`TrainManager.cs` (every train's cars), `ObjectManager.cs` (the route's plain animated and keyframe
+objects) and `Host.cs` (function scripts on per-thread stacks, shows and hides queued, a thread-safe
+Random). `OBNS_PARALLEL_UPDATES=0` turns them off.
+
+| Tuen Ma Line, steady state | Off | On |
+|---|---|---|
+| Cab: world objects | 2.68 ms | 1.10 ms |
+| Exterior: world objects / train objects | 2.80 / 4.28 ms | 1.15 / 2.86 ms |
+| Exterior: frame | 32.2 ms (31.0 fps) | 28.9 ms (34.6 fps) |
+| Cab: frame (near the 60 Hz limit) | 17.5 ms | 17.3 ms |
+
+### 2. Fewer draw calls (next)
+
+The scene's rendering is now most of the frame (exterior: ~23 of 29 ms), with the swap under 0.5 ms:
+the time is the CPU submitting draw calls, not the GPU. The Android port's renderer cut exactly
+that on the same route (~18,000 calls a frame before): runs of an object's faces drawn as one call
+(`DrawRuns`), trains' still parts batched (`StaticBatcher`), and shared meshes (`MeshSharing`). They
+are independent of the graphics API, so they help under OpenGL now and under Vulkan later.
+
+### 3. Vulkan with pipelined frames
+
+Android's `OpenBve.Vulkan` (`VulkanGL`) carries out the GL calls of upstream's renderer with Vulkan,
+recording and submitting each frame on its own thread while the next is prepared. On the desktop,
+upstream calls OpenTK's own GL class directly, so this needs a GL facade there first.
+
+### 4. The x86 plugin layer for macOS and Linux

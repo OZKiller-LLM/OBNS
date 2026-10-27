@@ -24,7 +24,9 @@
 using System;
 using System.Threading;
 
-namespace OpenBve.Android
+// OBNS: shared by the Android port (OpenBve.Android) and the desktop build (compiled into TrainManager).
+
+namespace OpenBve
 {
 	/*
 	 * Worker threads for work inside a frame (ParallelUpdates). The .NET thread pool suits work
@@ -34,7 +36,7 @@ namespace OpenBve.Android
 	 * threads live for the game, take chunks of the work from a shared counter (the calling thread
 	 * too), and between frames spin briefly before sleeping, so a frame wakes them in microseconds.
 	 */
-	internal sealed class FrameWorkers
+	public sealed class FrameWorkers
 	{
 		public static readonly FrameWorkers Shared = new FrameWorkers(Math.Max(0, Environment.ProcessorCount - 1));
 
@@ -112,10 +114,10 @@ namespace OpenBve.Android
 			}
 
 			job.RunChunks();
-			SpinWait spin = new SpinWait();
+			Spinner spin = new Spinner();
 			while (Volatile.Read(ref job.Pending) > 0)
 			{
-				spin.SpinOnce(-1);
+				spin.SpinOnce();
 			}
 
 			current = null;
@@ -131,10 +133,10 @@ namespace OpenBve.Android
 			while (true)
 			{
 				// Spin a little after a job (the next frame's may come soon), then sleep.
-				SpinWait spin = new SpinWait();
+				Spinner spin = new Spinner();
 				while (generation == seen && !spin.NextSpinWillYield)
 				{
-					spin.SpinOnce(-1);
+					spin.SpinOnce();
 				}
 
 				lock (gate)
@@ -148,6 +150,33 @@ namespace OpenBve.Android
 				}
 
 				current?.RunChunks();
+			}
+		}
+
+		/// <summary>
+		/// A spin wait that never sleeps: busy-waits a little longer each time, then yields the processor. .NET's
+		/// SpinWait.SpinOnce(-1) does this, but only from .NET Core 3.0; .NET Framework's SpinOnce() sleeps a whole
+		/// millisecond every twentieth time, too long inside a frame.
+		/// </summary>
+		private struct Spinner
+		{
+			private int count;
+
+			/// <summary>Whether the next SpinOnce yields the processor rather than busy-waiting.</summary>
+			public bool NextSpinWillYield => count >= 10;
+
+			public void SpinOnce()
+			{
+				if (count < 10)
+				{
+					Thread.SpinWait(4 << count);
+				}
+				else
+				{
+					Thread.Yield();
+				}
+
+				count++;
 			}
 		}
 	}

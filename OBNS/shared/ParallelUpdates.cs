@@ -26,27 +26,32 @@ using System.Runtime.CompilerServices;
 using OpenBveApi.FunctionScripting;
 using OpenBveApi.Objects;
 
-namespace OpenBve.Android
+// OBNS: shared by the Android port (OpenBve.Android) and the desktop build (compiled into TrainManager, used by
+// TrainManager's UpdateTrainObjects and the program's ObjectManager and Host; all OBNS copies of upstream's).
+
+namespace OpenBve
 {
 	/*
 	 * Animated objects updated on several cores each frame. Upstream updates every train's parts
 	 * and every animated object of the route one after another; on the Tuen Ma Line, with 36
 	 * scripted trains, that is ~8-10 ms of an A73's exterior frame, and far more on slow phones.
 	 * Each train only moves its own cars' objects, and each animated object its own, so they can
-	 * be updated side by side (AndroidTrainManager.UpdateTrainObjectsParallel,
-	 * AndroidHost.UpdateAnimatedWorldObjects), with three things made safe for it:
+	 * be updated side by side (Android: AndroidTrainManager.UpdateTrainObjectsParallel and
+	 * AndroidHost.UpdateAnimatedWorldObjects; desktop: OBNS's copies of TrainManagerBase.UpdateTrainObjects
+	 * and ObjectManager.UpdateAnimatedWorldObjects), with three things made safe for it:
 	 *  - Function scripts: upstream's FunctionScript.Clone is a MemberwiseClone, so every copy of a
 	 *    script (the same door in every car of every train) shares one evaluation stack. While a
 	 *    parallel update runs, each script is evaluated on a stack of the thread's own, swapped in
-	 *    for the call (AndroidHost.ExecuteFunctionScript: UseThreadStack / Restore below).
+	 *    for the call (the host's ExecuteFunctionScript: UseThreadStack / Restore below).
 	 *  - The scripts' random numbers come from the host's Random, which is not thread-safe: the
-	 *    host uses .NET's thread-safe Random.Shared instead.
+	 *    host uses a thread-safe one instead (Android: .NET's Random.Shared; desktop: ThreadSafeRandom).
 	 *  - Showing and hiding objects is queued and applied on the render thread afterwards (End).
-	 * Kept on the calling (GL) thread: the player's train (its cab's LED elements rebuild GPU
+	 * Kept on the calling (render) thread: the player's train (its cab's LED elements rebuild GPU
 	 * buffers), and route objects that play sounds or follow the track.
-	 * --ez parallel_updates false updates everything one after another, as upstream.
+	 * Switched off (everything one after another, as upstream) with --ez parallel_updates false on
+	 * Android, and OBNS_PARALLEL_UPDATES=0 on the desktop.
 	 */
-	internal static class ParallelUpdates
+	public static class ParallelUpdates
 	{
 		public static bool Enabled = true;
 

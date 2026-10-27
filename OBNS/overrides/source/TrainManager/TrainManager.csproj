@@ -45,6 +45,10 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <!-- OBNS: for the shared parallel updates (OBNS/shared/ParallelUpdates.cs). -->
+    <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=6.0.3.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.6.1.2\lib\net462\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
     <Reference Include="System.ServiceModel" />
   </ItemGroup>
   <ItemGroup>
@@ -169,6 +173,9 @@
     <Compile Include="SafetySystems\Plugin\LegacyPlugin.cs" />
     <!-- OBNS: 64-bit plugins, loaded directly (OBNS/overrides). -->
     <Compile Include="SafetySystems\Plugin\Win64Plugin.cs" />
+    <!-- OBNS: the parallel-update helpers shared with the Android port (OBNS/shared), from the mirror's place in OBNS/build. -->
+    <Compile Include="..\..\..\..\shared\FrameWorkers.cs" Link="OBNS\FrameWorkers.cs" />
+    <Compile Include="..\..\..\..\shared\ParallelUpdates.cs" Link="OBNS\ParallelUpdates.cs" />
     <Compile Include="SafetySystems\Plugin\NetPlugin.cs" />
     <Compile Include="SafetySystems\Plugin\Plugin.cs" />
     <Compile Include="SafetySystems\Plugin\Plugin.Functions.cs" />
