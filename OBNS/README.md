@@ -90,11 +90,16 @@ Random). `OBNS_PARALLEL_UPDATES=0` turns them off.
 
 ### 2. Fewer draw calls (next)
 
-The scene's rendering is now most of the frame (exterior: ~23 of 29 ms), with the swap under 0.5 ms:
-the time is the CPU submitting draw calls, not the GPU. The Android port's renderer cut exactly
-that on the same route (~18,000 calls a frame before): runs of an object's faces drawn as one call
-(`DrawRuns`), trains' still parts batched (`StaticBatcher`), and shared meshes (`MeshSharing`). They
-are independent of the graphics API, so they help under OpenGL now and under Vulkan later.
+The scene's rendering is now most of the frame (exterior: ~23 of 29 ms, ~10,000 draw calls), with the
+swap under 0.5 ms: the time is the CPU submitting draw calls, not the GPU.
+
+- **Runs of an object's faces as one call** (Android's `DrawRuns`): tried and dropped. On the desktop,
+  upstream's in-game object optimisation already joins each object's faces per material when it
+  loads (every face is a triangle list, and no two neighbouring faces of an object share a material:
+  0 joinable of 3,212), so each call is already one object's material.
+- **Trains' still parts batched** (Android's `StaticBatcher`): one call for many objects' faces of a
+  material. The exterior's calls are mostly the 36 scripted trains' parts.
+- Then Vulkan (3), which makes each remaining call cheaper.
 
 ### 3. Vulkan with pipelined frames
 
