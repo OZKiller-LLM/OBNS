@@ -164,6 +164,16 @@ namespace OpenBve.Graphics
 				Program.CurrentRoute.CurrentFog = Program.CurrentRoute.PreviousFog;
 			}
 
+			// OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md), unless shadows or the debug views are on (not drawn
+			// by it yet): its faces are given to it now, and its frame made and submitted on another thread while OpenGL
+			// draws the background below; it is laid over the background where upstream draws the world layer.
+			bool vulkanWorld = Vulkan.VulkanWorld.Enabled && !ShadowsEnabled && !OptionWireFrame && !OptionNormals;
+			List<FaceState> vulkanOverlayOpaque = null, vulkanOverlayAlpha = null;
+			if (vulkanWorld)
+			{
+				StartVulkanWorld(out vulkanOverlayOpaque, out vulkanOverlayAlpha);
+			}
+
 			DefaultShader.Activate();
 			BindCSMToDefaultShader();
 
@@ -212,7 +222,17 @@ namespace OpenBve.Graphics
 
             ResetOpenGlState();
 			long worldStart = System.Diagnostics.Stopwatch.GetTimestamp();
-			List<FaceState> opaqueFaces, alphaFaces, overlayOpaqueFaces, overlayAlphaFaces, unsortedAlphaFaces;
+			List<FaceState> overlayOpaqueFaces, overlayAlphaFaces;
+			if (vulkanWorld)
+			{
+				// OBNS: the world layer Vulkan has drawn, laid over the background.
+				overlayOpaqueFaces = vulkanOverlayOpaque;
+				overlayAlphaFaces = vulkanOverlayAlpha;
+				FinishVulkanWorld();
+			}
+			else
+			{
+			List<FaceState> opaqueFaces, alphaFaces, unsortedAlphaFaces;
 			lock (VisibleObjects.LockObject)
 			{
 				opaqueFaces = VisibleObjects.OpaqueFaces.ToList();
@@ -227,14 +247,6 @@ namespace OpenBve.Graphics
 			batcher = batcher ?? new StaticBatcher(this);
 			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
 
-			// OBNS: the world layer drawn by Vulkan and laid over the background (OBNS/VULKAN.md), unless shadows or
-			// the debug views are on (not drawn by it yet); else by OpenGL as upstream, below.
-			if (Vulkan.VulkanWorld.Enabled && !ShadowsEnabled && !OptionWireFrame && !OptionNormals)
-			{
-				DrawVulkanWorld(opaqueFaces, alphaFaces);
-			}
-			else
-			{
 			foreach (FaceState face in opaqueFaces)
 			{
 				face.Draw();
@@ -545,14 +557,48 @@ namespace OpenBve.Graphics
 		/// <summary>OBNS: whether faces drawn now go to the Vulkan world layer (the static batcher's draws included).</summary>
 		private bool vulkanGathering;
 
+		/// <summary>OBNS: when the Vulkan world layer's frame was started, and how long that took, for the log.</summary>
+		private long vulkanGatherTicks;
+
 		/// <summary>
-		/// OBNS: has Vulkan draw the world layer: the passes of upstream's world layer above, in the same order and with
-		/// the same state, then puts back the GL state upstream's renderer expects.
+		/// OBNS: gives the Vulkan world layer the frame's faces, in the passes of upstream's world layer (below, in
+		/// RenderScene), in the same order and with the same state, and starts its frame; returns the overlay layer's
+		/// faces, taken with the world's. Called before the background is drawn, with the camera, lighting and fog set.
 		/// </summary>
-		private void DrawVulkanWorld(List<FaceState> opaqueFaces, List<FaceState> alphaFaces)
+		private void StartVulkanWorld(out List<FaceState> overlayOpaqueFaces, out List<FaceState> overlayAlphaFaces)
 		{
-			Vulkan.VulkanScene scene = Vulkan.VulkanWorld.Instance.Scene;
 			long gatherStart = System.Diagnostics.Stopwatch.GetTimestamp();
+
+			// The fog as upstream sets it after drawing the background (the same values; OpenGL's is set there).
+			float fogStart = Program.CurrentRoute.CurrentFog.Start, fogEnd = Program.CurrentRoute.CurrentFog.End;
+			if (fogStart < fogEnd & fogStart < Program.CurrentRoute.CurrentBackground.BackgroundImageDistance)
+			{
+				Fog.Enabled = true;
+				Fog.Start = fogStart;
+				Fog.End = fogEnd;
+				Fog.Color = Program.CurrentRoute.CurrentFog.Color;
+				Fog.Density = Program.CurrentRoute.CurrentFog.Density;
+				Fog.IsLinear = Program.CurrentRoute.CurrentFog.IsLinear;
+			}
+			else
+			{
+				Fog.Enabled = false;
+			}
+
+			List<FaceState> opaqueFaces, alphaFaces, unsortedAlphaFaces;
+			lock (VisibleObjects.LockObject)
+			{
+				opaqueFaces = VisibleObjects.OpaqueFaces.ToList();
+				alphaFaces = VisibleObjects.GetSortedPolygons();
+				overlayOpaqueFaces = VisibleObjects.OverlayOpaqueFaces.ToList();
+				overlayAlphaFaces = VisibleObjects.GetSortedPolygons(true);
+				unsortedAlphaFaces = VisibleObjects.AlphaFaces.ToList();
+			}
+
+			batcher = batcher ?? new StaticBatcher(this);
+			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
+
+			Vulkan.VulkanScene scene = Vulkan.VulkanWorld.Instance.Scene;
 			scene.Begin(this);
 			vulkanGathering = true;
 			try
@@ -614,13 +660,18 @@ namespace OpenBve.Graphics
 				vulkanGathering = false;
 			}
 
-			// The faces' records, made on every core.
-			scene.Build();
-			long drawStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			int[] viewport = new int[4];
 			GL.GetInteger(GetPName.Viewport, viewport);
-			Vulkan.VulkanWorld.Instance.DrawWorld(viewport[0], viewport[1], viewport[2], viewport[3]);
-			Vulkan.VulkanWorld.Instance.Timed(drawStart - gatherStart, System.Diagnostics.Stopwatch.GetTimestamp() - drawStart);
+			Vulkan.VulkanWorld.Instance.Start(viewport[0], viewport[1], viewport[2], viewport[3]);
+			vulkanGatherTicks = System.Diagnostics.Stopwatch.GetTimestamp() - gatherStart;
+		}
+
+		/// <summary>OBNS: lays the Vulkan world layer's frame over the background, then puts back the GL state upstream's renderer expects.</summary>
+		private void FinishVulkanWorld()
+		{
+			long finishStart = System.Diagnostics.Stopwatch.GetTimestamp();
+			Vulkan.VulkanWorld.Instance.Finish();
+			Vulkan.VulkanWorld.Instance.Timed(vulkanGatherTicks, System.Diagnostics.Stopwatch.GetTimestamp() - finishStart);
 
 			// The composite used its own program, vertex array and textures.
 			DefaultShader.Deactivate();

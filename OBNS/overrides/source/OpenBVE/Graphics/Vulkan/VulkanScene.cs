@@ -108,7 +108,17 @@ namespace OpenBve.Graphics.Vulkan
 			public MeshFace Face;
 			public int Pass, AlphaFunction;
 			public float AlphaReference;
+			// Resolved by Prepare (main thread): the mesh, the face's indices, its textures' places (-1: none).
+			public VulkanMesh Mesh;
+			public uint FirstIndex, IndexCount;
+			public int DayTexture, NightTexture;
 		}
+
+		// Upstream's renderer state for the frame, taken by Begin: the frame's records are made from these (on other
+		// threads, while the main thread goes on) rather than from the renderer.
+		private Matrix4D cameraTranslation, viewMatrix;
+		private bool backFaceCulling, fogEnabled;
+		private float lightingAmount;
 
 		/// <summary>A pass's state: blending, depth writes, and whether its faces are drawn in the order given.</summary>
 		private struct PassInfo
@@ -428,6 +438,11 @@ namespace OpenBve.Graphics.Vulkan
 			renderer = baseRenderer;
 			itemCount = 0;
 			passes.Clear();
+			cameraTranslation = renderer.Camera.TranslationMatrix;
+			viewMatrix = renderer.CurrentViewMatrix;
+			backFaceCulling = renderer.OptionBackFaceCulling;
+			fogEnabled = renderer.Fog.Enabled;
+			lightingAmount = renderer.Lighting.OptionLightingResultingAmount;
 
 			FrameData data = new FrameData();
 			Store(renderer.CurrentProjectionMatrix, data.Projection);
@@ -502,16 +517,18 @@ namespace OpenBve.Graphics.Vulkan
 		private const float Inv255 = 1.0f / 255.0f;
 
 		/// <summary>
-		/// Makes the frame's records from the faces given: first, on this (the main) thread, what needs OpenGL or changes
-		/// shared state (missing VAOs, textures not loaded yet or animated, objects' cached matrices); then the records,
-		/// in chunks on every core; then the chunks merged, in order (blended faces keep upstream's order).
+		/// The faces given, resolved on the main thread: what needs OpenGL or changes shared state (missing VAOs, textures
+		/// not loaded yet or animated, objects' lazily made model matrices), and each face's mesh, indices and textures'
+		/// places, so that making the records (BuildRecords, on other threads) reads nothing the main thread changes.
 		/// </summary>
-		internal void Build()
+		internal void Prepare()
 		{
 			ObjectState last = null;
 			for (int i = 0; i < itemCount; i++)
 			{
-				ObjectState state = items[i].State;
+				ref Item item = ref items[i];
+				item.Mesh = null;
+				ObjectState state = item.State;
 				Mesh mesh = state.Prototype.Mesh;
 				if (mesh.Vertices.Length < 1)
 				{
@@ -530,15 +547,32 @@ namespace OpenBve.Graphics.Vulkan
 					last = state;
 				}
 
-				ref MeshMaterial material = ref mesh.Materials[items[i].Face.Material];
+				if (!((mesh.VAO as VertexArrayObject)?.ObnsVulkanMesh is VulkanMesh vulkanMesh) || !vulkanMesh.Find(item.Face.IboStartIndex, out int slot, out item.FirstIndex, out item.IndexCount))
+				{
+					continue;
+				}
+
+				ref MeshMaterial material = ref mesh.Materials[item.Face.Material];
 				OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
 				EnsureLoaded(material.DaytimeTexture, wrap);
+				item.DayTexture = TextureIndex(material.DaytimeTexture, wrap, vulkanMesh.DaySlots, slot);
+				item.NightTexture = -1;
 				if (material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && BlendFactor(state) != 0)
 				{
 					EnsureLoaded(material.NighttimeTexture, wrap);
+					item.NightTexture = TextureIndex(material.NighttimeTexture, wrap, vulkanMesh.NightSlots, slot);
 				}
-			}
 
+				item.Mesh = vulkanMesh;
+			}
+		}
+
+		/// <summary>
+		/// Makes the frame's records from the prepared faces, in chunks on every core, then merges the chunks in order
+		/// (blended faces keep upstream's order). Reads only the faces and the frame's state taken by Begin.
+		/// </summary>
+		internal void BuildRecords()
+		{
 			chunkCount = itemCount == 0 ? 0 : Math.Min(Math.Max(1, itemCount / 128), FrameWorkers.Shared.Threads * 4);
 			while (chunks.Count < chunkCount)
 			{
@@ -562,7 +596,7 @@ namespace OpenBve.Graphics.Vulkan
 
 		private float BlendFactor(ObjectState state)
 		{
-			float blendFactor = Inv255 * state.DaytimeNighttimeBlend + 1.0f - renderer.Lighting.OptionLightingResultingAmount;
+			float blendFactor = Inv255 * state.DaytimeNighttimeBlend + 1.0f - lightingAmount;
 			return blendFactor > 1.0f ? 1.0f : blendFactor;
 		}
 
@@ -591,32 +625,34 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>A face's records, as upstream's RenderFace would draw it in its pass.</summary>
 		private void BuildFace(Chunk chunk, ref Item item, ref ObjectState lastState, ref Matrix4D lastModelMatrix, ref int lastObject)
 		{
-			ObjectState state = item.State;
-			Mesh mesh = state.Prototype.Mesh;
-			if (mesh.Vertices.Length < 1)
+			VulkanMesh vulkanMesh = item.Mesh;
+			if (vulkanMesh == null)
 			{
+				if (item.State.Prototype.Mesh.Vertices.Length > 0)
+				{
+					chunk.Skipped++;
+				}
+
 				return;
 			}
 
-			if (!((mesh.VAO as VertexArrayObject)?.ObnsVulkanMesh is VulkanMesh vulkanMesh) || !vulkanMesh.Find(item.Face.IboStartIndex, out int slot, out uint firstIndex, out uint indexCount))
-			{
-				chunk.Skipped++;
-				return;
-			}
+			ObjectState state = item.State;
+			Mesh mesh = state.Prototype.Mesh;
+			uint firstIndex = item.FirstIndex, indexCount = item.IndexCount;
 
 			// The object: its matrices, once per object as upstream sends them.
 			if (state != lastState || state.Prototype.Dynamic)
 			{
 				long objectStart = System.Diagnostics.Stopwatch.GetTimestamp();
-				lastModelMatrix = state.ModelMatrix * renderer.Camera.TranslationMatrix;
-				lastObject = AddObject(chunk, state, lastModelMatrix * renderer.CurrentViewMatrix);
+				lastModelMatrix = state.ModelMatrix * cameraTranslation;
+				lastObject = AddObject(chunk, state, lastModelMatrix * viewMatrix);
 				lastState = state;
 				chunk.ObjectTicks += System.Diagnostics.Stopwatch.GetTimestamp() - objectStart;
 			}
 
 			PassInfo pass = passes[item.Pass];
 			ref MeshMaterial material = ref mesh.Materials[item.Face.Material];
-			bool cull = renderer.OptionBackFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0;
+			bool cull = backFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0;
 			OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
 
 			float distanceFactor = material.GlowAttenuationData != 0
@@ -630,7 +666,7 @@ namespace OpenBve.Graphics.Vulkan
 				Flags = (int)material.Flags,
 				Object = lastObject,
 				Sampler = (int)wrap & 3,
-				Fog = renderer.Fog.Enabled ? 1 : 0,
+				Fog = fogEnabled ? 1 : 0,
 				AlphaFunction = item.AlphaFunction,
 				AlphaReference = item.AlphaReference,
 				Shininess = 1.0f
@@ -645,11 +681,7 @@ namespace OpenBve.Graphics.Vulkan
 			draw.EmissionB = material.EmissiveColor.B * Inv255;
 
 			// Daytime texture, else white.
-			draw.Texture = TextureIndex(material.DaytimeTexture, wrap, vulkanMesh.DaySlots, slot);
-			if (draw.Texture < 0)
-			{
-				draw.Texture = VulkanTextures.White;
-			}
+			draw.Texture = item.DayTexture >= 0 ? item.DayTexture : VulkanTextures.White;
 
 			Blend blend = pass.Blend;
 			bool additive = material.BlendMode == MeshMaterialBlendMode.Additive;
@@ -680,11 +712,9 @@ namespace OpenBve.Graphics.Vulkan
 			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, vulkanMesh, false);
 
 			// Nighttime texture, blended over the daytime one.
-			int night;
-			if (blendFactor != 0 && material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture &&
-			    (night = TextureIndex(material.NighttimeTexture, wrap, vulkanMesh.NightSlots, slot)) >= 0)
+			if (blendFactor != 0 && item.NightTexture >= 0)
 			{
-				draw.Texture = night;
+				draw.Texture = item.NightTexture;
 				draw.AlphaFunction = AlphaGreater;
 				draw.AlphaReference = 0.0f;
 				draw.Opacity = Inv255 * material.Color.A * distanceFactor * blendFactor;
@@ -693,7 +723,7 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		/// <summary>
-		/// A loaded texture's place in the bindless array (Build has loaded what needed it), or -1 if it is not loaded.
+		/// A loaded texture's place in the bindless array (Prepare has loaded what needed it), or -1 if it is not loaded.
 		/// The place is kept per face, for as long as it is the same OpenGL texture and nothing has moved.
 		/// </summary>
 		private int TextureIndex(Texture texture, OpenGlTextureWrapMode wrap, TextureSlot[] slots, int slot)

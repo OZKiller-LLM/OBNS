@@ -73,7 +73,9 @@ on OpenGL until the Vulkan shadow pass exists.
 
 ## Fallback and switches
 
-Vulkan is used when the driver has Vulkan 1.3 with descriptor indexing and external memory, and OpenGL has
+The renderer is chosen in the options (Options, display group: Renderer, OpenGL or Vulkan; Vulkan by default),
+kept in `Settings/1.5.0/obns.cfg` beside upstream's `options.cfg`, and takes effect when a game starts. The
+debug overlay's renderer line says which is drawing. Vulkan is used when the driver has Vulkan 1.3 with descriptor indexing and external memory, and OpenGL has
 the memory object and semaphore extensions on the same GPU (matched by device UUID); otherwise, or with
 `OBNS_VULKAN=0`, the world layer is drawn by OpenGL as before (with the GL state filter,
 `Graphics/GLStateFilter.cs`, which `OBNS_GL_FILTER=0` turns off). The log says which, and why.
@@ -124,7 +126,11 @@ OBNS's `NewRenderer.cs` calls it after the background; `GameWindow.cs` sets it u
    What is left is the GPU running OpenGL's background, Vulkan's world and OpenGL's overlays in turn, idle while
    the CPU makes the Vulkan frame: the frame's start waits about 2 ms longer with Vulkan on. Overlapping the
    Vulkan frame's making with OpenGL's work is the next step.
-3. Pipelined frames.
+3. Pipelined frames. Done: the world's faces are given to Vulkan before the background is drawn; what needs
+   OpenGL is done on the main thread, then the frame is made (on every core) and submitted on a thread of its
+   own while OpenGL draws the background, and laid over it where upstream draws the world. On the Tuen Ma Line,
+   in one run: exterior 25-28 ms a frame against OpenGL's 34-37, cab 18-19 against 17. Frames start and end
+   about 2 ms later with Vulkan on (OpenGL waiting for the GPU, it seems): GPU timestamps are next, to see.
 4. The overlay layer (cab).
 5. Shadows.
 6. Linux (`_fd` handles); later, the 2D layer for macOS.

@@ -117,24 +117,29 @@ namespace OpenBve.Graphics.Vulkan
 			writtenBuffers.Add(buffer);
 		}
 
-		/// <summary>The OpenGL buffers written since the last frame, for OpenGL's semaphore signal.</summary>
-		internal void WrittenNames(List<int> names)
+		/// <summary>
+		/// The vertex buffers written since the last frame, handed over now: their OpenGL names added for OpenGL's
+		/// semaphore signal; whether there were any, for the frame's barrier. Then forgotten.
+		/// </summary>
+		internal bool TakeWritten(List<int> names)
 		{
 			names.AddRange(writtenBuffers);
+			bool any = written;
+			written = false;
+			writtenBuffers.Clear();
+			return any;
 		}
 
-		/// <summary>Records making OpenGL's vertex writes visible to the frame's vertex input, and forgets them.</summary>
-		internal void AcquireWritten(IntPtr commandBuffer)
+		/// <summary>Records making vertex writes OpenGL handed over visible to the frame's vertex input.</summary>
+		internal void AcquireWritten(IntPtr commandBuffer, bool handed)
 		{
-			if (!written)
+			if (!handed)
 			{
 				return;
 			}
 
 			Vk.MemoryBarrier barrier = new Vk.MemoryBarrier { SType = Vk.StructureTypeMemoryBarrier, DstAccessMask = Vk.AccessVertexAttributeRead };
 			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTopOfPipe, Vk.PipelineStageVertexInput, 0, 1, &barrier, 0, null, 0, null);
-			written = false;
-			writtenBuffers.Clear();
 		}
 
 		/// <summary>Indexes a mesh upstream has made (or updated) a VAO for, if its vertex buffer is in shared storage.</summary>

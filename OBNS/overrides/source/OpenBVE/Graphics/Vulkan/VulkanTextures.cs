@@ -18,7 +18,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>The index of the white texture drawn when a face has none.</summary>
 		internal const int White = 0;
 
-		private sealed class Entry
+		internal sealed class Entry
 		{
 			internal int Index;
 			internal ulong Image, View;
@@ -229,26 +229,34 @@ namespace OpenBve.Graphics.Vulkan
 			}
 		}
 
-		/// <summary>The OpenGL names of the textures written since the last frame, for OpenGL's semaphore signal.</summary>
-		internal void WrittenNames(List<int> names)
+		/// <summary>
+		/// The textures written since the last frame, handed over now: their OpenGL names added for OpenGL's semaphore
+		/// signal, and the textures returned for the frame's barriers (made on another thread); then forgotten.
+		/// </summary>
+		internal List<Entry> TakeWritten(List<int> names)
 		{
+			List<Entry> taken = new List<Entry>(written.Count);
 			foreach (Entry entry in written)
 			{
 				names.Add(entry.Key.Name);
+				taken.Add(entry);
 			}
+
+			written.Clear();
+			return taken;
 		}
 
-		/// <summary>Records taking the written textures over from OpenGL (in the layout it signalled them in), and forgets them.</summary>
-		internal void AcquireWritten(IntPtr commandBuffer)
+		/// <summary>Records taking textures handed over by OpenGL (in the layout it signalled them in).</summary>
+		internal void AcquireWritten(IntPtr commandBuffer, List<Entry> handed)
 		{
-			if (written.Count == 0)
+			if (handed == null || handed.Count == 0)
 			{
 				return;
 			}
 
-			Vk.ImageMemoryBarrier[] barriers = new Vk.ImageMemoryBarrier[written.Count];
+			Vk.ImageMemoryBarrier[] barriers = new Vk.ImageMemoryBarrier[handed.Count];
 			int i = 0;
-			foreach (Entry entry in written)
+			foreach (Entry entry in handed)
 			{
 				Vk.ImageMemoryBarrier barrier = Barrier(entry, 0, Vk.AccessShaderRead, Vk.ImageLayoutShaderReadOnlyOptimal, Vk.ImageLayoutShaderReadOnlyOptimal);
 				barrier.SrcQueueFamilyIndex = Vk.QueueFamilyExternal;
@@ -260,8 +268,6 @@ namespace OpenBve.Graphics.Vulkan
 			{
 				Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTopOfPipe, Vk.PipelineStageFragmentShader, 0, 0, null, 0, null, (uint)barriers.Length, data);
 			}
-
-			written.Clear();
 		}
 
 		/// <summary>OpenGL has deleted a texture: its image goes once the frames in flight are done with it.</summary>

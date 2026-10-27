@@ -17,8 +17,8 @@ namespace OpenBve.Graphics.Vulkan
 	/// </summary>
 	internal sealed unsafe class VulkanWorld : IDisposable
 	{
-		/// <summary>Whether the world layer is drawn by Vulkan this session.</summary>
-		internal static bool Enabled => instance != null;
+		/// <summary>Whether the world layer is drawn by Vulkan (this session, unless a frame has failed).</summary>
+		internal static bool Enabled => instance != null && !instance.failed;
 
 		/// <summary>The renderer, once <see cref="Initialize"/> has made it.</summary>
 		internal static VulkanWorld Instance => instance;
@@ -63,9 +63,11 @@ namespace OpenBve.Graphics.Vulkan
 				return;
 			}
 
-			if (Environment.GetEnvironmentVariable("OBNS_VULKAN") == "0")
+			// The renderer chosen in the options; OBNS_VULKAN=0 or 1 overrides it (for testing).
+			string forced = Environment.GetEnvironmentVariable("OBNS_VULKAN");
+			if (forced == "0" || forced != "1" && ObnsOptions.Renderer == ObnsOptions.RendererKind.OpenGL)
 			{
-				Log("OBNS Vulkan world layer off (OBNS_VULKAN=0); OpenGL draws it");
+				Log("OBNS Vulkan world layer off (" + (forced == "0" ? "OBNS_VULKAN=0" : "the OpenGL renderer is chosen in the options") + "); OpenGL draws it");
 				return;
 			}
 
@@ -175,6 +177,20 @@ namespace OpenBve.Graphics.Vulkan
 			gatherTicks += gather;
 			drawTicks += draw;
 			timedFrames++;
+		}
+
+		/// <summary>The renderer as it is drawing, for the debug overlay: Vulkan's world layer, or OpenGL alone.</summary>
+		internal static string RendererName
+		{
+			get
+			{
+				if (Enabled && Program.Renderer != null && !Program.Renderer.ShadowsEnabled && !Program.Renderer.OptionWireFrame && !Program.Renderer.OptionNormals)
+				{
+					return "Vulkan world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
+				}
+
+				return "openGL 4 (new)" + (Enabled ? " (Vulkan world layer paused: shadows or a debug view)" : "");
+			}
 		}
 
 		/// <summary>The world layer's state for the frame statistics.</summary>
@@ -338,27 +354,32 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>OpenGL's layout names for the layouts the images are handed over in (<see cref="SharedTarget"/>).</summary>
 		private static readonly TextureLayout[] glLayouts = { TextureLayout.LayoutShaderReadOnlyExt, TextureLayout.LayoutDepthStencilReadOnlyExt };
 
+		// The frame started and not laid over yet: its slot, what OpenGL handed over with it, and the thread making it.
+		private bool started, failed;
+		private int startedSlot;
+		private System.Collections.Generic.List<VulkanTextures.Entry> handedTextures;
+		private bool handedVertices;
+		private readonly FrameThread frameThread = new FrameThread();
+		private Action recordFrame;
+
 		/// <summary>
-		/// Draws the world layer: OpenGL hands the images over, Vulkan draws them, and OpenGL lays the colour over what it
-		/// has drawn so far (the background) and writes the depth, for what it draws next. The viewport is the scene's.
+		/// Starts the frame's world layer (on the main thread, its faces given): what needs OpenGL or the shared tables is
+		/// done here; OpenGL hands the images over, with what it has written into shared storage; then the frame is made
+		/// and submitted on its own thread, while OpenGL goes on (the background). The viewport is the scene's.
 		/// </summary>
-		internal void DrawWorld(int x, int y, int width, int height)
+		internal void Start(int x, int y, int width, int height)
 		{
-			if (width <= 0 || height <= 0)
+			started = false;
+			if (width <= 0 || height <= 0 || failed)
 			{
 				return;
 			}
 
 			EnsureTarget(width, height);
-			int[] textures = { glColorTexture, glDepthTexture };
+			Scene.Prepare();
 
-			// This frame's set of commands and buffers, once the GPU has finished the frame that last had them; what
-			// the frames before that let go of can be freed then.
-			int current = frame;
-			frame = (frame + 1) % FramesInFlight;
-			ulong fence = fences[current];
-			Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
-			Vk.Check(Vk.vkResetFences(device.Device, 1, &fence), "vkResetFences");
+			// What the frames three or more before this one let go of can be freed: they are done (each frame's set
+			// of commands is waited for before it is used again, two frames later).
 			frameNumber++;
 			Scene.Textures.FrameStarted(frameNumber);
 			Scene.Meshes.FrameStarted(frameNumber);
@@ -369,11 +390,11 @@ namespace OpenBve.Graphics.Vulkan
 			// OpenGL is done with the images (last frame's composite), and hands over what it has written into shared
 			// storage since the last frame: Vulkan may have them.
 			signalBuffers.Clear();
-			Scene.Meshes.WrittenNames(signalBuffers);
+			handedVertices = Scene.Meshes.TakeWritten(signalBuffers);
 			signalTextures.Clear();
 			signalTextures.Add(glColorTexture);
 			signalTextures.Add(glDepthTexture);
-			Scene.Textures.WrittenNames(signalTextures);
+			handedTextures = Scene.Textures.TakeWritten(signalTextures);
 			signalLayouts.Clear();
 			signalLayouts.AddRange(glLayouts);
 			while (signalLayouts.Count < signalTextures.Count)
@@ -384,11 +405,51 @@ namespace OpenBve.Graphics.Vulkan
 			GL.Ext.SignalSemaphore(glDoneSemaphore, signalBuffers.Count, signalBuffers.ToArray(), signalTextures.Count, signalTextures.ToArray(), signalLayouts.ToArray());
 			GL.Flush();
 
-			IntPtr commandBuffer = commandBuffers[current];
-			Record(commandBuffer, current);
-			Submit(commandBuffer, fence);
+			startedSlot = frame;
+			frame = (frame + 1) % FramesInFlight;
+			started = true;
+			recordFrame = recordFrame ?? RecordFrame;
+			frameThread.Start(recordFrame);
+		}
 
-			// OpenGL waits for Vulkan, then composites.
+		/// <summary>The frame's records, commands and submission (on the frame's thread).</summary>
+		private void RecordFrame()
+		{
+			Scene.BuildRecords();
+			// This frame's set of commands and buffers, once the GPU has finished the frame that last had them.
+			ulong fence = fences[startedSlot];
+			Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
+			Vk.Check(Vk.vkResetFences(device.Device, 1, &fence), "vkResetFences");
+			IntPtr commandBuffer = commandBuffers[startedSlot];
+			Record(commandBuffer, startedSlot);
+			Submit(commandBuffer, fence);
+		}
+
+		/// <summary>
+		/// Lays the frame's world layer over what OpenGL has drawn (the background) and writes its depth, for what it
+		/// draws next. OpenGL's wait is queued only once Vulkan's frame is submitted (its signal must be submitted first).
+		/// </summary>
+		internal void Finish()
+		{
+			if (!started)
+			{
+				return;
+			}
+
+			started = false;
+			try
+			{
+				frameThread.Wait();
+			}
+			catch (Exception ex)
+			{
+				// Not submitted: OpenGL must not wait for it. OpenGL draws the world layer from the next frame.
+				failed = true;
+				Log("OBNS Vulkan world layer stopped, OpenGL draws it from now: a frame failed: " + ex);
+				return;
+			}
+
+			int[] textures = { glColorTexture, glDepthTexture };
 			GL.Ext.WaitSemaphore(glVulkanDoneSemaphore, 0, (int[])null, 2, textures, glLayouts);
 			if (debugFrames < 3 && Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
 			{
@@ -410,6 +471,58 @@ namespace OpenBve.Graphics.Vulkan
 			Composite();
 		}
 
+		/// <summary>A thread that makes one frame at a time, started and waited for by the main thread.</summary>
+		private sealed class FrameThread
+		{
+			private readonly System.Threading.AutoResetEvent go = new System.Threading.AutoResetEvent(false);
+			private readonly System.Threading.ManualResetEventSlim done = new System.Threading.ManualResetEventSlim(true);
+			private Action work;
+			private Exception failure;
+
+			internal FrameThread()
+			{
+				new System.Threading.Thread(Loop) { IsBackground = true, Name = "OBNS Vulkan frame" }.Start();
+			}
+
+			private void Loop()
+			{
+				while (true)
+				{
+					go.WaitOne();
+					try
+					{
+						work();
+					}
+					catch (Exception ex)
+					{
+						failure = ex;
+					}
+					finally
+					{
+						done.Set();
+					}
+				}
+			}
+
+			internal void Start(Action frameWork)
+			{
+				work = frameWork;
+				failure = null;
+				done.Reset();
+				go.Set();
+			}
+
+			/// <summary>Waits for the frame, rethrowing what made it fail.</summary>
+			internal void Wait()
+			{
+				done.Wait();
+				if (failure != null)
+				{
+					throw new InvalidOperationException(failure.Message, failure);
+				}
+			}
+		}
+
 		private void Record(IntPtr commandBuffer, int slot)
 		{
 			Vk.Check(Vk.vkResetCommandBuffer(commandBuffer, 0), "vkResetCommandBuffer");
@@ -417,8 +530,8 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.Check(Vk.vkBeginCommandBuffer(commandBuffer, &beginInfo), "vkBeginCommandBuffer");
 			target.AcquireForDrawing(commandBuffer);
 			// What OpenGL wrote into shared storage since the last frame.
-			Scene.Textures.AcquireWritten(commandBuffer);
-			Scene.Meshes.AcquireWritten(commandBuffer);
+			Scene.Textures.AcquireWritten(commandBuffer, handedTextures);
+			Scene.Meshes.AcquireWritten(commandBuffer, handedVertices);
 
 			// Cleared to nothing (no coverage), at the far plane.
 			Vk.RenderingAttachmentInfo color = new Vk.RenderingAttachmentInfo
@@ -580,6 +693,19 @@ void main()
 
 		public void Dispose()
 		{
+			if (started)
+			{
+				// A frame being made is waited for, and not laid over.
+				started = false;
+				try
+				{
+					frameThread.Wait();
+				}
+				catch (Exception)
+				{
+				}
+			}
+
 			if (device.Device != IntPtr.Zero)
 			{
 				Vk.vkDeviceWaitIdle(device.Device);

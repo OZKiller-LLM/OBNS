@@ -201,6 +201,11 @@
     <Compile Include="Graphics\NewRenderer.cs" />
     <!-- OBNS: redundant GL state elimination (from the Android port). -->
     <Compile Include="Graphics\GLStateFilter.cs" />
+    <!-- OBNS: OBNS's options, and their rows in the options. -->
+    <Compile Include="System\ObnsOptions.cs" />
+    <Compile Include="UserInterface\formMain.Obns.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <!-- OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md). -->
     <Compile Include="Graphics\Vulkan\Vk.cs" />
     <Compile Include="Graphics\Vulkan\VulkanDevice.cs" />
