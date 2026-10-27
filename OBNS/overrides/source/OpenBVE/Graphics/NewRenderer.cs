@@ -172,6 +172,12 @@ namespace OpenBve.Graphics
 			Program.CurrentRoute.UpdateBackground(TimeElapsed, Program.Renderer.CurrentInterface != InterfaceType.Normal);
 			DefaultShader.SetShadowEnabled(ShadowsEnabled);
 
+			// OBNS: the world layer drawn by Vulkan and laid over the background (OBNS/VULKAN.md).
+			if (Vulkan.VulkanWorld.Enabled)
+			{
+				DrawVulkanWorld();
+			}
+
 
 			// fog
 			float aa = Program.CurrentRoute.CurrentFog.Start;
@@ -503,6 +509,21 @@ namespace OpenBve.Graphics
 		 * merged per material into one mesh drawn with one call, instead of one call per object and material.
 		 */
 		private StaticBatcher batcher;
+
+		/// <summary>OBNS: has Vulkan draw the world layer, then puts back the GL state upstream's renderer expects.</summary>
+		private void DrawVulkanWorld()
+		{
+			int[] viewport = new int[4];
+			GL.GetInteger(GetPName.Viewport, viewport);
+			Vulkan.VulkanWorld.Instance.DrawWorld(viewport[0], viewport[1], viewport[2], viewport[3]);
+
+			// The composite used its own program, vertex array and textures.
+			DefaultShader.Deactivate();
+			DefaultShader.Activate();
+			lastVAO = -1;
+			LastBoundTexture = null;
+			ResetOpenGlState();
+		}
 
 		/// <summary>OBNS: the static batcher's state, for the log.</summary>
 		internal string BatchSummary => batcher?.Describe() ?? "none";

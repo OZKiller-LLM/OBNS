@@ -278,6 +278,8 @@ namespace OpenBve
 			FrameStats.Mark(FrameStats.Part.Render);
 			Program.Sounds.Update(TimeElapsed);
 			FrameStats.Mark(FrameStats.Part.Other);
+			// OBNS: a picture of the frame now and then, for comparing renderers (OBNS_SNAPSHOT_EVERY).
+			FrameSnapshots.Take(Width, Height);
 			Program.Renderer.GameWindow.SwapBuffers();
 			FrameStats.Mark(FrameStats.Part.Swap);
 			Game.UpdateBlackBox();
@@ -465,6 +467,10 @@ namespace OpenBve
 		private static extern int GetDesktopWindow();
 		protected override void OnLoad(EventArgs e)
 		{
+			// OBNS: sets of GL state that change nothing are skipped (Graphics/GLStateFilter.cs); the context is current here.
+			GLStateFilter.Install();
+			// OBNS: the world layer drawn by Vulkan where it can share images with OpenGL (OBNS/VULKAN.md).
+			OpenBve.Graphics.Vulkan.VulkanWorld.Initialize();
 			if (Program.CurrentHost.Platform == HostPlatform.MicrosoftWindows && WindowState != WindowState.Fullscreen)
 			{
 				int w = DisplayDevice.Default.Width;
@@ -1249,6 +1255,46 @@ namespace OpenBve
 	/// trains' objects, the scene's rendering, the buffer swap (the wait for the GPU and vertical sync) and the rest.
 	/// For measuring the desktop backports (OBNS/README.md); off, it costs a flag test per call.
 	/// </summary>
+	internal static class FrameSnapshots
+	{
+		private static readonly double every = double.TryParse(Environment.GetEnvironmentVariable("OBNS_SNAPSHOT_EVERY"), System.Globalization.NumberStyles.Float,
+			System.Globalization.CultureInfo.InvariantCulture, out double seconds) ? seconds : 0.0;
+		private static readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+		private static double next = every;
+		private static int count;
+
+		/// <summary>
+		/// OBNS: with OBNS_SNAPSHOT_EVERY=s, saves the frame about to be shown every s seconds, as snapshot-N.png beside the
+		/// log: the game's own back buffer, read before the swap (a capture of the window misses frames, and other windows).
+		/// </summary>
+		internal static void Take(int width, int height)
+		{
+			if (every <= 0.0 || clock.Elapsed.TotalSeconds < next || width <= 0 || height <= 0)
+			{
+				return;
+			}
+
+			next = clock.Elapsed.TotalSeconds + every;
+			count++;
+			using (Bitmap bitmap = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+			{
+				System.Drawing.Imaging.BitmapData data = bitmap.LockBits(new Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, bitmap.PixelFormat);
+				OpenTK.Graphics.OpenGL.GL.ReadBuffer(OpenTK.Graphics.OpenGL.ReadBufferMode.Back);
+				OpenTK.Graphics.OpenGL.GL.ReadPixels(0, 0, width, height, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, OpenTK.Graphics.OpenGL.PixelType.UnsignedByte, data.Scan0);
+				bitmap.UnlockBits(data);
+				// OpenGL's rows run bottom to top; the frame is opaque.
+				bitmap.RotateFlip(RotateFlipType.RotateNoneFlipY);
+				string file = OpenBveApi.Path.CombineFile(Program.FileSystem.SettingsFolder, "snapshot-" + count + ".png");
+				using (Bitmap opaque = bitmap.Clone(new Rectangle(0, 0, width, height), System.Drawing.Imaging.PixelFormat.Format24bppRgb))
+				{
+					opaque.Save(file, System.Drawing.Imaging.ImageFormat.Png);
+				}
+
+				Program.FileSystem.AppendToLogFile("OBNS snapshot " + count + ": " + file);
+			}
+		}
+	}
+
 	internal static class FrameStats
 	{
 		internal enum Part { WorldObjects, TrainObjects, Render, Swap, Other }
@@ -1283,15 +1329,27 @@ namespace OpenBve
 				double ms(long ticks) => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames;
 				double span = (now - windowStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 				Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms; world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms, swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}",
+					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms; world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms, swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}",
 					frames, span / frames, frames * 1000.0 / span, worstFrame * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
 					ms(totals[(int)Part.WorldObjects]), ms(totals[(int)Part.TrainObjects]), ms(totals[(int)Part.Render]), ms(totals[(int)Part.Swap]), ms(totals[(int)Part.Other]),
-					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off"));
+					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off", GLFilterSummary()));
 				Array.Clear(totals, 0, totals.Length);
 				frames = 0;
 				worstFrame = 0;
 				windowStart = now;
 			}
+		}
+
+		/// <summary>The GL state filter's sets passed on and skipped a frame, since it was last asked.</summary>
+		private static string GLFilterSummary()
+		{
+			if (!GLStateFilter.Installed)
+			{
+				return "off";
+			}
+
+			GLStateFilter.TakeCounts(out long passed, out long skipped);
+			return string.Format(System.Globalization.CultureInfo.InvariantCulture, "on ({0:0} sets a frame passed on, {1:0} skipped)", (double)passed / frames, (double)skipped / frames);
 		}
 
 		internal static void Mark(Part part)

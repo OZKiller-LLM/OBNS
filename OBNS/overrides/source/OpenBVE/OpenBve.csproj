@@ -199,6 +199,13 @@
       <DependentUpon>HUD.cs</DependentUpon>
     </Compile>
     <Compile Include="Graphics\NewRenderer.cs" />
+    <!-- OBNS: redundant GL state elimination (from the Android port). -->
+    <Compile Include="Graphics\GLStateFilter.cs" />
+    <!-- OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md). -->
+    <Compile Include="Graphics\Vulkan\Vk.cs" />
+    <Compile Include="Graphics\Vulkan\VulkanDevice.cs" />
+    <Compile Include="Graphics\Vulkan\SharedTarget.cs" />
+    <Compile Include="Graphics\Vulkan\VulkanWorld.cs" />
     <Compile Include="Graphics\Renderers\Events.cs" />
     <Compile Include="Graphics\Renderers\Overlays.Lamp.cs" />
     <Compile Include="Graphics\Renderers\Overlays.cs" />
