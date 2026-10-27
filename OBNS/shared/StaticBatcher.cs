@@ -32,10 +32,45 @@ using OpenBveApi.Colors;
 using OpenBveApi.Graphics;
 using OpenBveApi.Math;
 using OpenBveApi.Objects;
+using OpenBveApi.Hosts;
 using OpenBveApi.Textures;
 
-namespace OpenBve.Android
+// OBNS: shared by the Android port (AndroidRenderer) and the desktop build (OBNS's copy of upstream's NewRenderer), each
+// giving it what differs between them through IStaticBatchHost.
+
+namespace OpenBve
 {
+	/// <summary>What the static batcher needs from the renderer drawing it, beyond upstream's BaseRenderer.</summary>
+	internal interface IStaticBatchHost
+	{
+		/// <summary>The renderer: its object states, visible faces, shaders and debug options.</summary>
+		BaseRenderer Renderer { get; }
+
+		/// <summary>The program's host.</summary>
+		HostInterface Host { get; }
+
+		/// <summary>Whether transparency is in quality mode (colour-keyed faces in the transparent list).</summary>
+		bool QualityTransparency { get; }
+
+		/// <summary>The trains whose cars' still parts are batched; null until the game is loaded.</summary>
+		IEnumerable<global::TrainManager.Trains.TrainBase> Trains();
+
+		/// <summary>A face vertex array of a length, for drawing a merged face (only its length is read).</summary>
+		MeshFaceVertex[] VerticesOfLength(int length);
+
+		/// <summary>Draws one face, as upstream's RenderFace.</summary>
+		void DrawFace(LibRender2.Shaders.Shader shader, ObjectState state, MeshFace face);
+
+		/// <summary>A texture's transparency type, if it is known yet (a texture not classified is never batched).</summary>
+		bool TryGetTransparencyType(Texture texture, out TextureTransparencyType type);
+
+		/// <summary>Lets go of the CPU copy of a mesh's vertices once the GPU has them (where the platform keeps one).</summary>
+		void ReleaseVertexCopy(Mesh mesh);
+
+		/// <summary>Writes to the log.</summary>
+		void Log(string message, bool warning);
+	}
+
 	/// <summary>
 	/// Draws the route's static scenery in batches: the objects sharing a stretch of track merged,
 	/// per material, into one mesh drawn with one call, instead of one call per object and
@@ -87,7 +122,7 @@ namespace OpenBve.Android
 		/// <summary>Time spent building batches per frame.</summary>
 		private const double BuildBudgetMilliseconds = 6.0;
 
-		private readonly AndroidRenderer renderer;
+		private readonly IStaticBatchHost host;
 
 		private sealed class Group
 		{
@@ -128,7 +163,7 @@ namespace OpenBve.Android
 		 *    entirely, are left out and hidden (such batches are never evicted).
 		 * Each group's array is always recomputed from its original, and every original is put
 		 * back before the trains are planned again or the batches freed.
-		 * --ez detach_parts false turns it off for comparisons.
+		 * Turned off for comparisons with --ez detach_parts false on Android, OBNS_DETACH_PARTS=0 on the desktop.
 		 */
 		public static bool DetachParts = true;
 		private readonly Dictionary<ObjectState, (LibRender2.Trains.ElementsGroup Owner, AnimatedObject Element)> partSource =
@@ -161,12 +196,12 @@ namespace OpenBve.Android
 			leftAloneReasons[reason] = leftAloneReasons.TryGetValue(reason, out int n) ? n + 1 : 1;
 		}
 
-		/// <summary>Switch for testing: batching on (default) or off.</summary>
+		/// <summary>Switch for testing: batching on (default) or off (Android: --ez static_batching false; desktop: OBNS_STATIC_BATCHES=0).</summary>
 		public static bool Enabled = true;
 
-		public StaticBatcher(AndroidRenderer renderer)
+		public StaticBatcher(IStaticBatchHost host)
 		{
-			this.renderer = renderer;
+			this.host = host;
 		}
 
 		/// <summary>A summary for the log: groups, batches in memory, their size.</summary>
@@ -194,7 +229,7 @@ namespace OpenBve.Android
 		 */
 		private void Plan()
 		{
-			List<ObjectState> states = renderer.StaticObjectStates;
+			List<ObjectState> states = host.Renderer.StaticObjectStates;
 			if (states == null || states.Count == plannedCount)
 			{
 				return;
@@ -241,9 +276,9 @@ namespace OpenBve.Android
 				}
 			}
 
-			global::Android.Util.Log.Info("OpenBVE", "static batches planned: " + states.Count + " static objects, " + groupOf.Count + " in " +
+			host.Log("static batches planned: " + states.Count + " static objects, " + groupOf.Count + " in " +
 			                                         (groups.Count - singletons) + " groups, " + singletons + " alone in their range; not batched: " +
-			                                         string.Join(", ", System.Linq.Enumerable.Select(ineligible, p => p.Key + " " + p.Value)));
+			         string.Join(", ", System.Linq.Enumerable.Select(ineligible, p => p.Key + " " + p.Value)), false);
 		}
 
 		/*
@@ -260,13 +295,13 @@ namespace OpenBve.Android
 
 		private void PlanTrains()
 		{
-			System.Func<IEnumerable<global::TrainManager.Trains.TrainBase>> source = renderer.TrainSource;
+			IEnumerable<global::TrainManager.Trains.TrainBase> source = host.Trains();
 			if (source == null)
 			{
 				return;
 			}
 
-			List<global::TrainManager.Trains.TrainBase> trains = new List<global::TrainManager.Trains.TrainBase>(source());
+			List<global::TrainManager.Trains.TrainBase> trains = new List<global::TrainManager.Trains.TrainBase>(source);
 			int signature = trains.Count;
 			foreach (global::TrainManager.Trains.TrainBase train in trains)
 			{
@@ -362,7 +397,7 @@ namespace OpenBve.Android
 				}
 			}
 
-			global::Android.Util.Log.Info("OpenBVE", "train batches planned: " + trains.Count + " trains, " + parts + " still parts in " + trainGroups.Count + " groups, of " + elementsSeen + " parts in all");
+			host.Log("train batches planned: " + trains.Count + " trains, " + parts + " still parts in " + trainGroups.Count + " groups, of " + elementsSeen + " parts in all", false);
 		}
 
 		/// <summary>Why a train part is not batched, for the log.</summary>
@@ -494,7 +529,7 @@ namespace OpenBve.Android
 			visible.Clear();
 			frame++;
 			// The debug views draw face by face, through upstream's RenderFace.
-			if (!Enabled || renderer.OptionWireFrame || renderer.OptionNormals)
+			if (!Enabled || host.Renderer.OptionWireFrame || host.Renderer.OptionNormals)
 			{
 				return;
 			}
@@ -613,13 +648,13 @@ namespace OpenBve.Android
 		private int Draw(Batch batch, int[] faces)
 		{
 			MeshFace[] meshFaces = batch.State.Prototype.Mesh.Faces;
-			LibRender2.Shaders.Shader shader = renderer.CurrentShader as LibRender2.Shaders.Shader;
+			LibRender2.Shaders.Shader shader = host.Renderer.CurrentShader as LibRender2.Shaders.Shader;
 			foreach (int index in faces)
 			{
 				// RenderFace draws as many indices as the face has vertices: a shared array of that length.
 				MeshFace face = meshFaces[index];
-				face.Vertices = renderer.VerticesOfLength(batch.FaceLengths[index]);
-				renderer.DrawFace(shader, batch.State, face);
+				face.Vertices = host.VerticesOfLength(batch.FaceLengths[index]);
+				host.DrawFace(shader, batch.State, face);
 			}
 
 			return faces.Length;
@@ -656,7 +691,7 @@ namespace OpenBve.Android
 				}
 				catch (Exception ex)
 				{
-					global::Android.Util.Log.Warn("OpenBVE", "static batch failed: " + ex.Message);
+					host.Log("static batch failed: " + ex.Message, true);
 					group.Batch = null;
 				}
 
@@ -709,8 +744,21 @@ namespace OpenBve.Android
 
 			public override bool Equals(object obj) => obj is MaterialKey other && Equals(other);
 
-			public override int GetHashCode() =>
-				HashCode.Combine(Alpha, Daytime, Nighttime, Color.GetHashCode(), Emissive.GetHashCode(), Flags, Wrap, DoubleSided);
+			public override int GetHashCode()
+			{
+				// By hand: .NET Framework (the desktop build) has no HashCode.Combine.
+				unchecked
+				{
+					int hash = Alpha ? 1 : 0;
+					hash = hash * 31 + (Daytime?.GetHashCode() ?? 0);
+					hash = hash * 31 + (Nighttime?.GetHashCode() ?? 0);
+					hash = hash * 31 + Color.GetHashCode();
+					hash = hash * 31 + Emissive.GetHashCode();
+					hash = hash * 31 + (int)Flags;
+					hash = hash * 31 + (int)Wrap;
+					return hash * 31 + (DoubleSided ? 1 : 0);
+				}
+			}
 		}
 
 		private sealed class Bucket
@@ -763,7 +811,7 @@ namespace OpenBve.Android
 					continue;
 				}
 
-				if (!TextureManager.textureCache.TryGetValue(texture.Origin, out TextureTransparencyType type))
+				if (!host.TryGetTransparencyType(texture, out TextureTransparencyType type))
 				{
 					CountReason("texture not classified");
 					return null;
@@ -775,7 +823,7 @@ namespace OpenBve.Android
 					return null;
 				}
 
-				if (type == TextureTransparencyType.Partial && renderer.currentOptions.TransparencyMode == TransparencyMode.Quality)
+				if (type == TextureTransparencyType.Partial && host.QualityTransparency)
 				{
 					alpha = true;
 				}
@@ -903,14 +951,14 @@ namespace OpenBve.Android
 				faces.Add(merged);
 			}
 
-			StaticObject prototype = new StaticObject(renderer.currentHost)
+			StaticObject prototype = new StaticObject(host.Host)
 			{
 				Dynamic = false
 			};
 			prototype.Mesh.Vertices = vertices.ToArray();
 			prototype.Mesh.Materials = materials.ToArray();
 			prototype.Mesh.Faces = faces.ToArray();
-			VAOExtensions.CreateOrUpdateVAO(prototype.Mesh, false, renderer.DefaultShader.VertexLayout, renderer);
+			VAOExtensions.CreateOrUpdateVAO(prototype.Mesh, false, host.Renderer.DefaultShader.VertexLayout, host.Renderer);
 			if (!(prototype.Mesh.VAO is VertexArrayObject))
 			{
 				return null;
@@ -922,7 +970,7 @@ namespace OpenBve.Android
 			 * so the copies are dropped to keep the build memory from staying resident.
 			 */
 			prototype.Mesh.Vertices = new[] { vertices[0] };
-			VertexCopyReleaser.Release(prototype.Mesh);
+			host.ReleaseVertexCopy(prototype.Mesh);
 			int[] lengths = new int[prototype.Mesh.Faces.Length];
 			for (int i = 0; i < prototype.Mesh.Faces.Length; i++)
 			{
@@ -1051,7 +1099,7 @@ namespace OpenBve.Android
 
 				if (batchDetached.Add(source.Element))
 				{
-					renderer.VisibleObjects.HideObject(member);
+					host.Renderer.VisibleObjects.HideObject(member);
 					owners.Add(source.Owner);
 				}
 			}

@@ -51,7 +51,7 @@ namespace OpenBve.Android
 	/// faces. Not yet ported: shadow cascades, motion blur, particles, event markers, and the cab
 	/// overlay layer.
 	/// </remarks>
-	public partial class AndroidRenderer : OpenBve.Graphics.NewRenderer
+	public partial class AndroidRenderer : OpenBve.Graphics.NewRenderer, IStaticBatchHost
 	{
 		/// <summary>The driver's eye height above the rail, in metres.</summary>
 		public const double EyeHeight = 2.5;
@@ -673,6 +673,36 @@ namespace OpenBve.Android
 		}
 
 		private StaticBatcher batcher;
+
+		// The static batcher's view of this renderer (OBNS/shared/StaticBatcher.cs, shared with the desktop build).
+		LibRender2.BaseRenderer IStaticBatchHost.Renderer => this;
+
+		OpenBveApi.Hosts.HostInterface IStaticBatchHost.Host => currentHost;
+
+		bool IStaticBatchHost.QualityTransparency => currentOptions.TransparencyMode == TransparencyMode.Quality;
+
+		IEnumerable<global::TrainManager.Trains.TrainBase> IStaticBatchHost.Trains() => TrainSource?.Invoke();
+
+		MeshFaceVertex[] IStaticBatchHost.VerticesOfLength(int length) => VerticesOfLength(length);
+
+		void IStaticBatchHost.DrawFace(LibRender2.Shaders.Shader shader, ObjectState state, MeshFace face) => DrawFace(shader, state, face);
+
+		bool IStaticBatchHost.TryGetTransparencyType(OpenBveApi.Textures.Texture texture, out OpenBveApi.Textures.TextureTransparencyType type) =>
+			LibRender2.Textures.TextureManager.textureCache.TryGetValue(texture.Origin, out type);
+
+		void IStaticBatchHost.ReleaseVertexCopy(OpenBveApi.Objects.Mesh mesh) => VertexCopyReleaser.Release(mesh);
+
+		void IStaticBatchHost.Log(string message, bool warning)
+		{
+			if (warning)
+			{
+				global::Android.Util.Log.Warn("OpenBVE", message);
+			}
+			else
+			{
+				global::Android.Util.Log.Info("OpenBVE", message);
+			}
+		}
 
 		/// <summary>
 		/// Whether a transparent-list face is only colour-keyed: a normal, fully opaque, non-glowing

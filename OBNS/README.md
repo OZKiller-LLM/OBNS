@@ -97,9 +97,23 @@ swap under 0.5 ms: the time is the CPU submitting draw calls, not the GPU.
   upstream's in-game object optimisation already joins each object's faces per material when it
   loads (every face is a triangle list, and no two neighbouring faces of an object share a material:
   0 joinable of 3,212), so each call is already one object's material.
-- **Trains' still parts batched** (Android's `StaticBatcher`): one call for many objects' faces of a
-  material. The exterior's calls are mostly the 36 scripted trains' parts.
-- Then Vulkan (3), which makes each remaining call cheaper.
+- **Static scenery and trains' still parts batched** (done): `OBNS/shared/StaticBatcher.cs`, moved here
+  from the Android port and compiled by both, each renderer giving it what differs through
+  `IStaticBatchHost` (Android's `AndroidRenderer`; on the desktop an OBNS copy of upstream's
+  `NewRenderer.cs`, with OBNS's `OpenBve.csproj` compiling the shared file). The objects of a stretch
+  of track, or a car's parts that never move relative to it, are merged per material into one mesh
+  drawn with one call; the batched train parts also leave the per-frame update. On the Tuen Ma Line:
+  28,032 of 29,448 scenery objects in 2,825 groups, 3,951 still train parts in 283 groups.
+  `OBNS_STATIC_BATCHES=0` and `OBNS_DETACH_PARTS=0` turn them off.
+
+| Tuen Ma Line, steady state, parallel updates on | Batching off | On |
+|---|---|---|
+| Cab: render / frame | 12.7 / 17.6 ms (57 fps) | 9.95 / 16.7 ms (59.8 fps: the 60 Hz limit) |
+| Cab: train objects | 0.68 ms | 0.33 ms |
+| Exterior: render / frame | 24.2 / 30.6 ms (32.7 fps) | 21.1 / 27.0 ms (37.1 fps) |
+
+Less than on phones, where a draw call costs far more; the exterior's remaining rendering is next
+for Vulkan (3), which makes each call cheaper.
 
 ### 3. Vulkan with pipelined frames
 
