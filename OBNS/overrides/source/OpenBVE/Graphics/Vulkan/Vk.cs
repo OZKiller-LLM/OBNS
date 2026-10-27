@@ -10,7 +10,7 @@ namespace OpenBve.Graphics.Vulkan
 {
 	/// <summary>Vulkan's functions, structures and constants, as far as the world renderer needs them.</summary>
 	[SuppressUnmanagedCodeSecurity]
-	internal static unsafe class Vk
+	internal static unsafe partial class Vk
 	{
 		private const string Library = "vulkan-1";
 
@@ -242,7 +242,7 @@ namespace OpenBve.Graphics.Vulkan
 			public void* PNext;
 			public fixed uint Features[15];
 
-			internal const int Synchronization2 = 9, DynamicRendering = 12;
+			internal const int ShaderDemoteToHelperInvocation = 5, Synchronization2 = 9, DynamicRendering = 12;
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -544,8 +544,6 @@ namespace OpenBve.Graphics.Vulkan
 		[DllImport(Library)] internal static extern int vkBeginCommandBuffer(IntPtr commandBuffer, CommandBufferBeginInfo* beginInfo);
 		[DllImport(Library)] internal static extern int vkEndCommandBuffer(IntPtr commandBuffer);
 		[DllImport(Library)] internal static extern int vkResetCommandBuffer(IntPtr commandBuffer, uint flags);
-		[DllImport(Library)] internal static extern void vkCmdPipelineBarrier(IntPtr commandBuffer, uint srcStageMask, uint dstStageMask, uint dependencyFlags,
-			uint memoryBarrierCount, void* memoryBarriers, uint bufferMemoryBarrierCount, void* bufferMemoryBarriers, uint imageMemoryBarrierCount, ImageMemoryBarrier* imageMemoryBarriers);
 		[DllImport(Library)] internal static extern void vkCmdBeginRendering(IntPtr commandBuffer, RenderingInfo* renderingInfo);
 		[DllImport(Library)] internal static extern void vkCmdEndRendering(IntPtr commandBuffer);
 		[DllImport(Library)] internal static extern int vkQueueSubmit(IntPtr queue, uint submitCount, SubmitInfo* submits, ulong fence);

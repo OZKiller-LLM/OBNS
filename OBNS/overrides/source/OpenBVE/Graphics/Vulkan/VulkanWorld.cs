@@ -2,6 +2,8 @@
 
 using System;
 using System.Runtime.InteropServices;
+using LibRender2;
+using LibRender2.Textures;
 using OpenBveApi.Interface;
 using OpenTK.Graphics;
 using OpenTK.Graphics.OpenGL;
@@ -25,6 +27,13 @@ namespace OpenBve.Graphics.Vulkan
 
 		private readonly VulkanDevice device;
 		private SharedTarget target;
+		private Uploader uploader;
+
+		/// <summary>The world layer's draws for the frame being drawn.</summary>
+		internal VulkanScene Scene { get; private set; }
+
+		/// <summary>Frames drawn, from 1 (the textures and meshes free what is let go of by it).</summary>
+		private long frameNumber;
 
 		// The frame's commands: two sets, so a frame's can be recorded while the GPU still has the last one.
 		private const int FramesInFlight = 2;
@@ -78,6 +87,9 @@ namespace OpenBve.Graphics.Vulkan
 			{
 				world.CreateFrames();
 				world.CreateComposite();
+				world.uploader = new Uploader(device);
+				world.Scene = new VulkanScene(device, world.uploader, Program.Renderer);
+				world.Hook();
 			}
 			catch (Exception ex)
 			{
@@ -88,6 +100,101 @@ namespace OpenBve.Graphics.Vulkan
 
 			instance = world;
 			Log("OBNS Vulkan world layer on: " + device.Description);
+		}
+
+		/// <summary>Has upstream's VAOs and textures copied as they are made, updated and let go of (OBNS's LibRender2 copies).</summary>
+		private void Hook()
+		{
+			ObnsSharing.Error = message => Log("OBNS Vulkan world layer: OpenGL error on shared storage: " + message);
+			// One copy of each vertex buffer and texture, in storage both APIs use.
+			ObnsSharing.AllocateBuffer = bytes => Guard(() => Scene.Meshes.AllocateVertices(bytes), 4);
+			ObnsSharing.FreeBuffer = shared => Guard(() => { Scene.Meshes.FreeVertices(shared); return null; }, 5);
+			ObnsSharing.BufferWritten = buffer => Scene.Meshes.Written(buffer);
+			ObnsSharing.AllocateTexture = (key, width, height, levels, r8, alphaOne) => Guard(() => Scene.Textures.Allocate(key, width, height, levels, r8, alphaOne), 2);
+			ObnsSharing.TextureWritten = key => Scene.Textures.Written(key);
+			ObnsSharing.TextureDeleted = key => Guard(() => { Scene.Textures.Deleted(key); return null; }, 3);
+			// The meshes' faces, indexed for Vulkan's triangle lists.
+			VAOExtensions.ObnsMeshUploaded = mesh => Guard(() => { Scene.Meshes.Uploaded(mesh); return null; }, 0);
+			VAOExtensions.ObnsVaoDisposed = vao => Guard(() => { Scene.Meshes.Disposed(vao); return null; }, 1);
+		}
+
+		private static bool hookFailed;
+
+		// The hooks' calls and time, logged every 5 seconds while they are busy (loading copies everything).
+		private static readonly long[] hookCalls = new long[6], hookTicks = new long[6];
+		private static readonly System.Diagnostics.Stopwatch hookClock = System.Diagnostics.Stopwatch.StartNew();
+		private static long lastHookLog;
+		private static readonly string[] hookNames = { "meshes indexed", "VAOs disposed", "textures made", "textures deleted", "vertex buffers made", "vertex buffers freed" };
+
+		/// <summary>
+		/// Runs a hook, so a failure is logged (once) and does not break upstream's drawing: storage not given is left to
+		/// OpenGL (null).
+		/// </summary>
+		private static ObnsSharedMemory Guard(Func<ObnsSharedMemory> action, int hook)
+		{
+			long start = hookClock.ElapsedTicks;
+			ObnsSharedMemory result = null;
+			try
+			{
+				result = action();
+			}
+			catch (Exception ex)
+			{
+				if (!hookFailed)
+				{
+					hookFailed = true;
+					Log("OBNS Vulkan world layer: a copy failed: " + ex);
+				}
+			}
+
+			long now = hookClock.ElapsedTicks;
+			hookCalls[hook]++;
+			hookTicks[hook] += now - start;
+			if (now - lastHookLog > 5 * System.Diagnostics.Stopwatch.Frequency)
+			{
+				lastHookLog = now;
+				System.Text.StringBuilder line = new System.Text.StringBuilder("OBNS Vulkan copies:");
+				for (int i = 0; i < hookCalls.Length; i++)
+				{
+					line.Append(' ').Append(hookCalls[i]).Append(' ').Append(hookNames[i]).Append(" (").Append((hookTicks[i] * 1000 / System.Diagnostics.Stopwatch.Frequency)).Append(" ms)").Append(i < hookCalls.Length - 1 ? "," : "");
+				}
+
+				line.Append("; upload waits ").Append(Uploader.WaitMilliseconds).Append(" ms; ").Append(instance?.Scene?.Meshes.Describe()).Append("; ").Append(instance?.Scene?.Textures.Describe());
+				Log(line.ToString());
+			}
+
+			return result;
+		}
+
+		// Time gathering the faces and drawing (recording, submitting, compositing), since the statistics were last taken.
+		private long gatherTicks, drawTicks, timedFrames;
+
+		/// <summary>Adds a frame's times: gathering its faces and drawing them.</summary>
+		internal void Timed(long gather, long draw)
+		{
+			gatherTicks += gather;
+			drawTicks += draw;
+			timedFrames++;
+		}
+
+		/// <summary>The world layer's state for the frame statistics.</summary>
+		internal static string Summary
+		{
+			get
+			{
+				VulkanWorld world = instance;
+				if (world?.Scene == null)
+				{
+					return "off";
+				}
+
+				double frames = Math.Max(1, world.timedFrames);
+				string times = string.Format(System.Globalization.CultureInfo.InvariantCulture, "gathering {0:0.00} ms, drawing {1:0.00} ms a frame",
+					world.gatherTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames, world.drawTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames);
+				world.gatherTicks = world.drawTicks = world.timedFrames = 0;
+				return "on (" + times + "; " + world.Scene.LastDraws + " draws in " + world.Scene.LastIndirectCalls + " indirect calls; " + world.Scene.Textures.Describe() + "; " + world.Scene.Meshes.Describe() +
+				       (world.Scene.SkippedFaces > 0 ? "; " + world.Scene.SkippedFaces + " faces without a copy" : "") + ")";
+			}
 		}
 
 		private static void Log(string message)
@@ -223,6 +330,9 @@ namespace OpenBve.Graphics.Vulkan
 			return semaphore;
 		}
 
+		private readonly System.Collections.Generic.List<int> signalBuffers = new System.Collections.Generic.List<int>(), signalTextures = new System.Collections.Generic.List<int>();
+		private readonly System.Collections.Generic.List<TextureLayout> signalLayouts = new System.Collections.Generic.List<TextureLayout>();
+
 		/// <summary>OpenGL's layout names for the layouts the images are handed over in (<see cref="SharedTarget"/>).</summary>
 		private static readonly TextureLayout[] glLayouts = { TextureLayout.LayoutShaderReadOnlyExt, TextureLayout.LayoutDepthStencilReadOnlyExt };
 
@@ -240,18 +350,40 @@ namespace OpenBve.Graphics.Vulkan
 			EnsureTarget(width, height);
 			int[] textures = { glColorTexture, glDepthTexture };
 
-			// OpenGL is done with the images (last frame's composite): Vulkan may have them.
-			GL.Ext.SignalSemaphore(glDoneSemaphore, 0, (int[])null, 2, textures, glLayouts);
-			GL.Flush();
-
-			// Vulkan: this frame's commands, once the GPU has finished the last ones recorded in the same set.
+			// This frame's set of commands and buffers, once the GPU has finished the frame that last had them; what
+			// the frames before that let go of can be freed then.
 			int current = frame;
 			frame = (frame + 1) % FramesInFlight;
 			ulong fence = fences[current];
 			Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
 			Vk.Check(Vk.vkResetFences(device.Device, 1, &fence), "vkResetFences");
+			frameNumber++;
+			Scene.Textures.FrameStarted(frameNumber);
+			Scene.Meshes.FrameStarted(frameNumber);
+
+			// Uploads first, on the same queue.
+			uploader.Submit(false);
+
+			// OpenGL is done with the images (last frame's composite), and hands over what it has written into shared
+			// storage since the last frame: Vulkan may have them.
+			signalBuffers.Clear();
+			Scene.Meshes.WrittenNames(signalBuffers);
+			signalTextures.Clear();
+			signalTextures.Add(glColorTexture);
+			signalTextures.Add(glDepthTexture);
+			Scene.Textures.WrittenNames(signalTextures);
+			signalLayouts.Clear();
+			signalLayouts.AddRange(glLayouts);
+			while (signalLayouts.Count < signalTextures.Count)
+			{
+				signalLayouts.Add(TextureLayout.LayoutShaderReadOnlyExt);
+			}
+
+			GL.Ext.SignalSemaphore(glDoneSemaphore, signalBuffers.Count, signalBuffers.ToArray(), signalTextures.Count, signalTextures.ToArray(), signalLayouts.ToArray());
+			GL.Flush();
+
 			IntPtr commandBuffer = commandBuffers[current];
-			Record(commandBuffer);
+			Record(commandBuffer, current);
 			Submit(commandBuffer, fence);
 
 			// OpenGL waits for Vulkan, then composites.
@@ -276,12 +408,15 @@ namespace OpenBve.Graphics.Vulkan
 			Composite();
 		}
 
-		private void Record(IntPtr commandBuffer)
+		private void Record(IntPtr commandBuffer, int slot)
 		{
 			Vk.Check(Vk.vkResetCommandBuffer(commandBuffer, 0), "vkResetCommandBuffer");
 			Vk.CommandBufferBeginInfo beginInfo = new Vk.CommandBufferBeginInfo { SType = Vk.StructureTypeCommandBufferBeginInfo, Flags = Vk.CommandBufferUsageOneTimeSubmit };
 			Vk.Check(Vk.vkBeginCommandBuffer(commandBuffer, &beginInfo), "vkBeginCommandBuffer");
 			target.AcquireForDrawing(commandBuffer);
+			// What OpenGL wrote into shared storage since the last frame.
+			Scene.Textures.AcquireWritten(commandBuffer);
+			Scene.Meshes.AcquireWritten(commandBuffer);
 
 			// Cleared to nothing (no coverage), at the far plane.
 			Vk.RenderingAttachmentInfo color = new Vk.RenderingAttachmentInfo
@@ -312,6 +447,11 @@ namespace OpenBve.Graphics.Vulkan
 				PDepthAttachment = &depth
 			};
 			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			if (!Scene.Empty)
+			{
+				Scene.Record(commandBuffer, slot, target.Width, target.Height);
+			}
+
 			Vk.vkCmdEndRendering(commandBuffer);
 
 			target.ReleaseToGL(commandBuffer);
@@ -444,6 +584,8 @@ void main()
 			}
 
 			ReleaseTarget();
+			Scene?.Dispose();
+			uploader?.Dispose();
 			if (compositeProgram != 0)
 			{
 				GL.DeleteProgram(compositeProgram);

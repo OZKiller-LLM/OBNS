@@ -172,12 +172,6 @@ namespace OpenBve.Graphics
 			Program.CurrentRoute.UpdateBackground(TimeElapsed, Program.Renderer.CurrentInterface != InterfaceType.Normal);
 			DefaultShader.SetShadowEnabled(ShadowsEnabled);
 
-			// OBNS: the world layer drawn by Vulkan and laid over the background (OBNS/VULKAN.md).
-			if (Vulkan.VulkanWorld.Enabled)
-			{
-				DrawVulkanWorld();
-			}
-
 
 			// fog
 			float aa = Program.CurrentRoute.CurrentFog.Start;
@@ -230,6 +224,14 @@ namespace OpenBve.Graphics
 			batcher = batcher ?? new StaticBatcher(this);
 			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
 
+			// OBNS: the world layer drawn by Vulkan and laid over the background (OBNS/VULKAN.md), unless shadows or
+			// the debug views are on (not drawn by it yet); else by OpenGL as upstream, below.
+			if (Vulkan.VulkanWorld.Enabled && !ShadowsEnabled && !OptionWireFrame && !OptionNormals)
+			{
+				DrawVulkanWorld(opaqueFaces, alphaFaces);
+			}
+			else
+			{
 			foreach (FaceState face in opaqueFaces)
 			{
 				face.Draw();
@@ -299,6 +301,8 @@ namespace OpenBve.Graphics
 					}
 					face.Draw();
 				}
+			}
+
 			}
 
 			// motion blur
@@ -510,12 +514,83 @@ namespace OpenBve.Graphics
 		 */
 		private StaticBatcher batcher;
 
-		/// <summary>OBNS: has Vulkan draw the world layer, then puts back the GL state upstream's renderer expects.</summary>
-		private void DrawVulkanWorld()
+		/// <summary>OBNS: whether faces drawn now go to the Vulkan world layer (the static batcher's draws included).</summary>
+		private bool vulkanGathering;
+
+		/// <summary>
+		/// OBNS: has Vulkan draw the world layer: the passes of upstream's world layer above, in the same order and with
+		/// the same state, then puts back the GL state upstream's renderer expects.
+		/// </summary>
+		private void DrawVulkanWorld(List<FaceState> opaqueFaces, List<FaceState> alphaFaces)
 		{
+			Vulkan.VulkanScene scene = Vulkan.VulkanWorld.Instance.Scene;
+			long gatherStart = System.Diagnostics.Stopwatch.GetTimestamp();
+			scene.Begin(this);
+			vulkanGathering = true;
+			try
+			{
+				// Opaque: no blending, alpha above 0.9 (ResetOpenGlState), any order.
+				scene.Pass(Vulkan.VulkanScene.Blend.None, Vulkan.VulkanScene.AlphaGreater, 0.9f, true, false);
+				foreach (FaceState face in opaqueFaces)
+				{
+					scene.Face(face.Object, face.Face);
+				}
+
+				batcher.DrawOpaque();
+				if (Interface.CurrentOptions.TransparencyMode == TransparencyMode.Performance)
+				{
+					scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaGreater, 0.0f, false, true);
+					foreach (FaceState face in alphaFaces)
+					{
+						scene.Face(face.Object, face.Face);
+					}
+				}
+				else
+				{
+					scene.Pass(Vulkan.VulkanScene.Blend.None, Vulkan.VulkanScene.AlphaEqual, 1.0f, true, false);
+					foreach (FaceState face in alphaFaces)
+					{
+						MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
+						if (material.BlendMode == MeshMaterialBlendMode.Normal && material.GlowAttenuationData == 0 && material.Color.A == 255)
+						{
+							scene.Face(face.Object, face.Face);
+						}
+					}
+
+					batcher.DrawAlpha();
+					scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaLess, 1.0f, false, true);
+					batcher.DrawAlpha();
+					bool additive = false;
+					foreach (FaceState face in alphaFaces)
+					{
+						if (face.Object.Prototype.Mesh.Materials[face.Face.Material].BlendMode == MeshMaterialBlendMode.Additive)
+						{
+							if (!additive)
+							{
+								scene.SetAlphaFunction(Vulkan.VulkanScene.AlphaNever, 0.0f);
+								additive = true;
+							}
+						}
+						else if (additive)
+						{
+							scene.SetAlphaFunction(Vulkan.VulkanScene.AlphaLess, 1.0f);
+							additive = false;
+						}
+
+						scene.Face(face.Object, face.Face);
+					}
+				}
+			}
+			finally
+			{
+				vulkanGathering = false;
+			}
+
+			long drawStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			int[] viewport = new int[4];
 			GL.GetInteger(GetPName.Viewport, viewport);
 			Vulkan.VulkanWorld.Instance.DrawWorld(viewport[0], viewport[1], viewport[2], viewport[3]);
+			Vulkan.VulkanWorld.Instance.Timed(drawStart - gatherStart, System.Diagnostics.Stopwatch.GetTimestamp() - drawStart);
 
 			// The composite used its own program, vertex array and textures.
 			DefaultShader.Deactivate();
@@ -572,7 +647,18 @@ namespace OpenBve.Graphics
 			return vertices;
 		}
 
-		void IStaticBatchHost.DrawFace(Shader shader, ObjectState state, MeshFace face) => RenderFace(shader, state, face);
+		void IStaticBatchHost.DrawFace(Shader shader, ObjectState state, MeshFace face)
+		{
+			// OBNS: to the Vulkan world layer while it is gathering the frame.
+			if (vulkanGathering)
+			{
+				Vulkan.VulkanWorld.Instance.Scene.Face(state, face);
+			}
+			else
+			{
+				RenderFace(shader, state, face);
+			}
+		}
 
 		/*
 		 * The texture's own type once it is uploaded; before that, its register-time decode's, which upstream's

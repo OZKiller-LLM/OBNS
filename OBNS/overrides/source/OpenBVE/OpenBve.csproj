@@ -206,6 +206,18 @@
     <Compile Include="Graphics\Vulkan\VulkanDevice.cs" />
     <Compile Include="Graphics\Vulkan\SharedTarget.cs" />
     <Compile Include="Graphics\Vulkan\VulkanWorld.cs" />
+    <Compile Include="Graphics\Vulkan\GpuMemory.cs" />
+    <Compile Include="Graphics\Vulkan\SharedHeap.cs" />
+    <Compile Include="Graphics\Vulkan\VulkanTextures.cs" />
+    <Compile Include="Graphics\Vulkan\VulkanMeshes.cs" />
+    <Compile Include="Graphics\Vulkan\VulkanScene.cs" />
+    <Compile Include="Graphics\Vulkan\Vk.Drawing.cs" />
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.vert.spv">
+      <LogicalName>OBNS.Vulkan.world.vert.spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.frag.spv">
+      <LogicalName>OBNS.Vulkan.world.frag.spv</LogicalName>
+    </EmbeddedResource>
     <Compile Include="Graphics\Renderers\Events.cs" />
     <Compile Include="Graphics\Renderers\Overlays.Lamp.cs" />
     <Compile Include="Graphics\Renderers\Overlays.cs" />

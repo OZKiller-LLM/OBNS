@@ -160,7 +160,8 @@ namespace OpenBve.Graphics.Vulkan
 				}
 			}
 
-			if (features13.Features[Vk.PhysicalDeviceVulkan13Features.DynamicRendering] == 0 || features13.Features[Vk.PhysicalDeviceVulkan13Features.Synchronization2] == 0)
+			if (features13.Features[Vk.PhysicalDeviceVulkan13Features.DynamicRendering] == 0 || features13.Features[Vk.PhysicalDeviceVulkan13Features.Synchronization2] == 0 ||
+			    features13.Features[Vk.PhysicalDeviceVulkan13Features.ShaderDemoteToHelperInvocation] == 0)
 			{
 				return "the device lacks dynamic rendering";
 			}
@@ -169,6 +170,8 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.PhysicalDeviceVulkan13Features enable13 = new Vk.PhysicalDeviceVulkan13Features { SType = Vk.StructureTypePhysicalDeviceVulkan13Features };
 			enable13.Features[Vk.PhysicalDeviceVulkan13Features.DynamicRendering] = 1;
 			enable13.Features[Vk.PhysicalDeviceVulkan13Features.Synchronization2] = 1;
+			// glslang compiles discard (Vulkan 1.3) to a demote, which needs this.
+			enable13.Features[Vk.PhysicalDeviceVulkan13Features.ShaderDemoteToHelperInvocation] = 1;
 			Vk.PhysicalDeviceVulkan12Features enable12 = new Vk.PhysicalDeviceVulkan12Features { SType = Vk.StructureTypePhysicalDeviceVulkan12Features, PNext = &enable13 };
 			foreach (int feature in needed12)
 			{
@@ -176,8 +179,16 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			Vk.PhysicalDeviceFeatures2 enable = new Vk.PhysicalDeviceFeatures2 { SType = Vk.StructureTypePhysicalDeviceFeatures2, PNext = &enable12 };
-			// VkPhysicalDeviceFeatures: samplerAnisotropy (19), when the device has it.
-			const int samplerAnisotropy = 19;
+			// VkPhysicalDeviceFeatures: indirect draws of many commands with their own first instance (9, 10), which the
+			// renderer needs, and samplerAnisotropy (19) when the device has it.
+			const int multiDrawIndirect = 9, drawIndirectFirstInstance = 10, samplerAnisotropy = 19;
+			if (features.Features[multiDrawIndirect] == 0 || features.Features[drawIndirectFirstInstance] == 0)
+			{
+				return "the device lacks multiDrawIndirect";
+			}
+
+			enable.Features[multiDrawIndirect] = 1;
+			enable.Features[drawIndirectFirstInstance] = 1;
 			enable.Features[samplerAnisotropy] = features.Features[samplerAnisotropy];
 
 			// A graphics queue.

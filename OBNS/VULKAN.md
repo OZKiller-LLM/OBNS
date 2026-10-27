@@ -41,17 +41,27 @@ layer to Vulkan, for macOS, is a later step that the 3D renderer is built not to
 
 ## The world renderer
 
-- **Meshes.** Upstream gives each face corner its own vertex and draws a face as triangles, a strip,
-  quads, a quad strip or a polygon. Vulkan has no quads or polygons, so each mesh gets its own triangle
-  index list over the same vertices (fans for quads and polygons). A mesh's buffers are made when
-  upstream makes its VAO (a hook in OBNS's copy of LibRender2's `VertexArrayObject.cs`), and remade when a
-  dynamic mesh is updated.
-- **Textures.** Made when upstream uploads a texture (a hook in OBNS's copy of the texture manager), with
-  mipmaps, in one bindless array (descriptor indexing) indexed by the draw.
-- **Per-draw data.** One storage buffer a frame holds each draw's model-view and texture matrices, its
-  normal matrix, material colours and flags, brightness, opacity and texture index; the shader reads its
-  record by `gl_InstanceIndex` (the draw's `firstInstance`). A draw is then only `vkCmdDrawIndexed`, and
-  draws are grouped by pipeline (blend mode, alpha test, culling, depth writes).
+- **One copy on the GPU.** Vulkan and OpenGL share the vertex buffers and textures: Vulkan allocates device
+  memory in exportable blocks, which OpenGL imports once each (`GL_EXT_memory_object`), and upstream's vertex
+  buffers and textures are made over ranges of them (`glBufferStorageMemEXT`, `glTexStorageMem2DEXT`, in OBNS's
+  copies of LibRender2's `VertexBufferObject.cs` and `TextureManager.cs`). OpenGL writes them as upstream does
+  and draws with them as before (the cab, the background, and the whole world when Vulkan is not drawing it);
+  Vulkan reads the same memory. Separate copies were tried first: on the Tuen Ma Line OpenGL alone uses about
+  5.5 GB of an 8 GB card, and a second copy brought the driver down. Each frame OpenGL's semaphore signal names
+  the buffers and textures it has written since the last, which Vulkan then takes over.
+- **Meshes.** Upstream gives each face corner its own vertex and draws a face as triangles, a strip, quads, a
+  quad strip or a polygon. Vulkan has no quads or polygons, so each mesh gets a triangle index list of Vulkan's
+  own over the shared vertices (fans for quads and polygons), made when upstream makes or updates its VAO (a hook
+  in OBNS's copy of `VertexArrayObject.cs`).
+- **Textures.** RGB8 textures are kept as RGBA8 whose alpha reads as 1, and one-channel ones as R8 read as grey,
+  in both APIs (OpenGL's swizzle, Vulkan's view); all with full mipmap chains (OpenGL generates them). They are
+  in one bindless array (descriptor indexing) indexed by the draw.
+- **Per-draw data.** Storage buffers a frame hold each object's model-view, normal and texture matrices and
+  animation matrices, and each draw's material colours and flags, brightness, opacity, texture, sampler and
+  alpha test; the shader reads its record by `gl_InstanceIndex` (the draw's `firstInstance`). Draws are
+  recorded as indirect draw commands, one `vkCmdDrawIndexedIndirect` per run of the same pipeline (blend
+  mode, depth writes, culling) and buffer blocks: on the Tuen Ma Line about 4,000 draws in 130 calls in the
+  cab, 8,000 in 400 outside.
 - **Shaders.** GLSL 450 ports of upstream's `default.vert` / `default.frag` (lighting, fog, alpha test,
   animation matrices, MSTS alpha flag), compiled to SPIR-V with glslang and kept beside their sources.
 - **Order.** Opaque faces in any order; colour-keyed faces; transparent faces in upstream's sorted order,
@@ -76,13 +86,17 @@ beside the log, for comparing renderers; `OBNS_FRAMESTATS=1` logs where frame ti
 ## Code
 
 In `OBNS/overrides/source/OpenBVE/Graphics/Vulkan/`, compiled into the desktop program by OBNS's
-`OpenBve.csproj`:
+`OpenBve.csproj` (the shaders, `Shaders/*.spv`, embedded):
 
 - `Vk.cs`: the Vulkan API, bound by hand (only what is used, no package dependencies, so it runs under
   .NET Framework and Mono alike); structure layouts checked against Silk.NET's.
 - `VulkanDevice.cs`: instance and device, on the GPU OpenGL is on.
 - `SharedTarget.cs`: the shared colour and depth images and the semaphores.
 - `VulkanWorld.cs`: the frame (OpenGL hands over, Vulkan draws, OpenGL composites) and OpenGL's side.
+- `SharedHeap.cs`, `GpuMemory.cs`: memory shared with OpenGL, Vulkan's own, and uploads.
+- `VulkanTextures.cs`, `VulkanMeshes.cs`: the shared textures and vertex buffers, and the triangle indices.
+- `VulkanScene.cs`: upstream's per-face drawing (`RenderFace`) as draw records, pipelines, and the recording.
+- `Vk.Drawing.cs`: the rest of the API it uses.
 
 OBNS's `NewRenderer.cs` calls it after the background; `GameWindow.cs` sets it up when the window loads.
 
@@ -91,7 +105,17 @@ OBNS's `NewRenderer.cs` calls it after the background; `GameWindow.cs` sets it u
 1. Device, shared images, semaphores; OpenGL composite of a cleared image (checks the interop). Done:
    on the Tuen Ma Line, OpenGL reads Vulkan's clear exactly and the scene is unchanged.
 2. Meshes, textures, per-draw data, shaders: the world layer drawn by Vulkan; compared with OpenGL by
-   screenshot and timed with `OBNS_FRAMESTATS=1`.
+   screenshot and timed with `OBNS_FRAMESTATS=1`. Done; on the Tuen Ma Line (RTX 2060 SUPER, the camera
+   moved forward past the cab door, frame times in ms):
+
+   | View | OpenGL (with the state filter) | Vulkan world layer |
+   | --- | --- | --- |
+   | Cab | 9.6 | 11.7 |
+   | Exterior | 18.5 | 19.5 |
+
+   Vulkan submits the world in about 1.3 ms, but gathering the faces (upstream's per-face work, every face every
+   frame) takes 2.2 ms in the cab and 5.4 ms outside: next, each face's draw record kept between frames (only the
+   objects' matrices change), and the gathering moved off the main thread.
 3. Pipelined frames.
 4. The overlay layer (cab).
 5. Shadows.
