@@ -72,7 +72,7 @@ namespace OpenBve.Graphics.Vulkan
 			memory = new GpuPool(device, 256UL << 20, 0, "textures");
 			CreateSamplers(interpolation, anisotropy);
 			white = new Entry { Index = White };
-			Upload(white, 1, 1, new byte[] { 255, 255, 255, 255 });
+			Upload(white, Pixels.Rgba(1, 1, new byte[] { 255, 255, 255, 255 }), false);
 		}
 
 		private void CreateSamplers(InterpolationMode interpolation, int anisotropy)
@@ -168,21 +168,29 @@ namespace OpenBve.Graphics.Vulkan
 			if (entry == null && !texture.MultipleFrames)
 			{
 				TextureManager manager = Program.Renderer.TextureManager;
+				long start = System.Diagnostics.Stopwatch.GetTimestamp();
 				if (manager.ObnsDecoded(texture, out Texture decoded))
 				{
 					TextureTransparencyType transparency = decoded.GetTransparencyType();
 					texture.Transparency = transparency;
-					byte[] rgba = ToRgba(decoded, decoded.Bytes, transparency == TextureTransparencyType.Opaque);
-					if (rgba != null)
+					// The alpha of RGBA (as upstream's decoders give PNG, JPEG and BMP) is left as it is: opaque means every
+					// alpha is 255 already, as the scan just made says of these very pixels.
+					Pixels pixels = Pixels.Of(decoded, decoded.Bytes, transparency == TextureTransparencyType.Opaque && decoded.PixelFormat != PixelFormat.RGBAlpha);
+					if (pixels != null)
 					{
 						entry = NewEntry(texture);
 						if (entry != null)
 						{
-							Upload(entry, (uint)decoded.Width, (uint)decoded.Height, rgba);
+							Upload(entry, pixels, true);
 						}
 					}
 
 					manager.ObnsReleaseDecoded(texture, decoded);
+					if (logTextures)
+					{
+						Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture, "OBNS Vulkan texture made at frame {0}: {1}x{2} {3}, {4:0.00} ms on the main thread", frame, decoded.Width, decoded.Height, decoded.PixelFormat, (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency));
+					}
+
 					if (entry != null)
 					{
 						return entry.Index;
@@ -340,8 +348,8 @@ namespace OpenBve.Graphics.Vulkan
 				return;
 			}
 
-			byte[] rgba = ToRgba(decoded, bytes, opaque);
-			if (rgba == null)
+			Pixels pixels = Pixels.Of(decoded, bytes, opaque);
+			if (pixels == null)
 			{
 				return;
 			}
@@ -364,7 +372,8 @@ namespace OpenBve.Graphics.Vulkan
 				entry.Animated = true;
 			}
 
-			Upload(entry, width, height, rgba);
+			// Written now: upstream may reuse the frame's bytes for the next.
+			Upload(entry, pixels, false);
 		}
 
 		private Entry NewEntry(Texture texture)
@@ -417,80 +426,103 @@ namespace OpenBve.Graphics.Vulkan
 			}
 		}
 
-		/// <summary>The pixels as RGBA, as upstream's upload has OpenGL keep them (alpha 255 for textures used as opaque).</summary>
-		private static byte[] ToRgba(Texture texture, byte[] bytes, bool opaque)
+		/// <summary>A decoded texture's pixels, to be written into staging as RGBA (on any thread: nothing shared is touched).</summary>
+		private sealed class Pixels
 		{
-			if (bytes == null)
+			internal uint Width, Height;
+			private byte[] bytes;
+			private PixelFormat format;
+			private Color32[] palette;
+			private bool opaque;
+
+			/// <summary>The pixels, or null if the format is not known or there are too few bytes; opaque forces alpha to 255.</summary>
+			internal static Pixels Of(Texture texture, byte[] bytes, bool opaque)
 			{
-				return null;
-			}
-
-			int count = texture.Width * texture.Height;
-			byte[] rgba = new byte[count * 4];
-			switch (texture.PixelFormat)
-			{
-				case PixelFormat.RGBAlpha:
-					if (bytes.Length < count * 4) return null;
-					Buffer.BlockCopy(bytes, 0, rgba, 0, count * 4);
-					if (opaque)
-					{
-						for (int p = 3; p < rgba.Length; p += 4) rgba[p] = 255;
-					}
-
-					break;
-				case PixelFormat.RGB:
-					if (bytes.Length < count * 3) return null;
-					for (int p = 0; p < count; p++)
-					{
-						rgba[p * 4] = bytes[p * 3];
-						rgba[p * 4 + 1] = bytes[p * 3 + 1];
-						rgba[p * 4 + 2] = bytes[p * 3 + 2];
-						rgba[p * 4 + 3] = 255;
-					}
-
-					break;
-				case PixelFormat.Paletted:
-					if (bytes.Length < count) return null;
-					Color32[] palette = texture.Palette32;
-					for (int p = 0; p < count; p++)
-					{
-						int index = bytes[p];
-						Color32 c = palette != null && index < palette.Length ? palette[index] : new Color32(0, 0, 0, 255);
-						rgba[p * 4] = c.R;
-						rgba[p * 4 + 1] = c.G;
-						rgba[p * 4 + 2] = c.B;
-						rgba[p * 4 + 3] = opaque ? (byte)255 : c.A;
-					}
-
-					break;
-				case PixelFormat.Grayscale:
-					if (bytes.Length < count) return null;
-					for (int p = 0; p < count; p++)
-					{
-						rgba[p * 4] = rgba[p * 4 + 1] = rgba[p * 4 + 2] = bytes[p];
-						rgba[p * 4 + 3] = 255;
-					}
-
-					break;
-				case PixelFormat.GrayscaleAlpha:
-					if (bytes.Length < count * 2) return null;
-					for (int p = 0; p < count; p++)
-					{
-						rgba[p * 4] = rgba[p * 4 + 1] = rgba[p * 4 + 2] = bytes[p * 2];
-						rgba[p * 4 + 3] = opaque ? (byte)255 : bytes[p * 2 + 1];
-					}
-
-					break;
-				default:
+				long count = (long)texture.Width * texture.Height;
+				if (bytes == null || count <= 0)
+				{
 					return null;
+				}
+
+				long needed;
+				switch (texture.PixelFormat)
+				{
+					case PixelFormat.RGBAlpha: needed = count * 4; break;
+					case PixelFormat.RGB: needed = count * 3; break;
+					case PixelFormat.GrayscaleAlpha: needed = count * 2; break;
+					case PixelFormat.Paletted:
+					case PixelFormat.Grayscale: needed = count; break;
+					default: return null;
+				}
+
+				if (bytes.Length < needed)
+				{
+					return null;
+				}
+
+				return new Pixels { Width = (uint)texture.Width, Height = (uint)texture.Height, bytes = bytes, format = texture.PixelFormat, palette = texture.Palette32, opaque = opaque };
 			}
 
-			return rgba;
+			/// <summary>RGBA pixels as they are.</summary>
+			internal static Pixels Rgba(uint width, uint height, byte[] bytes) => new Pixels { Width = width, Height = height, bytes = bytes, format = PixelFormat.RGBAlpha };
+
+			/// <summary>Writes pixels [first, first + count) as RGBA into the texture's staging (Width * Height * 4 bytes).</summary>
+			internal void Fill(byte* target, int first, int count)
+			{
+				uint* rgba = (uint*)target + first;
+				fixed (byte* pixels = bytes)
+				{
+					switch (format)
+					{
+						case PixelFormat.RGBAlpha:
+							Buffer.MemoryCopy(pixels + (long)first * 4, rgba, (long)count * 4, (long)count * 4);
+							if (opaque)
+							{
+								for (int p = 0; p < count; p++) rgba[p] |= 0xFF000000;
+							}
+
+							break;
+						case PixelFormat.RGB:
+							byte* rgb = pixels + (long)first * 3;
+							for (int p = 0; p < count; p++, rgb += 3)
+							{
+								rgba[p] = rgb[0] | (uint)rgb[1] << 8 | (uint)rgb[2] << 16 | 0xFF000000;
+							}
+
+							break;
+						case PixelFormat.Paletted:
+							uint* colours = stackalloc uint[256];
+							for (int i = 0; i < 256; i++)
+							{
+								Color32 c = palette != null && i < palette.Length ? palette[i] : new Color32(0, 0, 0, 255);
+								colours[i] = c.R | (uint)c.G << 8 | (uint)c.B << 16 | (uint)(opaque ? 255 : c.A) << 24;
+							}
+
+							for (int p = 0; p < count; p++) rgba[p] = colours[pixels[first + p]];
+							break;
+						case PixelFormat.Grayscale:
+							for (int p = 0; p < count; p++) rgba[p] = pixels[first + p] * 0x010101u | 0xFF000000;
+							break;
+						case PixelFormat.GrayscaleAlpha:
+							byte* grey = pixels + (long)first * 2;
+							for (int p = 0; p < count; p++, grey += 2) rgba[p] = grey[0] * 0x010101u | (uint)(opaque ? 255 : grey[1]) << 24;
+							break;
+					}
+				}
+			}
 		}
 
-		/// <summary>Uploads the pixels with every mipmap level (made on the GPU), making the image the first time.</summary>
-		private void Upload(Entry entry, uint width, uint height, byte[] rgba)
+		// The pixels written into staging per piece of work: a large texture (one of 4096 x 4096 took 57 ms on one core)
+		// is shared out over every core too.
+		private const int FillPiece = 1 << 20;
+
+		/// <summary>
+		/// Uploads the pixels with every mipmap level (made on the GPU), making the image the first time. With later, the
+		/// pixels are written into staging when the uploads are submitted, with the others then on every core.
+		/// </summary>
+		private void Upload(Entry entry, Pixels pixels, bool later)
 		{
+			uint width = pixels.Width, height = pixels.Height;
 			bool created = entry.Image == 0;
 			if (created)
 			{
@@ -536,12 +568,23 @@ namespace OpenBve.Graphics.Vulkan
 
 			// The first level staged and copied; the others made from it on the GPU, each from the one before (image blits,
 			// as OpenGL's mipmap generation does).
-			budgetBytes += rgba.Length;
+			ulong stagedBytes = (ulong)width * height * 4;
+			budgetBytes += (long)stagedBytes;
 			ulong stagingOffset;
 			ulong staging;
-			fixed (byte* data = rgba)
+			staging = uploader.Reserve(stagedBytes, out stagingOffset, out byte* target);
+			int count = (int)(width * height);
+			if (later)
 			{
-				staging = uploader.Stage(data, (ulong)rgba.Length, out stagingOffset);
+				for (int first = 0; first < count; first += FillPiece)
+				{
+					int start = first, pieceCount = Math.Min(FillPiece, count - first);
+					uploader.FillLater(() => pixels.Fill(target, start, pieceCount));
+				}
+			}
+			else
+			{
+				pixels.Fill(target, 0, count);
 			}
 
 			IntPtr commands = uploader.Commands;

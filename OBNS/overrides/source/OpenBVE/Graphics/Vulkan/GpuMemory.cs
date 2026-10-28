@@ -280,6 +280,12 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		private readonly List<Batch> batches = new List<Batch>();
+
+		// Staging chunks kept for reuse once their upload is done (allocating and mapping one costs about a millisecond,
+		// and a frame making textures stages several), up to this many.
+		private const int KeptChunks = 8;
+		private readonly Stack<HostBuffer> keptChunks = new Stack<HostBuffer>();
+
 		private Batch current;
 		private HostBuffer chunk;
 		private ulong chunkUsed, staged;
@@ -357,7 +363,14 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.vkResetFences(device.Device, 1, &fence);
 			foreach (HostBuffer staging in batch.Chunks)
 			{
-				staging.Dispose();
+				if (staging.Size == ChunkSize && keptChunks.Count < KeptChunks)
+				{
+					keptChunks.Push(staging);
+				}
+				else
+				{
+					staging.Dispose();
+				}
 			}
 
 			batch.Chunks.Clear();
@@ -367,20 +380,78 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Copies bytes into staging; returns the staging buffer and offset to copy from.</summary>
 		internal ulong Stage(void* data, ulong size, out ulong offset)
 		{
+			ulong buffer = Reserve(size, out offset, out byte* target);
+			Buffer.MemoryCopy(data, target, size, size);
+			return buffer;
+		}
+
+		/// <summary>Staging for bytes the caller writes (before the uploads are submitted); returns the staging buffer and offset to copy from.</summary>
+		internal ulong Reserve(ulong size, out ulong offset, out byte* target)
+		{
 			IntPtr commands = Commands;
 			const ulong alignment = 16;
 			if (chunk == null || chunkUsed + size > chunk.Size)
 			{
-				chunk = new HostBuffer(device, Math.Max(ChunkSize, size), Vk.BufferUsageTransferSrc);
+				chunk = size <= ChunkSize && keptChunks.Count > 0 ? keptChunks.Pop() : new HostBuffer(device, Math.Max(ChunkSize, size), Vk.BufferUsageTransferSrc);
 				current.Chunks.Add(chunk);
 				chunkUsed = 0;
 			}
 
 			offset = chunkUsed;
-			Buffer.MemoryCopy(data, chunk.Data + offset, chunk.Size - offset, size);
+			target = chunk.Data + offset;
 			chunkUsed = (chunkUsed + size + alignment - 1) / alignment * alignment;
 			staged += size;
 			return chunk.Buffer;
+		}
+
+		// Writes into reserved staging, made when the uploads are submitted.
+		private readonly List<Action> fills = new List<Action>();
+		private Action<int, int> runFills;
+		private static readonly bool logFills = Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1";
+
+		/// <summary>Writes staging when the uploads are submitted (on every core for the frame's submit).</summary>
+		internal void FillLater(Action fill)
+		{
+			fills.Add(fill);
+		}
+
+		private void RunFills(bool parallel)
+		{
+			if (fills.Count == 0)
+			{
+				return;
+			}
+
+			long fillStart = System.Diagnostics.Stopwatch.GetTimestamp();
+			if (parallel)
+			{
+				if (runFills == null)
+				{
+					runFills = (start, end) =>
+					{
+						for (int i = start; i < end; i++)
+						{
+							fills[i]();
+						}
+					};
+				}
+
+				OpenBve.FrameWorkers.Shared.Run(fills.Count, runFills);
+			}
+			else
+			{
+				foreach (Action fill in fills)
+				{
+					fill();
+				}
+			}
+
+			if (logFills)
+			{
+				Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture, "OBNS Vulkan staging written: {0} pieces, {1:0.00} ms{2}", fills.Count, (System.Diagnostics.Stopwatch.GetTimestamp() - fillStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency, parallel ? " on every core" : ""));
+			}
+
+			fills.Clear();
 		}
 
 		/// <summary>Whether so much is staged that it should be submitted now.</summary>
@@ -391,14 +462,17 @@ namespace OpenBve.Graphics.Vulkan
 
 		/// <summary>
 		/// Submits what has been recorded, ending with a barrier making it visible to everything after it on the queue;
-		/// with wait, until the GPU has done it (and the staging is freed).
+		/// with wait, until the GPU has done it (and the staging is freed). Staging still to be written is written first:
+		/// with parallel, on every core (only from the render thread between frames' work, as FrameWorkers runs one job).
 		/// </summary>
-		internal void Submit(bool wait)
+		internal void Submit(bool wait, bool parallel = false)
 		{
 			if (current == null)
 			{
 				return;
 			}
+
+			RunFills(parallel);
 
 			Vk.MemoryBarrier barrier = new Vk.MemoryBarrier
 			{
@@ -447,6 +521,11 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			batches.Clear();
+			while (keptChunks.Count > 0)
+			{
+				keptChunks.Pop().Dispose();
+			}
+
 			if (commandPool != 0)
 			{
 				Vk.vkDestroyCommandPool(device.Device, commandPool, null);

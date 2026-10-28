@@ -59,9 +59,14 @@ layer to Vulkan, for macOS, is a later step that the 3D renderer is built not to
   in OBNS's copy of `VertexArrayObject.cs`).
 - **Textures.** RGBA8, converted as OpenGL keeps them (alpha 1 for textures used as opaque), mipmaps made on the
   GPU (image blits); in one bindless array (descriptor indexing) indexed by the draw. Made when first drawn, a
-  few each frame (16 ms of the frame at most; one not made yet is drawn white for that frame), so a new view
-  does not hold the frame for seconds: a train's textures are made as they come into view (Vulkan's memory
-  cannot be paged out a texture at a time, as OpenGL's is, so textures never shown should not be made).
+  few each frame (16 ms of the main thread and 64 MB of pixels at most; one not made yet is drawn white for that
+  frame), so a new view does not hold the frame for seconds: a train's textures are made as they come into view
+  (Vulkan's memory cannot be paged out a texture at a time, as OpenGL's is, so textures never shown should not
+  be made). The main thread makes the image and records its upload; the pixels (upstream decodes them when it
+  loads) are written into staging when the frame's uploads are submitted, in pieces of 4 MB on every core,
+  RGBA copied as it is and other formats converted. On the Tuen Ma Line the exterior view's 900 textures
+  (1 GB) took 64 frames, about 3 s of white train, with the copying and converting on the main thread; now
+  15 frames, the main thread's share 0.25 ms a texture.
 - **Per-draw data.** Storage buffers a frame hold each object's model-view, normal and texture matrices and
   animation matrices, and each draw's material colours and flags, brightness, opacity, texture, sampler and
   alpha test; the shader reads its record by `gl_InstanceIndex` (the draw's `firstInstance`). Draws are

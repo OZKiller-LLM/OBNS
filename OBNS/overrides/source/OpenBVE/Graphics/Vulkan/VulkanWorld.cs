@@ -399,8 +399,8 @@ namespace OpenBve.Graphics.Vulkan
 			Scene.Textures.FrameStarted(frameNumber);
 			Scene.Meshes.FrameStarted(frameNumber);
 
-			// Uploads first, on the same queue.
-			uploader.Submit(false);
+			// Uploads first, on the same queue (their pixels written on every core).
+			uploader.Submit(false, true);
 
 			// OpenGL is done with the images (last frame's composite), and hands over what it has written into shared
 			// storage since the last frame: Vulkan may have them.
