@@ -129,14 +129,13 @@ OBNS's `NewRenderer.cs` calls it after the background; `GameWindow.cs` sets it u
    faster outside (25 ms) and level in the cab. Frame times vary a lot between runs, so comparisons are made
    within one run (`OBNS_FRAMESTATS` also splits RenderScene into before, world and after).
 
-   What is left is the GPU running OpenGL's background, Vulkan's world and OpenGL's overlays in turn, idle while
-   the CPU makes the Vulkan frame: the frame's start waits about 2 ms longer with Vulkan on. Overlapping the
-   Vulkan frame's making with OpenGL's work is the next step.
 3. Pipelined frames. Done: the world's faces are given to Vulkan before the background is drawn; what needs
    OpenGL is done on the main thread, then the frame is made (on every core) and submitted on a thread of its
-   own while OpenGL draws the background, and laid over it where upstream draws the world. On the Tuen Ma Line,
-   in one run: exterior 25-28 ms a frame against OpenGL's 34-37, cab 18-19 against 17. Frames start and end
-   about 2 ms later with Vulkan on (OpenGL waiting for the GPU, it seems): GPU timestamps are next, to see.
+   own while OpenGL draws the background, and laid over it where upstream draws the world. The frames then
+   started and ended about 2 ms later with Vulkan on; GPU timestamps and a finer CPU split (`OBNS_GPUSTATS=1`)
+   showed that was OpenGL drawing with textures over shared memory, now gone (see "One copy on the GPU").
+   On the Tuen Ma Line, in one run: cab 9.8-10.2 ms a frame against OpenGL's 10.8-11.2, exterior 15.6-17
+   against 19.4-22.9; Vulkan's world on the GPU takes 0.6 ms in the cab and 0.9 outside.
 4. The overlay layer (cab).
 5. Shadows.
 6. Linux (`_fd` handles); later, the 2D layer for macOS.
