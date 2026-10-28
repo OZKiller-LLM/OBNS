@@ -516,8 +516,6 @@ namespace OpenBve.Graphics.Vulkan
 
 		private const float Inv255 = 1.0f / 255.0f;
 
-		/// <summary>For finding faults: textures made and uploaded, but drawn white (OBNS_VULKAN_WHITE=1).</summary>
-		private static readonly bool whiteOnly = Environment.GetEnvironmentVariable("OBNS_VULKAN_WHITE") == "1";
 
 		/// <summary>
 		/// The faces given, resolved on the main thread: what needs OpenGL or changes shared state (missing VAOs, textures
@@ -672,7 +670,7 @@ namespace OpenBve.Graphics.Vulkan
 			draw.EmissionB = material.EmissiveColor.B * Inv255;
 
 			// Daytime texture, else white.
-			draw.Texture = item.DayTexture >= 0 && !whiteOnly ? item.DayTexture : VulkanTextures.White;
+			draw.Texture = item.DayTexture >= 0 ? item.DayTexture : VulkanTextures.White;
 
 			Blend blend = pass.Blend;
 			bool additive = material.BlendMode == MeshMaterialBlendMode.Additive;
@@ -705,7 +703,7 @@ namespace OpenBve.Graphics.Vulkan
 			// Nighttime texture, blended over the daytime one.
 			if (blendFactor != 0 && item.NightTexture >= 0)
 			{
-				draw.Texture = whiteOnly ? VulkanTextures.White : item.NightTexture;
+				draw.Texture = item.NightTexture;
 				draw.AlphaFunction = AlphaGreater;
 				draw.AlphaReference = 0.0f;
 				draw.Opacity = Inv255 * material.Color.A * distanceFactor * blendFactor;

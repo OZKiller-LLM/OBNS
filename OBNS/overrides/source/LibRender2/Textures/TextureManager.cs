@@ -1,6 +1,7 @@
 // OBNS: a copy of upstream's source/LibRender2/Textures/TextureManager.cs (OpenBVE 1.14.1.2), laid over the desktop
-// build's mirror (OBNS/build-desktop.ps1): textures in storage shared with the Vulkan world layer when it is in use
-// (OBNS/VULKAN.md). On an upstream update: copy the file again and reapply the parts marked OBNS.
+// build's mirror (OBNS/build-desktop.ps1): what the Vulkan world layer (OBNS/VULKAN.md) needs of the textures: their
+// decodes without an OpenGL upload, animated textures' frames, unloads. On an upstream update: copy the file again
+// and reapply the parts marked OBNS.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -338,45 +339,6 @@ namespace LibRender2.Textures
 			}
 		}
 
-		/// <summary>
-		/// OBNS: upstream's glTexImage2D for a texture's first level: in storage shared with the Vulkan world layer when it
-		/// gives some (immutable, with every mipmap level, written with glTexSubImage2D; RGB8 is kept as RGBA8 whose alpha
-		/// reads as 1), else as upstream.
-		/// </summary>
-		private static void ObnsTexImage2D(OpenGlTexture key, PixelInternalFormat internalFormat, int width, int height, int border,
-			OpenTK.Graphics.OpenGL.PixelFormat format, PixelType type, byte[] pixels)
-		{
-			if (ObnsSharing.AllocateTexture != null)
-			{
-				bool r8 = internalFormat == PixelInternalFormat.R8;
-				bool alphaOne = internalFormat == PixelInternalFormat.Rgb8;
-				int levels = 1;
-				for (int size = Math.Max(width, height); size > 1; size >>= 1)
-				{
-					levels++;
-				}
-
-				ObnsSharedMemory shared = ObnsSharing.AllocateTexture(key, width, height, levels, r8, alphaOne);
-				if (shared != null)
-				{
-					ObnsSharing.CheckError("before glTexStorageMem2DEXT (left by an earlier call)");
-					GL.Ext.TexStorageMem2D(TextureTarget.Texture2D, levels, (ExtMemoryObject)(r8 ? (int)All.R8 : (int)All.Rgba8), width, height, shared.GLMemory, (long)shared.Offset);
-					ObnsSharing.CheckError("glTexStorageMem2DEXT (" + width + "x" + height + ", " + levels + " levels, offset " + shared.Offset + ")");
-					if (alphaOne)
-					{
-						GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureSwizzleA, (int)All.One);
-					}
-
-					GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, width, height, format, type, pixels);
-					ObnsSharing.CheckError("glTexSubImage2D into shared storage");
-					ObnsSharing.TextureWritten?.Invoke(key);
-					return;
-				}
-			}
-
-			GL.TexImage2D(TextureTarget.Texture2D, /* level */ 0, internalFormat, width, height, border, format, type, pixels);
-		}
-
 		public bool LoadTexture(ref Texture handle, OpenGlTextureWrapMode wrap, int currentTicks, InterpolationMode Interpolation, int AnisotropicFilteringLevel)
 		{
 			Stopwatch uploadTimer = Stopwatch.StartNew();
@@ -542,7 +504,6 @@ namespace LibRender2.Textures
 							GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
 						}
 						// OBNS: the new frame, for the Vulkan world layer.
-						ObnsSharing.TextureWritten?.Invoke(handle.OpenGlTextures[(int)wrap]);
 						ObnsSharing.AnimatedFrame?.Invoke(handle, texture, subBytes, handle.Transparency == TextureTransparencyType.Opaque);
 						// Keep the stable handle in sync without swapping identity: the handle keeps
 						// its origin so the animated cache keeps hitting every tick (swapping to the
@@ -743,7 +704,7 @@ namespace LibRender2.Textures
 										expanded[p*3] = c.R; expanded[p*3+1] = c.G; expanded[p*3+2] = c.B;
 									}
 									GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
-									ObnsTexImage2D(handle.OpenGlTextures[(int)wrap],  PixelInternalFormat.Rgb8, texture.Width, texture.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgb, PixelType.UnsignedByte, expanded);
+									GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgb8, texture.Width, texture.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgb, PixelType.UnsignedByte, expanded);
 									break;
 								}
 						case PixelFormat.Grayscale:
@@ -751,7 +712,7 @@ namespace LibRender2.Textures
 							// #version 410 core, so always upload via the Red channel with a swizzle
 							// n.b. Make sure to set the unpack alignment as otherwise we corrupt textures where stride > width
 							GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
-							ObnsTexImage2D(handle.OpenGlTextures[(int)wrap], 
+							GL.TexImage2D(TextureTarget.Texture2D, 0,
 								PixelInternalFormat.R8,
 								texture.Width, texture.Height, 0,
 								OpenTK.Graphics.OpenGL.PixelFormat.Red,
@@ -771,7 +732,7 @@ namespace LibRender2.Textures
 									gray[p] = textureBytes[2 * p];
 								}
 								GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
-								ObnsTexImage2D(handle.OpenGlTextures[(int)wrap], 
+								GL.TexImage2D(TextureTarget.Texture2D, 0,
 									PixelInternalFormat.R8,
 									texture.Width, texture.Height, 0,
 									OpenTK.Graphics.OpenGL.PixelFormat.Red,
@@ -783,7 +744,7 @@ namespace LibRender2.Textures
 								// send as is
 								// n.b. Make sure to set the unpack alignment as otherwise we corrupt textures where stride > width
 								GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
-								ObnsTexImage2D(handle.OpenGlTextures[(int)wrap], 
+								GL.TexImage2D(TextureTarget.Texture2D, 0,
 									PixelInternalFormat.Rgb8,
 									texture.Width, texture.Height, 0,
 									OpenTK.Graphics.OpenGL.PixelFormat.Rgb,
@@ -795,7 +756,7 @@ namespace LibRender2.Textures
 								 * Upload the RGBA data directly rather than stripping it CPU-side.
 								 */
 								GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
-								ObnsTexImage2D(handle.OpenGlTextures[(int)wrap], 
+								GL.TexImage2D(TextureTarget.Texture2D, 0,
 									PixelInternalFormat.Rgb8,
 									texture.Width, texture.Height, 0,
 									OpenTK.Graphics.OpenGL.PixelFormat.Rgba,
@@ -824,7 +785,7 @@ namespace LibRender2.Textures
 									expanded[p*4] = c.R; expanded[p*4+1] = c.G; expanded[p*4+2] = c.B; expanded[p*4+3] = c.A;
 								}
 								GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
-								ObnsTexImage2D(handle.OpenGlTextures[(int)wrap],  PixelInternalFormat.Rgba8, texture.Width, texture.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, expanded);
+								GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, texture.Width, texture.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, expanded);
 								break;
 							}
 					case PixelFormat.GrayscaleAlpha:
@@ -849,7 +810,7 @@ namespace LibRender2.Textures
 								j += stride - 4 * texture.Width;
 							}
 							GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
-							ObnsTexImage2D(handle.OpenGlTextures[(int)wrap], 
+							GL.TexImage2D(TextureTarget.Texture2D, 0,
 								PixelInternalFormat.Rgba8,
 								texture.Width, texture.Height, 0,
 								OpenTK.Graphics.OpenGL.PixelFormat.Rgba,
@@ -868,7 +829,7 @@ namespace LibRender2.Textures
 									expanded[p * 4 + 3] = 255;
 								}
 								GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
-								ObnsTexImage2D(handle.OpenGlTextures[(int)wrap],  PixelInternalFormat.Rgba8, texture.Width, texture.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, expanded);
+								GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, texture.Width, texture.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, expanded);
 								break;
 							}
 						case PixelFormat.RGB:
@@ -883,7 +844,7 @@ namespace LibRender2.Textures
 									expanded[p * 4 + 3] = 255;
 								}
 								GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
-								ObnsTexImage2D(handle.OpenGlTextures[(int)wrap],  PixelInternalFormat.Rgba8, texture.Width, texture.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, expanded);
+								GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, texture.Width, texture.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, expanded);
 								break;
 							}
 							case PixelFormat.RGBAlpha:
@@ -893,7 +854,7 @@ namespace LibRender2.Textures
 								* */
 								// n.b. Must reset the unpack alignment in case of changes
 								GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
-								ObnsTexImage2D(handle.OpenGlTextures[(int)wrap], 
+								GL.TexImage2D(TextureTarget.Texture2D, 0,
 									PixelInternalFormat.Rgba8,
 									texture.Width, texture.Height, 0,
 									OpenTK.Graphics.OpenGL.PixelFormat.Rgba,
@@ -910,7 +871,6 @@ namespace LibRender2.Textures
 					}
 					GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
                     handle.OpenGlTextures[(int)wrap].Valid = true;
-					ObnsSharing.GLUploaded?.Invoke(handle);
 					// OBNS: an animated texture's first frame, for the Vulkan world layer.
 					if (texture.MultipleFrames)
 					{
@@ -1000,7 +960,6 @@ namespace LibRender2.Textures
 				{
 					if (t.Valid)
 					{
-						ObnsSharing.TextureDeleted?.Invoke(t); // OBNS
 						GL.DeleteTextures(1, new[] { t.Name });
 						t.Valid = false;
 					}
@@ -1023,7 +982,6 @@ namespace LibRender2.Textures
 				{
 					if (t.Valid)
 					{
-						ObnsSharing.TextureDeleted?.Invoke(t); // OBNS
 						GL.DeleteTextures(1, new[] { t.Name });
 						t.Valid = false;
 					}

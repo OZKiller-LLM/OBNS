@@ -21,7 +21,10 @@ namespace OpenBve.Graphics
 	 * game, plugins drawing through OpenTK - goes through the table, so nothing changes state behind the caches.
 	 * The game has one GL context, current on the main thread, which is where the filter runs.
 	 *
-	 * OBNS_GL_FILTER=0 leaves the table alone, for comparisons.
+	 * Measured on the Tuen Ma Line it does not pay on the desktop: each filtered call goes from OpenTK into a
+	 * managed delegate and out again to the driver, two transitions where there was one, and with OpenGL drawing
+	 * the world frames were 1-4 ms slower with it (no difference with Vulkan drawing it). So it is off unless
+	 * OBNS_GL_FILTER=1, for comparisons.
 	 */
 	internal static class GLStateFilter
 	{
@@ -65,7 +68,7 @@ namespace OpenBve.Graphics
 		/// <summary>Replaces OpenTK's entry points for the filtered functions; once the context is current and OpenTK has loaded them.</summary>
 		internal static void Install()
 		{
-			if (Installed || Environment.GetEnvironmentVariable("OBNS_GL_FILTER") == "0")
+			if (Installed || Environment.GetEnvironmentVariable("OBNS_GL_FILTER") != "1")
 			{
 				return;
 			}

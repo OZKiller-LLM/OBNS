@@ -24,29 +24,20 @@ namespace LibRender2
 	}
 
 	/// <summary>
-	/// OBNS: where vertex buffers and textures get their storage when the Vulkan world layer is in use, so the GPU has
-	/// one copy of each that both APIs use; and what OpenGL writes into it, which it hands over to Vulkan each frame.
-	/// Unset (OpenGL alone), upstream's own storage is used.
+	/// OBNS: where vertex buffers get their storage when the Vulkan world layer is in use, so the GPU has one copy of
+	/// each that both APIs use, and what OpenGL writes into it, which it hands over to Vulkan each frame; and what the
+	/// Vulkan world layer, which keeps its own copy of textures, is told of them. Unset (OpenGL alone), nothing changes.
 	/// </summary>
 	public static class ObnsSharing
 	{
 		/// <summary>Storage for a vertex buffer of so many bytes, or null for OpenGL's own.</summary>
 		public static Func<long, ObnsSharedMemory> AllocateBuffer;
 
-		/// <summary>Storage for a texture: its key, width, height, mipmap levels, whether it is one channel (R8), and whether its alpha reads as 1 (RGB8); or null for OpenGL's own.</summary>
-		public static Func<OpenBveApi.Textures.OpenGlTexture, int, int, int, bool, bool, ObnsSharedMemory> AllocateTexture;
-
 		/// <summary>Called when a buffer's storage is let go of.</summary>
 		public static Action<ObnsSharedMemory> FreeBuffer;
 
 		/// <summary>Called with an OpenGL buffer written into shared storage.</summary>
 		public static Action<int> BufferWritten;
-
-		/// <summary>Called with a texture written into shared storage (uploads, animation frames, mipmaps).</summary>
-		public static Action<OpenBveApi.Textures.OpenGlTexture> TextureWritten;
-
-		/// <summary>Called when a texture is deleted from OpenGL (shared storage or not).</summary>
-		public static Action<OpenBveApi.Textures.OpenGlTexture> TextureDeleted;
 
 		/// <summary>
 		/// Called with an animated texture's pixels when OpenGL has uploaded them (its first frame, and each new one): the
@@ -56,9 +47,6 @@ namespace LibRender2
 
 		/// <summary>Called when a texture is about to be unloaded (its OpenGL textures deleted, its handle made again).</summary>
 		public static Action<OpenBveApi.Textures.Texture> TextureUnloading;
-
-		/// <summary>Called when a texture is uploaded to OpenGL (its first upload), for finding who loads what.</summary>
-		public static Action<OpenBveApi.Textures.Texture> GLUploaded;
 
 		/// <summary>Reports an OpenGL error after making shared storage (the first few), for the log.</summary>
 		public static Action<string> Error;

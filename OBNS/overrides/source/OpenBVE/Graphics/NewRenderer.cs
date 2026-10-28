@@ -398,20 +398,16 @@ namespace OpenBve.Graphics
 			 * We must reset the shader between overlay and world layers for correct lighting results.
 			 * Additionally, the viewport change updates the projection matrix
 			 */
-			long resetStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			DefaultShader.Activate();
 			ResetShader(DefaultShader);
 			DefaultShader.SetCurrentProjectionMatrix(CurrentProjectionMatrix);
-			GpuStats.ResetShaderTicks += System.Diagnostics.Stopwatch.GetTimestamp() - resetStart;
 
             CurrentViewMatrix = Matrix4D.LookAt(Vector3.Zero, new Vector3(Camera.AbsoluteDirection.X, Camera.AbsoluteDirection.Y, -Camera.AbsoluteDirection.Z), new Vector3(Camera.AbsoluteUp.X, Camera.AbsoluteUp.Y, -Camera.AbsoluteUp.Z));
 			
 			if (Camera.CurrentRestriction == CameraRestrictionMode.NotAvailable || Camera.CurrentRestriction == CameraRestrictionMode.Restricted3D)
 			{
 				ResetOpenGlState(); // TODO: inserted
-				long depthClearStart = System.Diagnostics.Stopwatch.GetTimestamp();
 				GL.Clear(ClearBufferMask.DepthBufferBit);
-				GpuStats.DepthClearTicks += System.Diagnostics.Stopwatch.GetTimestamp() - depthClearStart;
 				OptionLighting = true;
 				Color24 prevOptionAmbientColor = Lighting.OptionAmbientColor;
 				Color24 prevOptionDiffuseColor = Lighting.OptionDiffuseColor;
@@ -537,7 +533,7 @@ namespace OpenBve.Graphics
 			SceneParts.Add(worldStart - sceneStart, worldEnd - worldStart, System.Diagnostics.Stopwatch.GetTimestamp() - worldEnd);
 			GpuStats.Mark(GpuStats.Point.FrameEnd);
 			SceneLaps.Lap(6);
-			GpuStats.Cpu(clearTicks, backgroundTicks, vulkanWorld ? Vulkan.VulkanWorld.Instance.LastJoinTicks : 0, vulkanWorld ? Vulkan.VulkanWorld.Instance.LastFlushTicks : 0);
+			GpuStats.Cpu(clearTicks, backgroundTicks, vulkanWorld ? Vulkan.VulkanWorld.Instance.LastJoinTicks : 0);
 		}
 
 		/// <summary>OBNS: RenderScene's time in finer parts (OBNS_GPUSTATS), for the log.</summary>

@@ -20,8 +20,8 @@ Linux later), and the libraries the Android port and the desktop build share.
 2. The OBNS desktop build: upstream's program for Windows x64, built from `OpenBVE/` as it is.
 3. BVE5 trains (vehicle, parameters, performance tables, panel, sound, motor noise) and BVE5 safety
    plugins, on Android and Windows.
-4. The Android port's features on the desktop: the native Vulkan renderer, per-frame updates on all
-   cores, pipelined frames, then the Win32 plugin layer (x86) for macOS and Linux.
+4. The Android port's features on the desktop: per-frame updates on all cores, fewer draw calls,
+   Vulkan with pipelined frames, then the Win32 plugin layer (x86) for macOS and Linux.
 
 ## The desktop build (Windows x64)
 
@@ -62,8 +62,8 @@ DetailManager.dll plugin through the proxy.
 | `source/CarXMLConvertor/CarXMLConvertor.csproj`, `packages.config` | Windows Forms resources built preserialized with System.Resources.Extensions (as upstream's TrainEditor), so the .NET SDK's MSBuild builds it | - |
 | `source/ObjectBender/ObjectBender.csproj`, `packages.config` | the same | - |
 
-Shared libraries (moving here from `Android/` as each is taken up): the GL-on-Vulkan renderer core,
-the x86 plugin layer, the BVE5 train plugin, the parallel-update helpers.
+Shared libraries (moving here from `Android/` as each is taken up): the x86 plugin layer, the BVE5
+train plugin, the parallel-update helpers, the static batcher.
 
 ## Backports to the desktop
 
@@ -88,7 +88,7 @@ Random). `OBNS_PARALLEL_UPDATES=0` turns them off.
 | Exterior: frame | 32.2 ms (31.0 fps) | 28.9 ms (34.6 fps) |
 | Cab: frame (near the 60 Hz limit) | 17.5 ms | 17.3 ms |
 
-### 2. Fewer draw calls (next)
+### 2. Fewer draw calls (done)
 
 The scene's rendering is now most of the frame (exterior: ~23 of 29 ms, ~10,000 draw calls), with the
 swap under 0.5 ms: the time is the CPU submitting draw calls, not the GPU.
@@ -115,10 +115,35 @@ swap under 0.5 ms: the time is the CPU submitting draw calls, not the GPU.
 Less than on phones, where a draw call costs far more; the exterior's remaining rendering is next
 for Vulkan (3), which makes each call cheaper.
 
-### 3. Vulkan with pipelined frames
+### 3. Vulkan for the world, with pipelined frames (done)
 
-Android's `OpenBve.Vulkan` (`VulkanGL`) carries out the GL calls of upstream's renderer with Vulkan,
-recording and submitting each frame on its own thread while the next is prepared. On the desktop,
-upstream calls OpenTK's own GL class directly, so this needs a GL facade there first.
+Not Android's renderer: on phones `OpenBve.Vulkan` (`VulkanGL`) carries out GL ES calls with Vulkan,
+which does not suit desktop drivers. The desktop's is a hybrid, designed for them (`OBNS/VULKAN.md`):
+Vulkan draws the world layer - upstream's scenery, trains and their faces, as draw records made on
+every core and drawn with bindless textures and indirect draws - into images OpenGL shares, and OpenGL
+draws the background, the cab, the overlays and the menus as upstream does, laying Vulkan's image over
+the background. Each frame is made and submitted on a thread of its own while OpenGL draws the
+background. The vertex buffers are shared between the two; textures are Vulkan's own, with upstream's
+preloads sent to it, so there is one copy of each on the GPU.
+
+The renderer is chosen in the options (display: Renderer, OpenGL or Vulkan; Vulkan by default) and
+the debug overlay names it. OpenGL draws the world when the GPU or driver cannot share images with
+Vulkan, while shadows or the wireframe and normals views are on, and for the rest of the session if a
+Vulkan frame fails; `OBNS_VULKAN=0` or `1` overrides the option.
+
+| Tuen Ma Line, steady state (each view's first 10 s left out), a loaded machine, runs interleaved | OpenGL | Vulkan |
+|---|---|---|
+| Cab: frame | 13.4-20.0 ms | 8.5-11.8 ms |
+| Exterior: frame | 25.1-30.1 ms | 14.0-18.4 ms |
+| Exterior: the world layer on the main thread | 17.7-21.5 ms (drawing) | 7.1-9.0 ms (gathering the faces, handing over, compositing) |
+
+Vulkan's world takes 0.6 ms of GPU time in the cab and 0.9 outside. Most of what remains on the main
+thread is upstream's per-face work, gathering every visible face each frame. In one of nine Vulkan runs the
+frames were 44-300 ms throughout; the other eight were as above, and on this machine, under load from
+other programs, that one is taken for now as the load.
+
+Also tried: a GL state filter (from the Android port's GL layer, `Graphics/GLStateFilter.cs`) skipping
+GL sets that change nothing. On the desktop it costs more than it saves - each call through it goes from
+OpenTK into managed code and out again - so it is off unless `OBNS_GL_FILTER=1`.
 
 ### 4. The x86 plugin layer for macOS and Linux

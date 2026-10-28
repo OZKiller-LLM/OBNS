@@ -467,7 +467,7 @@ namespace OpenBve
 		private static extern int GetDesktopWindow();
 		protected override void OnLoad(EventArgs e)
 		{
-			// OBNS: sets of GL state that change nothing are skipped (Graphics/GLStateFilter.cs); the context is current here.
+			// OBNS: with OBNS_GL_FILTER=1, sets of GL state that change nothing are skipped (Graphics/GLStateFilter.cs); the context is current here.
 			GLStateFilter.Install();
 			// OBNS: the world layer drawn by Vulkan where it can share images with OpenGL (OBNS/VULKAN.md).
 			OpenBve.Graphics.Vulkan.VulkanWorld.Initialize();

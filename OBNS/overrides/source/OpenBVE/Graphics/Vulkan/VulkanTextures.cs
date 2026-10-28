@@ -51,14 +51,7 @@ namespace OpenBve.Graphics.Vulkan
 		private Entry white;
 		private long pixelBytes;
 
-		/// <summary>For finding faults: textures uploaded without mipmaps (OBNS_VULKAN_NOMIPS=1).</summary>
-		private static readonly bool noMipmaps = Environment.GetEnvironmentVariable("OBNS_VULKAN_NOMIPS") == "1";
-
-		/// <summary>For finding faults: each texture made, logged (OBNS_VULKAN_DEBUG=1).</summary>
-		private static readonly bool levelZeroOnly = Environment.GetEnvironmentVariable("OBNS_VULKAN_LEVEL0") == "1";
-
-		private static readonly bool skipHuge = Environment.GetEnvironmentVariable("OBNS_VULKAN_SKIPHUGE") == "1";
-
+		/// <summary>Each texture made, logged (OBNS_VULKAN_DEBUG=1).</summary>
 		private static readonly bool logTextures = Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1";
 
 		private readonly ulong[] descriptorSets;
@@ -76,8 +69,7 @@ namespace OpenBve.Graphics.Vulkan
 			this.uploader = uploader;
 			this.descriptorSets = descriptorSets;
 			this.textureBinding = textureBinding;
-			// (OBNS_VULKAN_DEDICATED=1, for finding faults: each texture in an allocation of its own.)
-			memory = new GpuPool(device, Environment.GetEnvironmentVariable("OBNS_VULKAN_DEDICATED") == "1" ? 1UL : 256UL << 20, 0, "textures");
+			memory = new GpuPool(device, 256UL << 20, 0, "textures");
 			CreateSamplers(interpolation, anisotropy);
 			white = new Entry { Index = White };
 			Upload(white, 1, 1, new byte[] { 255, 255, 255, 255 });
@@ -131,10 +123,10 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>The place given for a texture not made yet because the frame's budget is spent: drawn white, asked for again.</summary>
 		internal const int Later = -2;
 
-		// The frame's budget for making textures: decoding and uploading many at once (a new view) held the main thread
-		// for seconds, and with OpenGL and Vulkan exchanging frames meanwhile the driver was reset (OBNS/VULKAN.md).
-		private static readonly double BudgetMilliseconds = double.TryParse(Environment.GetEnvironmentVariable("OBNS_VULKAN_BUDGET_MS"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ms) ? ms : 16.0;
-		private static readonly long BudgetBytes = (long.TryParse(Environment.GetEnvironmentVariable("OBNS_VULKAN_BUDGET_MB"), out long mb) ? mb : 64L) << 20;
+		// The frame's budget for making textures: decoding and uploading all a new view needs at once held the main
+		// thread for seconds; a few each frame, the view comes in over a few frames instead.
+		private const double BudgetMilliseconds = 16.0;
+		private const long BudgetBytes = 64L << 20;
 		private long budgetStart, budgetBytes;
 
 		/// <summary>Starts a frame's budget for making textures.</summary>
@@ -176,14 +168,7 @@ namespace OpenBve.Graphics.Vulkan
 			if (entry == null && !texture.MultipleFrames)
 			{
 				TextureManager manager = Program.Renderer.TextureManager;
-				bool decodedHere = manager.ObnsDecoded(texture, out Texture decoded);
-				if (decodedHere && skipHuge && Math.Max(decoded.Width, decoded.Height) > 8192)
-				{
-					entries[texture] = new Entry { Index = -1, Failed = true };
-					return -1;
-				}
-
-				if (decodedHere)
+				if (manager.ObnsDecoded(texture, out Texture decoded))
 				{
 					TextureTransparencyType transparency = decoded.GetTransparencyType();
 					texture.Transparency = transparency;
@@ -512,7 +497,7 @@ namespace OpenBve.Graphics.Vulkan
 				entry.Width = width;
 				entry.Height = height;
 				entry.Levels = 1;
-				for (uint size = Math.Max(width, height); size > 1 && !noMipmaps; size >>= 1)
+				for (uint size = Math.Max(width, height); size > 1; size >>= 1)
 				{
 					entry.Levels++;
 				}

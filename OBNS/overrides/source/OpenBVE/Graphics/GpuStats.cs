@@ -25,10 +25,7 @@ namespace OpenBve.Graphics
 		// and the main thread's time in calls that may wait for the GPU or the Vulkan thread.
 		private static double glBackground, glWorld, glAfter, glFrame, vulkanFrame;
 		private static long glFrames, vulkanFrames;
-		private static long clearTicks, backgroundTicks, joinTicks, flushTicks, cpuFrames;
-
-		/// <summary>The cab layer's depth clear and shader reset, added to by the renderer.</summary>
-		internal static long DepthClearTicks, ResetShaderTicks;
+		private static long clearTicks, backgroundTicks, joinTicks, cpuFrames;
 
 		/// <summary>An OpenGL timestamp at a point in this frame (the GPU's time when it gets there).</summary>
 		internal static void Mark(Point point)
@@ -88,7 +85,7 @@ namespace OpenBve.Graphics
 		}
 
 		/// <summary>Main thread time in glClear (where a frame waits for the GPU), drawing the background, and waiting for the Vulkan thread.</summary>
-		internal static void Cpu(long clear, long background, long join, long flush)
+		internal static void Cpu(long clear, long background, long join)
 		{
 			if (!Enabled)
 			{
@@ -98,7 +95,6 @@ namespace OpenBve.Graphics
 			clearTicks += clear;
 			backgroundTicks += background;
 			joinTicks += join;
-			flushTicks += flush;
 			cpuFrames++;
 		}
 
@@ -112,11 +108,11 @@ namespace OpenBve.Graphics
 
 			double gl = Math.Max(1, glFrames), vk = Math.Max(1, vulkanFrames), cpu = Math.Max(1, cpuFrames), ms = 1000.0 / Stopwatch.Frequency;
 			string text = string.Format(CultureInfo.InvariantCulture,
-				"GPU: OpenGL background {0:0.00}, world {1:0.00}, after {2:0.00}, frame {3:0.00} ms; Vulkan frame {4:0.00} ms; main thread in glClear {5:0.00}, background {6:0.00}, waiting for Vulkan {7:0.00}, flushing after the composite {8:0.00}, cab layer depth clear {9:0.00}, cab layer shader reset {10:0.00} ms",
-				glBackground / gl, glWorld / gl, glAfter / gl, glFrame / gl, vulkanFrames == 0 ? 0.0 : vulkanFrame / vk, clearTicks * ms / cpu, backgroundTicks * ms / cpu, joinTicks * ms / cpu, flushTicks * ms / cpu, DepthClearTicks * ms / cpu, ResetShaderTicks * ms / cpu);
+				"GPU: OpenGL background {0:0.00}, world {1:0.00}, after {2:0.00}, frame {3:0.00} ms; Vulkan frame {4:0.00} ms; main thread in glClear {5:0.00}, background {6:0.00}, waiting for Vulkan {7:0.00} ms",
+				glBackground / gl, glWorld / gl, glAfter / gl, glFrame / gl, vulkanFrames == 0 ? 0.0 : vulkanFrame / vk, clearTicks * ms / cpu, backgroundTicks * ms / cpu, joinTicks * ms / cpu);
 			glBackground = glWorld = glAfter = glFrame = vulkanFrame = 0;
 			glFrames = vulkanFrames = cpuFrames = 0;
-			clearTicks = backgroundTicks = joinTicks = flushTicks = DepthClearTicks = ResetShaderTicks = 0;
+			clearTicks = backgroundTicks = joinTicks = 0;
 			return text;
 		}
 	}

@@ -81,32 +81,45 @@ on OpenGL until the Vulkan shadow pass exists.
 
 The renderer is chosen in the options (Options, display group: Renderer, OpenGL or Vulkan; Vulkan by default),
 kept in `Settings/1.5.0/obns.cfg` beside upstream's `options.cfg`, and takes effect when a game starts. The
-debug overlay's renderer line says which is drawing. Vulkan is used when the driver has Vulkan 1.3 with descriptor indexing and external memory, and OpenGL has
-the memory object and semaphore extensions on the same GPU (matched by device UUID); otherwise, or with
-`OBNS_VULKAN=0`, the world layer is drawn by OpenGL as before (with the GL state filter,
-`Graphics/GLStateFilter.cs`, which `OBNS_GL_FILTER=0` turns off). The log says which, and why.
+debug overlay's renderer line says which is drawing. Vulkan is used when the driver has Vulkan 1.3 with
+descriptor indexing and external memory, and OpenGL has the memory object and semaphore extensions on the
+same GPU (matched by device UUID); otherwise the world layer is drawn by OpenGL as before. The log says which, and why. While shadows or the wireframe or normals
+debug views are on, OpenGL draws the world layer (frame by frame); a Vulkan frame that fails stops Vulkan for
+the session, logged, and OpenGL draws the world from then on.
 
-For testing: `OBNS_VULKAN_TINT=1` clears Vulkan's image to a faint green (the background shows it);
-`OBNS_VULKAN_DEBUG=1` logs what OpenGL reads back of the shared images for the first frames;
-`OBNS_SNAPSHOT_EVERY=<seconds>` saves the frame (the back buffer, before the swap) as `snapshot-N.png`
-beside the log, for comparing renderers; `OBNS_FRAMESTATS=1` logs where frame time goes.
+Switches, for testing and measuring (environment variables):
+
+| Variable | Effect |
+| --- | --- |
+| `OBNS_VULKAN=0` / `1` | OpenGL / Vulkan for the world layer, whatever the options say |
+| `OBNS_GL_FILTER=1` | the GL state filter on (`Graphics/GLStateFilter.cs`: skips GL sets that change nothing; off by default, as it costs more than it saves on the desktop) |
+| `OBNS_FRAMESTATS=1` | where frame time goes, logged every 10 s |
+| `OBNS_GPUSTATS=1` | with it, GPU timestamps (OpenGL's parts, Vulkan's frame) and a finer CPU split |
+| `OBNS_SNAPSHOT_EVERY=<s>` | the frame saved (back buffer, before the swap) as `snapshot-N.png` beside the log |
+| `OBNS_VULKAN_TINT=1` | Vulkan's image cleared to a faint green (shows where the background is) |
+| `OBNS_VULKAN_DEBUG=1` | the shared images read back for the first frames, each texture made, the copies' counts, and a watchdog logging where each thread is when frames stop for 3 s |
 
 ## Code
 
 In `OBNS/overrides/source/OpenBVE/Graphics/Vulkan/`, compiled into the desktop program by OBNS's
 `OpenBve.csproj` (the shaders, `Shaders/*.spv`, embedded):
 
-- `Vk.cs`: the Vulkan API, bound by hand (only what is used, no package dependencies, so it runs under
-  .NET Framework and Mono alike); structure layouts checked against Silk.NET's.
+- `Vk.cs`, `Vk.Drawing.cs`: the Vulkan API, bound by hand (only what is used, no package dependencies, so it
+  runs under .NET Framework and Mono alike); structure layouts checked against Silk.NET's.
 - `VulkanDevice.cs`: instance and device, on the GPU OpenGL is on.
 - `SharedTarget.cs`: the shared colour and depth images and the semaphores.
-- `VulkanWorld.cs`: the frame (OpenGL hands over, Vulkan draws, OpenGL composites) and OpenGL's side.
-- `SharedHeap.cs`, `GpuMemory.cs`: memory shared with OpenGL, Vulkan's own, and uploads.
-- `VulkanTextures.cs`, `VulkanMeshes.cs`: the shared textures and vertex buffers, and the triangle indices.
-- `VulkanScene.cs`: upstream's per-face drawing (`RenderFace`) as draw records, pipelines, and the recording.
-- `Vk.Drawing.cs`: the rest of the API it uses.
+- `VulkanWorld.cs`: the frame (OpenGL hands over, Vulkan makes and submits the frame on its own thread, OpenGL
+  composites) and OpenGL's side.
+- `SharedHeap.cs`, `GpuMemory.cs`: memory shared with OpenGL (vertex buffers), Vulkan's own, and uploads.
+- `VulkanTextures.cs`: Vulkan's own textures; `VulkanMeshes.cs`: the shared vertex buffers and the triangle
+  indices.
+- `VulkanScene.cs`: upstream's per-face drawing (`RenderFace`) as draw records, made on every core, pipelines,
+  and the recording.
 
-OBNS's `NewRenderer.cs` calls it after the background; `GameWindow.cs` sets it up when the window loads.
+Elsewhere: OBNS's `NewRenderer.cs` gives the world's faces to it before the background and lays the frame over
+it; `GameWindow.cs` sets it up and sends upstream's texture preloads to it; `Graphics/GpuStats.cs` measures;
+`System/ObnsOptions.cs` and `UserInterface/formMain.Obns.cs` are the option; OBNS's copies of LibRender2's
+`VertexBufferObject.cs`, `VertexArrayObject.cs` and `TextureManager.cs` have the hooks.
 
 ## Steps
 

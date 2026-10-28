@@ -112,39 +112,14 @@ namespace OpenBve.Graphics.Vulkan
 		private void Hook()
 		{
 			ObnsSharing.Error = message => Log("OBNS Vulkan world layer: OpenGL error on shared storage: " + message);
-			// One copy of each vertex buffer and texture, in storage both APIs use. (OBNS_SHARE=0, for measuring what
-			// shared storage costs OpenGL: none shared, so Vulkan's world is empty.)
-			string share = Environment.GetEnvironmentVariable("OBNS_SHARE");
-			if (share != "0")
-			{
-			if (share != "textures")
-			{
+			// One copy of each vertex buffer, in storage both APIs use.
 			ObnsSharing.AllocateBuffer = bytes => Guard(() => Scene.Meshes.AllocateVertices(bytes), 4);
 			ObnsSharing.FreeBuffer = shared => Guard(() => { Scene.Meshes.FreeVertices(shared); return null; }, 5);
 			ObnsSharing.BufferWritten = buffer => Scene.Meshes.Written(buffer);
-			}
-
-			if (share != "meshes")
-			{
 			// Textures are not shared (OpenGL draws far more slowly with textures over shared memory): Vulkan keeps its
 			// own copy of the world's (VulkanTextures), and of animated ones' frames as OpenGL uploads them.
 			ObnsSharing.AnimatedFrame = (handle, decoded, bytes, opaque) => Guard(() => { Scene.Textures.AnimatedFrame(handle, decoded, bytes, opaque); return null; }, 2);
-			if (Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
-			{
-				// For finding what loads textures into OpenGL while Vulkan draws the world: the first uploads' callers.
-				int uploads = 0;
-				ObnsSharing.GLUploaded = handle =>
-				{
-					if (++uploads <= 4 || uploads % 500 == 0)
-					{
-						Log("OBNS Vulkan debug: OpenGL texture upload " + uploads + " (" + handle.Origin + "): " + Environment.StackTrace);
-					}
-				};
-			}
-
 			ObnsSharing.TextureUnloading = handle => Guard(() => { Scene.Textures.Unloading(handle); return null; }, 3);
-			}
-			}
 
 			// The meshes' faces, indexed for Vulkan's triangle lists.
 			VAOExtensions.ObnsMeshUploaded = mesh => Guard(() => { Scene.Meshes.Uploaded(mesh); return null; }, 0);
@@ -153,7 +128,8 @@ namespace OpenBve.Graphics.Vulkan
 
 		private static bool hookFailed;
 
-		// The hooks' calls and time, logged every 5 seconds while they are busy (loading copies everything).
+		// The hooks' calls and time, logged every 5 seconds while they are busy (OBNS_VULKAN_DEBUG=1).
+		private static readonly bool logHooks = Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1";
 		private static readonly long[] hookCalls = new long[6], hookTicks = new long[6];
 		private static readonly System.Diagnostics.Stopwatch hookClock = System.Diagnostics.Stopwatch.StartNew();
 		private static long lastHookLog;
@@ -183,7 +159,7 @@ namespace OpenBve.Graphics.Vulkan
 			long now = hookClock.ElapsedTicks;
 			hookCalls[hook]++;
 			hookTicks[hook] += now - start;
-			if (now - lastHookLog > 5 * System.Diagnostics.Stopwatch.Frequency)
+			if (logHooks && now - lastHookLog > 5 * System.Diagnostics.Stopwatch.Frequency)
 			{
 				lastHookLog = now;
 				System.Text.StringBuilder line = new System.Text.StringBuilder("OBNS Vulkan copies:");
@@ -387,7 +363,6 @@ namespace OpenBve.Graphics.Vulkan
 
 		// The frame started and not laid over yet: its slot, what OpenGL handed over with it, and the thread making it.
 		private bool started, failed;
-		private static readonly int stallTest = int.TryParse(Environment.GetEnvironmentVariable("OBNS_VULKAN_STALL"), out int stall) ? stall : 0;
 
 		/// <summary>The main thread's wait for the last frame's thread (OBNS_GPUSTATS).</summary>
 		internal long LastJoinTicks;
@@ -415,12 +390,6 @@ namespace OpenBve.Graphics.Vulkan
 
 			EnsureTarget(width, height);
 			Step.Main = "preparing the faces";
-			if (stallTest > 0 && frameNumber == 600)
-			{
-				// For finding hangs (OBNS_VULKAN_STALL=ms): the main thread held here once, doing nothing.
-				System.Threading.Thread.Sleep(stallTest);
-			}
-
 			Scene.Prepare();
 			Step.Main = "submitting uploads";
 
@@ -538,17 +507,7 @@ namespace OpenBve.Graphics.Vulkan
 			Composite();
 			Step.Main = "after the world layer";
 			Step.Frames++;
-			if (GpuStats.Enabled)
-			{
-				// For finding where OpenGL waits for Vulkan's frame: a flush straight after the composite, timed.
-				long flushStart = System.Diagnostics.Stopwatch.GetTimestamp();
-				GL.Flush();
-				LastFlushTicks = System.Diagnostics.Stopwatch.GetTimestamp() - flushStart;
-			}
 		}
-
-		/// <summary>The time of the flush after the composite (OBNS_GPUSTATS).</summary>
-		internal long LastFlushTicks;
 
 		/// <summary>
 		/// For finding hangs (OBNS_VULKAN_DEBUG=1): the step each thread is at, logged by a watchdog when frames stop
