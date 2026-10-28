@@ -201,6 +201,7 @@
     <Compile Include="Graphics\NewRenderer.cs" />
     <!-- OBNS: redundant GL state elimination (from the Android port). -->
     <Compile Include="Graphics\GLStateFilter.cs" />
+    <Compile Include="Graphics\GpuStats.cs" />
     <!-- OBNS: OBNS's options, and their rows in the options. -->
     <Compile Include="System\ObnsOptions.cs" />
     <Compile Include="UserInterface\formMain.Obns.cs">

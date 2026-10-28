@@ -94,6 +94,8 @@ namespace OpenBve.Graphics
 		{
 			// OBNS: the frame's parts timed for the frame statistics (OBNS_FRAMESTATS).
 			long sceneStart = System.Diagnostics.Stopwatch.GetTimestamp();
+			GpuStats.Mark(GpuStats.Point.FrameStart);
+			SceneLaps.Start();
 			ReleaseResources();
 			// initialize
 			ResetOpenGlState();
@@ -119,7 +121,9 @@ namespace OpenBve.Graphics
 				GL.ClearColor(Interface.CurrentOptions.ClearColor.R * inv255, Interface.CurrentOptions.ClearColor.G * inv255, Interface.CurrentOptions.ClearColor.B * inv255, 1.0f);
 			}
 
+			long clearStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+			long clearTicks = System.Diagnostics.Stopwatch.GetTimestamp() - clearStart;
 			
 			// set up camera and lighting early for shadows
 			CurrentViewMatrix = Matrix4D.LookAt(Vector3.Zero, new Vector3(Camera.AbsoluteDirection.X, Camera.AbsoluteDirection.Y, -Camera.AbsoluteDirection.Z), new Vector3(Camera.AbsoluteUp.X, Camera.AbsoluteUp.Y, -Camera.AbsoluteUp.Z));
@@ -169,10 +173,13 @@ namespace OpenBve.Graphics
 			// draws the background below; it is laid over the background where upstream draws the world layer.
 			bool vulkanWorld = Vulkan.VulkanWorld.Enabled && !ShadowsEnabled && !OptionWireFrame && !OptionNormals;
 			List<FaceState> vulkanOverlayOpaque = null, vulkanOverlayAlpha = null;
+			SceneLaps.Lap(0);
 			if (vulkanWorld)
 			{
 				StartVulkanWorld(out vulkanOverlayOpaque, out vulkanOverlayAlpha);
 			}
+
+			SceneLaps.Lap(1);
 
 			DefaultShader.Activate();
 			BindCSMToDefaultShader();
@@ -181,7 +188,10 @@ namespace OpenBve.Graphics
             // n.b. must disable shadows
             GL.Disable(EnableCap.DepthTest);
 			DefaultShader.SetShadowEnabled(false);
+			long backgroundStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			Program.CurrentRoute.UpdateBackground(TimeElapsed, Program.Renderer.CurrentInterface != InterfaceType.Normal);
+			long backgroundTicks = System.Diagnostics.Stopwatch.GetTimestamp() - backgroundStart;
+			GpuStats.Mark(GpuStats.Point.BackgroundDone);
 			DefaultShader.SetShadowEnabled(ShadowsEnabled);
 
 
@@ -222,6 +232,7 @@ namespace OpenBve.Graphics
 
             ResetOpenGlState();
 			long worldStart = System.Diagnostics.Stopwatch.GetTimestamp();
+			SceneLaps.Lap(2);
 			List<FaceState> overlayOpaqueFaces, overlayAlphaFaces;
 			if (vulkanWorld)
 			{
@@ -321,6 +332,8 @@ namespace OpenBve.Graphics
 			}
 
 			long worldEnd = System.Diagnostics.Stopwatch.GetTimestamp();
+			GpuStats.Mark(GpuStats.Point.WorldDone);
+			SceneLaps.Lap(3);
 
 			// motion blur
 			ResetOpenGlState();
@@ -376,6 +389,7 @@ namespace OpenBve.Graphics
 				}
 			}
 
+			SceneLaps.Lap(4);
 			// overlay (cab / interior) layer
 			Fog.Enabled = false;
 			UpdateViewport(ViewportChangeMode.ChangeToCab);
@@ -384,16 +398,20 @@ namespace OpenBve.Graphics
 			 * We must reset the shader between overlay and world layers for correct lighting results.
 			 * Additionally, the viewport change updates the projection matrix
 			 */
+			long resetStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			DefaultShader.Activate();
 			ResetShader(DefaultShader);
 			DefaultShader.SetCurrentProjectionMatrix(CurrentProjectionMatrix);
+			GpuStats.ResetShaderTicks += System.Diagnostics.Stopwatch.GetTimestamp() - resetStart;
 
             CurrentViewMatrix = Matrix4D.LookAt(Vector3.Zero, new Vector3(Camera.AbsoluteDirection.X, Camera.AbsoluteDirection.Y, -Camera.AbsoluteDirection.Z), new Vector3(Camera.AbsoluteUp.X, Camera.AbsoluteUp.Y, -Camera.AbsoluteUp.Z));
 			
 			if (Camera.CurrentRestriction == CameraRestrictionMode.NotAvailable || Camera.CurrentRestriction == CameraRestrictionMode.Restricted3D)
 			{
 				ResetOpenGlState(); // TODO: inserted
+				long depthClearStart = System.Diagnostics.Stopwatch.GetTimestamp();
 				GL.Clear(ClearBufferMask.DepthBufferBit);
+				GpuStats.DepthClearTicks += System.Diagnostics.Stopwatch.GetTimestamp() - depthClearStart;
 				OptionLighting = true;
 				Color24 prevOptionAmbientColor = Lighting.OptionAmbientColor;
 				Color24 prevOptionDiffuseColor = Lighting.OptionDiffuseColor;
@@ -494,6 +512,7 @@ namespace OpenBve.Graphics
 					face.Draw();
 				}
 			}
+			SceneLaps.Lap(5);
 			// render touch
 			OptionLighting = false;
 			Touch.RenderScene();
@@ -516,6 +535,44 @@ namespace OpenBve.Graphics
 			}
 			OptionLighting = true;
 			SceneParts.Add(worldStart - sceneStart, worldEnd - worldStart, System.Diagnostics.Stopwatch.GetTimestamp() - worldEnd);
+			GpuStats.Mark(GpuStats.Point.FrameEnd);
+			SceneLaps.Lap(6);
+			GpuStats.Cpu(clearTicks, backgroundTicks, vulkanWorld ? Vulkan.VulkanWorld.Instance.LastJoinTicks : 0, vulkanWorld ? Vulkan.VulkanWorld.Instance.LastFlushTicks : 0);
+		}
+
+		/// <summary>OBNS: RenderScene's time in finer parts (OBNS_GPUSTATS), for the log.</summary>
+		internal static class SceneLaps
+		{
+			private static readonly string[] names = { "setup", "Vulkan start", "shader and background", "world", "blur and particles", "cab layer", "touch and overlays" };
+			private static readonly long[] totals = new long[7];
+			private static long last, frames;
+
+			internal static void Start()
+			{
+				last = System.Diagnostics.Stopwatch.GetTimestamp();
+				frames++;
+			}
+
+			internal static void Lap(int part)
+			{
+				long now = System.Diagnostics.Stopwatch.GetTimestamp();
+				totals[part] += now - last;
+				last = now;
+			}
+
+			internal static string Take()
+			{
+				double f = Math.Max(1, frames), ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+				System.Text.StringBuilder text = new System.Text.StringBuilder("CPU parts:");
+				for (int i = 0; i < totals.Length; i++)
+				{
+					text.Append(' ').Append(names[i]).Append(' ').Append((totals[i] * ms / f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)).Append(i < totals.Length - 1 ? "," : " ms");
+					totals[i] = 0;
+				}
+
+				frames = 0;
+				return text.ToString();
+			}
 		}
 
 		/// <summary>OBNS: RenderScene's time before the world layer (background, fog), in it, and after it (cab, overlays), for the log.</summary>

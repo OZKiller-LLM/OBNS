@@ -41,21 +41,27 @@ layer to Vulkan, for macOS, is a later step that the 3D renderer is built not to
 
 ## The world renderer
 
-- **One copy on the GPU.** Vulkan and OpenGL share the vertex buffers and textures: Vulkan allocates device
-  memory in exportable blocks, which OpenGL imports once each (`GL_EXT_memory_object`), and upstream's vertex
-  buffers and textures are made over ranges of them (`glBufferStorageMemEXT`, `glTexStorageMem2DEXT`, in OBNS's
-  copies of LibRender2's `VertexBufferObject.cs` and `TextureManager.cs`). OpenGL writes them as upstream does
-  and draws with them as before (the cab, the background, and the whole world when Vulkan is not drawing it);
-  Vulkan reads the same memory. Separate copies were tried first: on the Tuen Ma Line OpenGL alone uses about
-  5.5 GB of an 8 GB card, and a second copy brought the driver down. Each frame OpenGL's semaphore signal names
-  the buffers and textures it has written since the last, which Vulkan then takes over.
+- **One copy on the GPU.** Vertex buffers are shared: Vulkan allocates device memory in exportable blocks,
+  which OpenGL imports once each (`GL_EXT_memory_object`), and upstream's vertex buffers are made over ranges
+  of them (`glBufferStorageMemEXT`, in OBNS's copy of LibRender2's `VertexBufferObject.cs`); OpenGL writes and
+  draws them as before, Vulkan reads the same memory, and each frame OpenGL's semaphore signal names the
+  buffers it has written. Textures are not shared: OpenGL drawing with textures over imported memory cost
+  2 ms or more a frame on the CPU (measured: it is the textures, not the buffers, and not the number of
+  blocks). Vulkan keeps its own copy of each texture the world draws, made from upstream's decode
+  (`TextureManager.ObnsDecoded` in OBNS's copy) and never uploaded to OpenGL, which keeps textures only for
+  what it draws itself (the cab, the background, the HUD); animated textures are animated by OpenGL and their
+  frames copied. Upstream's preloads go to Vulkan instead of OpenGL ("load textures in advance", and a
+  train's exterior; its cab still to OpenGL): with both copies, the Tuen Ma Line's SP1900 (hundreds of
+  destination display textures) filled the 8 GB card and the driver reset.
 - **Meshes.** Upstream gives each face corner its own vertex and draws a face as triangles, a strip, quads, a
   quad strip or a polygon. Vulkan has no quads or polygons, so each mesh gets a triangle index list of Vulkan's
   own over the shared vertices (fans for quads and polygons), made when upstream makes or updates its VAO (a hook
   in OBNS's copy of `VertexArrayObject.cs`).
-- **Textures.** RGB8 textures are kept as RGBA8 whose alpha reads as 1, and one-channel ones as R8 read as grey,
-  in both APIs (OpenGL's swizzle, Vulkan's view); all with full mipmap chains (OpenGL generates them). They are
-  in one bindless array (descriptor indexing) indexed by the draw.
+- **Textures.** RGBA8, converted as OpenGL keeps them (alpha 1 for textures used as opaque), mipmaps made on the
+  GPU (image blits); in one bindless array (descriptor indexing) indexed by the draw. Made when first drawn, a
+  few each frame (16 ms of the frame at most; one not made yet is drawn white for that frame), so a new view
+  does not hold the frame for seconds: a train's textures are made as they come into view (Vulkan's memory
+  cannot be paged out a texture at a time, as OpenGL's is, so textures never shown should not be made).
 - **Per-draw data.** Storage buffers a frame hold each object's model-view, normal and texture matrices and
   animation matrices, and each draw's material colours and flags, brightness, opacity, texture, sampler and
   alpha test; the shader reads its record by `gl_InstanceIndex` (the draw's `firstInstance`). Draws are

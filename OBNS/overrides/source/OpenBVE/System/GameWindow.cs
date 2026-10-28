@@ -677,7 +677,16 @@ namespace OpenBve
 
 			if (Interface.CurrentOptions.LoadInAdvance)
 			{
-				Program.Renderer.TextureManager.LoadAllTextures();
+				// OBNS: with the Vulkan world layer, the world's textures are loaded in advance by it, not by OpenGL: one
+				// copy of each on the GPU (OBNS/VULKAN.md).
+				if (OpenBve.Graphics.Vulkan.VulkanWorld.Enabled)
+				{
+					OpenBve.Graphics.Vulkan.VulkanWorld.Instance.Scene.Textures.LoadAll();
+				}
+				else
+				{
+					Program.Renderer.TextureManager.LoadAllTextures();
+				}
 			}
 			else
 			{
@@ -1065,7 +1074,16 @@ namespace OpenBve
 			World.InitializeCameraRestriction();
 			Loading.SimulationSetup = true;
 			Program.Renderer.CurrentInterface = InterfaceType.Normal;
-			TrainManager.PlayerTrain.PreloadTextures();
+			// OBNS: with the Vulkan world layer, the train's exterior textures are preloaded by it, not into OpenGL: one
+			// copy of each on the GPU (OBNS/VULKAN.md).
+			if (OpenBve.Graphics.Vulkan.VulkanWorld.Enabled)
+			{
+				OpenBve.Graphics.Vulkan.VulkanWorld.Instance.Scene.Textures.PreloadTrain(TrainManager.PlayerTrain);
+			}
+			else
+			{
+				TrainManager.PlayerTrain.PreloadTextures();
+			}
 			if (TrainManager.PlayerTrain.CurrentDirection == TrackDirection.Reverse)
 			{
 				Program.Renderer.Camera.Alignment.Yaw = 180 / 57.2957795130824;
@@ -1329,10 +1347,10 @@ namespace OpenBve
 				double ms(long ticks) => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames;
 				double span = (now - windowStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 				Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms; world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms ({12}), swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}; Vulkan world layer {11}",
+					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms; world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms ({12}), swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}; Vulkan world layer {11}; {13}; {14}",
 					frames, span / frames, frames * 1000.0 / span, worstFrame * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
 					ms(totals[(int)Part.WorldObjects]), ms(totals[(int)Part.TrainObjects]), ms(totals[(int)Part.Render]), ms(totals[(int)Part.Swap]), ms(totals[(int)Part.Other]),
-					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off", GLFilterSummary(), OpenBve.Graphics.Vulkan.VulkanWorld.Summary, NewRenderer.SceneParts.Take()));
+					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off", GLFilterSummary(), OpenBve.Graphics.Vulkan.VulkanWorld.Summary, NewRenderer.SceneParts.Take(), GpuStats.Take(), NewRenderer.SceneLaps.Take()));
 				Array.Clear(totals, 0, totals.Length);
 				frames = 0;
 				worstFrame = 0;

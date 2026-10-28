@@ -32,6 +32,12 @@ namespace OpenBve.Graphics.Vulkan
 
 		internal ulong Memory(int block) => memories[block];
 
+		/// <summary>A block size in bytes: the environment variable's megabytes if set (for measuring), else the default's.</summary>
+		internal static ulong BlockSize(string variable, int defaultMegabytes)
+		{
+			return (ulong)(int.TryParse(Environment.GetEnvironmentVariable(variable), out int megabytes) && megabytes > 0 ? megabytes : defaultMegabytes) << 20;
+		}
+
 		/// <summary>The block's OpenGL memory object.</summary>
 		internal int GLMemory(int block) => glMemories[block];
 

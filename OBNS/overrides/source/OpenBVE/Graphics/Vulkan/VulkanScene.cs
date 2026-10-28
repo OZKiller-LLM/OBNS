@@ -34,7 +34,7 @@ namespace OpenBve.Graphics.Vulkan
 			public fixed float ModelView[16];
 			public fixed float Normal[12];
 			public fixed float TextureMatrix[16];
-			public int MatrixBase, Pad0, Pad1, Pad2;
+			public int MatrixBase, Pad0, MatrixCount, Pad2;
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -516,6 +516,9 @@ namespace OpenBve.Graphics.Vulkan
 
 		private const float Inv255 = 1.0f / 255.0f;
 
+		/// <summary>For finding faults: textures made and uploaded, but drawn white (OBNS_VULKAN_WHITE=1).</summary>
+		private static readonly bool whiteOnly = Environment.GetEnvironmentVariable("OBNS_VULKAN_WHITE") == "1";
+
 		/// <summary>
 		/// The faces given, resolved on the main thread: what needs OpenGL or changes shared state (missing VAOs, textures
 		/// not loaded yet or animated, objects' lazily made model matrices), and each face's mesh, indices and textures'
@@ -523,6 +526,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// </summary>
 		internal void Prepare()
 		{
+			Textures.StartBudget();
 			ObjectState last = null;
 			for (int i = 0; i < itemCount; i++)
 			{
@@ -554,12 +558,10 @@ namespace OpenBve.Graphics.Vulkan
 
 				ref MeshMaterial material = ref mesh.Materials[item.Face.Material];
 				OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
-				EnsureLoaded(material.DaytimeTexture, wrap);
 				item.DayTexture = TextureIndex(material.DaytimeTexture, wrap, vulkanMesh.DaySlots, slot);
 				item.NightTexture = -1;
 				if (material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && BlendFactor(state) != 0)
 				{
-					EnsureLoaded(material.NighttimeTexture, wrap);
 					item.NightTexture = TextureIndex(material.NighttimeTexture, wrap, vulkanMesh.NightSlots, slot);
 				}
 
@@ -581,17 +583,6 @@ namespace OpenBve.Graphics.Vulkan
 
 			FrameWorkers.Shared.Run(chunkCount, buildChunks);
 			Merge();
-		}
-
-		/// <summary>Upstream's load for a texture not loaded yet (the first upload) or animated (its frames); else nothing to do.</summary>
-		private static void EnsureLoaded(Texture texture, OpenGlTextureWrapMode wrap)
-		{
-			if (texture != null && (!texture.OpenGlTextures[(int)wrap].Valid || texture.MultipleFrames))
-			{
-				// As upstream: through a copy of the handle, so the material is not changed.
-				Texture handle = texture;
-				Program.CurrentHost.LoadTexture(ref handle, wrap);
-			}
 		}
 
 		private float BlendFactor(ObjectState state)
@@ -681,7 +672,7 @@ namespace OpenBve.Graphics.Vulkan
 			draw.EmissionB = material.EmissiveColor.B * Inv255;
 
 			// Daytime texture, else white.
-			draw.Texture = item.DayTexture >= 0 ? item.DayTexture : VulkanTextures.White;
+			draw.Texture = item.DayTexture >= 0 && !whiteOnly ? item.DayTexture : VulkanTextures.White;
 
 			Blend blend = pass.Blend;
 			bool additive = material.BlendMode == MeshMaterialBlendMode.Additive;
@@ -714,7 +705,7 @@ namespace OpenBve.Graphics.Vulkan
 			// Nighttime texture, blended over the daytime one.
 			if (blendFactor != 0 && item.NightTexture >= 0)
 			{
-				draw.Texture = item.NightTexture;
+				draw.Texture = whiteOnly ? VulkanTextures.White : item.NightTexture;
 				draw.AlphaFunction = AlphaGreater;
 				draw.AlphaReference = 0.0f;
 				draw.Opacity = Inv255 * material.Color.A * distanceFactor * blendFactor;
@@ -723,8 +714,9 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		/// <summary>
-		/// A loaded texture's place in the bindless array (Prepare has loaded what needed it), or -1 if it is not loaded.
-		/// The place is kept per face, for as long as it is the same OpenGL texture and nothing has moved.
+		/// A texture's place in the bindless array (made the first time it is needed; main thread), or -1 if it cannot be
+		/// made. The place is kept per face, for as long as it is the same texture and nothing has moved; an animated
+		/// texture is asked for every frame (which advances it).
 		/// </summary>
 		private int TextureIndex(Texture texture, OpenGlTextureWrapMode wrap, TextureSlot[] slots, int slot)
 		{
@@ -733,21 +725,21 @@ namespace OpenBve.Graphics.Vulkan
 				return -1;
 			}
 
-			OpenGlTexture gl = texture.OpenGlTextures[(int)wrap];
-			if (!gl.Valid)
+			TextureSlot cached = slots[slot];
+			if (cached != null && ReferenceEquals(cached.Texture, texture) && cached.Generation == Textures.Generation)
 			{
+				return cached.Index;
+			}
+
+			int index = Textures.Prepare(texture, wrap, out bool animated);
+			if (index == VulkanTextures.Later)
+			{
+				// Not made yet (the frame's budget is spent): white this frame, asked for again next frame.
 				return -1;
 			}
 
-			int generation = Textures.Generation;
-			TextureSlot cached = slots[slot];
-			if (cached == null || !ReferenceEquals(cached.Texture, gl) || cached.Generation != generation)
-			{
-				cached = new TextureSlot(gl, Textures.IndexOf(gl), generation);
-				slots[slot] = cached;
-			}
-
-			return cached.Index;
+			slots[slot] = animated ? null : new TextureSlot(texture, index, Textures.Generation);
+			return index;
 		}
 
 		private int AddObject(Chunk chunk, ObjectState state, Matrix4D modelView)
@@ -782,6 +774,7 @@ namespace OpenBve.Graphics.Vulkan
 				// Pad0 marks an object with animation matrices: their base is moved when the chunks are merged.
 				data.MatrixBase = chunk.MatrixCount;
 				data.Pad0 = 1;
+				data.MatrixCount = animation.Length;
 				int needed = (chunk.MatrixCount + animation.Length) * 16;
 				if (needed > chunk.Matrices.Length)
 				{

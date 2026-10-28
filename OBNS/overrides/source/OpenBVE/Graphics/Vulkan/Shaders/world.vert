@@ -25,7 +25,9 @@ struct Object
 	vec4 normal0, normal1, normal2; // the normal matrix's columns
 	mat4 textureMatrix;
 	int matrixBase;                 // the object's animation matrices in the frame's matrix buffer
-	int pad0, pad1, pad2;
+	int matrixFlag;                 // (the CPU's: whether the base is moved when its records are merged)
+	int matrixCount;                // how many: a chain's indices beyond them are skipped (the buffer ends there)
+	int pad2;
 };
 
 struct Draw
@@ -81,7 +83,7 @@ vec3 transformVector(vec3 v, int m)
 	            v.x * a[0].z + v.y * a[1].z + v.z * a[2].z + a[3].z);
 }
 
-vec3 applyChain(vec3 pos, int chain, int base)
+vec3 applyChain(vec3 pos, int chain, int base, int count)
 {
 	if (chain != 0)
 	{
@@ -90,10 +92,10 @@ vec3 applyChain(vec3 pos, int chain, int base)
 		int m1 = (chain >> 16) & 0xff;
 		int m2 = (chain & 0xff00) >> 8;
 		int m3 = chain & 0xff;
-		if (m0 >= 0 && m0 < 255) pos = transformVector(pos, base + m0);
-		if (m1 >= 0 && m1 < 255) pos = transformVector(pos, base + m1);
-		if (m2 >= 0 && m2 < 255) pos = transformVector(pos, base + m2);
-		if (m3 >= 0 && m3 < 255) pos = transformVector(pos, base + m3);
+		if (m0 >= 0 && m0 < 255 && m0 < count) pos = transformVector(pos, base + m0);
+		if (m1 >= 0 && m1 < 255 && m1 < count) pos = transformVector(pos, base + m1);
+		if (m2 >= 0 && m2 < 255 && m2 < count) pos = transformVector(pos, base + m2);
+		if (m3 >= 0 && m3 < 255 && m3 < count) pos = transformVector(pos, base + m3);
 	}
 
 	return pos;
@@ -108,9 +110,9 @@ void main()
 
 	vec3 pos = iPosition;
 	oColor = iColor;
-	pos = applyChain(pos, iMatrixChain.x, o.matrixBase);
-	pos = applyChain(pos, iMatrixChain.y, o.matrixBase);
-	pos = applyChain(pos, iMatrixChain.z, o.matrixBase);
+	pos = applyChain(pos, iMatrixChain.x, o.matrixBase, o.matrixCount);
+	pos = applyChain(pos, iMatrixChain.y, o.matrixBase, o.matrixCount);
+	pos = applyChain(pos, iMatrixChain.z, o.matrixBase, o.matrixCount);
 	pos.z = -pos.z;
 
 	oViewPos = o.modelView * vec4(pos, 1.0);

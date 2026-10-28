@@ -16,8 +16,15 @@ namespace OpenBve.Graphics.Vulkan
 		internal IntPtr Queue { get; private set; }
 		internal uint QueueFamily { get; private set; }
 
+		/// <summary>Held while submitting to the queue: the frame's thread and the main thread (uploads) both submit.</summary>
+		internal readonly object QueueLock = new object();
+
 		/// <summary>The device's name and Vulkan version, for the log.</summary>
 		internal string Description { get; private set; }
+
+		/// <summary>Nanoseconds per timestamp tick (VkPhysicalDeviceLimits.timestampPeriod), and whether the queue has timestamps.</summary>
+		internal float TimestampPeriod { get; private set; }
+		internal bool Timestamps { get; private set; }
 
 		internal Vk.GetMemoryWin32HandleKHR GetMemoryWin32Handle { get; private set; }
 		internal Vk.GetSemaphoreWin32HandleKHR GetSemaphoreWin32Handle { get; private set; }
@@ -116,6 +123,8 @@ namespace OpenBve.Graphics.Vulkan
 				{
 					PhysicalDevice = devices[i];
 					Description = deviceName + ", Vulkan " + VersionText(properties.Properties.ApiVersion);
+					// timestampPeriod: 428 bytes into the limits as they are kept here (720 into VkPhysicalDeviceProperties).
+					TimestampPeriod = *(float*)(properties.Properties.LimitsAndSparseProperties + 428);
 					if (properties.Properties.ApiVersion < Vk.MakeVersion(1, 3, 0))
 					{
 						return deviceName + " has Vulkan " + VersionText(properties.Properties.ApiVersion) + "; 1.3 is needed";
@@ -202,6 +211,7 @@ namespace OpenBve.Graphics.Vulkan
 				if ((families[i].QueueFlags & Vk.QueueGraphics) != 0)
 				{
 					QueueFamily = i;
+					Timestamps = families[i].TimestampValidBits != 0;
 					break;
 				}
 			}

@@ -1,10 +1,12 @@
-// OBNS: not an upstream file. The Vulkan world layer's textures (OBNS/VULKAN.md): the images upstream's textures are
-// stored in, shared with OpenGL (which writes them as upstream does), in one bindless array the draws index.
+// OBNS: not an upstream file. The Vulkan world layer's textures (OBNS/VULKAN.md): its own copy of each texture the
+// world uses, made from upstream's decode (not uploaded to OpenGL, which keeps textures only for what it draws), in one
+// bindless array the draws index.
 
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using LibRender2;
+using LibRender2.Textures;
+using OpenBveApi.Colors;
 using OpenBveApi.Graphics;
 using OpenBveApi.Textures;
 
@@ -23,30 +25,41 @@ namespace OpenBve.Graphics.Vulkan
 			internal int Index;
 			internal ulong Image, View;
 			internal GpuRange Memory;
-			internal uint Levels;
+			internal uint Width, Height, Levels;
 			internal long FreedAt;
-			internal OpenGlTexture Key;
+			/// <summary>Could not be made (its decode failed): drawn white, not tried again.</summary>
+			internal bool Failed;
+			/// <summary>Animated: OpenGL loads and animates it, and each frame is copied here.</summary>
+			internal bool Animated;
 		}
 
-		/// <summary>Compares texture objects by reference (they are keys for as long as OpenGL has them).</summary>
-		private sealed class ReferenceComparer : IEqualityComparer<OpenGlTexture>
+		/// <summary>Compares textures by reference (the handles the materials hold).</summary>
+		private sealed class ReferenceComparer : IEqualityComparer<Texture>
 		{
-			public bool Equals(OpenGlTexture a, OpenGlTexture b) => ReferenceEquals(a, b);
-			public int GetHashCode(OpenGlTexture texture) => RuntimeHelpers.GetHashCode(texture);
+			public bool Equals(Texture a, Texture b) => ReferenceEquals(a, b);
+			public int GetHashCode(Texture texture) => RuntimeHelpers.GetHashCode(texture);
 		}
 
 		private readonly VulkanDevice device;
-		private readonly SharedHeap heap;
-		private readonly Dictionary<OpenGlTexture, Entry> entries = new Dictionary<OpenGlTexture, Entry>(new ReferenceComparer());
+		private readonly Uploader uploader;
+		private readonly GpuPool memory;
+		private readonly Dictionary<Texture, Entry> entries = new Dictionary<Texture, Entry>(new ReferenceComparer());
 		private readonly Stack<int> freeIndices = new Stack<int>();
 		private readonly List<Entry> freed = new List<Entry>();
 		private int nextIndex = 1;
 		private long frame = 1;
 		private Entry white;
-		private uint imageTypeBits;
+		private long pixelBytes;
 
-		/// <summary>Textures OpenGL has written since they were last handed over to Vulkan.</summary>
-		private readonly HashSet<Entry> written = new HashSet<Entry>();
+		/// <summary>For finding faults: textures uploaded without mipmaps (OBNS_VULKAN_NOMIPS=1).</summary>
+		private static readonly bool noMipmaps = Environment.GetEnvironmentVariable("OBNS_VULKAN_NOMIPS") == "1";
+
+		/// <summary>For finding faults: each texture made, logged (OBNS_VULKAN_DEBUG=1).</summary>
+		private static readonly bool levelZeroOnly = Environment.GetEnvironmentVariable("OBNS_VULKAN_LEVEL0") == "1";
+
+		private static readonly bool skipHuge = Environment.GetEnvironmentVariable("OBNS_VULKAN_SKIPHUGE") == "1";
+
+		private static readonly bool logTextures = Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1";
 
 		private readonly ulong[] descriptorSets;
 		private readonly uint textureBinding;
@@ -54,14 +67,20 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>The samplers by OpenGL wrap mode (ClampClamp, ClampRepeat, RepeatClamp, RepeatRepeat).</summary>
 		internal readonly ulong[] Samplers = new ulong[4];
 
+		/// <summary>Changes whenever a texture's place in the array may have changed (one made, deleted or unloaded).</summary>
+		internal int Generation { get; private set; } = 1;
+
 		internal VulkanTextures(VulkanDevice device, Uploader uploader, ulong[] descriptorSets, uint textureBinding, InterpolationMode interpolation, int anisotropy)
 		{
 			this.device = device;
+			this.uploader = uploader;
 			this.descriptorSets = descriptorSets;
 			this.textureBinding = textureBinding;
-			heap = new SharedHeap(device, 256UL << 20, 0, "textures");
+			// (OBNS_VULKAN_DEDICATED=1, for finding faults: each texture in an allocation of its own.)
+			memory = new GpuPool(device, Environment.GetEnvironmentVariable("OBNS_VULKAN_DEDICATED") == "1" ? 1UL : 256UL << 20, 0, "textures");
 			CreateSamplers(interpolation, anisotropy);
-			CreateWhite(uploader);
+			white = new Entry { Index = White };
+			Upload(white, 1, 1, new byte[] { 255, 255, 255, 255 });
 		}
 
 		private void CreateSamplers(InterpolationMode interpolation, int anisotropy)
@@ -109,50 +128,262 @@ namespace OpenBve.Graphics.Vulkan
 			}
 		}
 
-		/// <summary>The white texture: Vulkan's own (OpenGL has its white pixel), cleared to white.</summary>
-		private void CreateWhite(Uploader uploader)
+		/// <summary>The place given for a texture not made yet because the frame's budget is spent: drawn white, asked for again.</summary>
+		internal const int Later = -2;
+
+		// The frame's budget for making textures: decoding and uploading many at once (a new view) held the main thread
+		// for seconds, and with OpenGL and Vulkan exchanging frames meanwhile the driver was reset (OBNS/VULKAN.md).
+		private static readonly double BudgetMilliseconds = double.TryParse(Environment.GetEnvironmentVariable("OBNS_VULKAN_BUDGET_MS"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ms) ? ms : 16.0;
+		private static readonly long BudgetBytes = (long.TryParse(Environment.GetEnvironmentVariable("OBNS_VULKAN_BUDGET_MB"), out long mb) ? mb : 64L) << 20;
+		private long budgetStart, budgetBytes;
+
+		/// <summary>Starts a frame's budget for making textures.</summary>
+		internal void StartBudget()
 		{
-			white = new Entry { Index = White, Levels = 1 };
-			CreateImage(white, 1, 1, false, false, true);
-			byte* pixel = stackalloc byte[4];
-			pixel[0] = pixel[1] = pixel[2] = pixel[3] = 255;
-			ulong staging = uploader.Stage(pixel, 4, out ulong offset);
-			IntPtr commands = uploader.Commands;
-			Vk.ImageMemoryBarrier toTransfer = Barrier(white, 0, Vk.AccessTransferWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutTransferDstOptimal);
-			Vk.vkCmdPipelineBarrier(commands, Vk.PipelineStageTopOfPipe, Vk.PipelineStageTransfer, 0, 0, null, 0, null, 1, &toTransfer);
-			Vk.BufferImageCopy copy = new Vk.BufferImageCopy
-			{
-				BufferOffset = offset,
-				ImageSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, LayerCount = 1 },
-				ImageExtent = new Vk.Extent3D { Width = 1, Height = 1, Depth = 1 }
-			};
-			Vk.vkCmdCopyBufferToImage(commands, staging, white.Image, Vk.ImageLayoutTransferDstOptimal, 1, &copy);
-			Vk.ImageMemoryBarrier toRead = Barrier(white, Vk.AccessTransferWrite, Vk.AccessShaderRead, Vk.ImageLayoutTransferDstOptimal, Vk.ImageLayoutShaderReadOnlyOptimal);
-			Vk.vkCmdPipelineBarrier(commands, Vk.PipelineStageTransfer, Vk.PipelineStageFragmentShader, 0, 0, null, 0, null, 1, &toRead);
-			WriteDescriptor(white);
+			budgetStart = System.Diagnostics.Stopwatch.GetTimestamp();
+			budgetBytes = 0;
 		}
 
-		/// <summary>Changes whenever a texture's place in the array may have changed (one deleted or made again).</summary>
-		internal int Generation { get; private set; } = 1;
+		/// <summary>Whether textures are being made in advance (LoadAll): the whole load, no budget.</summary>
+		private bool loadingAll;
 
-		/// <summary>The array index of a texture OpenGL has, or the white texture's if it has none here.</summary>
-		internal int IndexOf(OpenGlTexture texture)
+		private bool BudgetSpent => !loadingAll && budgetBytes >= BudgetBytes || !loadingAll && (System.Diagnostics.Stopwatch.GetTimestamp() - budgetStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency >= BudgetMilliseconds;
+
+		/// <summary>
+		/// A texture's place in the bindless array, made the first time (main thread): from upstream's decode for a still
+		/// texture; through OpenGL for an animated one (OpenGL animates it, and its frames are copied here, so it is loaded
+		/// every frame, which advances it). -1 if it cannot be made; Later if the frame's budget is spent. Whether it is
+		/// animated is returned too.
+		/// </summary>
+		internal int Prepare(Texture texture, OpenGlTextureWrapMode wrap, out bool animated)
 		{
-			return texture != null && entries.TryGetValue(texture, out Entry entry) ? entry.Index : White;
+			animated = false;
+			if (texture == null)
+			{
+				return -1;
+			}
+
+			if (entries.TryGetValue(texture, out Entry entry) && !entry.Animated)
+			{
+				return entry.Failed ? -1 : entry.Index;
+			}
+
+			if (entry == null && BudgetSpent)
+			{
+				return Later;
+			}
+
+			if (entry == null && !texture.MultipleFrames)
+			{
+				TextureManager manager = Program.Renderer.TextureManager;
+				bool decodedHere = manager.ObnsDecoded(texture, out Texture decoded);
+				if (decodedHere && skipHuge && Math.Max(decoded.Width, decoded.Height) > 8192)
+				{
+					entries[texture] = new Entry { Index = -1, Failed = true };
+					return -1;
+				}
+
+				if (decodedHere)
+				{
+					TextureTransparencyType transparency = decoded.GetTransparencyType();
+					texture.Transparency = transparency;
+					byte[] rgba = ToRgba(decoded, decoded.Bytes, transparency == TextureTransparencyType.Opaque);
+					if (rgba != null)
+					{
+						entry = NewEntry(texture);
+						if (entry != null)
+						{
+							Upload(entry, (uint)decoded.Width, (uint)decoded.Height, rgba);
+						}
+					}
+
+					manager.ObnsReleaseDecoded(texture, decoded);
+					if (entry != null)
+					{
+						return entry.Index;
+					}
+				}
+			}
+
+			// Animated (or not decodable here): upstream's load, through OpenGL; its frames come back to AnimatedFrame.
+			Texture handle = texture;
+			bool loaded = Program.CurrentHost.LoadTexture(ref handle, wrap);
+			if (entries.TryGetValue(texture, out entry) && entry.Animated)
+			{
+				animated = true;
+				return entry.Index;
+			}
+
+			if (!loaded || !entries.ContainsKey(texture))
+			{
+				// Drawn white from now on (as OpenGL does with a texture it cannot load).
+				entries[texture] = new Entry { Index = -1, Failed = true };
+			}
+
+			return -1;
 		}
 
 		/// <summary>
-		/// Storage for a texture OpenGL is about to make: an image in the shared heap (its format and swizzle as OpenGL
-		/// will have them), which OpenGL then makes its texture over and writes. Null to leave it to OpenGL alone.
+		/// Upstream's "load textures in advance" when Vulkan draws the world: every registered texture made here (one copy
+		/// each; OpenGL loads only what it draws itself, as it comes to it), rather than all of them uploaded to OpenGL.
 		/// </summary>
-		internal ObnsSharedMemory Allocate(OpenGlTexture key, int width, int height, int levels, bool r8, bool alphaOne)
+		internal void LoadAll()
 		{
-			if (key == null || width <= 0 || height <= 0)
+			Texture[] registered = TextureManager.RegisteredTextures;
+			int count = Math.Min(Program.Renderer.TextureManager.RegisteredTexturesCount, registered?.Length ?? 0);
+			loadingAll = true;
+			try
 			{
-				return null;
+				for (int i = 0; i < count; i++)
+				{
+					Texture texture = registered[i];
+					for (int wrap = 0; texture != null && wrap < 4; wrap++)
+					{
+						if (texture.OpenGlTextures[wrap].Used)
+						{
+							Prepare(texture, (OpenGlTextureWrapMode)wrap, out bool _);
+							break;
+						}
+					}
+				}
+			}
+			finally
+			{
+				loadingAll = false;
 			}
 
-			Deleted(key);
+			uploader.Submit(true);
+		}
+
+		/// <summary>
+		/// Upstream's train texture preload (TrainBase.PreloadTextures) when Vulkan draws the world: for the exterior, the
+		/// wrap modes upstream works out (AnimatedObject.LoadTextures), its textures made when first drawn (a train may
+		/// have hundreds it seldom shows, such as destination displays; OpenGL can page those out of video memory, but
+		/// Vulkan's would stay in it); the cab's (interior and head-out views, which OpenGL draws) preloaded into OpenGL
+		/// as upstream does.
+		/// </summary>
+		internal void PreloadTrain(global::TrainManager.Trains.TrainBase train)
+		{
+			{
+				foreach (global::TrainManager.Car.CarBase car in train.Cars)
+				{
+					foreach (System.Collections.Generic.KeyValuePair<LibRender2.Trains.CarSectionType, LibRender2.Trains.CarSection> section in car.CarSections)
+					{
+						foreach (LibRender2.Trains.ElementsGroup group in section.Value.Groups)
+						{
+							if (section.Key != LibRender2.Trains.CarSectionType.Exterior)
+							{
+								group.PreloadTextures();
+								continue;
+							}
+
+							foreach (OpenBveApi.Objects.AnimatedObject element in group.Elements)
+							{
+								PreloadObject(element);
+							}
+						}
+					}
+				}
+			}
+		}
+
+		/// <summary>AnimatedObject.LoadTextures (upstream) without the loads: the wrap modes, and the textures kept loaded.</summary>
+		private void PreloadObject(OpenBveApi.Objects.AnimatedObject element)
+		{
+			foreach (OpenBveApi.Objects.ObjectState state in element.States)
+			{
+				if (state.Prototype?.Mesh == null)
+				{
+					continue;
+				}
+
+				OpenBveApi.Objects.Mesh mesh = state.Prototype.Mesh;
+				foreach (OpenBveApi.Objects.MeshFace face in mesh.Faces)
+				{
+					ref OpenBveApi.Objects.MeshMaterial material = ref mesh.Materials[face.Material];
+					if (material.DaytimeTexture == null && material.NighttimeTexture == null)
+					{
+						continue;
+					}
+
+					OpenGlTextureWrapMode wrap = OpenGlTextureWrapMode.ClampClamp;
+					if (material.WrapMode == null)
+					{
+						// As upstream: repeated where the coordinates go beyond the texture.
+						foreach (OpenBveApi.Objects.VertexTemplate vertex in mesh.Vertices)
+						{
+							if (vertex.TextureCoordinates.X < 0.0f || vertex.TextureCoordinates.X > 1.0f)
+							{
+								wrap |= OpenGlTextureWrapMode.RepeatClamp;
+							}
+
+							if (vertex.TextureCoordinates.Y < 0.0f || vertex.TextureCoordinates.Y > 1.0f)
+							{
+								wrap |= OpenGlTextureWrapMode.ClampRepeat;
+							}
+
+							if (wrap == OpenGlTextureWrapMode.RepeatRepeat)
+							{
+								break;
+							}
+						}
+					}
+					else
+					{
+						wrap = material.WrapMode.Value;
+					}
+
+					material.WrapMode = wrap;
+					if (material.DaytimeTexture != null)
+					{
+						material.DaytimeTexture.AvailableToUnload = false;
+					}
+
+					if (material.NighttimeTexture != null)
+					{
+						material.NighttimeTexture.AvailableToUnload = false;
+					}
+				}
+			}
+		}
+
+		/// <summary>An animated texture's frame, uploaded to OpenGL: copied here (its first frame makes its entry).</summary>
+		internal void AnimatedFrame(Texture handle, Texture decoded, byte[] bytes, bool opaque)
+		{
+			if (handle == null || decoded == null || bytes == null || decoded.Width <= 0 || decoded.Height <= 0)
+			{
+				return;
+			}
+
+			byte[] rgba = ToRgba(decoded, bytes, opaque);
+			if (rgba == null)
+			{
+				return;
+			}
+
+			uint width = (uint)decoded.Width, height = (uint)decoded.Height;
+			if (entries.TryGetValue(handle, out Entry entry) && (entry.Failed || entry.Width != width || entry.Height != height))
+			{
+				Unloading(handle);
+				entry = null;
+			}
+
+			if (entry == null)
+			{
+				entry = NewEntry(handle);
+				if (entry == null)
+				{
+					return;
+				}
+
+				entry.Animated = true;
+			}
+
+			Upload(entry, width, height, rgba);
+		}
+
+		private Entry NewEntry(Texture texture)
+		{
 			int index = freeIndices.Count > 0 ? freeIndices.Pop() : nextIndex;
 			if (index >= Capacity)
 			{
@@ -164,122 +395,24 @@ namespace OpenBve.Graphics.Vulkan
 				nextIndex++;
 			}
 
-			Entry entry = new Entry { Index = index, Levels = (uint)levels, Key = key };
-			pixelBytes += (long)width * height * (r8 ? 1 : 4) * 4 / 3;
-			CreateImage(entry, (uint)width, (uint)height, r8, alphaOne, true);
-			WriteDescriptor(entry);
-			entries[key] = entry;
+			Entry entry = new Entry { Index = index };
+			entries[texture] = entry;
 			Generation++;
-			return new ObnsSharedMemory { GLMemory = heap.GLMemory(entry.Memory.Block), Offset = entry.Memory.Offset, Owner = entry };
+			return entry;
 		}
 
-		private void CreateImage(Entry entry, uint width, uint height, bool r8, bool alphaOne, bool shared)
+		/// <summary>Upstream is unloading a texture: its copy goes once the frames in flight are done with it.</summary>
+		internal void Unloading(Texture texture)
 		{
-			Vk.ExternalMemoryImageCreateInfo external = new Vk.ExternalMemoryImageCreateInfo
+			if (texture != null && entries.TryGetValue(texture, out Entry entry))
 			{
-				SType = Vk.StructureTypeExternalMemoryImageCreateInfo,
-				HandleTypes = Vk.ExternalMemoryHandleTypeOpaqueWin32
-			};
-			uint format = r8 ? Vk.FormatR8Unorm : Vk.FormatR8G8B8A8Unorm;
-			Vk.ImageCreateInfo imageInfo = new Vk.ImageCreateInfo
-			{
-				SType = Vk.StructureTypeImageCreateInfo,
-				PNext = shared ? &external : null,
-				ImageType = 1,
-				Format = format,
-				Extent = new Vk.Extent3D { Width = width, Height = height, Depth = 1 },
-				MipLevels = entry.Levels,
-				ArrayLayers = 1,
-				Samples = 1,
-				// What OpenGL may do with a texture: sample, copy, and render into (mipmap generation).
-				Usage = Vk.ImageUsageSampled | Vk.ImageUsageTransferSrc | Vk.ImageUsageTransferDst | Vk.ImageUsageColorAttachment,
-				InitialLayout = Vk.ImageLayoutUndefined
-			};
-			Vk.Check(Vk.vkCreateImage(device.Device, &imageInfo, null, out entry.Image), "vkCreateImage (texture)");
-			Vk.vkGetImageMemoryRequirements(device.Device, entry.Image, out Vk.MemoryRequirements requirements);
-			if (imageTypeBits == 0)
-			{
-				imageTypeBits = requirements.MemoryTypeBits;
-			}
-
-			entry.Memory = heap.Allocate(requirements.Size, requirements.Alignment, requirements.MemoryTypeBits);
-			Vk.Check(Vk.vkBindImageMemory(device.Device, entry.Image, heap.Memory(entry.Memory.Block), entry.Memory.Offset), "vkBindImageMemory (texture)");
-			// As OpenGL samples it: one channel as grey (upstream's swizzle), and RGB8 textures (kept as RGBA8) opaque.
-			Vk.ComponentMapping mapping = r8
-				? new Vk.ComponentMapping { R = Vk.ComponentSwizzleR, G = Vk.ComponentSwizzleR, B = Vk.ComponentSwizzleR, A = Vk.ComponentSwizzleOne }
-				: new Vk.ComponentMapping { A = alphaOne ? Vk.ComponentSwizzleOne : Vk.ComponentSwizzleIdentity };
-			Vk.ImageViewCreateInfo viewInfo = new Vk.ImageViewCreateInfo
-			{
-				SType = Vk.StructureTypeImageViewCreateInfo,
-				Image = entry.Image,
-				ViewType = 1,
-				Format = format,
-				Components = mapping,
-				SubresourceRange = new Vk.ImageSubresourceRange { AspectMask = Vk.ImageAspectColor, LevelCount = entry.Levels, LayerCount = 1 }
-			};
-			Vk.Check(Vk.vkCreateImageView(device.Device, &viewInfo, null, out entry.View), "vkCreateImageView (texture)");
-		}
-
-		/// <summary>OpenGL has written a texture (it is handed over at the next frame).</summary>
-		internal void Written(OpenGlTexture key)
-		{
-			if (key != null && entries.TryGetValue(key, out Entry entry))
-			{
-				written.Add(entry);
-			}
-		}
-
-		/// <summary>
-		/// The textures written since the last frame, handed over now: their OpenGL names added for OpenGL's semaphore
-		/// signal, and the textures returned for the frame's barriers (made on another thread); then forgotten.
-		/// </summary>
-		internal List<Entry> TakeWritten(List<int> names)
-		{
-			List<Entry> taken = new List<Entry>(written.Count);
-			foreach (Entry entry in written)
-			{
-				names.Add(entry.Key.Name);
-				taken.Add(entry);
-			}
-
-			written.Clear();
-			return taken;
-		}
-
-		/// <summary>Records taking textures handed over by OpenGL (in the layout it signalled them in).</summary>
-		internal void AcquireWritten(IntPtr commandBuffer, List<Entry> handed)
-		{
-			if (handed == null || handed.Count == 0)
-			{
-				return;
-			}
-
-			Vk.ImageMemoryBarrier[] barriers = new Vk.ImageMemoryBarrier[handed.Count];
-			int i = 0;
-			foreach (Entry entry in handed)
-			{
-				Vk.ImageMemoryBarrier barrier = Barrier(entry, 0, Vk.AccessShaderRead, Vk.ImageLayoutShaderReadOnlyOptimal, Vk.ImageLayoutShaderReadOnlyOptimal);
-				barrier.SrcQueueFamilyIndex = Vk.QueueFamilyExternal;
-				barrier.DstQueueFamilyIndex = device.QueueFamily;
-				barriers[i++] = barrier;
-			}
-
-			fixed (Vk.ImageMemoryBarrier* data = barriers)
-			{
-				Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTopOfPipe, Vk.PipelineStageFragmentShader, 0, 0, null, 0, null, (uint)barriers.Length, data);
-			}
-		}
-
-		/// <summary>OpenGL has deleted a texture: its image goes once the frames in flight are done with it.</summary>
-		internal void Deleted(OpenGlTexture key)
-		{
-			if (key != null && entries.TryGetValue(key, out Entry entry))
-			{
-				entries.Remove(key);
-				written.Remove(entry);
+				entries.Remove(texture);
 				Generation++;
-				entry.FreedAt = frame;
-				freed.Add(entry);
+				if (!entry.Failed)
+				{
+					entry.FreedAt = frame;
+					freed.Add(entry);
+				}
 			}
 		}
 
@@ -299,7 +432,186 @@ namespace OpenBve.Graphics.Vulkan
 			}
 		}
 
-		private static Vk.ImageMemoryBarrier Barrier(Entry entry, uint srcAccess, uint dstAccess, uint oldLayout, uint newLayout)
+		/// <summary>The pixels as RGBA, as upstream's upload has OpenGL keep them (alpha 255 for textures used as opaque).</summary>
+		private static byte[] ToRgba(Texture texture, byte[] bytes, bool opaque)
+		{
+			if (bytes == null)
+			{
+				return null;
+			}
+
+			int count = texture.Width * texture.Height;
+			byte[] rgba = new byte[count * 4];
+			switch (texture.PixelFormat)
+			{
+				case PixelFormat.RGBAlpha:
+					if (bytes.Length < count * 4) return null;
+					Buffer.BlockCopy(bytes, 0, rgba, 0, count * 4);
+					if (opaque)
+					{
+						for (int p = 3; p < rgba.Length; p += 4) rgba[p] = 255;
+					}
+
+					break;
+				case PixelFormat.RGB:
+					if (bytes.Length < count * 3) return null;
+					for (int p = 0; p < count; p++)
+					{
+						rgba[p * 4] = bytes[p * 3];
+						rgba[p * 4 + 1] = bytes[p * 3 + 1];
+						rgba[p * 4 + 2] = bytes[p * 3 + 2];
+						rgba[p * 4 + 3] = 255;
+					}
+
+					break;
+				case PixelFormat.Paletted:
+					if (bytes.Length < count) return null;
+					Color32[] palette = texture.Palette32;
+					for (int p = 0; p < count; p++)
+					{
+						int index = bytes[p];
+						Color32 c = palette != null && index < palette.Length ? palette[index] : new Color32(0, 0, 0, 255);
+						rgba[p * 4] = c.R;
+						rgba[p * 4 + 1] = c.G;
+						rgba[p * 4 + 2] = c.B;
+						rgba[p * 4 + 3] = opaque ? (byte)255 : c.A;
+					}
+
+					break;
+				case PixelFormat.Grayscale:
+					if (bytes.Length < count) return null;
+					for (int p = 0; p < count; p++)
+					{
+						rgba[p * 4] = rgba[p * 4 + 1] = rgba[p * 4 + 2] = bytes[p];
+						rgba[p * 4 + 3] = 255;
+					}
+
+					break;
+				case PixelFormat.GrayscaleAlpha:
+					if (bytes.Length < count * 2) return null;
+					for (int p = 0; p < count; p++)
+					{
+						rgba[p * 4] = rgba[p * 4 + 1] = rgba[p * 4 + 2] = bytes[p * 2];
+						rgba[p * 4 + 3] = opaque ? (byte)255 : bytes[p * 2 + 1];
+					}
+
+					break;
+				default:
+					return null;
+			}
+
+			return rgba;
+		}
+
+		/// <summary>Uploads the pixels with every mipmap level (made on the GPU), making the image the first time.</summary>
+		private void Upload(Entry entry, uint width, uint height, byte[] rgba)
+		{
+			bool created = entry.Image == 0;
+			if (created)
+			{
+				entry.Width = width;
+				entry.Height = height;
+				entry.Levels = 1;
+				for (uint size = Math.Max(width, height); size > 1 && !noMipmaps; size >>= 1)
+				{
+					entry.Levels++;
+				}
+
+				Vk.ImageCreateInfo imageInfo = new Vk.ImageCreateInfo
+				{
+					SType = Vk.StructureTypeImageCreateInfo,
+					ImageType = 1,
+					Format = Vk.FormatR8G8B8A8Unorm,
+					Extent = new Vk.Extent3D { Width = width, Height = height, Depth = 1 },
+					MipLevels = entry.Levels,
+					ArrayLayers = 1,
+					Samples = 1,
+					Usage = Vk.ImageUsageSampled | Vk.ImageUsageTransferDst | Vk.ImageUsageTransferSrc,
+					InitialLayout = Vk.ImageLayoutUndefined
+				};
+				Vk.Check(Vk.vkCreateImage(device.Device, &imageInfo, null, out entry.Image), "vkCreateImage (texture)");
+				Vk.vkGetImageMemoryRequirements(device.Device, entry.Image, out Vk.MemoryRequirements requirements);
+				entry.Memory = memory.Allocate(requirements.Size, requirements.Alignment, requirements.MemoryTypeBits);
+				Vk.Check(Vk.vkBindImageMemory(device.Device, entry.Image, memory.Memory(entry.Memory.Block), entry.Memory.Offset), "vkBindImageMemory (texture)");
+				Vk.ImageViewCreateInfo viewInfo = new Vk.ImageViewCreateInfo
+				{
+					SType = Vk.StructureTypeImageViewCreateInfo,
+					Image = entry.Image,
+					ViewType = 1,
+					Format = Vk.FormatR8G8B8A8Unorm,
+					SubresourceRange = new Vk.ImageSubresourceRange { AspectMask = Vk.ImageAspectColor, LevelCount = entry.Levels, LayerCount = 1 }
+				};
+				Vk.Check(Vk.vkCreateImageView(device.Device, &viewInfo, null, out entry.View), "vkCreateImageView (texture)");
+				pixelBytes += (long)width * height * 4 * 4 / 3;
+				if (logTextures)
+				{
+					Program.FileSystem.AppendToLogFile("OBNS Vulkan texture " + entry.Index + ": " + width + "x" + height + ", " + entry.Levels + " levels, " + requirements.Size + " bytes at block " + entry.Memory.Block + " offset " + entry.Memory.Offset + " (alignment " + requirements.Alignment + ")");
+				}
+			}
+
+			// The first level staged and copied; the others made from it on the GPU, each from the one before (image blits,
+			// as OpenGL's mipmap generation does).
+			budgetBytes += rgba.Length;
+			ulong stagingOffset;
+			ulong staging;
+			fixed (byte* data = rgba)
+			{
+				staging = uploader.Stage(data, (ulong)rgba.Length, out stagingOffset);
+			}
+
+			IntPtr commands = uploader.Commands;
+			// Discarding what was there (a new image, or an animated one's last frame: frames reading it are earlier on the queue).
+			Vk.ImageMemoryBarrier toTransfer = ImageBarrier(entry.Image, 0, entry.Levels, Vk.AccessShaderRead, Vk.AccessTransferWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutTransferDstOptimal);
+			Vk.vkCmdPipelineBarrier(commands, Vk.PipelineStageFragmentShader | Vk.PipelineStageTransfer, Vk.PipelineStageTransfer, 0, 0, null, 0, null, 1, &toTransfer);
+			Vk.BufferImageCopy copy = new Vk.BufferImageCopy
+			{
+				BufferOffset = stagingOffset,
+				ImageSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, LayerCount = 1 },
+				ImageExtent = new Vk.Extent3D { Width = width, Height = height, Depth = 1 }
+			};
+			Vk.vkCmdCopyBufferToImage(commands, staging, entry.Image, Vk.ImageLayoutTransferDstOptimal, 1, &copy);
+
+			int levelWidth = (int)width, levelHeight = (int)height;
+			for (uint level = 1; level < entry.Levels; level++)
+			{
+				Vk.ImageMemoryBarrier toSource = ImageBarrier(entry.Image, level - 1, 1, Vk.AccessTransferWrite, Vk.AccessTransferRead, Vk.ImageLayoutTransferDstOptimal, Vk.ImageLayoutTransferSrcOptimal);
+				Vk.vkCmdPipelineBarrier(commands, Vk.PipelineStageTransfer, Vk.PipelineStageTransfer, 0, 0, null, 0, null, 1, &toSource);
+				int nextWidth = Math.Max(1, levelWidth / 2), nextHeight = Math.Max(1, levelHeight / 2);
+				Vk.ImageBlit blit = new Vk.ImageBlit
+				{
+					SrcSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, MipLevel = level - 1, LayerCount = 1 },
+					SrcOffset1 = new Vk.Offset3D { X = levelWidth, Y = levelHeight, Z = 1 },
+					DstSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, MipLevel = level, LayerCount = 1 },
+					DstOffset1 = new Vk.Offset3D { X = nextWidth, Y = nextHeight, Z = 1 }
+				};
+				Vk.vkCmdBlitImage(commands, entry.Image, Vk.ImageLayoutTransferSrcOptimal, entry.Image, Vk.ImageLayoutTransferDstOptimal, 1, &blit, Vk.FilterLinear);
+				levelWidth = nextWidth;
+				levelHeight = nextHeight;
+			}
+
+			// Levels before the last are transfer sources now; the last is still a transfer destination.
+			Vk.ImageMemoryBarrier* toRead = stackalloc Vk.ImageMemoryBarrier[2];
+			int barriers = 0;
+			if (entry.Levels > 1)
+			{
+				toRead[barriers++] = ImageBarrier(entry.Image, 0, entry.Levels - 1, Vk.AccessTransferRead, Vk.AccessShaderRead, Vk.ImageLayoutTransferSrcOptimal, Vk.ImageLayoutShaderReadOnlyOptimal);
+			}
+
+			toRead[barriers++] = ImageBarrier(entry.Image, entry.Levels - 1, 1, Vk.AccessTransferWrite, Vk.AccessShaderRead, Vk.ImageLayoutTransferDstOptimal, Vk.ImageLayoutShaderReadOnlyOptimal);
+			Vk.vkCmdPipelineBarrier(commands, Vk.PipelineStageTransfer, Vk.PipelineStageFragmentShader, 0, 0, null, 0, null, (uint)barriers, toRead);
+
+			if (created)
+			{
+				WriteDescriptor(entry);
+			}
+
+			if (uploader.Full)
+			{
+				uploader.Submit(true);
+			}
+		}
+
+		private static Vk.ImageMemoryBarrier ImageBarrier(ulong image, uint baseLevel, uint levels, uint srcAccess, uint dstAccess, uint oldLayout, uint newLayout)
 		{
 			return new Vk.ImageMemoryBarrier
 			{
@@ -310,8 +622,8 @@ namespace OpenBve.Graphics.Vulkan
 				NewLayout = newLayout,
 				SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
 				DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-				Image = entry.Image,
-				SubresourceRange = new Vk.ImageSubresourceRange { AspectMask = Vk.ImageAspectColor, LevelCount = entry.Levels, LayerCount = 1 }
+				Image = image,
+				SubresourceRange = new Vk.ImageSubresourceRange { AspectMask = Vk.ImageAspectColor, BaseMipLevel = baseLevel, LevelCount = levels, LayerCount = 1 }
 			};
 		}
 
@@ -339,14 +651,11 @@ namespace OpenBve.Graphics.Vulkan
 		{
 			if (entry.View != 0) Vk.vkDestroyImageView(device.Device, entry.View, null);
 			if (entry.Image != 0) Vk.vkDestroyImage(device.Device, entry.Image, null);
-			heap.Free(entry.Memory);
+			memory.Free(entry.Memory);
 			entry.View = entry.Image = 0;
 		}
 
-		/// <summary>The textures' pixels with their mipmaps, for comparing with the storage they take.</summary>
-		private long pixelBytes;
-
-		internal string Describe() => entries.Count + " textures (" + (pixelBytes >> 20) + " MB of pixels made), " + heap.Describe();
+		internal string Describe() => entries.Count + " textures (" + (pixelBytes >> 20) + " MB of pixels made), " + memory.Describe();
 
 		public void Dispose()
 		{
@@ -372,7 +681,7 @@ namespace OpenBve.Graphics.Vulkan
 				if (sampler != 0) Vk.vkDestroySampler(device.Device, sampler, null);
 			}
 
-			heap.Dispose();
+			memory.Dispose();
 		}
 	}
 }

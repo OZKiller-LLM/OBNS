@@ -48,6 +48,18 @@ namespace LibRender2
 		/// <summary>Called when a texture is deleted from OpenGL (shared storage or not).</summary>
 		public static Action<OpenBveApi.Textures.OpenGlTexture> TextureDeleted;
 
+		/// <summary>
+		/// Called with an animated texture's pixels when OpenGL has uploaded them (its first frame, and each new one): the
+		/// handle, the decoded texture, its pixels in its own format, and whether it is used as opaque.
+		/// </summary>
+		public static Action<OpenBveApi.Textures.Texture, OpenBveApi.Textures.Texture, byte[], bool> AnimatedFrame;
+
+		/// <summary>Called when a texture is about to be unloaded (its OpenGL textures deleted, its handle made again).</summary>
+		public static Action<OpenBveApi.Textures.Texture> TextureUnloading;
+
+		/// <summary>Called when a texture is uploaded to OpenGL (its first upload), for finding who loads what.</summary>
+		public static Action<OpenBveApi.Textures.Texture> GLUploaded;
+
 		/// <summary>Reports an OpenGL error after making shared storage (the first few), for the log.</summary>
 		public static Action<string> Error;
 

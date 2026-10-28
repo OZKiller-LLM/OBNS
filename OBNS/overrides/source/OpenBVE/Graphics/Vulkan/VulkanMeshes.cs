@@ -47,10 +47,10 @@ namespace OpenBve.Graphics.Vulkan
 	/// </summary>
 	internal sealed class TextureSlot
 	{
-		internal readonly OpenBveApi.Textures.OpenGlTexture Texture;
+		internal readonly OpenBveApi.Textures.Texture Texture;
 		internal readonly int Index, Generation;
 
-		internal TextureSlot(OpenBveApi.Textures.OpenGlTexture texture, int index, int generation)
+		internal TextureSlot(OpenBveApi.Textures.Texture texture, int index, int generation)
 		{
 			Texture = texture;
 			Index = index;
@@ -87,7 +87,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal VulkanMeshes(VulkanDevice device, Uploader uploader)
 		{
 			this.uploader = uploader;
-			Vertices = new SharedHeap(device, 128UL << 20, Vk.BufferUsageVertexBuffer | Vk.BufferUsageTransferDst | Vk.BufferUsageTransferSrc, "vertices");
+			Vertices = new SharedHeap(device, SharedHeap.BlockSize("OBNS_VERTEX_BLOCK_MB", 128), Vk.BufferUsageVertexBuffer | Vk.BufferUsageTransferDst | Vk.BufferUsageTransferSrc, "vertices");
 			Indices = new GpuPool(device, 64UL << 20, Vk.BufferUsageIndexBuffer | Vk.BufferUsageTransferDst, "indices");
 		}
 

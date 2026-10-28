@@ -35,6 +35,9 @@ namespace OpenBve.Graphics.Vulkan
 		internal const uint StructureTypeDescriptorSetVariableDescriptorCountAllocateInfo = 1000161003;
 		internal const uint StructureTypePipelineRenderingCreateInfo = 1000044002;
 		internal const uint StructureTypeExternalMemoryBufferCreateInfo = 1000072000;
+		internal const uint StructureTypeQueryPoolCreateInfo = 11;
+		internal const uint QueryTypeTimestamp = 2;
+		internal const uint QueryResult64 = 0x1, QueryResultWait = 0x2;
 		internal const uint FormatR8Unorm = 9;
 		internal const uint ComponentSwizzleIdentity = 0, ComponentSwizzleOne = 2, ComponentSwizzleR = 3;
 
@@ -92,6 +95,17 @@ namespace OpenBve.Graphics.Vulkan
 			public uint SharingMode;
 			public uint QueueFamilyIndexCount;
 			public uint* PQueueFamilyIndices;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct QueryPoolCreateInfo
+		{
+			public uint SType;
+			public void* PNext;
+			public uint Flags;
+			public uint QueryType;
+			public uint QueryCount;
+			public uint PipelineStatistics;
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -588,6 +602,11 @@ namespace OpenBve.Graphics.Vulkan
 		[DllImport(Library)] internal static extern void vkCmdSetViewport(IntPtr commandBuffer, uint firstViewport, uint viewportCount, Viewport* viewports);
 		[DllImport(Library)] internal static extern void vkCmdSetScissor(IntPtr commandBuffer, uint firstScissor, uint scissorCount, Rect2D* scissors);
 		[DllImport(Library)] internal static extern void vkCmdPushConstants(IntPtr commandBuffer, ulong layout, uint stageFlags, uint offset, uint size, void* values);
+		[DllImport(Library)] internal static extern int vkCreateQueryPool(IntPtr device, QueryPoolCreateInfo* createInfo, void* allocator, out ulong pool);
+		[DllImport(Library)] internal static extern void vkDestroyQueryPool(IntPtr device, ulong pool, void* allocator);
+		[DllImport(Library)] internal static extern void vkCmdResetQueryPool(IntPtr commandBuffer, ulong pool, uint firstQuery, uint queryCount);
+		[DllImport(Library)] internal static extern void vkCmdWriteTimestamp(IntPtr commandBuffer, uint pipelineStage, ulong pool, uint query);
+		[DllImport(Library)] internal static extern int vkGetQueryPoolResults(IntPtr device, ulong pool, uint firstQuery, uint queryCount, UIntPtr dataSize, void* data, ulong stride, uint flags);
 		[DllImport(Library)] internal static extern void vkCmdDrawIndexedIndirect(IntPtr commandBuffer, ulong buffer, ulong offset, uint drawCount, uint stride);
 	}
 }

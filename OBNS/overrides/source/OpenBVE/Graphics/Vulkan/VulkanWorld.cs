@@ -102,19 +102,50 @@ namespace OpenBve.Graphics.Vulkan
 
 			instance = world;
 			Log("OBNS Vulkan world layer on: " + device.Description);
+			if (Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
+			{
+				Step.Watch();
+			}
 		}
 
 		/// <summary>Has upstream's VAOs and textures copied as they are made, updated and let go of (OBNS's LibRender2 copies).</summary>
 		private void Hook()
 		{
 			ObnsSharing.Error = message => Log("OBNS Vulkan world layer: OpenGL error on shared storage: " + message);
-			// One copy of each vertex buffer and texture, in storage both APIs use.
+			// One copy of each vertex buffer and texture, in storage both APIs use. (OBNS_SHARE=0, for measuring what
+			// shared storage costs OpenGL: none shared, so Vulkan's world is empty.)
+			string share = Environment.GetEnvironmentVariable("OBNS_SHARE");
+			if (share != "0")
+			{
+			if (share != "textures")
+			{
 			ObnsSharing.AllocateBuffer = bytes => Guard(() => Scene.Meshes.AllocateVertices(bytes), 4);
 			ObnsSharing.FreeBuffer = shared => Guard(() => { Scene.Meshes.FreeVertices(shared); return null; }, 5);
 			ObnsSharing.BufferWritten = buffer => Scene.Meshes.Written(buffer);
-			ObnsSharing.AllocateTexture = (key, width, height, levels, r8, alphaOne) => Guard(() => Scene.Textures.Allocate(key, width, height, levels, r8, alphaOne), 2);
-			ObnsSharing.TextureWritten = key => Scene.Textures.Written(key);
-			ObnsSharing.TextureDeleted = key => Guard(() => { Scene.Textures.Deleted(key); return null; }, 3);
+			}
+
+			if (share != "meshes")
+			{
+			// Textures are not shared (OpenGL draws far more slowly with textures over shared memory): Vulkan keeps its
+			// own copy of the world's (VulkanTextures), and of animated ones' frames as OpenGL uploads them.
+			ObnsSharing.AnimatedFrame = (handle, decoded, bytes, opaque) => Guard(() => { Scene.Textures.AnimatedFrame(handle, decoded, bytes, opaque); return null; }, 2);
+			if (Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
+			{
+				// For finding what loads textures into OpenGL while Vulkan draws the world: the first uploads' callers.
+				int uploads = 0;
+				ObnsSharing.GLUploaded = handle =>
+				{
+					if (++uploads <= 4 || uploads % 500 == 0)
+					{
+						Log("OBNS Vulkan debug: OpenGL texture upload " + uploads + " (" + handle.Origin + "): " + Environment.StackTrace);
+					}
+				};
+			}
+
+			ObnsSharing.TextureUnloading = handle => Guard(() => { Scene.Textures.Unloading(handle); return null; }, 3);
+			}
+			}
+
 			// The meshes' faces, indexed for Vulkan's triangle lists.
 			VAOExtensions.ObnsMeshUploaded = mesh => Guard(() => { Scene.Meshes.Uploaded(mesh); return null; }, 0);
 			VAOExtensions.ObnsVaoDisposed = vao => Guard(() => { Scene.Meshes.Disposed(vao); return null; }, 1);
@@ -126,7 +157,7 @@ namespace OpenBve.Graphics.Vulkan
 		private static readonly long[] hookCalls = new long[6], hookTicks = new long[6];
 		private static readonly System.Diagnostics.Stopwatch hookClock = System.Diagnostics.Stopwatch.StartNew();
 		private static long lastHookLog;
-		private static readonly string[] hookNames = { "meshes indexed", "VAOs disposed", "textures made", "textures deleted", "vertex buffers made", "vertex buffers freed" };
+		private static readonly string[] hookNames = { "meshes indexed", "VAOs disposed", "animated texture frames", "textures unloaded", "vertex buffers made", "vertex buffers freed" };
 
 		/// <summary>
 		/// Runs a hook, so a failure is logged (once) and does not break upstream's drawing: storage not given is left to
@@ -210,7 +241,7 @@ namespace OpenBve.Graphics.Vulkan
 					world.Scene.LastObjects, world.Scene.ObjectTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames);
 				world.gatherTicks = world.drawTicks = world.timedFrames = 0;
 				world.Scene.ObjectTicks = 0;
-				return "on (" + times + "; " + world.Scene.LastDraws + " draws in " + world.Scene.LastIndirectCalls + " indirect calls; " + world.Scene.Textures.Describe() + "; " + world.Scene.Meshes.Describe() +
+				return "on (" + times + "; OpenGL's loaded textures " + Program.Renderer.TextureManager.GetNumberOfLoadedTextures() + "; " + world.Scene.LastDraws + " draws in " + world.Scene.LastIndirectCalls + " indirect calls; " + world.Scene.Textures.Describe() + "; " + world.Scene.Meshes.Describe() +
 				       (world.Scene.SkippedFaces > 0 ? "; " + world.Scene.SkippedFaces + " faces without a copy" : "") + ")";
 			}
 		}
@@ -356,8 +387,15 @@ namespace OpenBve.Graphics.Vulkan
 
 		// The frame started and not laid over yet: its slot, what OpenGL handed over with it, and the thread making it.
 		private bool started, failed;
+		private static readonly int stallTest = int.TryParse(Environment.GetEnvironmentVariable("OBNS_VULKAN_STALL"), out int stall) ? stall : 0;
+
+		/// <summary>The main thread's wait for the last frame's thread (OBNS_GPUSTATS).</summary>
+		internal long LastJoinTicks;
+
+		// The frames' timestamps (OBNS_GPUSTATS): two a set of commands, start and end.
+		private ulong queryPool;
+		private readonly bool[] stamped = new bool[FramesInFlight];
 		private int startedSlot;
-		private System.Collections.Generic.List<VulkanTextures.Entry> handedTextures;
 		private bool handedVertices;
 		private readonly FrameThread frameThread = new FrameThread();
 		private Action recordFrame;
@@ -376,7 +414,15 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			EnsureTarget(width, height);
+			Step.Main = "preparing the faces";
+			if (stallTest > 0 && frameNumber == 600)
+			{
+				// For finding hangs (OBNS_VULKAN_STALL=ms): the main thread held here once, doing nothing.
+				System.Threading.Thread.Sleep(stallTest);
+			}
+
 			Scene.Prepare();
+			Step.Main = "submitting uploads";
 
 			// What the frames three or more before this one let go of can be freed: they are done (each frame's set
 			// of commands is waited for before it is used again, two frames later).
@@ -394,7 +440,6 @@ namespace OpenBve.Graphics.Vulkan
 			signalTextures.Clear();
 			signalTextures.Add(glColorTexture);
 			signalTextures.Add(glDepthTexture);
-			handedTextures = Scene.Textures.TakeWritten(signalTextures);
 			signalLayouts.Clear();
 			signalLayouts.AddRange(glLayouts);
 			while (signalLayouts.Count < signalTextures.Count)
@@ -402,6 +447,7 @@ namespace OpenBve.Graphics.Vulkan
 				signalLayouts.Add(TextureLayout.LayoutShaderReadOnlyExt);
 			}
 
+			Step.Main = "OpenGL's signal";
 			GL.Ext.SignalSemaphore(glDoneSemaphore, signalBuffers.Count, signalBuffers.ToArray(), signalTextures.Count, signalTextures.ToArray(), signalLayouts.ToArray());
 			GL.Flush();
 
@@ -410,19 +456,35 @@ namespace OpenBve.Graphics.Vulkan
 			started = true;
 			recordFrame = recordFrame ?? RecordFrame;
 			frameThread.Start(recordFrame);
+			Step.Main = "OpenGL's background (frame being made)";
 		}
 
 		/// <summary>The frame's records, commands and submission (on the frame's thread).</summary>
 		private void RecordFrame()
 		{
+			Step.Thread = "making the records";
 			Scene.BuildRecords();
+			Step.Thread = "waiting for the slot's fence";
 			// This frame's set of commands and buffers, once the GPU has finished the frame that last had them.
 			ulong fence = fences[startedSlot];
 			Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
 			Vk.Check(Vk.vkResetFences(device.Device, 1, &fence), "vkResetFences");
+			if (stamped[startedSlot])
+			{
+				// The slot's last frame is done: its time on the GPU.
+				ulong* times = stackalloc ulong[2];
+				if (Vk.vkGetQueryPoolResults(device.Device, queryPool, (uint)startedSlot * 2, 2, (UIntPtr)16, times, 8, Vk.QueryResult64) == Vk.Success)
+				{
+					GpuStats.VulkanFrame((times[1] - times[0]) * device.TimestampPeriod / 1e6);
+				}
+			}
+
 			IntPtr commandBuffer = commandBuffers[startedSlot];
+			Step.Thread = "recording";
 			Record(commandBuffer, startedSlot);
+			Step.Thread = "submitting";
 			Submit(commandBuffer, fence);
+			Step.Thread = "done";
 		}
 
 		/// <summary>
@@ -437,9 +499,12 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			started = false;
+			long joinStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			try
 			{
+				Step.Main = "waiting for the frame's thread";
 				frameThread.Wait();
+				LastJoinTicks = System.Diagnostics.Stopwatch.GetTimestamp() - joinStart;
 			}
 			catch (Exception ex)
 			{
@@ -450,6 +515,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			int[] textures = { glColorTexture, glDepthTexture };
+			Step.Main = "OpenGL's wait";
 			GL.Ext.WaitSemaphore(glVulkanDoneSemaphore, 0, (int[])null, 2, textures, glLayouts);
 			if (debugFrames < 3 && Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
 			{
@@ -468,7 +534,77 @@ namespace OpenBve.Graphics.Vulkan
 				    ", middle " + pixels[middle * 4] + "," + pixels[middle * 4 + 1] + "," + pixels[middle * 4 + 2] + "," + pixels[middle * 4 + 3] + "; depth first " + depths[0] + ", middle " + depths[middle]);
 			}
 
+			Step.Main = "compositing";
 			Composite();
+			Step.Main = "after the world layer";
+			Step.Frames++;
+			if (GpuStats.Enabled)
+			{
+				// For finding where OpenGL waits for Vulkan's frame: a flush straight after the composite, timed.
+				long flushStart = System.Diagnostics.Stopwatch.GetTimestamp();
+				GL.Flush();
+				LastFlushTicks = System.Diagnostics.Stopwatch.GetTimestamp() - flushStart;
+			}
+		}
+
+		/// <summary>The time of the flush after the composite (OBNS_GPUSTATS).</summary>
+		internal long LastFlushTicks;
+
+		/// <summary>
+		/// For finding hangs (OBNS_VULKAN_DEBUG=1): the step each thread is at, logged by a watchdog when frames stop
+		/// coming for three seconds.
+		/// </summary>
+		internal static unsafe class Step
+		{
+			internal static volatile string Main = "starting", Thread = "idle", Uploads = "idle";
+			internal static long Frames;
+
+			/// <summary>Whether Vulkan's device is lost (its last frames' fences asked, without waiting).</summary>
+			private static string DeviceState()
+			{
+				VulkanWorld world = instance;
+				if (world == null)
+				{
+					return "no device";
+				}
+
+				System.Text.StringBuilder text = new System.Text.StringBuilder("Vulkan fences:");
+				for (int i = 0; i < FramesInFlight; i++)
+				{
+					ulong fence = world.fences[i];
+					int result = Vk.vkWaitForFences(world.device.Device, 1, &fence, 1, 0);
+					text.Append(' ').Append(result == Vk.Success ? "done" : result == Vk.Timeout ? "pending" : result == -4 ? "DEVICE LOST" : "result " + result);
+				}
+
+				return text.ToString();
+			}
+
+			internal static void Watch()
+			{
+				new System.Threading.Thread(() =>
+				{
+					long last = -1;
+					int stuck = 0;
+					while (true)
+					{
+						System.Threading.Thread.Sleep(1000);
+						long frames = System.Threading.Interlocked.Read(ref Frames);
+						if (frames == last && frames > 0)
+						{
+							if (++stuck == 3)
+							{
+								Log("OBNS Vulkan watchdog: no frame for 3 s; main thread: " + Main + "; frame's thread: " + Thread + "; uploads: " + Uploads + "; " + DeviceState());
+							}
+						}
+						else
+						{
+							stuck = 0;
+						}
+
+						last = frames;
+					}
+				}) { IsBackground = true, Name = "OBNS Vulkan watchdog" }.Start();
+			}
 		}
 
 		/// <summary>A thread that makes one frame at a time, started and waited for by the main thread.</summary>
@@ -528,9 +664,20 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.Check(Vk.vkResetCommandBuffer(commandBuffer, 0), "vkResetCommandBuffer");
 			Vk.CommandBufferBeginInfo beginInfo = new Vk.CommandBufferBeginInfo { SType = Vk.StructureTypeCommandBufferBeginInfo, Flags = Vk.CommandBufferUsageOneTimeSubmit };
 			Vk.Check(Vk.vkBeginCommandBuffer(commandBuffer, &beginInfo), "vkBeginCommandBuffer");
+			if (GpuStats.Enabled && device.Timestamps)
+			{
+				if (queryPool == 0)
+				{
+					Vk.QueryPoolCreateInfo queryInfo = new Vk.QueryPoolCreateInfo { SType = Vk.StructureTypeQueryPoolCreateInfo, QueryType = Vk.QueryTypeTimestamp, QueryCount = FramesInFlight * 2 };
+					Vk.Check(Vk.vkCreateQueryPool(device.Device, &queryInfo, null, out queryPool), "vkCreateQueryPool");
+				}
+
+				Vk.vkCmdResetQueryPool(commandBuffer, queryPool, (uint)slot * 2, 2);
+				Vk.vkCmdWriteTimestamp(commandBuffer, Vk.PipelineStageTopOfPipe, queryPool, (uint)slot * 2);
+			}
+
 			target.AcquireForDrawing(commandBuffer);
 			// What OpenGL wrote into shared storage since the last frame.
-			Scene.Textures.AcquireWritten(commandBuffer, handedTextures);
 			Scene.Meshes.AcquireWritten(commandBuffer, handedVertices);
 
 			// Cleared to nothing (no coverage), at the far plane.
@@ -570,6 +717,12 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.vkCmdEndRendering(commandBuffer);
 
 			target.ReleaseToGL(commandBuffer);
+			if (queryPool != 0)
+			{
+				Vk.vkCmdWriteTimestamp(commandBuffer, Vk.PipelineStageBottomOfPipe, queryPool, (uint)slot * 2 + 1);
+				stamped[slot] = true;
+			}
+
 			Vk.Check(Vk.vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 		}
 
@@ -588,7 +741,10 @@ namespace OpenBve.Graphics.Vulkan
 				SignalSemaphoreCount = 1,
 				PSignalSemaphores = &signal
 			};
-			Vk.Check(Vk.vkQueueSubmit(device.Queue, 1, &submit, fence), "vkQueueSubmit");
+			lock (device.QueueLock)
+			{
+				Vk.Check(Vk.vkQueueSubmit(device.Queue, 1, &submit, fence), "vkQueueSubmit");
+			}
 		}
 
 		// --- OpenGL's composite ---
@@ -728,6 +884,12 @@ void main()
 					Vk.vkDestroyFence(device.Device, fences[i], null);
 					fences[i] = 0;
 				}
+			}
+
+			if (queryPool != 0)
+			{
+				Vk.vkDestroyQueryPool(device.Device, queryPool, null);
+				queryPool = 0;
 			}
 
 			if (commandPool != 0)

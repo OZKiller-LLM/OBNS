@@ -269,6 +269,76 @@ namespace LibRender2.Textures
 		/// <param name="AnisotropicFilteringLevel">The anisotropic filtering level to use when loading the texture</param>
 		/// <returns>Whether loading the texture was successful.</returns>
 		/// <summary>
+		/// OBNS: a still texture's decoded pixels for the Vulkan world layer (OBNS/VULKAN.md), which keeps its own copy:
+		/// the decode upstream's upload below would use (the texture cache's, the handle's register-time one, or a new
+		/// one), without uploading it to OpenGL. False for animated textures (OpenGL animates those) and failed decodes.
+		/// </summary>
+		public bool ObnsDecoded(Texture handle, out Texture decoded)
+		{
+			decoded = null;
+			if (handle == null || handle.Ignore || handle.MultipleFrames)
+			{
+				return false;
+			}
+
+			lock (TextureLookupLock)
+			{
+				if (handle.Origin != null && textureCache.TryGetValue(handle.Origin, out Texture cachedTexture) && cachedTexture != null && !cachedTexture.MultipleFrames)
+				{
+					// As below: a cached decode is used when its parameters are the handle's.
+					PathOrigin cachedPathOrigin = cachedTexture.Origin as PathOrigin;
+					PathOrigin handlePathOrigin = handle.Origin as PathOrigin;
+					if (cachedPathOrigin != null && handlePathOrigin != null && cachedPathOrigin.Parameters == handlePathOrigin.Parameters)
+					{
+						decoded = cachedTexture;
+					}
+					else if (cachedTexture.Origin is ByteArrayOrigin && handlePathOrigin != null && handlePathOrigin.Parameters == null)
+					{
+						decoded = cachedTexture;
+					}
+				}
+			}
+
+			if (decoded == null && handle.Origin is PathOrigin && TextureFileUnchanged(handle.Origin) && handle.DecodedTexture != null)
+			{
+				decoded = handle.DecodedTexture;
+			}
+
+			if (decoded == null && (handle.Origin == null || !handle.Origin.GetTexture(out decoded)))
+			{
+				decoded = null;
+				return false;
+			}
+
+			return decoded != null && !decoded.MultipleFrames && decoded.Width > 0 && decoded.Height > 0;
+		}
+
+		/// <summary>
+		/// OBNS: lets go of a decode's pixels once the Vulkan world layer has its copy, as upstream's upload does once
+		/// OpenGL has the pixels (their transparency worked out first; they are decoded again if needed).
+		/// </summary>
+		public void ObnsReleaseDecoded(Texture handle, Texture decoded)
+		{
+			decoded.GetTransparencyType();
+			decoded.ReleaseBytes();
+			Texture cachedTexture = null;
+			lock (TextureLookupLock)
+			{
+				if (handle.Origin != null && textureCache.TryGetValue(handle.Origin, out cachedTexture) && cachedTexture != null)
+				{
+					cachedTexture.GetTransparencyType();
+					cachedTexture.ReleaseBytes();
+				}
+			}
+
+			if (handle.DecodedTexture != null && handle.DecodedTexture != cachedTexture)
+			{
+				handle.DecodedTexture.GetTransparencyType();
+				handle.DecodedTexture.ReleaseBytes();
+			}
+		}
+
+		/// <summary>
 		/// OBNS: upstream's glTexImage2D for a texture's first level: in storage shared with the Vulkan world layer when it
 		/// gives some (immutable, with every mipmap level, written with glTexSubImage2D; RGB8 is kept as RGBA8 whose alpha
 		/// reads as 1), else as upstream.
@@ -473,6 +543,7 @@ namespace LibRender2.Textures
 						}
 						// OBNS: the new frame, for the Vulkan world layer.
 						ObnsSharing.TextureWritten?.Invoke(handle.OpenGlTextures[(int)wrap]);
+						ObnsSharing.AnimatedFrame?.Invoke(handle, texture, subBytes, handle.Transparency == TextureTransparencyType.Opaque);
 						// Keep the stable handle in sync without swapping identity: the handle keeps
 						// its origin so the animated cache keeps hitting every tick (swapping to the
 						// decoded texture gives it a fresh ByteArrayOrigin and the cache never hits again)
@@ -839,6 +910,12 @@ namespace LibRender2.Textures
 					}
 					GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
                     handle.OpenGlTextures[(int)wrap].Valid = true;
+					ObnsSharing.GLUploaded?.Invoke(handle);
+					// OBNS: an animated texture's first frame, for the Vulkan world layer.
+					if (texture.MultipleFrames)
+					{
+						ObnsSharing.AnimatedFrame?.Invoke(handle, texture, textureBytes, handle.Transparency == TextureTransparencyType.Opaque);
+					}
 					if (texture.MultipleFrames)
 					{
 						texture.OpenGlTextures[(int)wrap].Valid = true;
@@ -906,6 +983,9 @@ namespace LibRender2.Textures
 			{
 				return;
 			}
+
+			// OBNS: the Vulkan world layer lets go of its copy.
+			ObnsSharing.TextureUnloading?.Invoke(handle);
 
 		if (handle.MultipleFrames)
 		{

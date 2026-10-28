@@ -98,8 +98,9 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly ulong blockSize;
 		private readonly uint bufferUsage;
 		private readonly string name;
-		private uint memoryTypeBits = ~0u;
 		private readonly List<ulong> memories = new List<ulong>();
+		/// <summary>Each block's memory type: a resource is only put in a block whose type it allows.</summary>
+		private readonly List<uint> memoryTypes = new List<uint>();
 		private readonly List<RangeAllocator> allocators = new List<RangeAllocator>();
 
 		/// <summary>The blocks' buffers (buffer pools only), by block.</summary>
@@ -139,6 +140,12 @@ namespace OpenBve.Graphics.Vulkan
 
 			for (int i = 0; i < allocators.Count; i++)
 			{
+				if ((typeBits & (1u << (int)memoryTypes[i])) == 0)
+				{
+					// (An image may only go in some memory types: on NVIDIA, mipmapped images and others differ.)
+					continue;
+				}
+
 				ulong offset = allocators[i].Allocate(size, alignment, out ulong taken);
 				if (offset != ulong.MaxValue)
 				{
@@ -174,12 +181,12 @@ namespace OpenBve.Graphics.Vulkan
 				requirements = new Vk.MemoryRequirements { Size = size, MemoryTypeBits = typeBits };
 			}
 
-			memoryTypeBits &= requirements.MemoryTypeBits;
+			uint memoryType = device.MemoryType(requirements.MemoryTypeBits & typeBits, Vk.MemoryPropertyDeviceLocal);
 			Vk.MemoryAllocateInfo allocateInfo = new Vk.MemoryAllocateInfo
 			{
 				SType = Vk.StructureTypeMemoryAllocateInfo,
 				AllocationSize = requirements.Size,
-				MemoryTypeIndex = device.MemoryType(requirements.MemoryTypeBits, Vk.MemoryPropertyDeviceLocal)
+				MemoryTypeIndex = memoryType
 			};
 			Vk.Check(Vk.vkAllocateMemory(device.Device, &allocateInfo, null, out ulong memory), "vkAllocateMemory (" + name + ", " + (size >> 20) + " MB)");
 			if (buffer != 0)
@@ -188,6 +195,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			memories.Add(memory);
+			memoryTypes.Add(memoryType);
 			Buffers.Add(buffer);
 			allocators.Add(new RangeAllocator(size));
 			return memories.Count - 1;
@@ -206,6 +214,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			memories.Clear();
+			memoryTypes.Clear();
 			Buffers.Clear();
 			allocators.Clear();
 		}
@@ -401,14 +410,19 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.Check(Vk.vkEndCommandBuffer(current.CommandBuffer), "vkEndCommandBuffer");
 			IntPtr commandBuffer = current.CommandBuffer;
 			Vk.SubmitInfo submit = new Vk.SubmitInfo { SType = Vk.StructureTypeSubmitInfo, CommandBufferCount = 1, PCommandBuffers = &commandBuffer };
-			Vk.Check(Vk.vkQueueSubmit(device.Queue, 1, &submit, current.Fence), "vkQueueSubmit (uploads)");
+			lock (device.QueueLock)
+			{
+				Vk.Check(Vk.vkQueueSubmit(device.Queue, 1, &submit, current.Fence), "vkQueueSubmit (uploads)");
+			}
 			current.Recording = false;
 			current.Submitted = true;
 			if (wait)
 			{
 				ulong fence = current.Fence;
 				long start = System.Diagnostics.Stopwatch.GetTimestamp();
+				VulkanWorld.Step.Uploads = "waiting for an upload";
 				Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences (uploads)");
+				VulkanWorld.Step.Uploads = "idle";
 				WaitMilliseconds += (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000 / System.Diagnostics.Stopwatch.Frequency;
 				Release(current);
 			}
