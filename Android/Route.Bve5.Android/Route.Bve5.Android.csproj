@@ -18,6 +18,9 @@
     <!-- OBNS's copy, shared with the desktop build: the scenario's vehicle is the route's suggested train. -->
     <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\ScenarioParser.cs" />
     <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\ScenarioParser.cs" Link="OBNS\ScenarioParser.cs" />
+    <!-- OBNS's copy, shared with the desktop build: a route's BVE5 adhesion kept, not halved. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\MapParser\ConvertComponents.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\MapParser\ConvertComponents.cs" Link="OBNS\ConvertComponents.cs" />
 
   </ItemGroup>
 
