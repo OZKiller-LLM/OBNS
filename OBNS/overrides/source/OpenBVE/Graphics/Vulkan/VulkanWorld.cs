@@ -682,6 +682,8 @@ namespace OpenBve.Graphics.Vulkan
 				PDepthAttachment = &depth
 			};
 			Scene.Upload(slot);
+			// The shadow maps first (cleared only, with shadows off), then the world layer that samples them.
+			Scene.RecordShadows(commandBuffer, slot);
 			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
 			if (!Scene.Empty(VulkanScene.WorldLayer))
 			{

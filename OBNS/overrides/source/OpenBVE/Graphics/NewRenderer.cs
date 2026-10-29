@@ -132,7 +132,13 @@ namespace OpenBve.Graphics
 
 			UpdateViewport(ViewportChangeMode.ChangeToScenery);
 
-			PerformCSMShadowPass();
+			// OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md), unless the debug views are on (not drawn by it):
+			// its shadows are drawn by Vulkan too, so upstream's OpenGL shadow pass is not needed then.
+			bool vulkanWorld = Vulkan.VulkanWorld.Enabled && !OptionWireFrame && !OptionNormals;
+			if (!vulkanWorld)
+			{
+				PerformCSMShadowPass();
+			}
 
             if (Lighting.ShouldInitialize)
 			{
@@ -168,10 +174,9 @@ namespace OpenBve.Graphics
 				Program.CurrentRoute.CurrentFog = Program.CurrentRoute.PreviousFog;
 			}
 
-			// OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md), unless shadows or the debug views are on (not drawn
-			// by it yet): its faces are given to it now, and its frame made and submitted on another thread while OpenGL
-			// draws the background below; it is laid over the background where upstream draws the world layer.
-			bool vulkanWorld = Vulkan.VulkanWorld.Enabled && !ShadowsEnabled && !OptionWireFrame && !OptionNormals;
+			// OBNS: with the world layer drawn by Vulkan, its faces are given to it now, and its frame made and submitted on
+			// another thread while OpenGL draws the background below; it is laid over the background where upstream draws
+			// the world layer.
 			List<FaceState> vulkanOverlayOpaque = null, vulkanOverlayAlpha = null;
 			SceneLaps.Lap(0);
 			if (vulkanWorld)
@@ -628,6 +633,48 @@ namespace OpenBve.Graphics
 		/// RenderScene), in the same order and with the same state, and starts its frame; returns the overlay layer's
 		/// faces, taken with the world's. Called before the background is drawn, with the camera, lighting and fog set.
 		/// </summary>
+		/// <summary>OBNS: the cascades for the Vulkan world layer's shadows (upstream's caster, set as LibRender2's Shadows sets it).</summary>
+		private LibRender2.ShadowMapping.CascadedShadowCaster vulkanShadowCaster;
+
+		/// <summary>
+		/// OBNS: the Vulkan world layer's shadows this frame, as upstream's shadow pass and Shadows.Bind would make them
+		/// (LibRender2/Shadows/Shadows.cs): the same cascades from the same options, the light and the scenery's camera.
+		/// </summary>
+		private void SetVulkanShadows(Vulkan.VulkanScene scene)
+		{
+			BaseOptions options = Interface.CurrentOptions;
+			Vector3 lightDir = new Vector3(-Lighting.OptionLightPosition.X, -Lighting.OptionLightPosition.Y, Lighting.OptionLightPosition.Z);
+			if (!ShadowsEnabled || options.ShadowResolution == ShadowMapResolution.Off || lightDir.IsNullVector())
+			{
+				scene.EnsureShadowMaps(1, 1);
+				scene.SetShadows(null, 0, false, 0, 0, 0);
+				return;
+			}
+
+			int resolution = Math.Max(1, (int)options.ShadowResolution);
+			int cascades = (int)options.ShadowCascades;
+			double distance = options.ShadowDrawDistance == ShadowDistance.ViewingDistance ? options.ViewingDistance : (double)(int)options.ShadowDrawDistance;
+			if (vulkanShadowCaster == null || vulkanShadowCaster.CascadeCount != cascades)
+			{
+				vulkanShadowCaster = new LibRender2.ShadowMapping.CascadedShadowCaster(cascades);
+			}
+
+			vulkanShadowCaster.ShadowDistance = Math.Max(1.0, distance);
+			vulkanShadowCaster.Resolution = resolution;
+			vulkanShadowCaster.SplitLambda = 0.75;
+			vulkanShadowCaster.DepthMargin = 150.0;
+			vulkanShadowCaster.Update(lightDir, CurrentViewMatrix, CurrentProjectionMatrix, 0.1, Camera.VerticalViewingAngle, Screen.AspectRatio);
+
+			// Shadows.ComputeEffectiveFilterRadius: the softness scaled by the distance per cascade and the resolution.
+			double perCascade = distance / Math.Max(1, cascades);
+			double distanceFactor = Math.Max(0.7, Math.Min(1.8, Math.Sqrt(perCascade / 100.0)));
+			double resolutionFactor = Math.Max(0.7, Math.Min(1.4, Math.Sqrt(Math.Max(512, resolution) / 2048.0)));
+			float filterRadius = (float)Math.Max(0.5, Math.Min(3.0, options.ShadowFilterRadius * distanceFactor * resolutionFactor));
+			float normalBias = Math.Max(0.0f, Math.Min(4.0f, (float)options.ShadowNormalBias));
+			scene.EnsureShadowMaps(resolution, cascades);
+			scene.SetShadows(vulkanShadowCaster, (float)options.ShadowStrength, options.ShadowSmooth, filterRadius, (float)options.ShadowBias, normalBias);
+		}
+
 		private void StartVulkanWorld(out List<FaceState> overlayOpaqueFaces, out List<FaceState> overlayAlphaFaces)
 		{
 			long gatherStart = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -663,6 +710,7 @@ namespace OpenBve.Graphics
 
 			Vulkan.VulkanScene scene = Vulkan.VulkanWorld.Instance.Scene;
 			scene.Begin(this);
+			SetVulkanShadows(scene);
 			vulkanGathering = true;
 			try
 			{

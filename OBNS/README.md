@@ -129,7 +129,7 @@ preloads sent to it, so there is one copy of each on the GPU.
 
 The renderer is chosen in the options (display: Renderer, OpenGL or Vulkan; Vulkan by default) and
 the debug overlay names it. OpenGL draws the world when the GPU or driver cannot share images with
-Vulkan, while shadows or the wireframe and normals views are on, and for the rest of the session if a
+Vulkan, while the wireframe and normals views are on, and for the rest of the session if a
 Vulkan frame fails; `OBNS_VULKAN=0` or `1` overrides the option.
 
 | Tuen Ma Line, steady state (each view's first 10 s left out), a loaded machine, runs interleaved | OpenGL | Vulkan |

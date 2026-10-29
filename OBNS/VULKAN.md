@@ -87,8 +87,11 @@ layer to Vulkan, for macOS, is a later step that the 3D renderer is built not to
   as `RenderScene` draws them in both transparency modes.
 - **Pipelined frames.** Two frames in flight: frame N+1's draw records are built while the GPU draws N.
 
-Not in the first version: shadows (upstream's cascaded shadow maps). With shadows on, the world layer stays
-on OpenGL until the Vulkan shadow pass exists.
+- **Shadows.** Upstream's cascaded shadow maps (LibRender2's `CascadedShadowCaster`, set from the same
+  options with the same split and depth margin) drawn by Vulkan: one depth image with a layer per cascade,
+  drawn at the start of the frame from the same indirect draw records (the world's casters: not additive, not
+  marked as casting no shadow), and sampled by the world shader with depth comparison and upstream's filter,
+  biases and cascade blend. Upstream's OpenGL shadow pass is skipped while Vulkan draws the world.
 
 ## Fallback and switches
 
@@ -96,7 +99,7 @@ The renderer is chosen in the options (Options, display group: Renderer, OpenGL 
 kept in `Settings/1.5.0/obns.cfg` beside upstream's `options.cfg`, and takes effect when a game starts. The
 debug overlay's renderer line says which is drawing. Vulkan is used when the driver has Vulkan 1.3 with
 descriptor indexing and external memory, and OpenGL has the memory object and semaphore extensions on the
-same GPU (matched by device UUID); otherwise the world layer is drawn by OpenGL as before. The log says which, and why. While shadows or the wireframe or normals
+same GPU (matched by device UUID); otherwise the world layer is drawn by OpenGL as before. The log says which, and why. While the wireframe or normals
 debug views are on, OpenGL draws the world layer (frame by frame); a Vulkan frame that fails stops Vulkan for
 the session, logged, and OpenGL draws the world from then on.
 
@@ -167,5 +170,9 @@ it; `GameWindow.cs` sets it up and sends upstream's texture preloads to it; `Gra
    thread time went from 1.09-1.53 ms (OpenGL drawing the cab) to 0.55-0.66 ms, which is upstream's fixed
    work there (the viewport change, touch's viewport, the shader reset); cab frames 9.1-9.9 ms against
    OpenGL's 15.0-17.4 in the same run.
-5. Shadows.
+5. Shadows. Done: drawn as described above, checked with the validation layer (no errors or warnings) and
+   against OpenGL by snapshot with shadows on at 2048 (the same picture: a mean difference of 0.09 in 255,
+   where the same view without shadows differs by 5.4). On the Tuen Ma Line with shadows on, in one run:
+   exterior frames 15.7-23.2 ms against OpenGL's 35.6-67.3, the world's main thread time 3.4-5.7 ms against
+   11.2-25.7.
 6. Linux (`_fd` handles); later, the 2D layer for macOS.

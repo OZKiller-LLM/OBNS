@@ -217,12 +217,19 @@
     <Compile Include="Graphics\Vulkan\VulkanTextures.cs" />
     <Compile Include="Graphics\Vulkan\VulkanMeshes.cs" />
     <Compile Include="Graphics\Vulkan\VulkanScene.cs" />
+    <Compile Include="Graphics\Vulkan\VulkanShadows.cs" />
     <Compile Include="Graphics\Vulkan\Vk.Drawing.cs" />
     <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.vert.spv">
       <LogicalName>OBNS.Vulkan.world.vert.spv</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.frag.spv">
       <LogicalName>OBNS.Vulkan.world.frag.spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\shadow.vert.spv">
+      <LogicalName>OBNS.Vulkan.shadow.vert.spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\shadow.frag.spv">
+      <LogicalName>OBNS.Vulkan.shadow.frag.spv</LogicalName>
     </EmbeddedResource>
     <Compile Include="Graphics\Renderers\Events.cs" />
     <Compile Include="Graphics\Renderers\Overlays.Lamp.cs" />

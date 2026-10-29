@@ -53,7 +53,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal const uint ImageLayoutTransferSrcOptimal = 6;
 
 		// Descriptors.
-		internal const uint DescriptorTypeSampler = 0, DescriptorTypeSampledImage = 2, DescriptorTypeUniformBuffer = 6, DescriptorTypeStorageBuffer = 7;
+		internal const uint DescriptorTypeSampler = 0, DescriptorTypeCombinedImageSampler = 1, DescriptorTypeSampledImage = 2, DescriptorTypeUniformBuffer = 6, DescriptorTypeStorageBuffer = 7;
 		internal const uint ShaderStageVertex = 0x1, ShaderStageFragment = 0x10;
 		internal const uint DescriptorBindingUpdateAfterBind = 0x1, DescriptorBindingUpdateUnusedWhilePending = 0x2, DescriptorBindingPartiallyBound = 0x4,
 			DescriptorBindingVariableDescriptorCount = 0x8;
@@ -71,7 +71,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal const uint PolygonModeFill = 0;
 		internal const uint CullModeNone = 0, CullModeFront = 1, CullModeBack = 2;
 		internal const uint FrontFaceCounterClockwise = 0, FrontFaceClockwise = 1;
-		internal const uint CompareOpLessOrEqual = 3, CompareOpAlways = 7;
+		internal const uint CompareOpLess = 1, CompareOpLessOrEqual = 3, CompareOpAlways = 7;
 		internal const uint BlendFactorZero = 0, BlendFactorOne = 1, BlendFactorSrcAlpha = 6, BlendFactorOneMinusSrcAlpha = 7;
 		internal const uint BlendOpAdd = 0;
 		internal const uint ColorComponentAll = 0xF;

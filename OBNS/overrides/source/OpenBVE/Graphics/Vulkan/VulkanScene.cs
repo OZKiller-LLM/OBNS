@@ -7,6 +7,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using LibRender2;
 using LibRender2.Objects;
+using LibRender2.ShadowMapping;
 using OpenBveApi.Colors;
 using OpenBveApi.Math;
 using OpenBveApi.Objects;
@@ -25,7 +26,14 @@ namespace OpenBve.Graphics.Vulkan
 			public fixed float Light[24]; // position, ambient, diffuse, specular, model, fog colour (vec4 each)
 			public float FogStart, FogEnd, FogDensity;
 			public int FogIsLinear;
-			public int IsLight, Pad0, Pad1, Pad2;
+			public int IsLight, ShadowEnabled, ShadowCascades, ShadowSmooth;
+			public fixed float InverseView[16];
+			public fixed float LightSpace[64];
+			public fixed float ShadowSplit[4];
+			public fixed float ShadowBias[4];
+			public fixed float ShadowNormalBias[4];
+			public fixed float ShadowTexelSize[4];
+			public float ShadowStrength, ShadowFilterRadius, Pad0, Pad1;
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -62,6 +70,8 @@ namespace OpenBve.Graphics.Vulkan
 			public long Key;
 			public uint FirstIndex, IndexCount;
 			public int VertexBase, Draw, Pass;
+			/// <summary>Whether the face casts a shadow: 0 no, 1 culled as upstream's shadow pass culls it, 2 both sides.</summary>
+			public int Shadow;
 		}
 
 		/// <summary>OpenGL's alpha functions as upstream's shader numbers them; Never means none.</summary>
@@ -70,12 +80,14 @@ namespace OpenBve.Graphics.Vulkan
 		internal enum Blend { None = 0, Normal = 1, Additive = 2 }
 
 		private const int FramesInFlight = 2;
-		private const uint FrameBinding = 0, ObjectBinding = 1, DrawBinding = 2, MatrixBinding = 3, SamplerBinding = 4, TextureBinding = 5;
+		private const uint FrameBinding = 0, ObjectBinding = 1, DrawBinding = 2, MatrixBinding = 3, SamplerBinding = 4, ShadowBinding = 5, TextureBinding = 6;
 
 		private readonly VulkanDevice device;
 		internal readonly VulkanTextures Textures;
 		internal readonly VulkanMeshes Meshes;
-		private ulong setLayout, pipelineLayout, descriptorPool, vertexModule, fragmentModule;
+		private ulong setLayout, pipelineLayout, descriptorPool, vertexModule, fragmentModule, shadowVertexModule, shadowFragmentModule;
+		internal readonly VulkanShadows Shadows;
+		private readonly ulong[] shadowPipelines = new ulong[2];
 		internal readonly ulong[] DescriptorSets = new ulong[FramesInFlight];
 		private readonly Dictionary<int, ulong> pipelines = new Dictionary<int, ulong>();
 
@@ -173,8 +185,12 @@ namespace OpenBve.Graphics.Vulkan
 			Textures = new VulkanTextures(device, uploader, DescriptorSets, TextureBinding, Interface.CurrentOptions.Interpolation, Interface.CurrentOptions.AnisotropicFilteringLevel);
 			Meshes = new VulkanMeshes(device, uploader);
 			WriteSamplers();
+			Shadows = new VulkanShadows(device);
+			WriteShadowMaps();
 			vertexModule = ShaderModule("world.vert.spv");
 			fragmentModule = ShaderModule("world.frag.spv");
+			shadowVertexModule = ShaderModule("shadow.vert.spv");
+			shadowFragmentModule = ShaderModule("shadow.frag.spv");
 		}
 
 		// --- set-up ---
@@ -182,25 +198,26 @@ namespace OpenBve.Graphics.Vulkan
 		private void CreateDescriptors()
 		{
 			const uint vertexAndFragment = Vk.ShaderStageVertex | Vk.ShaderStageFragment;
-			Vk.DescriptorSetLayoutBinding* bindings = stackalloc Vk.DescriptorSetLayoutBinding[6];
+			Vk.DescriptorSetLayoutBinding* bindings = stackalloc Vk.DescriptorSetLayoutBinding[7];
 			bindings[0] = new Vk.DescriptorSetLayoutBinding { Binding = FrameBinding, DescriptorType = Vk.DescriptorTypeStorageBuffer, DescriptorCount = 1, StageFlags = vertexAndFragment };
 			bindings[1] = new Vk.DescriptorSetLayoutBinding { Binding = ObjectBinding, DescriptorType = Vk.DescriptorTypeStorageBuffer, DescriptorCount = 1, StageFlags = vertexAndFragment };
 			bindings[2] = new Vk.DescriptorSetLayoutBinding { Binding = DrawBinding, DescriptorType = Vk.DescriptorTypeStorageBuffer, DescriptorCount = 1, StageFlags = vertexAndFragment };
 			bindings[3] = new Vk.DescriptorSetLayoutBinding { Binding = MatrixBinding, DescriptorType = Vk.DescriptorTypeStorageBuffer, DescriptorCount = 1, StageFlags = vertexAndFragment };
 			bindings[4] = new Vk.DescriptorSetLayoutBinding { Binding = SamplerBinding, DescriptorType = Vk.DescriptorTypeSampler, DescriptorCount = 4, StageFlags = Vk.ShaderStageFragment };
-			bindings[5] = new Vk.DescriptorSetLayoutBinding { Binding = TextureBinding, DescriptorType = Vk.DescriptorTypeSampledImage, DescriptorCount = VulkanTextures.Capacity, StageFlags = Vk.ShaderStageFragment };
-			uint* flags = stackalloc uint[6];
-			for (int i = 0; i < 5; i++)
+			bindings[5] = new Vk.DescriptorSetLayoutBinding { Binding = ShadowBinding, DescriptorType = Vk.DescriptorTypeCombinedImageSampler, DescriptorCount = 1, StageFlags = Vk.ShaderStageFragment };
+			bindings[6] = new Vk.DescriptorSetLayoutBinding { Binding = TextureBinding, DescriptorType = Vk.DescriptorTypeSampledImage, DescriptorCount = VulkanTextures.Capacity, StageFlags = Vk.ShaderStageFragment };
+			uint* flags = stackalloc uint[7];
+			for (int i = 0; i < 6; i++)
 			{
 				flags[i] = 0;
 			}
 
 			// The textures: written as they are uploaded, while frames using other elements may be in flight.
-			flags[5] = Vk.DescriptorBindingPartiallyBound | Vk.DescriptorBindingUpdateAfterBind | Vk.DescriptorBindingUpdateUnusedWhilePending | Vk.DescriptorBindingVariableDescriptorCount;
+			flags[6] = Vk.DescriptorBindingPartiallyBound | Vk.DescriptorBindingUpdateAfterBind | Vk.DescriptorBindingUpdateUnusedWhilePending | Vk.DescriptorBindingVariableDescriptorCount;
 			Vk.DescriptorSetLayoutBindingFlagsCreateInfo flagsInfo = new Vk.DescriptorSetLayoutBindingFlagsCreateInfo
 			{
 				SType = Vk.StructureTypeDescriptorSetLayoutBindingFlagsCreateInfo,
-				BindingCount = 6,
+				BindingCount = 7,
 				PBindingFlags = flags
 			};
 			Vk.DescriptorSetLayoutCreateInfo layoutInfo = new Vk.DescriptorSetLayoutCreateInfo
@@ -208,12 +225,13 @@ namespace OpenBve.Graphics.Vulkan
 				SType = Vk.StructureTypeDescriptorSetLayoutCreateInfo,
 				PNext = &flagsInfo,
 				Flags = Vk.DescriptorSetLayoutCreateUpdateAfterBindPool,
-				BindingCount = 6,
+				BindingCount = 7,
 				PBindings = bindings
 			};
 			Vk.Check(Vk.vkCreateDescriptorSetLayout(device.Device, &layoutInfo, null, out setLayout), "vkCreateDescriptorSetLayout");
 
-			Vk.PushConstantRange push = new Vk.PushConstantRange { StageFlags = vertexAndFragment, Size = 4 };
+			// The frame's index, and the cascade the shadow pass draws.
+			Vk.PushConstantRange push = new Vk.PushConstantRange { StageFlags = vertexAndFragment, Size = 8 };
 			ulong layout = setLayout;
 			Vk.PipelineLayoutCreateInfo pipelineLayoutInfo = new Vk.PipelineLayoutCreateInfo
 			{
@@ -225,16 +243,17 @@ namespace OpenBve.Graphics.Vulkan
 			};
 			Vk.Check(Vk.vkCreatePipelineLayout(device.Device, &pipelineLayoutInfo, null, out pipelineLayout), "vkCreatePipelineLayout");
 
-			Vk.DescriptorPoolSize* sizes = stackalloc Vk.DescriptorPoolSize[3];
+			Vk.DescriptorPoolSize* sizes = stackalloc Vk.DescriptorPoolSize[4];
 			sizes[0] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeStorageBuffer, DescriptorCount = 4 * FramesInFlight };
 			sizes[1] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeSampler, DescriptorCount = 4 * FramesInFlight };
 			sizes[2] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeSampledImage, DescriptorCount = VulkanTextures.Capacity * FramesInFlight };
+			sizes[3] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeCombinedImageSampler, DescriptorCount = FramesInFlight };
 			Vk.DescriptorPoolCreateInfo poolInfo = new Vk.DescriptorPoolCreateInfo
 			{
 				SType = Vk.StructureTypeDescriptorPoolCreateInfo,
 				Flags = Vk.DescriptorPoolCreateUpdateAfterBind,
 				MaxSets = FramesInFlight,
-				PoolSizeCount = 3,
+				PoolSizeCount = 4,
 				PPoolSizes = sizes
 			};
 			Vk.Check(Vk.vkCreateDescriptorPool(device.Device, &poolInfo, null, out descriptorPool), "vkCreateDescriptorPool");
@@ -288,6 +307,123 @@ namespace OpenBve.Graphics.Vulkan
 				};
 				Vk.vkUpdateDescriptorSets(device.Device, 1, &write, 0, null);
 			}
+		}
+
+		/// <summary>Points both frames' descriptor sets at the shadow maps (after they are made, with the GPU idle).</summary>
+		private void WriteShadowMaps()
+		{
+			Vk.DescriptorImageInfo image = new Vk.DescriptorImageInfo { Sampler = Shadows.Sampler, ImageView = Shadows.ArrayView, ImageLayout = Vk.ImageLayoutShaderReadOnlyOptimal };
+			foreach (ulong set in DescriptorSets)
+			{
+				Vk.WriteDescriptorSet write = new Vk.WriteDescriptorSet
+				{
+					SType = Vk.StructureTypeWriteDescriptorSet,
+					DstSet = set,
+					DstBinding = ShadowBinding,
+					DescriptorCount = 1,
+					DescriptorType = Vk.DescriptorTypeCombinedImageSampler,
+					PImageInfo = &image
+				};
+				Vk.vkUpdateDescriptorSets(device.Device, 1, &write, 0, null);
+			}
+		}
+
+		/// <summary>The shadow maps for a resolution and cascade count, made again (with the GPU idle) when they change.</summary>
+		internal void EnsureShadowMaps(int resolution, int cascades)
+		{
+			if (!Shadows.Differs(resolution, cascades))
+			{
+				return;
+			}
+
+			Vk.vkDeviceWaitIdle(device.Device);
+			Shadows.Create(resolution, cascades);
+			WriteShadowMaps();
+		}
+
+		/// <summary>The shadow pass's pipeline: depth only, culled as upstream's shadow pass culls (or not).</summary>
+		private ulong ShadowPipeline(bool cull)
+		{
+			ulong pipeline = shadowPipelines[cull ? 1 : 0];
+			if (pipeline != 0)
+			{
+				return pipeline;
+			}
+
+			IntPtr main = Marshal.StringToHGlobalAnsi("main");
+			try
+			{
+				Vk.PipelineShaderStageCreateInfo* stages = stackalloc Vk.PipelineShaderStageCreateInfo[2];
+				stages[0] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageVertexBit, Module = shadowVertexModule, PName = (byte*)main };
+				stages[1] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageFragmentBit, Module = shadowFragmentModule, PName = (byte*)main };
+				Vk.VertexInputBindingDescription binding = new Vk.VertexInputBindingDescription { Binding = 0, Stride = (uint)VulkanMeshes.VertexSize, InputRate = Vk.VertexInputRateVertex };
+				Vk.VertexInputAttributeDescription* attributes = stackalloc Vk.VertexInputAttributeDescription[3];
+				attributes[0] = Attribute(0, Vk.FormatR32G32B32Sfloat, nameof(LibRenderVertex.Position));
+				attributes[1] = Attribute(2, Vk.FormatR32G32Sfloat, nameof(LibRenderVertex.UV));
+				attributes[2] = Attribute(4, Vk.FormatR32G32B32Sint, nameof(LibRenderVertex.MatrixChain));
+				Vk.PipelineVertexInputStateCreateInfo vertexInput = new Vk.PipelineVertexInputStateCreateInfo
+				{
+					SType = Vk.StructureTypePipelineVertexInputStateCreateInfo,
+					VertexBindingDescriptionCount = 1,
+					PVertexBindingDescriptions = &binding,
+					VertexAttributeDescriptionCount = 3,
+					PVertexAttributeDescriptions = attributes
+				};
+				Vk.PipelineInputAssemblyStateCreateInfo inputAssembly = new Vk.PipelineInputAssemblyStateCreateInfo { SType = Vk.StructureTypePipelineInputAssemblyStateCreateInfo, Topology = Vk.PrimitiveTopologyTriangleList };
+				Vk.PipelineViewportStateCreateInfo viewport = new Vk.PipelineViewportStateCreateInfo { SType = Vk.StructureTypePipelineViewportStateCreateInfo, ViewportCount = 1, ScissorCount = 1 };
+				Vk.PipelineRasterizationStateCreateInfo rasterization = new Vk.PipelineRasterizationStateCreateInfo
+				{
+					SType = Vk.StructureTypePipelineRasterizationStateCreateInfo,
+					PolygonMode = Vk.PolygonModeFill,
+					CullMode = cull ? Vk.CullModeFront : Vk.CullModeNone,
+					FrontFace = Vk.FrontFaceClockwise,
+					LineWidth = 1.0f
+				};
+				Vk.PipelineMultisampleStateCreateInfo multisample = new Vk.PipelineMultisampleStateCreateInfo { SType = Vk.StructureTypePipelineMultisampleStateCreateInfo, RasterizationSamples = 1 };
+				Vk.PipelineDepthStencilStateCreateInfo depth = new Vk.PipelineDepthStencilStateCreateInfo
+				{
+					SType = Vk.StructureTypePipelineDepthStencilStateCreateInfo,
+					DepthTestEnable = 1,
+					DepthWriteEnable = 1,
+					DepthCompareOp = Vk.CompareOpLess,
+					MaxDepthBounds = 1.0f
+				};
+				Vk.PipelineColorBlendStateCreateInfo colorBlend = new Vk.PipelineColorBlendStateCreateInfo { SType = Vk.StructureTypePipelineColorBlendStateCreateInfo };
+				uint* dynamicStates = stackalloc uint[2];
+				dynamicStates[0] = Vk.DynamicStateViewport;
+				dynamicStates[1] = Vk.DynamicStateScissor;
+				Vk.PipelineDynamicStateCreateInfo dynamic = new Vk.PipelineDynamicStateCreateInfo { SType = Vk.StructureTypePipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dynamicStates };
+				Vk.PipelineRenderingCreateInfo rendering = new Vk.PipelineRenderingCreateInfo
+				{
+					SType = Vk.StructureTypePipelineRenderingCreateInfo,
+					DepthAttachmentFormat = VulkanShadows.Format
+				};
+				Vk.GraphicsPipelineCreateInfo info = new Vk.GraphicsPipelineCreateInfo
+				{
+					SType = Vk.StructureTypeGraphicsPipelineCreateInfo,
+					PNext = &rendering,
+					StageCount = 2,
+					PStages = stages,
+					PVertexInputState = &vertexInput,
+					PInputAssemblyState = &inputAssembly,
+					PViewportState = &viewport,
+					PRasterizationState = &rasterization,
+					PMultisampleState = &multisample,
+					PDepthStencilState = &depth,
+					PColorBlendState = &colorBlend,
+					PDynamicState = &dynamic,
+					Layout = pipelineLayout,
+					BasePipelineIndex = -1
+				};
+				Vk.Check(Vk.vkCreateGraphicsPipelines(device.Device, 0, 1, &info, null, &pipeline), "vkCreateGraphicsPipelines (shadows)");
+			}
+			finally
+			{
+				Marshal.FreeHGlobal(main);
+			}
+
+			shadowPipelines[cull ? 1 : 0] = pipeline;
+			return pipeline;
 		}
 
 		private ulong ShaderModule(string name)
@@ -508,8 +644,55 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			data.IsLight = lit ? 1 : 0;
+			// Upstream draws the cab without shadows.
+			data.ShadowEnabled = 0;
 			frameData[CabLayer] = data;
 		}
+
+		/// <summary>
+		/// The world layer's shadows this frame, as upstream binds them to its shader (LibRender2's Shadows.Bind): the
+		/// cascades' light-space matrices and splits, the biases, strength and filter; null for none.
+		/// </summary>
+		internal void SetShadows(CascadedShadowCaster caster, float strength, bool smooth, float filterRadius, float userBias, float normalBiasTexels)
+		{
+			FrameData data = frameData[WorldLayer];
+			shadowCascades = 0;
+			if (caster == null)
+			{
+				data.ShadowEnabled = 0;
+				frameData[WorldLayer] = data;
+				return;
+			}
+
+			shadowCascades = caster.CascadeCount;
+			data.ShadowEnabled = 1;
+			data.ShadowCascades = caster.CascadeCount;
+			data.ShadowSmooth = smooth ? 1 : 0;
+			data.ShadowStrength = strength;
+			data.ShadowFilterRadius = filterRadius;
+			Store(Matrix4D.Invert(viewMatrix), data.InverseView);
+			for (int i = 0; i < 4; i++)
+			{
+				if (i < caster.CascadeCount)
+				{
+					Store(caster.LightSpaceMatrices[i], data.LightSpace + 16 * i);
+					data.ShadowSplit[i] = caster.SplitDistances[i];
+					data.ShadowBias[i] = caster.CascadeBiases[i] + userBias;
+					data.ShadowNormalBias[i] = normalBiasTexels;
+					data.ShadowTexelSize[i] = caster.TexelWorldSizes[i];
+				}
+				else
+				{
+					data.ShadowSplit[i] = 0.0f;
+					data.ShadowTexelSize[i] = caster.CascadeCount > 0 ? caster.TexelWorldSizes[caster.CascadeCount - 1] : 0.05f;
+				}
+			}
+
+			frameData[WorldLayer] = data;
+		}
+
+		/// <summary>How many cascades the shadow pass draws this frame (0: none).</summary>
+		private int shadowCascades;
 
 		private static void StoreColor(Color24 color, float* to, int at)
 		{
@@ -749,7 +932,14 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			draw.Opacity = Inv255 * material.Color.A * alphaFactor;
-			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, vulkanMesh, false);
+			// A shadow caster as upstream's shadow pass has it: a world face, not additive, its material and object casting.
+			int shadow = 0;
+			if (pass.Layer == WorldLayer && !additive && (material.Flags & MaterialFlags.NoShadow) == 0 && !state.DisableShadowCasting)
+			{
+				shadow = backFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0 ? 1 : 2;
+			}
+
+			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, vulkanMesh, false, shadow);
 
 			// Nighttime texture, blended over the daytime one.
 			if (blendFactor != 0 && item.NightTexture >= 0)
@@ -758,7 +948,7 @@ namespace OpenBve.Graphics.Vulkan
 				draw.AlphaFunction = AlphaGreater;
 				draw.AlphaReference = 0.0f;
 				draw.Opacity = Inv255 * material.Color.A * distanceFactor * blendFactor;
-				AddDraw(chunk, draw, pass, item.Pass, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, vulkanMesh, true);
+				AddDraw(chunk, draw, pass, item.Pass, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, vulkanMesh, true, 0);
 			}
 		}
 
@@ -845,7 +1035,7 @@ namespace OpenBve.Graphics.Vulkan
 			return chunk.ObjectCount++;
 		}
 
-		private static void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, VulkanMesh mesh, bool night)
+		private static void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, VulkanMesh mesh, bool night, int shadow)
 		{
 			if (chunk.DrawCount == chunk.Draws.Length)
 			{
@@ -864,7 +1054,7 @@ namespace OpenBve.Graphics.Vulkan
 			// Grouped by: nighttime draws after daytime ones (they blend over them), then pipeline, then vertex and index blocks.
 			long key = ((night ? 1L : 0L) << 62) | ((long)pipelineKey << 32) | ((long)(mesh.VertexBlock & 0xFFFF) << 16) | (long)(mesh.IndexBlock & 0xFFFF);
 			chunk.Draws[chunk.DrawCount] = draw;
-			chunk.Commands[chunk.CommandCount++] = new DrawCommand { Key = key, FirstIndex = firstIndex, IndexCount = indexCount, VertexBase = mesh.VertexBase, Draw = chunk.DrawCount, Pass = passIndex };
+			chunk.Commands[chunk.CommandCount++] = new DrawCommand { Key = key, FirstIndex = firstIndex, IndexCount = indexCount, VertexBase = mesh.VertexBase, Draw = chunk.DrawCount, Pass = passIndex, Shadow = shadow };
 			chunk.DrawCount++;
 		}
 
@@ -960,6 +1150,24 @@ namespace OpenBve.Graphics.Vulkan
 				}
 			}
 
+			// The shadow casters' draws, grouped by culling and buffer blocks, after the layers' commands.
+			shadowCount = 0;
+			if (shadowCascades > 0)
+			{
+				Grow(ref shadowCommands, cabCommandStart);
+				for (int i = 0; i < cabCommandStart; i++)
+				{
+					if (commands[i].Shadow != 0)
+					{
+						DrawCommand command = commands[i];
+						command.Key = ((long)command.Shadow << 32) | (command.Key & 0xFFFFFFFFL);
+						shadowCommands[shadowCount++] = command;
+					}
+				}
+
+				Array.Sort(shadowCommands, 0, shadowCount, KeyComparer.Instance);
+			}
+
 			EnsureBuffers(slot);
 			fixed (FrameData* frames = frameData)
 			{
@@ -991,6 +1199,18 @@ namespace OpenBve.Graphics.Vulkan
 					FirstIndex = commands[i].FirstIndex,
 					VertexOffset = commands[i].VertexBase,
 					FirstInstance = (uint)commands[i].Draw
+				};
+			}
+
+			for (int i = 0; i < shadowCount; i++)
+			{
+				indirect[commandCount + i] = new Vk.DrawIndexedIndirectCommand
+				{
+					IndexCount = shadowCommands[i].IndexCount,
+					InstanceCount = 1,
+					FirstIndex = shadowCommands[i].FirstIndex,
+					VertexOffset = shadowCommands[i].VertexBase,
+					FirstInstance = (uint)shadowCommands[i].Draw
 				};
 			}
 
@@ -1054,6 +1274,96 @@ namespace OpenBve.Graphics.Vulkan
 			LastIndirectCalls += calls;
 		}
 
+		private DrawCommand[] shadowCommands = new DrawCommand[1024];
+		private int shadowCount;
+
+		/// <summary>Shadow casters drawn in the last frame (per cascade), for the log.</summary>
+		internal int LastShadowDraws => shadowCount;
+
+		/// <summary>
+		/// Records the shadow pass (before the world layer's rendering, after Upload): each cascade's layer cleared and the
+		/// casters drawn into it in the cascade's light space, as upstream's Shadows.RenderPass; with shadows off, the
+		/// maps are only cleared, so they are always ready for the world shader.
+		/// </summary>
+		internal void RecordShadows(IntPtr commandBuffer, int slot)
+		{
+			Shadows.BeginWriting(commandBuffer);
+			uint size = (uint)Shadows.Resolution;
+			ulong set = DescriptorSets[slot];
+			for (int cascade = 0; cascade < Shadows.Cascades; cascade++)
+			{
+				Vk.RenderingAttachmentInfo depth = new Vk.RenderingAttachmentInfo
+				{
+					SType = Vk.StructureTypeRenderingAttachmentInfo,
+					ImageView = Shadows.LayerViews[cascade],
+					ImageLayout = Vk.ImageLayoutDepthStencilAttachmentOptimal,
+					LoadOp = Vk.AttachmentLoadOpClear,
+					StoreOp = Vk.AttachmentStoreOpStore,
+					ClearValue = new Vk.ClearValue { Depth = 1.0f }
+				};
+				Vk.RenderingInfo renderingInfo = new Vk.RenderingInfo
+				{
+					SType = Vk.StructureTypeRenderingInfo,
+					RenderArea = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = size, Height = size } },
+					LayerCount = 1,
+					PDepthAttachment = &depth
+				};
+				Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+				if (cascade < shadowCascades && shadowCount > 0)
+				{
+					Vk.Viewport viewport = new Vk.Viewport { Width = size, Height = size, MaxDepth = 1.0f };
+					Vk.Rect2D scissor = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = size, Height = size } };
+					Vk.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+					Vk.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+					Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 0, 1, &set, 0, null);
+					int* push = stackalloc int[2];
+					push[0] = WorldLayer;
+					push[1] = cascade;
+					Vk.vkCmdPushConstants(commandBuffer, pipelineLayout, Vk.ShaderStageVertex | Vk.ShaderStageFragment, 0, 8, push);
+					int boundCull = -1, boundVertexBlock = -1, boundIndexBlock = -1;
+					int run = 0;
+					while (run < shadowCount)
+					{
+						long key = shadowCommands[run].Key;
+						int next = run + 1;
+						while (next < shadowCount && shadowCommands[next].Key == key)
+						{
+							next++;
+						}
+
+						int cull = (int)(key >> 32) == 1 ? 1 : 0;
+						int vertexBlock = (int)((key >> 16) & 0xFFFF), indexBlock = (int)(key & 0xFFFF);
+						if (cull != boundCull)
+						{
+							Vk.vkCmdBindPipeline(commandBuffer, Vk.PipelineBindPointGraphics, ShadowPipeline(cull == 1));
+							boundCull = cull;
+						}
+
+						if (vertexBlock != boundVertexBlock)
+						{
+							ulong buffer = Meshes.Vertices.Buffers[vertexBlock];
+							ulong offset = 0;
+							Vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &buffer, &offset);
+							boundVertexBlock = vertexBlock;
+						}
+
+						if (indexBlock != boundIndexBlock)
+						{
+							Vk.vkCmdBindIndexBuffer(commandBuffer, Meshes.Indices.Buffers[indexBlock], 0, Vk.IndexTypeUint32);
+							boundIndexBlock = indexBlock;
+						}
+
+						Vk.vkCmdDrawIndexedIndirect(commandBuffer, indirectBuffers[slot].Buffer, (ulong)(commandCount + run) * (ulong)sizeof(Vk.DrawIndexedIndirectCommand), (uint)(next - run), (uint)sizeof(Vk.DrawIndexedIndirectCommand));
+						run = next;
+					}
+				}
+
+				Vk.vkCmdEndRendering(commandBuffer);
+			}
+
+			Shadows.EndWriting(commandBuffer);
+		}
+
 		private sealed class KeyComparer : IComparer<DrawCommand>
 		{
 			internal static readonly KeyComparer Instance = new KeyComparer();
@@ -1068,7 +1378,7 @@ namespace OpenBve.Graphics.Vulkan
 			changed |= Ensure(ref objectBuffers[slot], (ulong)Math.Max(1, objectCount) * (ulong)sizeof(ObjectData), Vk.BufferUsageStorageBuffer);
 			changed |= Ensure(ref drawBuffers[slot], (ulong)Math.Max(1, drawCount) * (ulong)sizeof(DrawData), Vk.BufferUsageStorageBuffer);
 			changed |= Ensure(ref matrixBuffers[slot], (ulong)Math.Max(1, matrixCount) * 64UL, Vk.BufferUsageStorageBuffer);
-			Ensure(ref indirectBuffers[slot], (ulong)Math.Max(1, commandCount) * (ulong)sizeof(Vk.DrawIndexedIndirectCommand), Vk.BufferUsageIndirectBuffer);
+			Ensure(ref indirectBuffers[slot], (ulong)Math.Max(1, commandCount + shadowCount) * (ulong)sizeof(Vk.DrawIndexedIndirectCommand), Vk.BufferUsageIndirectBuffer);
 			if (!changed)
 			{
 				return;
@@ -1142,6 +1452,14 @@ namespace OpenBve.Graphics.Vulkan
 			if (vertexModule != 0) Vk.vkDestroyShaderModule(device.Device, vertexModule, null);
 			if (fragmentModule != 0) Vk.vkDestroyShaderModule(device.Device, fragmentModule, null);
 			if (descriptorPool != 0) Vk.vkDestroyDescriptorPool(device.Device, descriptorPool, null);
+			foreach (ulong shadowPipeline in shadowPipelines)
+			{
+				if (shadowPipeline != 0) Vk.vkDestroyPipeline(device.Device, shadowPipeline, null);
+			}
+
+			if (shadowVertexModule != 0) Vk.vkDestroyShaderModule(device.Device, shadowVertexModule, null);
+			if (shadowFragmentModule != 0) Vk.vkDestroyShaderModule(device.Device, shadowFragmentModule, null);
+			Shadows?.Dispose();
 			if (pipelineLayout != 0) Vk.vkDestroyPipelineLayout(device.Device, pipelineLayout, null);
 			if (setLayout != 0) Vk.vkDestroyDescriptorSetLayout(device.Device, setLayout, null);
 		}
