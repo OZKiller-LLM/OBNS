@@ -98,7 +98,7 @@ namespace OpenBve.X86
 			Export(m, "_except_handler3", 0, c => 1); // ExceptionContinueSearch: only reached if an exception is raised
 			Export(m, "_except_handler4_common", 0, c => 1);
 			Export(m, "_XcptFilter", 0, c => 0);
-			Export(m, "_CxxThrowException", 0, c => throw new X86Exception("the plugin threw a C++ exception"));
+			Export(m, "_CxxThrowException", 0, c => throw new GuestThrow(c.Arg(0), c.Arg(1), "a C++ exception the plugin threw"));
 			Export(m, "_purecall", 0, c => throw new X86Exception("the plugin called a pure virtual function"));
 			Export(m, "terminate", 0, c => throw new X86Exception("the plugin called terminate()"));
 			Export(m, "_controlfp", 0, c => 0x0009001F);

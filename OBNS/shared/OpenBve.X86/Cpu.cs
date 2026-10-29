@@ -33,6 +33,21 @@ namespace OpenBve.X86
 	public delegate ulong HostFunction(Cpu cpu);
 
 	/// <summary>
+	/// A C++ exception the emulated code (or a host function standing in for the C++ runtime) throws: the object
+	/// thrown and its ThrowInfo. Raised by a host function, it is handed to <see cref="Cpu.ThrowDispatcher"/>.
+	/// </summary>
+	public sealed class GuestThrow : Exception
+	{
+		public readonly uint Object, ThrowInfo;
+
+		public GuestThrow(uint thrownObject, uint throwInfo, string description) : base(description)
+		{
+			Object = thrownObject;
+			ThrowInfo = throwInfo;
+		}
+	}
+
+	/// <summary>
 	/// An IA-32 interpreter: the integer instruction set, x87 (Cpu.Fpu.cs) and the SSE/SSE2
 	/// subset compilers emit for scalar maths and memory moves (Cpu.Sse.cs).
 	/// </summary>
@@ -103,6 +118,18 @@ namespace OpenBve.X86
 		/// </summary>
 		public Action<string, uint[], ulong> HostCallTrace { get; set; }
 
+		/// <summary>
+		/// Finds and enters the catch block for a C++ exception a host function raised: true once execution has been moved
+		/// there (EIP, ESP and EBP set), false if nothing within the current call catches it.
+		/// </summary>
+		public Func<GuestThrow, bool> ThrowDispatcher { get; set; }
+
+		/// <summary>The stack pointer each call from the host started at, innermost last: a catch is looked for below it.</summary>
+		private readonly List<uint> callFloors = new List<uint>();
+
+		/// <summary>Where the innermost call from the host started on the stack (frames below it are that call's).</summary>
+		public uint CallFloor => callFloors.Count > 0 ? callFloors[callFloors.Count - 1] : uint.MaxValue;
+
 		/// <summary>The name of the host function at an address, for diagnostics.</summary>
 		public string HostFunctionName(uint address)
 		{
@@ -133,7 +160,16 @@ namespace OpenBve.X86
 			Push(ReturnTrap);
 			uint savedEip = Eip;
 			Eip = function;
-			Run();
+			callFloors.Add(R[ESP]);
+			try
+			{
+				Run();
+			}
+			finally
+			{
+				callFloors.RemoveAt(callFloors.Count - 1);
+			}
+
 			Eip = savedEip;
 			return R[EAX] | ((ulong)R[EDX] << 32);
 		}
@@ -185,7 +221,28 @@ namespace OpenBve.X86
 
 			(HostFunction function, int argBytes, string name) = hostFunctions[index];
 			uint[] traceArgs = HostCallTrace != null ? new[] { Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5) } : null;
-			ulong result = function(this);
+			ulong result;
+			try
+			{
+				result = function(this);
+			}
+			catch (GuestThrow thrown)
+			{
+				// A C++ throw: execution continues in the catch block that takes it, or the plugin stops as on Windows.
+				if (ThrowDispatcher != null && ThrowDispatcher(thrown))
+				{
+					return;
+				}
+
+				if (callFloors.Count > 1)
+				{
+					// Not caught within this call from the host: on to the call that made it.
+					throw;
+				}
+
+				throw new X86Exception("the plugin threw a C++ exception nothing caught (" + thrown.Message + ")");
+			}
+
 			HostCallTrace?.Invoke(name, traceArgs, result);
 			R[EAX] = (uint)result;
 			R[EDX] = (uint)(result >> 32);

@@ -102,6 +102,7 @@ namespace OpenBve.X86
 			Memory.Write32(TebAddress + 0x2C, TebAddress + 0x1000); // TLS array
 			Memory.Write32(TebAddress + 0x30, PebAddress);
 			Cpu.FsBase = TebAddress;
+			Cpu.ThrowDispatcher = DispatchThrow;
 			Memory.Map(PebAddress, 0x1000);
 
 			Memory.Map(MiscBase, 0x10000);

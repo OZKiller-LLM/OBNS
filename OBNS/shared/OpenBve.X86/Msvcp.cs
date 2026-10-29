@@ -35,11 +35,12 @@ namespace OpenBve.X86
 	/// The plugin's own code is the templates' inline part (basic_filebuf, basic_ifstream, use_facet), which reads these
 	/// objects' fields directly, so they are laid out as Visual C++ lays them out for x86:
 	/// basic_streambuf: vptr, _Gfirst, _Pfirst, _IGfirst, _IPfirst, _Gnext, _Pnext, _IGnext, _IPnext, _Gcount, _Pcount,
-	/// _IGcount, _IPcount, _Plocale (56 bytes); ios_base: vptr, _Stdstr, _Mystate, _Except, _Fmtfl, then _Prec and
-	/// _Wide (64-bit, at 24 and 32), _Arr, _Calls, _Ploc (56 bytes); basic_ios adds _Mystrbuf, _Tiestr, _Fillch (72);
+	/// _IGcount, _IPcount, _Plocale (56 bytes); ios_base: vptr, two words (_Stdstr's), _Mystate at 12, _Except, _Fmtfl,
+	/// then _Prec and _Wide (64-bit, at 24 and 32), _Arr, _Calls, _Ploc (56 bytes; _Mystate and _Mystrbuf where the
+	/// plugin's own code reads them); basic_ios adds _Mystrbuf, _Tiestr, _Fillch (72);
 	/// basic_istream: vbptr, _Chcount (64-bit, at 8), with basic_ios a virtual base found through the vbptr's table.
 	/// Members are thiscall (this in ECX, the callee removes the arguments); a constructor of a class with a virtual
-	/// base takes a hidden last argument, nonzero when it is to construct that base. A locale is its _Locimp pointer;
+	/// base takes a hidden last argument, nonzero when it is to construct that base. A locale is a pointer's worth of padding (Visual C++ 2019's, for binary compatibility), then its _Locimp pointer;
 	/// the _Locimp holds no facets, so use_facet asks the facet's _Getcat for one, made here.
 	/// </remarks>
 	public sealed partial class Win32Process
@@ -87,7 +88,8 @@ namespace OpenBve.X86
 			{
 				uint self = c.R[Cpu.ECX], result = c.Arg(0);
 				uint locale = Memory.Read32(self + 52);
-				Memory.Write32(result, locale != 0 ? Memory.Read32(locale) : globalLocimp);
+				Memory.Write32(result, 0);
+				Memory.Write32(result + 4, locale != 0 ? Memory.Read32(locale + 4) : globalLocimp);
 				return result;
 			});
 			Export(p, "?sgetc@" + streambuf + "QAEHXZ", 0, c => StreambufSgetc(c.R[Cpu.ECX]));
@@ -197,7 +199,7 @@ namespace OpenBve.X86
 				uint self = c.R[Cpu.ECX];
 				if (c.Arg(0) != IosGood)
 				{
-					IosClear(self, Memory.Read32(self + 8) | c.Arg(0));
+					IosClear(self, Memory.Read32(self + 12) | c.Arg(0));
 				}
 
 				return 0;
@@ -227,17 +229,17 @@ namespace OpenBve.X86
 				uint self = c.R[Cpu.ECX];
 				bool noSkip = (c.Arg(0) & 0xFF) != 0;
 				uint ios = IosOf(self);
-				if (Memory.Read32(ios + 8) == IosGood)
+				if (Memory.Read32(ios + 12) == IosGood)
 				{
 					uint buffer = Memory.Read32(ios + 56);
-					if (!noSkip && (Memory.Read32(ios + 16) & 1) != 0)
+					if (!noSkip && (Memory.Read32(ios + 20) & 1) != 0)
 					{
 						// skipws: past white space, as ctype<char>::is(space) has it.
 						for (uint meta = StreambufSgetc(buffer); ; meta = StreambufSnextc(buffer))
 						{
 							if (meta == StreamEof)
 							{
-								IosClear(ios, Memory.Read32(ios + 8) | IosEof);
+								IosClear(ios, Memory.Read32(ios + 12) | IosEof);
 								break;
 							}
 
@@ -248,13 +250,13 @@ namespace OpenBve.X86
 						}
 					}
 
-					if (Memory.Read32(ios + 8) == IosGood)
+					if (Memory.Read32(ios + 12) == IosGood)
 					{
 						return 1;
 					}
 				}
 
-				IosClear(ios, Memory.Read32(ios + 8) | IosFail);
+				IosClear(ios, Memory.Read32(ios + 12) | IosFail);
 				return 0;
 			});
 
@@ -324,10 +326,11 @@ namespace OpenBve.X86
 
 				return 0;
 			});
-			Export(p, "?_Xlength_error@std@@YAXPBD@Z", 0, c => throw new X86Exception("the plugin threw std::length_error: " + Memory.ReadCString(c.Arg(0))));
-			Export(p, "?_Xout_of_range@std@@YAXPBD@Z", 0, c => throw new X86Exception("the plugin threw std::out_of_range: " + Memory.ReadCString(c.Arg(0))));
-			Export(p, "?_Xinvalid_argument@std@@YAXPBD@Z", 0, c => throw new X86Exception("the plugin threw std::invalid_argument: " + Memory.ReadCString(c.Arg(0))));
-			Export(p, "?_Xbad_alloc@std@@YAXXZ", 0, c => throw new X86Exception("the plugin threw std::bad_alloc"));
+			// The throw helpers: the standard exceptions, thrown as C++ exceptions the plugin may catch (CxxExceptions.cs).
+			Export(p, "?_Xlength_error@std@@YAXPBD@Z", 0, c => throw StandardThrow("length_error", Memory.ReadCString(c.Arg(0)), "logic_error", "exception"));
+			Export(p, "?_Xout_of_range@std@@YAXPBD@Z", 0, c => throw StandardThrow("out_of_range", Memory.ReadCString(c.Arg(0)), "logic_error", "exception"));
+			Export(p, "?_Xinvalid_argument@std@@YAXPBD@Z", 0, c => throw StandardThrow("invalid_argument", Memory.ReadCString(c.Arg(0)), "logic_error", "exception"));
+			Export(p, "?_Xbad_alloc@std@@YAXXZ", 0, c => throw StandardThrow("bad_alloc", "bad allocation", "exception"));
 		}
 
 		/// <summary>The runtime's own objects, made on first use: the global locale's _Locimp and the virtual tables.</summary>
@@ -409,11 +412,11 @@ namespace OpenBve.X86
 			Memory.Write32(istreamVbtable + 4, 16);
 		}
 
-		/// <summary>A new std::locale (the global one): its _Locimp pointer, in the heap.</summary>
+		/// <summary>A new std::locale (the global one), in the heap: a pointer's worth of padding, then its _Locimp pointer.</summary>
 		private uint NewLocale()
 		{
-			uint locale = HeapAllocate(4);
-			Memory.Write32(locale, globalLocimp);
+			uint locale = HeapAllocate(8);
+			Memory.Write32(locale + 4, globalLocimp);
 			return locale;
 		}
 
@@ -492,9 +495,9 @@ namespace OpenBve.X86
 		/// <summary>basic_ios::init: ios_base::_Init, the stream buffer, no tie, a space as the fill.</summary>
 		private void IosInit(uint ios, uint buffer)
 		{
-			Memory.Write32(ios + 4, 0); // _Stdstr
-			Memory.Write32(ios + 12, 0); // _Except
-			Memory.Write32(ios + 16, 0x201); // skipws | dec
+			Memory.Write64(ios + 4, 0); // _Stdstr and the field before _Mystate
+			Memory.Write32(ios + 16, 0); // _Except
+			Memory.Write32(ios + 20, 0x201); // skipws | dec
 			Memory.Write64(ios + 24, 6); // _Prec
 			Memory.Write64(ios + 32, 0); // _Wide
 			Memory.Write32(ios + 40, 0); // _Arr
@@ -510,8 +513,8 @@ namespace OpenBve.X86
 		private void IosClear(uint ios, uint state)
 		{
 			state = (state | (Memory.Read32(ios + 56) == 0 ? IosBad : IosGood)) & 0x17;
-			Memory.Write32(ios + 8, state);
-			if ((state & Memory.Read32(ios + 12)) != 0)
+			Memory.Write32(ios + 12, state);
+			if ((state & Memory.Read32(ios + 16)) != 0)
 			{
 				Log("plugin: a stream's state " + state + " would throw ios_base::failure (not raised)");
 			}

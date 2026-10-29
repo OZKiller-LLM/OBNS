@@ -1,4 +1,4 @@
-//Simplified BSD License (BSD-2-Clause)
+﻿//Simplified BSD License (BSD-2-Clause)
 //
 //Copyright (c) 2026, The OpenBVE Android port contributors
 //
@@ -56,6 +56,16 @@ namespace OpenBve.X86.Tests
 			Console.WriteLine("--- Elapse");
 			int[] panel = new int[256], sound = new int[256];
 			plugin.Elapse(new AtsVehicleState { Location = 1000, Time = 36000000, MrPressure = 800000 }, panel, sound);
+
+			// OBNS_PROBE_BEACON=type:optional[,type:optional...]: beacons passed first (e.g. a TIMS's IC card, 1000:379304).
+			foreach (string beacon in (Environment.GetEnvironmentVariable("OBNS_PROBE_BEACON") ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+			{
+				string[] parts = beacon.Split(':');
+				Console.WriteLine("--- beacon " + beacon);
+				plugin.SetBeaconData(int.Parse(parts[0]), 0, 0.0f, int.Parse(parts[1]));
+				plugin.Elapse(new AtsVehicleState { Location = 1000, Time = 36000010, MrPressure = 800000 }, panel, sound);
+				Console.WriteLine("panel: " + string.Join(" ", System.Linq.Enumerable.Select(System.Linq.Enumerable.Where(System.Linq.Enumerable.Range(0, 256), i => panel[i] != 0), i => i + "=" + panel[i])));
+			}
 
 			// Each ATS key pressed and let go, with a frame after each: what a plugin does on a key (e.g. a TIMS
 			// reading an IC card's file).
