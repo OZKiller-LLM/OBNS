@@ -56,6 +56,18 @@ namespace OpenBve.X86.Tests
 			Console.WriteLine("--- Elapse");
 			int[] panel = new int[256], sound = new int[256];
 			plugin.Elapse(new AtsVehicleState { Location = 1000, Time = 36000000, MrPressure = 800000 }, panel, sound);
+
+			// Each ATS key pressed and let go, with a frame after each: what a plugin does on a key (e.g. a TIMS
+			// reading an IC card's file).
+			for (int key = 0; key < 16; key++)
+			{
+				Console.WriteLine("--- key " + key);
+				plugin.KeyDown(key);
+				plugin.Elapse(new AtsVehicleState { Location = 1000, Time = 36000000 + 100 * key, MrPressure = 800000 }, panel, sound);
+				plugin.KeyUp(key);
+				plugin.Elapse(new AtsVehicleState { Location = 1000, Time = 36000050 + 100 * key, MrPressure = 800000 }, panel, sound);
+			}
+
 			Console.WriteLine("ok");
 		}
 	}

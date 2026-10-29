@@ -110,6 +110,7 @@ namespace OpenBve.X86
 			RegisterKernel32();
 			RegisterMsvcrt();
 			RegisterExtras();
+			RegisterMsvcp();
 		}
 
 		// --- small fixed allocations (data imports, strings the process hands out) ---

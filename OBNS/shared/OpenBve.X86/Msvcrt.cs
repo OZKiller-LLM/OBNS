@@ -218,6 +218,11 @@ namespace OpenBve.X86
 			Export(m, "vsprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), false, 0, Format(c.Arg(2), c.Arg(3))));
 			Export(m, "_snprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), true, c.Arg(2), Format(c.Arg(3), c.R[Cpu.ESP] + 20)));
 			Export(m, "_vsnprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), true, c.Arg(2), Format(c.Arg(3), c.Arg(4))));
+			// The Universal CRT's forms: a 64-bit options word first, a locale before the argument list.
+			Export(m, "__stdio_common_vsprintf", 0, c => WriteCommon(c.Arg(0), c.Arg(2), c.Arg(3), Format(c.Arg(4), c.Arg(6))));
+			Export(m, "__stdio_common_vsprintf_s", 0, c => WriteSecure(c.Arg(2), c.Arg(3), false, 0, Format(c.Arg(4), c.Arg(6))));
+			Export(m, "__stdio_common_vsnprintf_s", 0, c => WriteSecure(c.Arg(2), c.Arg(3), true, c.Arg(4), Format(c.Arg(5), c.Arg(7))));
+			Export(m, "__stdio_common_vfprintf", 0, c => { string s = Format(c.Arg(3), c.Arg(5)); WriteStream(c.Arg(2), AnsiEncoding.GetBytes(s)); return (uint)s.Length; });
 			Export(m, "printf", 0, c => { string s = Format(c.Arg(0), c.R[Cpu.ESP] + 8); Log("plugin: " + s.TrimEnd()); return (uint)s.Length; });
 			Export(m, "vprintf", 0, c => { string s = Format(c.Arg(0), c.Arg(1)); Log("plugin: " + s.TrimEnd()); return (uint)s.Length; });
 			Export(m, "fprintf", 0, c => { string s = Format(c.Arg(1), c.R[Cpu.ESP] + 12); WriteStream(c.Arg(0), AnsiEncoding.GetBytes(s)); return (uint)s.Length; });
@@ -293,6 +298,26 @@ namespace OpenBve.X86
 			Export(m, "ftell", 0, c => crtFiles.TryGetValue(c.Arg(0), out Stream stream) ? (uint)stream.Position : 0xFFFFFFFF);
 			Export(m, "feof", 0, c => crtFiles.TryGetValue(c.Arg(0), out Stream stream) && stream.Position >= stream.Length ? 1u : 0u);
 			Export(m, "rewind", 0, c => { if (crtFiles.TryGetValue(c.Arg(0), out Stream stream)) stream.Position = 0; return 0; });
+			Export(m, "_fseeki64", 0, c =>
+			{
+				if (!crtFiles.TryGetValue(c.Arg(0), out Stream stream)) return 0xFFFFFFFF;
+				stream.Seek((long)(c.Arg(1) | ((ulong)c.Arg(2) << 32)), (SeekOrigin)c.Arg(3));
+				return 0;
+			});
+			Export(m, "_ftelli64", 0, c => crtFiles.TryGetValue(c.Arg(0), out Stream stream) ? (ulong)stream.Position : ulong.MaxValue);
+			Export(m, "_lock_file", 0, c => 0);
+			Export(m, "_unlock_file", 0, c => 0);
+			// A FILE's buffer pointers (its _ptr, _base and _cnt, at 0, 4 and 8): kept empty, as the streams here are not
+			// buffered in emulated memory, so std::basic_filebuf reads and writes through fgetc, fread and the like.
+			Export(m, "_get_stream_buffer_pointers", 0, c =>
+			{
+				uint file = c.Arg(0);
+				if (c.Arg(1) != 0) Memory.Write32(c.Arg(1), file + 4);
+				if (c.Arg(2) != 0) Memory.Write32(c.Arg(2), file);
+				if (c.Arg(3) != 0) Memory.Write32(c.Arg(3), file + 8);
+				return 0;
+			});
+			Export(m, "___lc_codepage_func", 0, c => (uint)AnsiEncoding.CodePage);
 
 			// --- file information and path names ---
 			// _stat64i32 (x86): st_dev 0, st_ino 4, st_mode 6, st_nlink 8, st_uid 10, st_gid 12, st_rdev 16, st_size 20,
@@ -540,6 +565,40 @@ namespace OpenBve.X86
 			double.TryParse(s.Substring(start, i - start), NumberStyles.Float, CultureInfo.InvariantCulture, out double value);
 			if (end != 0) Memory.Write32(end, i == start ? text : text + (uint)i);
 			return value;
+		}
+
+		/// <summary>
+		/// __stdio_common_vsprintf: the length with no buffer; with one, the text (cut to fit, terminated, its full length
+		/// returned with the standard snprintf behaviour, option 2; otherwise -1 when cut, as _vsnprintf).
+		/// </summary>
+		private uint WriteCommon(uint options, uint buffer, uint count, string text)
+		{
+			byte[] bytes = AnsiEncoding.GetBytes(text);
+			if (buffer == 0)
+			{
+				return (uint)bytes.Length;
+			}
+
+			if ((uint)bytes.Length < count)
+			{
+				Memory.WriteBytes(buffer, bytes);
+				Memory.Write8(buffer + (uint)bytes.Length, 0);
+				return (uint)bytes.Length;
+			}
+
+			if ((options & 2) != 0)
+			{
+				if (count > 0)
+				{
+					Memory.WriteBytes(buffer, bytes.AsSpan(0, (int)count - 1));
+					Memory.Write8(buffer + count - 1, 0);
+				}
+
+				return (uint)bytes.Length;
+			}
+
+			Memory.WriteBytes(buffer, bytes.AsSpan(0, (int)count));
+			return 0xFFFFFFFF;
 		}
 
 		private uint WriteLimited(uint buffer, uint size, string text)

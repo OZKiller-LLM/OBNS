@@ -174,10 +174,13 @@ ATS-Sx brake its real system would not have applied.
   backend crashes there (a variadic objc_msgSend called as a fixed one), its SDL2 backend works. Start
   it as `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib mono OpenBve.exe`.
 - Checked on Linux (Ubuntu 22.04, Mono 6.8, Intel Iris 6100): the Keisei 3500's KqAts.dll runs in the
-  layer and drives; the Tuen Ma Line's DetailManager runs OS_Ats1 and kcrwr_seltrac in it. The E217's
-  DetailManager runs four of its five modules (the C runtime's text mode, the bounds-checked string
-  functions, `_wstat64i32`, `_wsplitpath_s` and `mbstowcs` added for it); its TIMS_MON_Disp.dll is C++
-  with iostreams (MSVCP140, not provided), so that train still runs on the managed module loader.
+  layer and drives; the Tuen Ma Line's DetailManager runs OS_Ats1 and kcrwr_seltrac in it. For the E217's
+  UCRT DetailManager and modules the layer gained the C runtime's text mode, the bounds-checked string
+  functions, `_wstat64i32`, `_wsplitpath_s`, `mbstowcs` and the Universal CRT's printf entry points, and
+  for its TIMS_MON_Disp.dll (C++ with file streams) a shim of Microsoft's C++ runtime (`Msvcp.cs`:
+  basic_streambuf, basic_ios, basic_istream, the char codecvt, locales, call_once), laid out as Visual C++
+  lays them out, as the plugin's own inline template code reads them. All five modules run in the layer
+  (checked in `OpenBve.X86.Tests`; `calls` now also presses each ATS key).
 
 Checked (2026-10-29), on Windows with `OBNS_X86_PLUGINS=1`: the Tuen Ma Line's SP1900 runs its
 DetailManager.dll with both modules (OS_Ats1, kcrwr_seltrac) in the layer; the TBL display and panel

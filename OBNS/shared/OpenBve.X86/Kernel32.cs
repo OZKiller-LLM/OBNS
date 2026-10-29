@@ -323,6 +323,29 @@ namespace OpenBve.X86
 			Export(k, "WriteConsoleW", 20, c => ConsoleWrite(c.Arg(1), c.Arg(2), c.Arg(3), true));
 			Export(k, "GetFileAttributesA", 4, c => FileAttributes(Memory.ReadCString(c.Arg(0), AnsiEncoding)));
 			Export(k, "GetFileAttributesW", 4, c => FileAttributes(Memory.ReadWString(c.Arg(0))));
+			Export(k, "GetFileAttributesExA", 12, c => FileAttributeData(Memory.ReadCString(c.Arg(0), AnsiEncoding), c.Arg(2)));
+			Export(k, "GetFileAttributesExW", 12, c => FileAttributeData(Memory.ReadWString(c.Arg(0)), c.Arg(2)));
+			Export(k, "GetFileInformationByHandle", 8, c =>
+			{
+				if (!(handles.TryGetValue(c.Arg(0), out object value) && value is FileStream stream)) { lastError = 6; return 0; }
+				// BY_HANDLE_FILE_INFORMATION: attributes, three FILETIMEs, the volume's serial, size, links and an index.
+				FileInfo info = new FileInfo(stream.Name);
+				uint data = c.Arg(1);
+				Memory.Fill(data, 0, 52);
+				Memory.Write32(data, 0x80);
+				Memory.Write64(data + 4, (ulong)info.CreationTimeUtc.ToFileTimeUtc());
+				Memory.Write64(data + 12, (ulong)info.LastAccessTimeUtc.ToFileTimeUtc());
+				Memory.Write64(data + 20, (ulong)info.LastWriteTimeUtc.ToFileTimeUtc());
+				Memory.Write32(data + 28, 0x12345678);
+				Memory.Write32(data + 32, (uint)(stream.Length >> 32));
+				Memory.Write32(data + 36, (uint)stream.Length);
+				Memory.Write32(data + 40, 1);
+				Memory.Write32(data + 48, (uint)stream.Name.GetHashCode());
+				return 1;
+			});
+			Export(k, "AreFileApisANSI", 0, c => 1);
+			Export(k, "IsDBCSLeadByte", 4, c => IsLeadByte((uint)AnsiEncoding.CodePage, (byte)c.Arg(0)) ? 1u : 0u);
+			Export(k, "IsDBCSLeadByteEx", 8, c => IsLeadByte(c.Arg(0) == 0 ? (uint)AnsiEncoding.CodePage : c.Arg(0), (byte)c.Arg(1)) ? 1u : 0u);
 			Export(k, "FindFirstFileA", 8, c => FindFirst(Memory.ReadCString(c.Arg(0), AnsiEncoding), c.Arg(1), false));
 			Export(k, "FindFirstFileW", 8, c => FindFirst(Memory.ReadWString(c.Arg(0)), c.Arg(1), true));
 			Export(k, "FindFirstFileExA", 24, c => FindFirst(Memory.ReadCString(c.Arg(0), AnsiEncoding), c.Arg(2), false));
@@ -871,6 +894,40 @@ namespace OpenBve.X86
 			long position = stream.Seek(offset, (SeekOrigin)method);
 			if (high != 0) Memory.Write32(high, (uint)(position >> 32));
 			return (uint)position;
+		}
+
+		/// <summary>GetFileAttributesEx's WIN32_FILE_ATTRIBUTE_DATA: attributes, three FILETIMEs, the size (high, low).</summary>
+		private uint FileAttributeData(string name, uint data)
+		{
+			string host = ToHostPath(name);
+			FileSystemInfo info = host == null ? null : Directory.Exists(host) ? new DirectoryInfo(host) : File.Exists(host) ? new FileInfo(host) : (FileSystemInfo)null;
+			if (info == null)
+			{
+				lastError = ErrorFileNotFound;
+				return 0;
+			}
+
+			long size = info is FileInfo file ? file.Length : 0;
+			Memory.Write32(data, info is DirectoryInfo ? 0x10u : 0x80u);
+			Memory.Write64(data + 4, (ulong)info.CreationTimeUtc.ToFileTimeUtc());
+			Memory.Write64(data + 12, (ulong)info.LastAccessTimeUtc.ToFileTimeUtc());
+			Memory.Write64(data + 20, (ulong)info.LastWriteTimeUtc.ToFileTimeUtc());
+			Memory.Write32(data + 28, (uint)(size >> 32));
+			Memory.Write32(data + 32, (uint)size);
+			return 1;
+		}
+
+		/// <summary>Whether a byte starts a double-byte character in a code page (Shift-JIS; GBK, UHC and Big5).</summary>
+		private static bool IsLeadByte(uint codePage, byte b)
+		{
+			switch (codePage)
+			{
+				case 932: return (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xFC);
+				case 936:
+				case 949:
+				case 950: return b >= 0x81 && b <= 0xFE;
+				default: return false;
+			}
 		}
 
 		private uint FileAttributes(string name)
