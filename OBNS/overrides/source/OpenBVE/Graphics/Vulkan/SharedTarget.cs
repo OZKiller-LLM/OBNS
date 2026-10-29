@@ -25,7 +25,7 @@ namespace OpenBve.Graphics.Vulkan
 		private ulong colorMemory, depthMemory, cabColorMemory, cabDepthMemory;
 		internal ulong GLDone, VulkanDone;
 
-		/// <summary>The Win32 handles OpenGL imports: memory (with its size) and semaphores; closed once imported (VulkanWorld).</summary>
+		/// <summary>The handles OpenGL imports (Windows NT handles or file descriptors): memory (with its size) and semaphores.</summary>
 		internal IntPtr ColorHandle, DepthHandle, CabColorHandle, GLDoneHandle, VulkanDoneHandle;
 		internal ulong ColorSize, DepthSize, CabColorSize;
 
@@ -63,7 +63,7 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.ExternalMemoryImageCreateInfo external = new Vk.ExternalMemoryImageCreateInfo
 			{
 				SType = Vk.StructureTypeExternalMemoryImageCreateInfo,
-				HandleTypes = Vk.ExternalMemoryHandleTypeOpaqueWin32
+				HandleTypes = VulkanDevice.MemoryHandleType
 			};
 			Vk.ImageCreateInfo imageInfo = new Vk.ImageCreateInfo
 			{
@@ -88,7 +88,7 @@ namespace OpenBve.Graphics.Vulkan
 			{
 				SType = Vk.StructureTypeExportMemoryAllocateInfo,
 				PNext = &dedicated,
-				HandleTypes = Vk.ExternalMemoryHandleTypeOpaqueWin32
+				HandleTypes = VulkanDevice.MemoryHandleType
 			};
 			Vk.MemoryAllocateInfo allocateInfo = new Vk.MemoryAllocateInfo
 			{
@@ -102,13 +102,7 @@ namespace OpenBve.Graphics.Vulkan
 			size = requirements.Size;
 			if (shared)
 			{
-				Vk.MemoryGetWin32HandleInfoKHR handleInfo = new Vk.MemoryGetWin32HandleInfoKHR
-			{
-				SType = Vk.StructureTypeMemoryGetWin32HandleInfoKhr,
-				Memory = memory,
-				HandleType = Vk.ExternalMemoryHandleTypeOpaqueWin32
-			};
-				Vk.Check(device.GetMemoryWin32Handle(device.Device, &handleInfo, out handle), "vkGetMemoryWin32HandleKHR");
+				handle = device.ExportMemory(memory);
 			}
 
 			Vk.ImageViewCreateInfo viewInfo = new Vk.ImageViewCreateInfo
@@ -127,17 +121,11 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.ExportSemaphoreCreateInfo export = new Vk.ExportSemaphoreCreateInfo
 			{
 				SType = Vk.StructureTypeExportSemaphoreCreateInfo,
-				HandleTypes = Vk.ExternalSemaphoreHandleTypeOpaqueWin32
+				HandleTypes = VulkanDevice.SemaphoreHandleType
 			};
 			Vk.SemaphoreCreateInfo info = new Vk.SemaphoreCreateInfo { SType = Vk.StructureTypeSemaphoreCreateInfo, PNext = &export };
 			Vk.Check(Vk.vkCreateSemaphore(device.Device, &info, null, out ulong semaphore), "vkCreateSemaphore");
-			Vk.SemaphoreGetWin32HandleInfoKHR handleInfo = new Vk.SemaphoreGetWin32HandleInfoKHR
-			{
-				SType = Vk.StructureTypeSemaphoreGetWin32HandleInfoKhr,
-				Semaphore = semaphore,
-				HandleType = Vk.ExternalSemaphoreHandleTypeOpaqueWin32
-			};
-			Vk.Check(device.GetSemaphoreWin32Handle(device.Device, &handleInfo, out handle), "vkGetSemaphoreWin32HandleKHR");
+			handle = device.ExportSemaphore(semaphore);
 			return semaphore;
 		}
 

@@ -1193,6 +1193,27 @@ namespace OpenBve
 		private int setupTickCount;
 		private bool textureStatsLogged;
 
+		/// <summary>OBNS: runs the OpenGL work the loader's threads are waiting on (BaseRenderer.RunInRenderThread).</summary>
+		private static void ObnsRunRenderThreadJobs()
+		{
+			if (!Program.Renderer.RenderThreadJobWaiting)
+			{
+				return;
+			}
+
+			while (!Program.Renderer.RenderThreadJobs.IsEmpty)
+			{
+				Program.Renderer.RenderThreadJobs.TryDequeue(out ThreadStart currentJob);
+				currentJob();
+				lock (currentJob)
+				{
+					Monitor.Pulse(currentJob);
+				}
+			}
+
+			Program.Renderer.RenderThreadJobWaiting = false;
+		}
+
 		public void LoadingScreenLoop()
 		{
 			Program.Renderer.PushMatrix(MatrixMode.Projection);
@@ -1200,8 +1221,33 @@ namespace OpenBve
 			Program.Renderer.PushMatrix(MatrixMode.Modelview);
 			Program.Renderer.CurrentViewMatrix = Matrix4D.Identity;
 
+			// OBNS: the loader's threads hand their OpenGL work (vertex arrays, preloaded textures) to this thread and wait
+			// for it, so it is done on every pass, not once a frame after the buffer swap; and the swap does not wait for
+			// vertical sync while loading. Where a swap stalls (Linux with the screen locked or the display off: about a
+			// second each), the loading screen is drawn only every 2 s, or the whole load waited on it.
+			VSyncMode loadingVSync = VSync;
+			VSync = VSyncMode.Off;
+			Stopwatch sinceDrawn = Stopwatch.StartNew();
+			bool drawSlowly = false;
+			bool first = true;
+
 			while (!Loading.Complete && !Loading.Cancel && !simulationSetup)
 			{
+				ObnsRunRenderThreadJobs();
+				if (!first && sinceDrawn.ElapsedMilliseconds < (drawSlowly ? 2000 : 1000 / 60))
+				{
+					ProcessEvents();
+					if (IsExiting)
+					{
+						Loading.Cancel = true;
+					}
+
+					Thread.Sleep(1);
+					continue;
+				}
+
+				first = false;
+				sinceDrawn.Restart();
 				CPreciseTimer.GetElapsedTime();
 				ProcessEvents();
 				if (IsExiting)
@@ -1237,27 +1283,19 @@ namespace OpenBve
 
 				Program.Renderer.Loading.SetLoadingBkg(Program.CurrentRoute.Information.LoadingScreenBackground);
 				Program.Renderer.Loading.DrawLoadingScreen(Program.Renderer.Fonts.SmallFont, routeProgress, finalTrainProgress);
+				long swapStart = Stopwatch.GetTimestamp();
 				SwapBuffers();
-				
-				if (Program.Renderer.RenderThreadJobWaiting)
+				double swapMilliseconds = (Stopwatch.GetTimestamp() - swapStart) * 1000.0 / Stopwatch.Frequency;
+				if (swapMilliseconds > 250 != drawSlowly)
 				{
-					while (!Program.Renderer.RenderThreadJobs.IsEmpty)
-					{
-						Program.Renderer.RenderThreadJobs.TryDequeue(out ThreadStart currentJob);
-						currentJob();
-						lock (currentJob)
-						{
-							Monitor.Pulse(currentJob);
-						}
-						
-					}
-					Program.Renderer.RenderThreadJobWaiting = false;
+					drawSlowly = swapMilliseconds > 250;
+					Program.FileSystem.AppendToLogFile(drawSlowly
+						? "OBNS: the loading screen's buffer swap took " + swapMilliseconds.ToString("0") + " ms (the window not shown?): drawn every 2 s while loading"
+						: "OBNS: the loading screen's buffer swap is quick again: drawn every frame");
 				}
-				double time = CPreciseTimer.GetElapsedTime();
-				double wait = 1000.0 / 60.0 - time * 1000 - 50;
-				if (wait > 0)
-					Thread.Sleep((int)(wait));
 			}
+
+			VSync = loadingVSync;
 			if(Loading.Cancel)
 			{
 				Exit();

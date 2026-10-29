@@ -175,4 +175,9 @@ it; `GameWindow.cs` sets it up and sends upstream's texture preloads to it; `Gra
    where the same view without shadows differs by 5.4). On the Tuen Ma Line with shadows on, in one run:
    exterior frames 15.7-23.2 ms against OpenGL's 35.6-67.3, the world's main thread time 3.4-5.7 ms against
    11.2-25.7.
-6. Linux (`_fd` handles); later, the 2D layer for macOS.
+6. Linux (`_fd` handles). Written (2026-10-30): on Linux the memory and semaphores are exported as file
+   descriptors (VK_KHR_external_memory_fd, VK_KHR_external_semaphore_fd) and imported with
+   `glImportMemoryFdEXT` and `glImportSemaphoreFdEXT`, which take the descriptor over (Windows' NT handles are
+   closed after an import, once a call has waited for the driver: a threaded driver may not have done the
+   import yet); Mono finds the loader as `libvulkan.so.1` through a dllmap in OpenBve.exe.config (declared an
+   ignored section, which .NET Framework otherwise rejects). Later, the 2D layer for macOS.

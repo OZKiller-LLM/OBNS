@@ -87,7 +87,7 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.ExternalMemoryBufferCreateInfo external = new Vk.ExternalMemoryBufferCreateInfo
 				{
 					SType = Vk.StructureTypeExternalMemoryBufferCreateInfo,
-					HandleTypes = Vk.ExternalMemoryHandleTypeOpaqueWin32
+					HandleTypes = VulkanDevice.MemoryHandleType
 				};
 				Vk.BufferCreateInfo bufferInfo = new Vk.BufferCreateInfo { SType = Vk.StructureTypeBufferCreateInfo, PNext = &external, Size = size, Usage = bufferUsage };
 				Vk.Check(Vk.vkCreateBuffer(device.Device, &bufferInfo, null, out buffer), "vkCreateBuffer (shared)");
@@ -101,7 +101,7 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.ExportMemoryAllocateInfo export = new Vk.ExportMemoryAllocateInfo
 			{
 				SType = Vk.StructureTypeExportMemoryAllocateInfo,
-				HandleTypes = Vk.ExternalMemoryHandleTypeOpaqueWin32
+				HandleTypes = VulkanDevice.MemoryHandleType
 			};
 			Vk.MemoryAllocateInfo allocateInfo = new Vk.MemoryAllocateInfo
 			{
@@ -116,19 +116,13 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.Check(Vk.vkBindBufferMemory(device.Device, buffer, memory, 0), "vkBindBufferMemory (shared)");
 			}
 
-			// OpenGL imports the block once; the handle is not taken over by the import, so it is closed after.
-			Vk.MemoryGetWin32HandleInfoKHR handleInfo = new Vk.MemoryGetWin32HandleInfoKHR
-			{
-				SType = Vk.StructureTypeMemoryGetWin32HandleInfoKhr,
-				Memory = memory,
-				HandleType = Vk.ExternalMemoryHandleTypeOpaqueWin32
-			};
-			Vk.Check(device.GetMemoryWin32Handle(device.Device, &handleInfo, out IntPtr handle), "vkGetMemoryWin32HandleKHR (shared)");
+			// OpenGL imports the block once (a Windows handle is closed after, a file descriptor taken over).
+			IntPtr handle = device.ExportMemory(memory);
 			LibRender2.ObnsSharing.CheckError("before importing a shared block (left by an earlier call)");
 			GL.Ext.CreateMemoryObjects(1, out int glMemory);
-			GL.Ext.ImportMemoryWin32Handle(glMemory, (long)requirements.Size, ExternalHandleType.HandleTypeOpaqueWin32Ext, handle);
+			VulkanDevice.GLImportMemory(glMemory, requirements.Size, handle);
 			LibRender2.ObnsSharing.CheckError("importing a shared " + name + " block of " + (requirements.Size >> 20) + " MB");
-			CloseHandle(handle);
+			VulkanDevice.CloseExported(handle);
 
 			memories.Add(memory);
 			Buffers.Add(buffer);
@@ -136,9 +130,6 @@ namespace OpenBve.Graphics.Vulkan
 			allocators.Add(new RangeAllocator(size));
 			return memories.Count - 1;
 		}
-
-		[DllImport("kernel32.dll")]
-		private static extern bool CloseHandle(IntPtr handle);
 
 		public void Dispose()
 		{

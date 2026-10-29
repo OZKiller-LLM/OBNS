@@ -231,23 +231,26 @@ namespace OpenBve.Graphics.Vulkan
 		private static string GLCanShare(out byte[] uuid)
 		{
 			uuid = null;
-			if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+			if (Environment.OSVersion.Platform != PlatformID.Win32NT && !VulkanDevice.PosixHandles)
 			{
-				return "only Windows' handles are supported so far";
+				return "only Windows' handles and Linux's file descriptors are supported so far";
 			}
 
+			// Windows shares NT handles, Linux file descriptors.
+			string memoryExtension = VulkanDevice.PosixHandles ? "GL_EXT_memory_object_fd" : "GL_EXT_memory_object_win32";
+			string semaphoreExtension = VulkanDevice.PosixHandles ? "GL_EXT_semaphore_fd" : "GL_EXT_semaphore_win32";
 			int count = GL.GetInteger(GetPName.NumExtensions);
 			bool memory = false, semaphore = false;
 			for (int i = 0; i < count; i++)
 			{
 				string extension = GL.GetString(StringNameIndexed.Extensions, i);
-				memory |= extension == "GL_EXT_memory_object_win32";
-				semaphore |= extension == "GL_EXT_semaphore_win32";
+				memory |= extension == memoryExtension;
+				semaphore |= extension == semaphoreExtension;
 			}
 
 			if (!memory || !semaphore)
 			{
-				return "OpenGL has no " + (memory ? "GL_EXT_semaphore_win32" : "GL_EXT_memory_object_win32");
+				return "OpenGL has no " + (memory ? semaphoreExtension : memoryExtension);
 			}
 
 			IntPtr address = ((IGraphicsContextInternal)GraphicsContext.CurrentContext).GetAddress("glGetUnsignedBytei_vEXT");
@@ -318,23 +321,20 @@ namespace OpenBve.Graphics.Vulkan
 			glDoneSemaphore = ImportSemaphore(target.GLDoneHandle);
 			glVulkanDoneSemaphore = ImportSemaphore(target.VulkanDoneHandle);
 
-			// Windows NT handles are not taken over by the import: they are closed here.
-			CloseHandle(target.ColorHandle);
-			CloseHandle(target.DepthHandle);
-			CloseHandle(target.CabColorHandle);
-			CloseHandle(target.GLDoneHandle);
-			CloseHandle(target.VulkanDoneHandle);
+			// Windows NT handles are not taken over by the import: closed now the textures are made from them.
+			VulkanDevice.CloseExported(target.ColorHandle);
+			VulkanDevice.CloseExported(target.DepthHandle);
+			VulkanDevice.CloseExported(target.CabColorHandle);
+			VulkanDevice.CloseExported(target.GLDoneHandle);
+			VulkanDevice.CloseExported(target.VulkanDoneHandle);
 		}
-
-		[DllImport("kernel32.dll")]
-		private static extern bool CloseHandle(IntPtr handle);
 
 		private static int ImportMemory(IntPtr handle, ulong size)
 		{
 			GL.Ext.CreateMemoryObjects(1, out int memory);
 			int dedicated = 1;
 			GL.Ext.MemoryObjectParameter(memory, MemoryObjectParameterName.DedicatedMemoryObjectExt, ref dedicated);
-			GL.Ext.ImportMemoryWin32Handle(memory, (long)size, ExternalHandleType.HandleTypeOpaqueWin32Ext, handle);
+			VulkanDevice.GLImportMemory(memory, size, handle);
 			return memory;
 		}
 
@@ -354,7 +354,7 @@ namespace OpenBve.Graphics.Vulkan
 		private static int ImportSemaphore(IntPtr handle)
 		{
 			GL.Ext.GenSemaphores(1, out int semaphore);
-			GL.Ext.ImportSemaphoreWin32Handle(semaphore, ExternalHandleType.HandleTypeOpaqueWin32Ext, handle);
+			VulkanDevice.GLImportSemaphore(semaphore, handle);
 			return semaphore;
 		}
 

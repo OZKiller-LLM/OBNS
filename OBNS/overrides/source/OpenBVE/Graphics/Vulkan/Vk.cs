@@ -74,6 +74,10 @@ namespace OpenBve.Graphics.Vulkan
 		// External handles.
 		internal const uint ExternalMemoryHandleTypeOpaqueWin32 = 0x2;
 		internal const uint ExternalSemaphoreHandleTypeOpaqueWin32 = 0x2;
+		internal const uint ExternalMemoryHandleTypeOpaqueFd = 0x1;
+		internal const uint ExternalSemaphoreHandleTypeOpaqueFd = 0x1;
+		internal const uint StructureTypeMemoryGetFdInfoKhr = 1000074002;
+		internal const uint StructureTypeSemaphoreGetFdInfoKhr = 1000079001;
 
 		// Pipeline stages, access.
 		internal const uint PipelineStageTopOfPipe = 0x1, PipelineStageEarlyFragmentTests = 0x100, PipelineStageLateFragmentTests = 0x200,
@@ -555,6 +559,13 @@ namespace OpenBve.Graphics.Vulkan
 
 		[UnmanagedFunctionPointer(CallingConvention.Winapi)]
 		internal delegate int GetSemaphoreWin32HandleKHR(IntPtr device, SemaphoreGetWin32HandleInfoKHR* info, out IntPtr handle);
+
+		// VkMemoryGetFdInfoKHR and VkSemaphoreGetFdInfoKHR are laid out as the Win32 forms (sType, pNext, object, type).
+		[UnmanagedFunctionPointer(CallingConvention.Winapi)]
+		internal delegate int GetMemoryFdKHR(IntPtr device, MemoryGetWin32HandleInfoKHR* info, out int fd);
+
+		[UnmanagedFunctionPointer(CallingConvention.Winapi)]
+		internal delegate int GetSemaphoreFdKHR(IntPtr device, SemaphoreGetWin32HandleInfoKHR* info, out int fd);
 
 		/// <summary>A device function, or null when the device does not have it.</summary>
 		internal static T DeviceFunction<T>(IntPtr device, string name) where T : class

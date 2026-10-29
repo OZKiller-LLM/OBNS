@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using OpenTK.Graphics.OpenGL;
 
 namespace OpenBve.Graphics.Vulkan
 {
@@ -28,11 +29,106 @@ namespace OpenBve.Graphics.Vulkan
 
 		internal Vk.GetMemoryWin32HandleKHR GetMemoryWin32Handle { get; private set; }
 		internal Vk.GetSemaphoreWin32HandleKHR GetSemaphoreWin32Handle { get; private set; }
+		private Vk.GetMemoryFdKHR getMemoryFd;
+		private Vk.GetSemaphoreFdKHR getSemaphoreFd;
+
+		/// <summary>
+		/// Whether memory and semaphores are shared with OpenGL as POSIX file descriptors (Linux) rather than Windows NT
+		/// handles. OpenGL takes a descriptor over when it imports it; a Windows handle is closed after (CloseExported).
+		/// </summary>
+		internal static readonly bool PosixHandles = Environment.OSVersion.Platform == PlatformID.Unix;
+
+		/// <summary>The handle type memory is exported as.</summary>
+		internal static uint MemoryHandleType => PosixHandles ? Vk.ExternalMemoryHandleTypeOpaqueFd : Vk.ExternalMemoryHandleTypeOpaqueWin32;
+
+		/// <summary>The handle type semaphores are exported as.</summary>
+		internal static uint SemaphoreHandleType => PosixHandles ? Vk.ExternalSemaphoreHandleTypeOpaqueFd : Vk.ExternalSemaphoreHandleTypeOpaqueWin32;
+
+		/// <summary>An exportable allocation's handle for OpenGL: a Windows NT handle, or a file descriptor.</summary>
+		internal IntPtr ExportMemory(ulong memory)
+		{
+			Vk.MemoryGetWin32HandleInfoKHR info = new Vk.MemoryGetWin32HandleInfoKHR
+			{
+				SType = PosixHandles ? Vk.StructureTypeMemoryGetFdInfoKhr : Vk.StructureTypeMemoryGetWin32HandleInfoKhr,
+				Memory = memory,
+				HandleType = MemoryHandleType
+			};
+			if (PosixHandles)
+			{
+				Vk.Check(getMemoryFd(Device, &info, out int fd), "vkGetMemoryFdKHR");
+				return (IntPtr)fd;
+			}
+
+			Vk.Check(GetMemoryWin32Handle(Device, &info, out IntPtr handle), "vkGetMemoryWin32HandleKHR");
+			return handle;
+		}
+
+		/// <summary>An exportable semaphore's handle for OpenGL: a Windows NT handle, or a file descriptor.</summary>
+		internal IntPtr ExportSemaphore(ulong semaphore)
+		{
+			Vk.SemaphoreGetWin32HandleInfoKHR info = new Vk.SemaphoreGetWin32HandleInfoKHR
+			{
+				SType = PosixHandles ? Vk.StructureTypeSemaphoreGetFdInfoKhr : Vk.StructureTypeSemaphoreGetWin32HandleInfoKhr,
+				Semaphore = semaphore,
+				HandleType = SemaphoreHandleType
+			};
+			if (PosixHandles)
+			{
+				Vk.Check(getSemaphoreFd(Device, &info, out int fd), "vkGetSemaphoreFdKHR");
+				return (IntPtr)fd;
+			}
+
+			Vk.Check(GetSemaphoreWin32Handle(Device, &info, out IntPtr handle), "vkGetSemaphoreWin32HandleKHR");
+			return handle;
+		}
+
+		/// <summary>OpenGL imports exported memory (a dedicated allocation if told so); a file descriptor is taken over.</summary>
+		internal static void GLImportMemory(int glMemory, ulong size, IntPtr handle)
+		{
+			if (PosixHandles)
+			{
+				GL.Ext.ImportMemoryF(glMemory, (long)size, ExternalHandleType.HandleTypeOpaqueFdExt, (int)handle);
+			}
+			else
+			{
+				GL.Ext.ImportMemoryWin32Handle(glMemory, (long)size, ExternalHandleType.HandleTypeOpaqueWin32Ext, handle);
+			}
+		}
+
+		/// <summary>OpenGL imports an exported semaphore; a file descriptor is taken over.</summary>
+		internal static void GLImportSemaphore(int glSemaphore, IntPtr handle)
+		{
+			if (PosixHandles)
+			{
+				GL.Ext.ImportSemaphoreF(glSemaphore, ExternalHandleType.HandleTypeOpaqueFdExt, (int)handle);
+			}
+			else
+			{
+				GL.Ext.ImportSemaphoreWin32Handle(glSemaphore, ExternalHandleType.HandleTypeOpaqueWin32Ext, handle);
+			}
+		}
+
+		/// <summary>
+		/// Closes a Windows handle OpenGL has imported (a file descriptor is OpenGL's once imported). Only after a call that
+		/// waits for the driver (glGetError, or using what was imported): a threaded driver may not have done the import yet.
+		/// </summary>
+		internal static void CloseExported(IntPtr handle)
+		{
+			if (!PosixHandles)
+			{
+				CloseHandle(handle);
+			}
+		}
+
+		[DllImport("kernel32.dll")]
+		private static extern bool CloseHandle(IntPtr handle);
 
 		private Vk.PhysicalDeviceMemoryProperties memoryProperties;
 
 		/// <summary>The device extensions the renderer needs (external memory and semaphores are core in Vulkan 1.1).</summary>
-		private static readonly string[] requiredExtensions = { "VK_KHR_external_memory_win32", "VK_KHR_external_semaphore_win32" };
+		private static readonly string[] requiredExtensions = PosixHandles
+			? new[] { "VK_KHR_external_memory_fd", "VK_KHR_external_semaphore_fd" }
+			: new[] { "VK_KHR_external_memory_win32", "VK_KHR_external_semaphore_win32" };
 
 		private VulkanDevice()
 		{
@@ -48,7 +144,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 			catch (DllNotFoundException)
 			{
-				reason = "no Vulkan loader (vulkan-1)";
+				reason = PosixHandles ? "no Vulkan loader (libvulkan.so.1)" : "no Vulkan loader (vulkan-1)";
 			}
 			catch (EntryPointNotFoundException ex)
 			{
@@ -263,11 +359,23 @@ namespace OpenBve.Graphics.Vulkan
 
 			Vk.vkGetDeviceQueue(Device, QueueFamily, 0, out IntPtr queue);
 			Queue = queue;
-			GetMemoryWin32Handle = Vk.DeviceFunction<Vk.GetMemoryWin32HandleKHR>(Device, "vkGetMemoryWin32HandleKHR");
-			GetSemaphoreWin32Handle = Vk.DeviceFunction<Vk.GetSemaphoreWin32HandleKHR>(Device, "vkGetSemaphoreWin32HandleKHR");
-			if (GetMemoryWin32Handle == null || GetSemaphoreWin32Handle == null)
+			if (PosixHandles)
 			{
-				return "the device's Win32 handle functions were not found";
+				getMemoryFd = Vk.DeviceFunction<Vk.GetMemoryFdKHR>(Device, "vkGetMemoryFdKHR");
+				getSemaphoreFd = Vk.DeviceFunction<Vk.GetSemaphoreFdKHR>(Device, "vkGetSemaphoreFdKHR");
+				if (getMemoryFd == null || getSemaphoreFd == null)
+				{
+					return "the device's file descriptor functions were not found";
+				}
+			}
+			else
+			{
+				GetMemoryWin32Handle = Vk.DeviceFunction<Vk.GetMemoryWin32HandleKHR>(Device, "vkGetMemoryWin32HandleKHR");
+				GetSemaphoreWin32Handle = Vk.DeviceFunction<Vk.GetSemaphoreWin32HandleKHR>(Device, "vkGetSemaphoreWin32HandleKHR");
+				if (GetMemoryWin32Handle == null || GetSemaphoreWin32Handle == null)
+				{
+					return "the device's Win32 handle functions were not found";
+				}
 			}
 
 			Vk.PhysicalDeviceMemoryProperties memory;
