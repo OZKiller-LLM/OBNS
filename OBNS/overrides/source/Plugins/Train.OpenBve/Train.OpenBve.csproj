@@ -74,6 +74,7 @@
     <Compile Include="Train\BVE5\Bve5Text.cs" />
     <Compile Include="Train\BVE5\Bve5Vehicle.cs" />
     <Compile Include="Train\BVE5\Bve5Parameters.cs" />
+    <Compile Include="Train\BVE5\Bve5Load.cs" />
     <Compile Include="Train\BVE5\Bve5Performance.cs" />
     <Compile Include="Train\BVE5\Bve5TrainBuilder.cs" />
     <Compile Include="Train\BVE5\Bve5MotorNoise.cs" />
@@ -95,6 +96,10 @@
     <ProjectReference Include="..\..\OpenBveApi\OpenBveApi.csproj">
       <Project>{27134980-4415-4375-a564-40a9014dfa5f}</Project>
       <Name>OpenBveApi</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\RouteManager2\RouteManager2.csproj">
+      <Project>{4EF680D7-DF17-4978-9872-133EDC169B4B}</Project>
+      <Name>RouteManager2</Name>
     </ProjectReference>
     <ProjectReference Include="..\..\SoundManager\SoundManager.csproj">
       <Project>{90ABFA0C-ABCA-444E-ADEF-9A299AED6524}</Project>

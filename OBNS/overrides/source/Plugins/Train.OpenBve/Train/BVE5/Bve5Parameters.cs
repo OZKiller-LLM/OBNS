@@ -119,6 +119,10 @@ namespace Train.OpenBve
 		internal double TrailerInertiaFactor = 0.05;
 		internal double CarLength = 20;
 
+		// [Passengers]: people a car carries at a load of 1, and each one's mass (kg).
+		internal double PassengerCapacity = 150;
+		internal double PassengerBodyWeight = 65;
+
 		// [Door]
 		internal double DoorCloseTime = 5;
 
@@ -198,6 +202,9 @@ namespace Train.OpenBve
 			p.MotorcarInertiaFactor = Number("Dynamics", "MotorcarInertiaFactor", 0.1);
 			p.TrailerInertiaFactor = Number("Dynamics", "TrailerInertiaFactor", 0.05);
 			p.CarLength = Number("Dynamics", "CarLength", 20);
+
+			p.PassengerCapacity = Math.Max(0, Number("Passengers", "Capacity", 150));
+			p.PassengerBodyWeight = Math.Max(0, Number("Passengers", "BodyWeight", 65));
 
 			p.DoorCloseTime = Number("Door", "CloseTime", 5);
 

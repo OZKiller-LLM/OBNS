@@ -190,10 +190,38 @@ namespace Train.OpenBve
 		internal Bve5StepParameters Params = new Bve5StepParameters();
 
 		/// <summary>
+		/// The passenger load as load compensation sees it (Bve5Load): where the current limit lies
+		/// between CurrentLimitingValue_Empty (0) and _Full (1), and the loaded mass over the empty
+		/// mass, by which steps with jerk regulation raise their force (up to MaxForce, the current
+		/// towards MaxCurrent by the same share). Without LoadCompensating, 0 and 1.
+		/// </summary>
+		internal double LoadShare;
+		internal double MassRatio = 1;
+
+		/// <summary>A step's force (N, per motor car) and current (A) at a speed (km/h), with the load.</summary>
+		internal void At(int step, double kmh, out double force, out double current)
+		{
+			force = Math.Max(0, Force.Get(step, kmh));
+			current = Current.Get(step, kmh);
+			if (MassRatio > 1 && (Params.Get("JerkRegulation_Up", step, 0) > 0 || Params.Get("JerkRegulation_Down", step, 0) > 0))
+			{
+				double most = MaxForce.Curves > step ? Math.Max(force, MaxForce.Get(step, kmh)) : force;
+				if (most > force)
+				{
+					double wanted = Math.Min(force * MassRatio, most);
+					double share = (wanted - force) / (most - force);
+					double mostCurrent = MaxCurrent.Curves > step ? Math.Max(current, MaxCurrent.Get(step, kmh)) : current;
+					current += (mostCurrent - current) * share;
+					force = wanted;
+				}
+			}
+		}
+
+		/// <summary>
 		/// The controller step a handle notch settles on at a speed (km/h): starting from the first, a
 		/// step advances to the next while the handle is at that step's RequiredNotch_Up or above and
-		/// the current is within its CurrentLimitingValue_Empty, as BVE5's controller does once its
-		/// step delays have passed. With no parameters, notch n is step n.
+		/// the current is within its limit (CurrentLimitingValue_Empty, towards _Full by the load), as
+		/// BVE5's controller does once its step delays have passed. With no parameters, notch n is step n.
 		/// </summary>
 		internal int StepFor(int notch, double kmh)
 		{
@@ -212,8 +240,10 @@ namespace Train.OpenBve
 					break;
 				}
 
-				double limit = Params.Get("CurrentLimitingValue_Empty", step, 0);
-				if (limit > 0 && Current.Get(step, kmh) > limit)
+				double empty = Params.Get("CurrentLimitingValue_Empty", step, 0);
+				double limit = empty + (Params.Get("CurrentLimitingValue_Full", step, empty) - empty) * LoadShare;
+				At(step, kmh, out _, out double current);
+				if (limit > 0 && current > limit)
 				{
 					break;
 				}
@@ -286,9 +316,36 @@ namespace Train.OpenBve
 		{
 			double kmh = Math.Abs(Speed) * 3.6;
 			int step = power.StepFor(notch, kmh);
-			return step < 0 ? 0 : Math.Max(0, power.Force.Get(step, kmh)) * scale;
+			if (step < 0)
+			{
+				return 0;
+			}
+
+			power.At(step, kmh, out double force, out _);
+			return force * scale;
 		}
 
 		public override double MaximumAcceleration => maximum;
+	}
+
+	/// <summary>
+	/// The air brake's deceleration at full service, as upstream's brakes take it: with load compensation, BVE5 raises
+	/// the brake cylinders' pressure by the loaded mass over the empty mass (Bve5Load), and the deceleration by as much.
+	/// </summary>
+	internal sealed class Bve5DecelerationCurve : AccelerationCurve
+	{
+		private readonly double empty;
+
+		/// <summary>The loaded mass over the empty mass the brake makes up for (1: empty, or no load compensation).</summary>
+		internal double MassRatio = 1;
+
+		internal Bve5DecelerationCurve(double deceleration)
+		{
+			empty = deceleration;
+		}
+
+		public override double GetAccelerationOutput(double Speed) => empty * MassRatio;
+
+		public override double MaximumAcceleration => empty * MassRatio;
 	}
 }

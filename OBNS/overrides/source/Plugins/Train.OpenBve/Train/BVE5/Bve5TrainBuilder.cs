@@ -142,10 +142,14 @@ namespace Train.OpenBve
 			double bcUp = p.BcApplySpeed * Math.Sqrt(emergencyBc);
 			double bcDown = p.BcReleaseSpeed * Math.Sqrt(emergencyBc);
 			double operatingPressure = p.BrakeSystem == Bve5BrakeSystem.Ecb ? Math.Max(490000, p.BpInitialPressure) : p.BpInitialPressure;
+			double bcServiceCharge = p.BrakeSystem == Bve5BrakeSystem.Cl ? bcUp : 0.3 * bcUp;
+			// Each car's air brake deceleration, raised with the cylinders' pressure by load compensation (Bve5Load).
+			Bve5DecelerationCurve[] loadedCurves = new Bve5DecelerationCurve[cars];
 
 			for (int i = 0; i < cars; i++)
 			{
-				AccelerationCurve[] decelerationCurves = { new BveDecelerationCurve(brakeDeceleration) };
+				loadedCurves[i] = new Bve5DecelerationCurve(brakeDeceleration);
+				AccelerationCurve[] decelerationCurves = { loadedCurves[i] };
 				CarBase car = train.Cars[i];
 				switch (p.BrakeSystem)
 				{
@@ -183,7 +187,7 @@ namespace Train.OpenBve
 				double r = Math.Max(0.1, Math.Min(1.0, 200000.0 / emergencyBc - 1.0));
 				car.CarBrake.AuxiliaryReservoir = new AuxiliaryReservoir(0.975 * operatingPressure, 200000.0, 0.5, r);
 				car.CarBrake.AuxiliaryReservoir.Volume = 0.16;
-				car.CarBrake.BrakeCylinder = new BrakeCylinder(serviceBc, emergencyBc, p.BrakeSystem == Bve5BrakeSystem.Cl ? bcUp : 0.3 * bcUp, bcUp, bcDown);
+				car.CarBrake.BrakeCylinder = new BrakeCylinder(serviceBc, emergencyBc, bcServiceCharge, bcUp, bcDown);
 				car.CarBrake.BrakeCylinder.Volume = 0.14;
 				car.CarBrake.JerkUp = 10.0;
 				car.CarBrake.JerkDown = 10.0;
@@ -250,6 +254,13 @@ namespace Train.OpenBve
 			}
 
 			train.Cars[cars - 1].BeaconReceiver.TriggerType = cars == 1 ? EventTriggerType.SingleCarTrain : EventTriggerType.TrainRear;
+
+			// The passengers: BVE5's load, from the first stop's (Bve5Load).
+			Bve5Load load = new Bve5Load(train, p, power, mass, serviceBc, emergencyBc, bcServiceCharge, bcUp, bcDown, loadedCurves);
+			for (int i = 0; i < cars; i++)
+			{
+				train.Cars[i].Cargo = new Bve5Passengers(train.Cars[i], load);
+			}
 
 			// --- the driver's eye: BVE5 measures Z back from the car's front ---
 			CarBase driverCar = train.Cars[train.DriverCar];

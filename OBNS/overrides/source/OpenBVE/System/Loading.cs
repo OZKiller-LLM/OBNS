@@ -282,6 +282,8 @@ namespace OpenBve {
 						loaded = true;
 						break;
 					}
+					// OBNS: the whole exception in the log (the crash log has its message only), to find where it came from.
+					Program.FileSystem.AppendToLogFile("The route could not be loaded: " + Program.CurrentHost.Plugins[i].Route.LastException);
 					var currentError = Translations.GetInterfaceString(HostApplication.OpenBve, new[] {"errors","critical_file"});
 					currentError = currentError.Replace("[file]", System.IO.Path.GetFileName(CurrentRouteFile));
 					Program.ShowMessageBox(currentError, Translations.GetInterfaceString(HostApplication.OpenBve, new[] {"program","title"}));

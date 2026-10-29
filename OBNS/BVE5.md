@@ -45,6 +45,15 @@ relative to the file. The vehicle performance file and the motor noise file have
   peak acceleration E233 cocoa 2.57 / 2.53 km/h/s (OBNS / Rinkin), TWR E233 2.54 / 2.50, E235
   3.06 / 3.02, JR 103 HK609 about 3.3 / 3.13; full service brake E233 cocoa 5.45 / 5.50, TWR E233
   4.51 / 4.65, E235 3.62 + 3.59 electric (both act) / 6.98.
+- **Passengers** (`Bve5Load`, by Rinkin's runs of BVE5): the load factor of the stop just served (a
+  station list's `passengers`, a factor: 1 is a full train; OBNS's copy of `Route.Bve5`'s
+  `StationList.cs` reads it so, where upstream divided it by 100), from the first stop's at the start:
+  factor x `[Passengers] Capacity` (150) people of `BodyWeight` (65 kg) a car. With `LoadCompensating`
+  the current limits lie between `CurrentLimitingValue_Empty` and `_Full` by the load (at most 1),
+  steps with jerk regulation raise their force by the loaded mass over the empty mass (up to
+  `MaxForce`, the current towards `MaxCurrent` as much), and the brake cylinders' pressure rises by
+  it, so that a loaded train accelerates and brakes about as an empty one; without, the same forces
+  move more mass. Upstream's own passenger mass is never added to a car's (`CargoMass`).
 - **Panel**: both formats through upstream's panel2.cfg parser (OBNS copy), read as BVE5 reads them: laid
   out for a 4:3 view with the default view kept within the panel's limits; a needle with
   `NaturalFreq = 0` undamped (upstream holds it at its first angle); a pilot lamp lit by any value but 0
@@ -75,8 +84,6 @@ relative to the file. The vehicle performance file and the motor noise file have
 
 ## Not yet
 
-- Passenger load (BVE starts the train at its first stop's load, the current limit between `_Empty`
-  and `_Full` by it): OBNS's trains are empty.
 - An `Ats64`-only train on Android needs an x64 layer (the x86 layer runs 32-bit plugins).
 - Upstream's BVE5 map parser (the `Bve5_Parsing` package) rejects some map 2.02 statements, such as
   `Track[...].Position(x, y, radius)`; such routes load without them.

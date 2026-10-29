@@ -21,6 +21,12 @@
     <!-- OBNS's copy, shared with the desktop build: a route's BVE5 adhesion kept, not halved. -->
     <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\MapParser\ConvertComponents.cs" />
     <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\MapParser\ConvertComponents.cs" Link="OBNS\ConvertComponents.cs" />
+    <!-- OBNS's copy: a BVE5 station list's passengers read as the load factor it is, not a percentage. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\Components\StationList.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\Components\StationList.cs" Link="OBNS\StationList.cs" />
+    <!-- OBNS's copy: an AI train's car sounds that do not exist are left out, not a failed route load. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\Components\ScriptedTrain.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\Components\ScriptedTrain.cs" Link="OBNS\ScriptedTrain.cs" />
 
   </ItemGroup>
 
