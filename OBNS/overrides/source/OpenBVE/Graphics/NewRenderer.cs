@@ -95,6 +95,8 @@ namespace OpenBve.Graphics
 			// OBNS: the frame's parts timed for the frame statistics (OBNS_FRAMESTATS).
 			long sceneStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			GpuStats.Mark(GpuStats.Point.FrameStart);
+			// OBNS: a new frame for the texture uploads' per-frame budget (TextureManager.ObnsUploadBudgetSpent).
+			LibRender2.Textures.TextureManager.ObnsFrameStarted();
 			SceneLaps.Start();
 			ReleaseResources();
 			// initialize

@@ -110,6 +110,42 @@ namespace OpenBve.Graphics.Vulkan
 			}
 		}
 
+		/// <summary>The upload batch the vertex writes' barrier was recorded in (one per batch).</summary>
+		private int vertexBarrierBatch = -1;
+
+		/// <summary>
+		/// Writes vertices into a buffer's storage with a copy on Vulkan's queue (ObnsSharing.WriteVertices), submitted
+		/// with the uploads before the next frame's draws: after a barrier on the frames before it reading vertices, so no
+		/// frame in flight sees half a write, and with no OpenGL access to the storage at all.
+		/// </summary>
+		internal unsafe bool WriteVertices(ObnsSharedMemory shared, LibRender2.LibRenderVertex[] data, long byteOffset)
+		{
+			if (!(shared?.Owner is GpuRange range) || data == null || data.Length == 0)
+			{
+				return false;
+			}
+
+			ulong bytes = (ulong)data.Length * (ulong)sizeof(LibRender2.LibRenderVertex);
+			ulong staging, stagingOffset;
+			fixed (LibRender2.LibRenderVertex* source = data)
+			{
+				staging = uploader.Stage(source, bytes, out stagingOffset);
+			}
+
+			IntPtr commands = uploader.Commands;
+			if (vertexBarrierBatch != uploader.Submissions)
+			{
+				// Earlier frames' vertex reads (all submitted before this batch) done before the copies write.
+				vertexBarrierBatch = uploader.Submissions;
+				Vk.MemoryBarrier barrier = new Vk.MemoryBarrier { SType = Vk.StructureTypeMemoryBarrier, SrcAccessMask = Vk.AccessVertexAttributeRead, DstAccessMask = Vk.AccessTransferWrite };
+				Vk.vkCmdPipelineBarrier(commands, Vk.PipelineStageVertexInput, Vk.PipelineStageTransfer, 0, 1, &barrier, 0, null, 0, null);
+			}
+
+			Vk.BufferCopy region = new Vk.BufferCopy { SrcOffset = stagingOffset, DstOffset = range.Offset + (ulong)byteOffset, Size = bytes };
+			Vk.vkCmdCopyBuffer(commands, staging, Vertices.Buffers[range.Block], 1, &region);
+			return true;
+		}
+
 		/// <summary>OpenGL has written a vertex buffer (it is handed over at the next frame).</summary>
 		internal void Written(int buffer)
 		{

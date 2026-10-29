@@ -465,8 +465,12 @@ namespace OpenBve.Graphics.Vulkan
 		/// with wait, until the GPU has done it (and the staging is freed). Staging still to be written is written first:
 		/// with parallel, on every core (only from the render thread between frames' work, as FrameWorkers runs one job).
 		/// </summary>
+		/// <summary>How many times the uploads have been submitted (a new batch begins after each).</summary>
+		internal int Submissions { get; private set; }
+
 		internal void Submit(bool wait, bool parallel = false)
 		{
+			Submissions++;
 			if (current == null)
 			{
 				return;

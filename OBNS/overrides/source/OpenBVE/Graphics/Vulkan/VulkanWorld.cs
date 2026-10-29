@@ -116,6 +116,7 @@ namespace OpenBve.Graphics.Vulkan
 			ObnsSharing.AllocateBuffer = bytes => Guard(() => Scene.Meshes.AllocateVertices(bytes), 4);
 			ObnsSharing.FreeBuffer = shared => Guard(() => { Scene.Meshes.FreeVertices(shared); return null; }, 5);
 			ObnsSharing.BufferWritten = buffer => Scene.Meshes.Written(buffer);
+			ObnsSharing.WriteVertices = (shared, data, offset) => Guard(() => Scene.Meshes.WriteVertices(shared, data, offset) ? shared : null, 6) != null;
 			// Textures are not shared (OpenGL draws far more slowly with textures over shared memory): Vulkan keeps its
 			// own copy of the world's (VulkanTextures), and of animated ones' frames as OpenGL uploads them.
 			ObnsSharing.AnimatedFrame = (handle, decoded, bytes, opaque) => Guard(() => { Scene.Textures.AnimatedFrame(handle, decoded, bytes, opaque); return null; }, 2);
@@ -130,10 +131,10 @@ namespace OpenBve.Graphics.Vulkan
 
 		// The hooks' calls and time, logged every 5 seconds while they are busy (OBNS_VULKAN_DEBUG=1).
 		private static readonly bool logHooks = Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1";
-		private static readonly long[] hookCalls = new long[6], hookTicks = new long[6];
+		private static readonly long[] hookCalls = new long[7], hookTicks = new long[7];
 		private static readonly System.Diagnostics.Stopwatch hookClock = System.Diagnostics.Stopwatch.StartNew();
 		private static long lastHookLog;
-		private static readonly string[] hookNames = { "meshes indexed", "VAOs disposed", "animated texture frames", "textures unloaded", "vertex buffers made", "vertex buffers freed" };
+		private static readonly string[] hookNames = { "meshes indexed", "VAOs disposed", "animated texture frames", "textures unloaded", "vertex buffers made", "vertex buffers freed", "vertex writes" };
 
 		/// <summary>
 		/// Runs a hook, so a failure is logged (once) and does not break upstream's drawing: storage not given is left to

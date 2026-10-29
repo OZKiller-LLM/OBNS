@@ -420,6 +420,90 @@ namespace LibRender2.Textures
 			return result;
 		}
 
+		/// <summary>
+		/// OBNS: whether textures OpenGL first needs are decoded on worker threads and uploaded a few at a time (set while
+		/// the simulation runs; loading decodes at once). Since the register-time decodes are let go, a texture coming into
+		/// view is decoded from its file when first drawn: on the main thread, that was a frame of up to 0.7 s near stations
+		/// on the Tuen Ma Line, for machines drawing with OpenGL only.
+		/// </summary>
+		public static bool ObnsAsyncDecoding;
+
+		private static readonly Dictionary<Texture, System.Threading.Tasks.Task<Texture>> obnsDecoding = new Dictionary<Texture, System.Threading.Tasks.Task<Texture>>();
+		private static readonly int obnsMaximumDecodes = Math.Max(1, Environment.ProcessorCount / 4);
+
+		/// <summary>A handle's decode once its worker has finished it (true); starts one if none is running (false meanwhile).</summary>
+		private static bool ObnsTakeDecode(Texture handle, out Texture decoded)
+		{
+			decoded = null;
+			lock (obnsDecoding)
+			{
+				if (!obnsDecoding.TryGetValue(handle, out System.Threading.Tasks.Task<Texture> task))
+				{
+					if (obnsDecoding.Count < obnsMaximumDecodes)
+					{
+						TextureOrigin origin = handle.Origin;
+						obnsDecoding[handle] = System.Threading.Tasks.Task.Run(() =>
+						{
+							System.Threading.Thread thread = System.Threading.Thread.CurrentThread;
+							System.Threading.ThreadPriority priority = thread.Priority;
+							thread.Priority = System.Threading.ThreadPriority.BelowNormal;
+							try
+							{
+								return origin.GetTexture(out Texture result) ? result : null;
+							}
+							finally
+							{
+								thread.Priority = priority;
+							}
+						});
+					}
+
+					return false;
+				}
+
+				if (!task.IsCompleted)
+				{
+					return false;
+				}
+
+				obnsDecoding.Remove(handle);
+				decoded = task.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? task.Result : null;
+				return true;
+			}
+		}
+
+		/// <summary>Keeps a finished decode for the next frame's upload (the frame's upload budget was spent).</summary>
+		private static void ObnsKeepDecode(Texture handle, Texture decoded)
+		{
+			lock (obnsDecoding)
+			{
+				obnsDecoding[handle] = System.Threading.Tasks.Task.FromResult(decoded);
+			}
+		}
+
+		private static long obnsBudgetStart;
+		private static bool obnsUploadedThisFrame;
+
+		/// <summary>OBNS: a frame begins (the renderer calls it): its uploads' 4 ms start when the first one goes up.</summary>
+		public static void ObnsFrameStarted()
+		{
+			obnsUploadedThisFrame = false;
+		}
+
+		/// <summary>Whether this frame's uploads have taken their 4 ms (the first of a frame always goes ahead).</summary>
+		private static bool ObnsUploadBudgetSpent(int currentTicks)
+		{
+			long now = Stopwatch.GetTimestamp();
+			if (!obnsUploadedThisFrame)
+			{
+				obnsUploadedThisFrame = true;
+				obnsBudgetStart = now;
+				return false;
+			}
+
+			return (now - obnsBudgetStart) * 1000.0 / Stopwatch.Frequency > 4.0;
+		}
+
 		private bool LoadTextureInternal(ref Texture handle, OpenGlTextureWrapMode wrap, int currentTicks, InterpolationMode Interpolation, int AnisotropicFilteringLevel)
 		{
 
@@ -680,7 +764,26 @@ namespace LibRender2.Textures
 					handle.Ignore = true;
 					return false;
 				}
-				handle.Origin.GetTexture(out texture);
+
+				if (ObnsAsyncDecoding && handle.Origin is PathOrigin)
+				{
+					// OBNS: decoded on a worker thread, uploaded once ready (until then the face is drawn without it).
+					if (!ObnsTakeDecode(handle, out texture))
+					{
+						return false;
+					}
+
+					// A frame's uploads stop after about 4 ms; the rest go up in the next frames.
+					if (texture != null && !texture.MultipleFrames && ObnsUploadBudgetSpent(currentTicks))
+					{
+						ObnsKeepDecode(handle, texture);
+						return false;
+					}
+				}
+				else
+				{
+					handle.Origin.GetTexture(out texture);
+				}
 			}
 			}
 			if (texture != null)

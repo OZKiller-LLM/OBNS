@@ -1181,6 +1181,8 @@ namespace OpenBve
 			}
 
 			simulationSetup = true;
+			// OBNS: from now, textures OpenGL first needs are decoded on worker threads (TextureManager).
+			LibRender2.Textures.TextureManager.ObnsAsyncDecoding = true;
 			Program.FileSystem.AppendToLogFile(@"--------------------", false);
 			Program.FileSystem.AppendToLogFile(@"Loading complete, starting simulation.");
 			Program.FileSystem.AppendToLogFile("Texture stats @load: decodes " + Program.CurrentHost.TextureDecodeCalls + " calls / " + Program.CurrentHost.TextureDecodeMs + " ms | uploads " + LibRender2.Textures.TextureManager.UploadCount + " calls / " + LibRender2.Textures.TextureManager.UploadMs + " ms | GC gen0/1/2: " + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2));
@@ -1225,6 +1227,7 @@ namespace OpenBve
 			// for it, so it is done on every pass, not once a frame after the buffer swap; and the swap does not wait for
 			// vertical sync while loading. Where a swap stalls (Linux with the screen locked or the display off: about a
 			// second each), the loading screen is drawn only every 2 s, or the whole load waited on it.
+			LibRender2.Textures.TextureManager.ObnsAsyncDecoding = false;
 			VSyncMode loadingVSync = VSync;
 			VSync = VSyncMode.Off;
 			Stopwatch sinceDrawn = Stopwatch.StartNew();

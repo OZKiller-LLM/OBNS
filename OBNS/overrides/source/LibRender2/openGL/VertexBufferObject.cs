@@ -40,6 +40,14 @@ namespace LibRender2
 		public static Action<int> BufferWritten;
 
 		/// <summary>
+		/// Writes vertices into a buffer's shared storage the sharer's way (Vulkan: a copy on its own queue, ordered with its
+		/// draws), the offset in bytes; false if it does not, and OpenGL writes them. Animated objects and scrolling
+		/// displays rewrite theirs every frame: through OpenGL each write made the two APIs wait on each other (on the
+		/// Tuen Ma Line, frames of 0.1 to 1.5 s near stations).
+		/// </summary>
+		public static Func<ObnsSharedMemory, LibRenderVertex[], long, bool> WriteVertices;
+
+		/// <summary>
 		/// Called with an animated texture's pixels when OpenGL has uploaded them (its first frame, and each new one): the
 		/// handle, the decoded texture, its pixels in its own format, and whether it is used as opaque.
 		/// </summary>
@@ -150,6 +158,11 @@ namespace LibRender2
 		/// </summary>
 		private void ObnsWrite(LibRenderVertex[] data, int offset)
 		{
+			if (ObnsSharing.WriteVertices != null && ObnsSharing.WriteVertices(ObnsShared, data, (long)offset * vertexSize))
+			{
+				return;
+			}
+
 			IntPtr bytes = new IntPtr(data.Length * vertexSize);
 			GL.GenBuffers(1, out int staging);
 			GL.BindBuffer(BufferTarget.CopyReadBuffer, staging);
