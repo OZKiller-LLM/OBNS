@@ -120,7 +120,11 @@ namespace OpenBve.X86
 			Export("advapi32", "SystemFunction036", 8, c => // RtlGenRandom
 			{
 				byte[] bytes = new byte[c.Arg(1)];
-				RandomNumberGenerator.Fill(bytes);
+				using (RandomNumberGenerator random = RandomNumberGenerator.Create())
+				{
+					random.GetBytes(bytes);
+				}
+
 				Memory.WriteBytes(c.Arg(0), bytes);
 				return 1;
 			});
@@ -216,20 +220,20 @@ namespace OpenBve.X86
 			{
 				double x = c.ArgDouble(0);
 				// FP_ZERO 0, FP_INFINITE 1, FP_NAN 2, FP_NORMAL -1, FP_SUBNORMAL -2
-				return double.IsNaN(x) ? 2u : double.IsInfinity(x) ? 1u : x == 0 ? 0u : double.IsSubnormal(x) ? unchecked((uint)-2) : unchecked((uint)-1);
+				return double.IsNaN(x) ? 2u : double.IsInfinity(x) ? 1u : x == 0 ? 0u : Compat.IsSubnormal(x) ? unchecked((uint)-2) : unchecked((uint)-1);
 			});
 			Export(m, "round", 0, c => { c.ReturnDouble(Math.Round(c.ArgDouble(0), MidpointRounding.AwayFromZero)); return 0; });
-			Export(m, "roundf", 0, c => { c.ReturnDouble(MathF.Round(BitConverter.Int32BitsToSingle((int)c.Arg(0)), MidpointRounding.AwayFromZero)); return 0; });
+			Export(m, "roundf", 0, c => { c.ReturnDouble(Compat.Round(Compat.Int32BitsToSingle((int)c.Arg(0)), MidpointRounding.AwayFromZero)); return 0; });
 			Export(m, "nextafterf", 0, c =>
 			{
-				float x = BitConverter.Int32BitsToSingle((int)c.Arg(0)), y = BitConverter.Int32BitsToSingle((int)c.Arg(1));
-				c.ReturnDouble(x == y ? y : x < y ? MathF.BitIncrement(x) : MathF.BitDecrement(x));
+				float x = Compat.Int32BitsToSingle((int)c.Arg(0)), y = Compat.Int32BitsToSingle((int)c.Arg(1));
+				c.ReturnDouble(x == y ? y : x < y ? Compat.BitIncrement(x) : Compat.BitDecrement(x));
 				return 0;
 			});
 			Export(m, "nextafter", 0, c =>
 			{
 				double x = c.ArgDouble(0), y = c.ArgDouble(8);
-				c.ReturnDouble(x == y ? y : x < y ? Math.BitIncrement(x) : Math.BitDecrement(x));
+				c.ReturnDouble(x == y ? y : x < y ? Compat.BitIncrement(x) : Compat.BitDecrement(x));
 				return 0;
 			});
 
@@ -249,7 +253,7 @@ namespace OpenBve.X86
 				int used = NumberPrefix(text, false);
 				long.TryParse(text.Substring(0, used).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long value);
 				if (c.Arg(1) != 0) Memory.Write32(c.Arg(1), c.Arg(0) + (uint)(2 * used));
-				return (uint)(int)Math.Clamp(value, int.MinValue, int.MaxValue);
+				return (uint)(int)Math.Max(int.MinValue, Math.Min(value, int.MaxValue));
 			});
 			Export(m, "iswblank", 0, c => c.Arg(0) == ' ' || c.Arg(0) == '\t' ? 0x40u : 0u);
 			Export(m, "iswdigit", 0, c => c.Arg(0) >= '0' && c.Arg(0) <= '9' ? 4u : 0u);

@@ -77,7 +77,7 @@ namespace OpenBve.X86
 		public Action<string> Log { get; set; } = _ => { };
 
 		/// <summary>Text encoding for the "ANSI" API (file names, strings): the code page the plugin was written for.</summary>
-		public Encoding AnsiEncoding { get; set; } = Encoding.Latin1;
+		public Encoding AnsiEncoding { get; set; } = Compat.Latin1;
 
 		private readonly List<LoadedModule> modules = new List<LoadedModule>();
 
@@ -246,7 +246,7 @@ namespace OpenBve.X86
 		public string ToWindowsPath(string hostPath)
 		{
 			string full = Path.GetFullPath(hostPath);
-			string relative = Path.GetRelativePath(RootFolder, full);
+			string relative = Compat.GetRelativePath(RootFolder, full);
 			if (relative.StartsWith("..", StringComparison.Ordinal))
 			{
 				throw new X86Exception("the plugin is outside the folder it may use: " + hostPath);

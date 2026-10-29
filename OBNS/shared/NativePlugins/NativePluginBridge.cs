@@ -22,22 +22,21 @@
 //(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-extern alias ContentPlugins;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Android.Util;
 using OpenBveApi.Runtime;
 using TrainManager.Trains;
 using PluginBase = global::TrainManager.SafetySystems.Plugin;
 
-namespace OpenBve.Android.NativePlugins
+namespace OpenBve.NativePlugins
 {
 	/// <summary>
-	/// Runs a train's Win32 safety-system plugin on Android, as far as that is possible: the file
-	/// is identified from its headers, and a managed re-implementation takes its place.
+	/// Runs a train's Win32 safety-system plugin where Windows cannot - on Android, and in the desktop build on Linux and
+	/// macOS - as far as that is possible: the file is identified from its headers and run in the x86 layer, or a managed
+	/// re-implementation takes its place.
 	/// </summary>
 	/// <remarks>
 	/// Upstream loads such a plugin either directly (32-bit Windows) or through a proxy process,
@@ -48,22 +47,21 @@ namespace OpenBve.Android.NativePlugins
 	/// driver can see. This bridge is the alternative: run what can be run, stand in for what
 	/// cannot, and say which is which.
 	/// </remarks>
-	public static class NativePluginBridge
+	public static partial class NativePluginBridge
 	{
-		private const string Tag = "OpenBVE";
-
 		/// <summary>
-		/// Loads the train's Win32 plugin as a managed translation.
+		/// Runs a train's Win32 plugin file in the x86 layer, else as a managed translation.
 		/// </summary>
+		/// <param name="train">The train.</param>
+		/// <param name="file">The plugin file.</param>
+		/// <param name="trainFolder">The train's folder, or a BVE5 train's vehicle file.</param>
+		/// <param name="encoding">The train's text encoding, or null if it is not known.</param>
+		/// <param name="mode">How the train starts.</param>
+		/// <param name="summary">What was installed, for the log.</param>
 		/// <returns>Whether a plugin was installed; false leaves the train for the usual loader.</returns>
-		public static bool TryLoad(TrainBase train, string trainFolder, Encoding encoding, InitializationModes mode, out string summary)
+		public static bool TryRun(TrainBase train, string file, string trainFolder, Encoding encoding, InitializationModes mode, out string summary)
 		{
 			summary = string.Empty;
-			string file = ResolvePlugin(trainFolder, encoding);
-			if (file == null)
-			{
-				return false;
-			}
 
 			// A BVE5 train may be its vehicle file rather than its folder; the plugin's surroundings are the folder.
 			if (File.Exists(trainFolder))
@@ -80,7 +78,7 @@ namespace OpenBve.Android.NativePlugins
 
 			if (image.Kind == NativePluginKind.NotAWindowsBinary || !image.IsAtsPlugin)
 			{
-				Log.Warn(Tag, "train plugin " + image + " does not export the ATS interface");
+				PluginLog.Warn("train plugin " + image + " does not export the ATS interface");
 				return false;
 			}
 
@@ -100,11 +98,11 @@ namespace OpenBve.Android.NativePlugins
 					train.Plugin = emulated;
 					string modules = string.Join(", ", System.Linq.Enumerable.Select(emulated.Emulated.Process.Modules, m => m.Name));
 					summary = image.FileName + " → running in the x86 compatibility layer (" + modules + ")";
-					Log.Info(Tag, "train plugin: " + summary);
+					PluginLog.Info("train plugin: " + summary);
 					return true;
 				}
 
-				Log.Warn(Tag, "train plugin " + image.FileName + " could not run in the x86 compatibility layer" +
+				PluginLog.Warn("train plugin " + image.FileName + " could not run in the x86 compatibility layer" +
 				              (emulated.LastException != null ? ": " + emulated.LastException.Message : string.Empty) + "; using a translation");
 			}
 
@@ -116,13 +114,13 @@ namespace OpenBve.Android.NativePlugins
 			{
 				if (!plugin.Load(train.GetVehicleSpecs(), mode))
 				{
-					Log.Warn(Tag, "the translation of " + image.FileName + " failed to load");
+					PluginLog.Warn("the translation of " + image.FileName + " failed to load");
 					return false;
 				}
 			}
 			catch (Exception ex)
 			{
-				Log.Error(Tag, "the translation of " + image.FileName + " raised " + ex);
+				PluginLog.Error("the translation of " + image.FileName + " raised " + ex);
 				return false;
 			}
 
@@ -176,7 +174,7 @@ namespace OpenBve.Android.NativePlugins
 			{
 			}
 
-			Log.Info("OpenBVE", "x86 layer: ANSI code page " + (detected ?? Encoding.UTF8).CodePage + (detected != null ? " (from the train's text files)" : " (UTF-8; the train's text is ASCII or Unicode)"));
+			PluginLog.Info("x86 layer: ANSI code page " + (detected ?? Encoding.UTF8).CodePage + (detected != null ? " (from the train's text files)" : " (UTF-8; the train's text is ASCII or Unicode)"));
 			return detected ?? Encoding.UTF8;
 		}
 
@@ -193,7 +191,7 @@ namespace OpenBve.Android.NativePlugins
 			Dictionary<int, (Encoding Encoding, int Votes)> votes = new Dictionary<int, (Encoding, int)>();
 			UTF8Encoding strictUtf8 = new UTF8Encoding(false, true);
 			int examined = 0;
-			foreach (string file in Directory.EnumerateFiles(trainFolder, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, MaxRecursionDepth = 3 }))
+			foreach (string file in TextFileCandidates(trainFolder))
 			{
 				if (!TextExtensions.Contains(Path.GetExtension(file)) || examined >= 60)
 				{
@@ -235,6 +233,39 @@ namespace OpenBve.Android.NativePlugins
 			return votes.Count == 0 ? null : votes.Values.OrderByDescending(v => v.Votes).First().Encoding;
 		}
 
+		/// <summary>The files under the train's folder, three folders deep, skipping what cannot be read.</summary>
+		private static IEnumerable<string> TextFileCandidates(string trainFolder)
+		{
+#if NETCOREAPP
+			return Directory.EnumerateFiles(trainFolder, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, MaxRecursionDepth = 3 });
+#else
+			// As the runtime's enumeration above goes: a folder's files, then its subfolders' in turn.
+			List<string> files = new List<string>();
+			Queue<KeyValuePair<string, int>> folders = new Queue<KeyValuePair<string, int>>();
+			folders.Enqueue(new KeyValuePair<string, int>(trainFolder, 0));
+			while (folders.Count > 0)
+			{
+				KeyValuePair<string, int> folder = folders.Dequeue();
+				try
+				{
+					files.AddRange(Directory.GetFiles(folder.Key));
+					if (folder.Value < 3)
+					{
+						foreach (string subfolder in Directory.GetDirectories(folder.Key))
+						{
+							folders.Enqueue(new KeyValuePair<string, int>(subfolder, folder.Value + 1));
+						}
+					}
+				}
+				catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+				{
+				}
+			}
+
+			return files;
+#endif
+		}
+
 		/// <summary>
 		/// The folder the emulated plugin sees as C:\: the one above the train's folder (normally
 		/// the folder holding Train and Railway), so paths relative to the plugin still resolve.
@@ -243,99 +274,6 @@ namespace OpenBve.Android.NativePlugins
 		{
 			DirectoryInfo train = new DirectoryInfo(trainFolder);
 			return train.Parent?.Parent?.FullName ?? train.Parent?.FullName ?? train.FullName;
-		}
-
-		/// <summary>
-		/// A BVE5 train's safety plugin (OBNS/BVE5.md): its vehicle file's 32-bit plugin, which the x86 layer runs,
-		/// else its 64-bit one; null if the train is not a BVE5 train or names neither. The train plugin's own
-		/// call to load it fails on Android, as every Win32 plugin's does, so it comes here as an ats.cfg's would.
-		/// </summary>
-		private static string Bve5Plugin(string trainFolder)
-		{
-			try
-			{
-				string vehicleFile = ContentPlugins::Train.OpenBve.Bve5Vehicle.Find(trainFolder);
-				ContentPlugins::Train.OpenBve.Bve5Vehicle vehicle = vehicleFile != null ? ContentPlugins::Train.OpenBve.Bve5Vehicle.Load(vehicleFile) : null;
-				string file = vehicle?.Ats32 ?? vehicle?.Ats64;
-				return file != null && File.Exists(file) ? file : null;
-			}
-			catch (Exception ex)
-			{
-				Log.Warn(Tag, "BVE5 vehicle in " + trainFolder + " could not be read: " + ex.Message);
-				return null;
-			}
-		}
-
-		/// <summary>
-		/// The plugin file named by the train's ats.cfg, or null if there is none.
-		/// </summary>
-		/// <remarks>
-		/// As upstream's LoadCustomPlugin reads it: the first line that is not a comment names the
-		/// plugin, in a Windows-relative path, and a mis-decoded name is retried in code page 1252.
-		/// </remarks>
-		private static string ResolvePlugin(string trainFolder, Encoding encoding)
-		{
-			string bve5Plugin = Bve5Plugin(trainFolder);
-			if (bve5Plugin != null)
-			{
-				return bve5Plugin;
-			}
-
-			if (File.Exists(trainFolder))
-			{
-				return null;
-			}
-
-			string config = OpenBveApi.Path.CombineFile(trainFolder, "ats.cfg");
-			if (!File.Exists(config))
-			{
-				return null;
-			}
-
-			foreach (Encoding candidate in new[] { encoding ?? Encoding.UTF8, Encoding.GetEncoding(1252) })
-			{
-				string name = FirstEntry(config, candidate);
-				if (name == null)
-				{
-					continue;
-				}
-
-				try
-				{
-					string file = OpenBveApi.Path.CombineFile(trainFolder, name);
-					if (File.Exists(file))
-					{
-						return file;
-					}
-				}
-				catch (Exception)
-				{
-					// A malformed path: try the other encoding.
-				}
-			}
-
-			return null;
-		}
-
-		private static string FirstEntry(string config, Encoding encoding)
-		{
-			foreach (string line in File.ReadAllLines(config, encoding))
-			{
-				string text = line;
-				int comment = text.IndexOf(';');
-				if (comment >= 0)
-				{
-					text = text.Substring(0, comment);
-				}
-
-				text = text.Trim();
-				if (text.Length > 0)
-				{
-					return text;
-				}
-			}
-
-			return null;
 		}
 	}
 }

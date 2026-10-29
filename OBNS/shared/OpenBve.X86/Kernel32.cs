@@ -621,7 +621,7 @@ namespace OpenBve.X86
 				case 3: // CP_THREAD_ACP
 					return AnsiEncoding;
 				case 1: // CP_OEMCP
-					return Encoding.Latin1;
+					return Compat.Latin1;
 				case 65001:
 					return Encoding.UTF8;
 				default:

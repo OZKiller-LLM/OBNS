@@ -62,8 +62,9 @@ DetailManager.dll plugin through the proxy.
 | `source/CarXMLConvertor/CarXMLConvertor.csproj`, `packages.config` | Windows Forms resources built preserialized with System.Resources.Extensions (as upstream's TrainEditor), so the .NET SDK's MSBuild builds it | - |
 | `source/ObjectBender/ObjectBender.csproj`, `packages.config` | the same | - |
 
-Shared libraries (moving here from `Android/` as each is taken up): the x86 plugin layer, the BVE5
-train plugin, the parallel-update helpers, the static batcher.
+Shared libraries (moving here from `Android/` as each is taken up): the x86 plugin layer
+(`shared/OpenBve.X86`, with its harness `shared/OpenBve.X86.Tests`) and plugin bridge
+(`shared/NativePlugins`), the BVE5 train plugin, the parallel-update helpers, the static batcher.
 
 ## Backports to the desktop
 
@@ -147,3 +148,30 @@ GL sets that change nothing. On the desktop it costs more than it saves - each c
 OpenTK into managed code and out again - so it is off unless `OBNS_GL_FILTER=1`.
 
 ### 4. The x86 plugin layer for macOS and Linux
+
+Upstream runs a 32-bit Win32 train plugin only on Windows (directly in a 32-bit process, else through
+Win32PluginProxy) and under 32-bit WINE; anywhere else it refuses the plugin and the train gets the
+default ATS-Sx. The desktop build now runs such a plugin as Android does: in the x86 layer, an
+IA-32 interpreter with a PE loader and the Windows and C runtime calls plugins make
+(`shared/OpenBve.X86`), through the Android port's plugin bridge (`shared/NativePlugins`). If the plugin
+cannot start there, a managed translation stands in (DetailManager's module list, OS_ATS from its
+configuration), else an inert one, and the driver is told; a train without one never drives into the
+ATS-Sx brake its real system would not have applied.
+
+- Where: on Linux, macOS and FreeBSD, and in the 64-bit program under WINE (which has no proxy). On
+  Windows the proxy stays, unless `OBNS_X86_PLUGINS=1` sends 32-bit plugins to the layer too, for
+  comparing the two.
+- How: OBNS's copy of `Plugin.Functions.cs` (`UseX86Layer`) hands the plugin to
+  `NativePluginBridge.TryRun`; the desktop's TrainManager compiles the shared files in (C# 12; the
+  few runtime functions .NET Framework 4.8 lacks are in `OpenBve.X86/Compat.cs`). Android builds the
+  same files for net10.0, with its own way into the bridge (`NativePluginBridge.Android.cs`).
+- Log: what was installed goes to the log file; `OBNS_X86_DEBUG=1` adds every key, signal, beacon
+  and panel change; `OBNS_PLUGIN_TRACE=<folder>` records the calls (`plugin-trace.bin`) for
+  `OpenBve.X86.Tests <root> <dll> replay <trace>`.
+
+Checked (2026-10-29), on Windows with `OBNS_X86_PLUGINS=1`: the Tuen Ma Line's SP1900 runs its
+DetailManager.dll with both modules (OS_Ats1, kcrwr_seltrac) in the layer; the TBL display and panel
+work, keys reach it, and a frame costs the same as with the proxy (9.2 against 9.3 ms). The plugin
+survey (`OpenBve.X86.Tests survey`, every 32-bit plugin in a library for a simulated minute) gives the
+same results before and after the layer was made to build for .NET Framework. Not yet run on Linux or
+macOS themselves.

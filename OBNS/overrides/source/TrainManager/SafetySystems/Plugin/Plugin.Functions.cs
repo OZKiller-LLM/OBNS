@@ -1,6 +1,7 @@
 // OBNS: a copy of upstream's source/TrainManager/SafetySystems/Plugin/Plugin.Functions.cs (OpenBVE 1.14.1.2), laid
 // over the desktop build's mirror (OBNS/build-desktop.ps1): a Win32 plugin is loaded by a path the plugin can read
-// in the system's code page (see AnsiSafePluginPath), and a 64-bit one is loaded directly (Win64Plugin). Android has
+// in the system's code page (see AnsiSafePluginPath), a 64-bit one is loaded directly (Win64Plugin), and where upstream
+// cannot run a Win32 plugin at all (Linux, macOS, 64-bit WINE) it runs in the x86 layer (see UseX86Layer). Android has
 // its own copy (TrainManager.Android).
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 #pragma warning disable CS0618 // Type or member is obsolete
@@ -101,7 +102,10 @@ namespace TrainManager.Trains
 			}
 
 			TrainManagerBase.currentHost.AddMessage(MessageType.Information, false, "Loading train plugin: " + file);
+			// OBNS: the x86 layer takes the plugin's narrow strings in a code page chosen from the train's encoding.
+			pluginEncoding = encoding;
 			bool success = LoadPlugin(file, trainFolder);
+			pluginEncoding = null;
 			if (success == false)
 			{
 				TrainManagerBase.PluginError = Translations.GetInterfaceString(HostApplication.OpenBve, new [] {"errors","plugin_failure1"}).Replace("[plugin]", file);
@@ -281,6 +285,28 @@ namespace TrainManager.Trains
 			 * Check if the plugin is a Win32 plugin.
 			 * 
 			 */
+			// OBNS: where upstream cannot run it, the plugin runs in the x86 layer shared with the Android port, or a
+			// managed translation stands in (OBNS/shared/NativePlugins); if neither will, upstream's messages follow.
+			if (UseX86Layer(pluginFile))
+			{
+				if (OpenBve.NativePlugins.NativePluginBridge.TraceFolder == null)
+				{
+					string trace = Environment.GetEnvironmentVariable("OBNS_PLUGIN_TRACE");
+					OpenBve.NativePlugins.NativePluginBridge.TraceFolder = string.IsNullOrEmpty(trace) ? null : trace;
+				}
+
+				if (OpenBve.NativePlugins.NativePluginBridge.TryRun(this, pluginFile, trainFolder, pluginEncoding, mode, out string summary))
+				{
+					// (The bridge has logged what it installed.)
+					if (!(Plugin is OpenBve.NativePlugins.EmulatedWin32Plugin))
+					{
+						// A stand-in, not the plugin: the driver is told, as upstream tells of a plugin it cannot load.
+						TrainManagerBase.currentHost.AddMessage(MessageType.Warning, false, "The train plugin " + pluginTitle + " could not run; in its place: " + summary);
+					}
+					return true;
+				}
+			}
+
 			// OBNS: a 64-bit plugin (BVE5's Ats64, BVE6's), in the 64-bit program on Windows, is loaded directly.
 			if (IntPtr.Size == 8 && TrainManagerBase.currentHost.Platform == HostPlatform.MicrosoftWindows && Win64Plugin.CheckHeader(pluginFile))
 			{
@@ -355,6 +381,46 @@ namespace TrainManager.Trains
 			Plugin = null;
 			TrainManagerBase.currentHost.AddMessage(MessageType.Error, false, "The train plugin " + pluginTitle + " does not export a train interface and therefore cannot be used with" + Translations.GetInterfaceString(HostApplication.OpenBve, new [] {"program","title"}));
 			return false;
+		}
+
+		/// <summary>OBNS: the train's text encoding while its own plugin loads (LoadCustomPlugin), else null.</summary>
+		private System.Text.Encoding pluginEncoding;
+
+		/// <summary>
+		/// OBNS: whether a native plugin runs in the x86 layer: wherever upstream gives up on it - on Linux, macOS and
+		/// FreeBSD, and in the 64-bit program under WINE, which has no plugin proxy - and, with OBNS_X86_PLUGINS=1, a
+		/// 32-bit one on Windows too, for comparing the layer with the proxy.
+		/// </summary>
+		private static bool UseX86Layer(string pluginFile)
+		{
+			switch (TrainManagerBase.currentHost.Platform)
+			{
+				case HostPlatform.MicrosoftWindows:
+					break;
+				case HostPlatform.WINE:
+					if (IntPtr.Size != 4)
+					{
+						return true;
+					}
+
+					break;
+				default:
+					return true;
+			}
+
+			if (Environment.GetEnvironmentVariable("OBNS_X86_PLUGINS") != "1")
+			{
+				return false;
+			}
+
+			try
+			{
+				return Win32Plugin.CheckHeader(pluginFile);
+			}
+			catch (Exception)
+			{
+				return false;
+			}
 		}
 
 		/// <summary>

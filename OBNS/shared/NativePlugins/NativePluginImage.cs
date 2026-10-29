@@ -28,7 +28,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace OpenBve.Android.NativePlugins
+namespace OpenBve.NativePlugins
 {
 	/// <summary>The kind of binary a train plugin file turns out to be.</summary>
 	public enum NativePluginKind

@@ -167,7 +167,7 @@ namespace OpenBve.X86
 						case OpSetBeaconData:
 						{
 							int type = reader.ReadInt32(), signal = reader.ReadInt32();
-							float distance = BitConverter.Int32BitsToSingle(reader.ReadInt32());
+							float distance = Compat.Int32BitsToSingle(reader.ReadInt32());
 							int optional = reader.ReadInt32();
 							plugin.SetBeaconData(type, signal, distance, optional);
 							events += " Beacon(" + type + "," + signal + "," + distance.ToString("0") + "," + optional + ")";

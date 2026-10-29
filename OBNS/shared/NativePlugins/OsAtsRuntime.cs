@@ -26,10 +26,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using Android.Util;
 using OpenBveApi.Runtime;
 
-namespace OpenBve.Android.NativePlugins
+namespace OpenBve.NativePlugins
 {
 	/// <summary>
 	/// OS_ATS, re-implemented from its configuration file.
@@ -49,8 +48,6 @@ namespace OpenBve.Android.NativePlugins
 	/// </remarks>
 	public class OsAtsRuntime : IRuntime
 	{
-		private const string Tag = "OpenBVE";
-
 		private readonly NativePluginImage image;
 		private readonly Dictionary<string, string> settings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		private readonly List<string> ignored = new List<string>();
@@ -136,7 +133,7 @@ namespace OpenBve.Android.NativePlugins
 			panel = new int[Math.Max(256, LargestIndex() + 1)];
 			properties.Panel = panel;
 			Summary = "OS_ATS: " + settings.Count + " settings read, " + ignored.Count + " not modelled";
-			Log.Info(Tag, Summary + "; not modelled: " + (ignored.Count == 0 ? "none" : string.Join(", ", ignored)));
+			PluginLog.Info(Summary + "; not modelled: " + (ignored.Count == 0 ? "none" : string.Join(", ", ignored)));
 			return true;
 		}
 

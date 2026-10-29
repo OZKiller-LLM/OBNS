@@ -13,6 +13,9 @@
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
+    <!-- OBNS: the x86 layer shared with the Android port (OBNS/shared/OpenBve.X86) is written in C# 12 (not later: C# 14 binds upstream's Cars.Reverse() to the span overload) and uses pointers. -->
+    <LangVersion>12.0</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -39,7 +42,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <DebugType>full</DebugType>
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <LangVersion>7.3</LangVersion>
+    <LangVersion>12.0</LangVersion>
     <ErrorReport>prompt</ErrorReport>
   </PropertyGroup>
   <ItemGroup>
@@ -50,6 +53,16 @@
       <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.6.1.2\lib\net462\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
     <Reference Include="System.ServiceModel" />
+    <!-- OBNS: for the x86 layer (OBNS/shared/OpenBve.X86), as OpenBveApi references them. -->
+    <Reference Include="System.Buffers, Version=4.0.5.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\System.Buffers.4.6.1\lib\net462\System.Buffers.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory, Version=4.0.5.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\System.Memory.4.6.3\lib\net462\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Numerics.Vectors, Version=4.1.6.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\System.Numerics.Vectors.4.6.1\lib\net462\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Brake\AirBrake\AirBrake.cs" />
@@ -176,6 +189,9 @@
     <!-- OBNS: the parallel-update helpers shared with the Android port (OBNS/shared), from the mirror's place in OBNS/build. -->
     <Compile Include="..\..\..\..\shared\FrameWorkers.cs" Link="OBNS\FrameWorkers.cs" />
     <Compile Include="..\..\..\..\shared\ParallelUpdates.cs" Link="OBNS\ParallelUpdates.cs" />
+    <!-- OBNS: Win32 plugins where Windows cannot run them (Linux, macOS): the Android port's x86 layer and plugin bridge. -->
+    <Compile Include="..\..\..\..\shared\OpenBve.X86\*.cs" LinkBase="OBNS\X86" />
+    <Compile Include="..\..\..\..\shared\NativePlugins\*.cs" LinkBase="OBNS\NativePlugins" />
     <Compile Include="SafetySystems\Plugin\NetPlugin.cs" />
     <Compile Include="SafetySystems\Plugin\Plugin.cs" />
     <Compile Include="SafetySystems\Plugin\Plugin.Functions.cs" />

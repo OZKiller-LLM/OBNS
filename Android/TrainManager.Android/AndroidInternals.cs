@@ -27,7 +27,7 @@ using System.Runtime.CompilerServices;
 /*
  * The Android port installs a train's safety-system plugin itself when the train ships a Win32
  * plugin: it identifies the file and runs a managed translation of it in place (see
- * OpenBve.Android.NativePlugins). That means constructing NetPlugin, which upstream keeps
+ * OpenBve.NativePlugins, OBNS/shared/NativePlugins). That means constructing NetPlugin, which upstream keeps
  * internal to this assembly because nothing outside it ever needed to. Rather than patch
  * upstream's source, the Android build of TrainManager lets the app's assembly see its internals.
  */

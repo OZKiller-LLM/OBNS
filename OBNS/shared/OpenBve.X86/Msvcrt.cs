@@ -487,7 +487,7 @@ namespace OpenBve.X86
 
 		private double ParseDouble(uint text, uint end)
 		{
-			string s = Memory.ReadCString(text, Encoding.Latin1, 4096);
+			string s = Memory.ReadCString(text, Compat.Latin1, 4096);
 			int i = 0;
 			while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
 			int start = i;
@@ -540,7 +540,7 @@ namespace OpenBve.X86
 				return 0;
 			}
 
-			bool write = mode.Contains('w') || mode.Contains('a') || mode.Contains('+');
+			bool write = mode.IndexOf('w') >= 0 || mode.IndexOf('a') >= 0 || mode.IndexOf('+') >= 0;
 			if (!write && !File.Exists(host))
 			{
 				return 0;
@@ -548,7 +548,7 @@ namespace OpenBve.X86
 
 			try
 			{
-				FileStream stream = new FileStream(host, mode.Contains('w') ? FileMode.Create : mode.Contains('a') ? FileMode.Append : FileMode.Open,
+				FileStream stream = new FileStream(host, mode.IndexOf('w') >= 0 ? FileMode.Create : mode.IndexOf('a') >= 0 ? FileMode.Append : FileMode.Open,
 					write ? FileAccess.ReadWrite : FileAccess.Read, FileShare.ReadWrite);
 				uint file = AllocateStatic(32);
 				crtFiles[file] = stream;
@@ -769,7 +769,7 @@ namespace OpenBve.X86
 					string s = exponent < -4 || exponent >= p
 						? value.ToString((conversion == 'g' ? "e" : "E") + (p - 1), CultureInfo.InvariantCulture)
 						: value.ToString("F" + Math.Max(0, p - 1 - exponent), CultureInfo.InvariantCulture);
-					if (!alternate && s.Contains('.'))
+					if (!alternate && s.IndexOf('.') >= 0)
 					{
 						int e = s.IndexOfAny(new[] { 'e', 'E' });
 						string mantissa = e >= 0 ? s.Substring(0, e) : s;

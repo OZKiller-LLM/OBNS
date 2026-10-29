@@ -23,9 +23,9 @@
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
-using Android.Util;
 using OpenBve.X86;
 using OpenBveApi.Interface;
 using OpenBveApi.Runtime;
@@ -33,7 +33,7 @@ using TrainManager.Trains;
 using PluginBase = global::TrainManager.SafetySystems.Plugin;
 using SoundInstructions = global::TrainManager.SafetySystems.SoundInstructions;
 
-namespace OpenBve.Android.NativePlugins
+namespace OpenBve.NativePlugins
 {
 	/// <summary>
 	/// A Win32 ATS plugin running in the x86 emulator: upstream's Win32Plugin, with the calls
@@ -47,8 +47,6 @@ namespace OpenBve.Android.NativePlugins
 	/// </remarks>
 	internal sealed class EmulatedWin32Plugin : PluginBase
 	{
-		private const string Tag = "OpenBVE";
-
 		private readonly string pluginFile;
 		private readonly string rootFolder;
 		private readonly Encoding encoding;
@@ -58,6 +56,7 @@ namespace OpenBve.Android.NativePlugins
 		private readonly int[] loggedPanel = new int[256];
 		private double lastPanelLog;
 		private int traceFrames;
+		private static readonly Stopwatch Clock = Stopwatch.StartNew();
 
 		/// <summary>The emulated process, once loaded, for diagnostics.</summary>
 		public AtsPlugin Emulated => plugin;
@@ -87,12 +86,12 @@ namespace OpenBve.Android.NativePlugins
 		{
 			try
 			{
-				plugin = AtsPlugin.Open(rootFolder, pluginFile, encoding, message => Log.Info(Tag, "x86 " + PluginTitle + ": " + message));
+				plugin = AtsPlugin.Open(rootFolder, pluginFile, encoding, message => PluginLog.Info("x86 " + PluginTitle + ": " + message));
 				if (NativePluginBridge.TraceFolder != null)
 				{
 					string traceFile = Path.Combine(NativePluginBridge.TraceFolder, "plugin-trace.bin");
 					plugin.Trace = new AtsTrace.Writer(File.Create(traceFile), encoding.CodePage);
-					Log.Info(Tag, "x86 " + PluginTitle + ": recording calls to " + traceFile);
+					PluginLog.Info("x86 " + PluginTitle + ": recording calls to " + traceFile);
 				}
 
 				plugin.Load();
@@ -111,7 +110,7 @@ namespace OpenBve.Android.NativePlugins
 			catch (X86Exception ex)
 			{
 				LastException = ex;
-				Log.Warn(Tag, "x86 " + PluginTitle + " could not start: " + ex.Message);
+				PluginLog.Warn("x86 " + PluginTitle + " could not start: " + ex.Message);
 				plugin = null;
 				return false;
 			}
@@ -248,13 +247,13 @@ namespace OpenBve.Android.NativePlugins
 		protected override void SetBrake(int brakeNotch) => Guard(() => plugin.SetBrake(brakeNotch));
 		public override void KeyDown(VirtualKeys key)
 		{
-			Log.Info(Tag, "x86 " + PluginTitle + ": KeyDown " + key);
+			PluginLog.Verbose("x86 " + PluginTitle + ": KeyDown " + key);
 			Guard(() => plugin.KeyDown((int)key));
 		}
 
 		public override void KeyUp(VirtualKeys key)
 		{
-			Log.Info(Tag, "x86 " + PluginTitle + ": KeyUp " + key);
+			PluginLog.Verbose("x86 " + PluginTitle + ": KeyUp " + key);
 			Guard(() => plugin.KeyUp((int)key));
 		}
 		public override void HornBlow(HornTypes type) => Guard(() => plugin.HornBlow((int)type));
@@ -275,7 +274,7 @@ namespace OpenBve.Android.NativePlugins
 		{
 			if (LastAspects.Length == 0 || signal[0].Aspect != LastAspects[0])
 			{
-				Log.Info(Tag, "x86 " + PluginTitle + ": SetSignal " + signal[0].Aspect);
+				PluginLog.Verbose("x86 " + PluginTitle + ": SetSignal " + signal[0].Aspect);
 				Guard(() => plugin.SetSignal(signal[0].Aspect));
 			}
 		}
@@ -286,7 +285,7 @@ namespace OpenBve.Android.NativePlugins
 			if (beaconsLogged < 200)
 			{
 				beaconsLogged++;
-				Log.Info(Tag, "x86 " + PluginTitle + ": beacon type " + beacon.Type + " optional " + beacon.Optional + " signal " + beacon.Signal.Aspect + " at " + beacon.Signal.Distance.ToString("0"));
+				PluginLog.Verbose("x86 " + PluginTitle + ": beacon type " + beacon.Type + " optional " + beacon.Optional + " signal " + beacon.Signal.Aspect + " at " + beacon.Signal.Distance.ToString("0"));
 			}
 
 			Guard(() => plugin.SetBeaconData(beacon.Type, beacon.Signal.Aspect, (float)beacon.Signal.Distance, beacon.Optional));
@@ -302,7 +301,7 @@ namespace OpenBve.Android.NativePlugins
 		/// </summary>
 		private void LogPanelChanges()
 		{
-			double now = Environment.TickCount64 / 1000.0;
+			double now = Clock.Elapsed.TotalSeconds;
 			if (now - lastPanelLog < 1.0)
 			{
 				return;
@@ -321,7 +320,7 @@ namespace OpenBve.Android.NativePlugins
 
 			if (changed != null)
 			{
-				Log.Info(Tag, "x86 " + PluginTitle + ": panel" + changed);
+				PluginLog.Verbose("x86 " + PluginTitle + ": panel" + changed);
 			}
 		}
 
@@ -346,7 +345,7 @@ namespace OpenBve.Android.NativePlugins
 		private void Fail(X86Exception ex)
 		{
 			LastException = ex;
-			Log.Error(Tag, "x86 " + PluginTitle + " stopped: " + ex.Message);
+			PluginLog.Error("x86 " + PluginTitle + " stopped: " + ex.Message);
 			global::TrainManager.TrainManagerBase.currentHost.AddMessage(MessageType.Error, false, "The train plugin " + PluginTitle + " stopped: " + ex.Message);
 			plugin = null;
 		}

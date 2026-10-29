@@ -4,6 +4,8 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
     <OutputType>Exe</OutputType>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <Nullable>disable</Nullable>

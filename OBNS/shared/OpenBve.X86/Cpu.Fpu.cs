@@ -236,7 +236,7 @@ namespace OpenBve.X86
 		{
 			ulong mantissa;
 			int exponent;
-			bool negative = value < 0 || (value == 0 && double.IsNegative(value));
+			bool negative = value < 0 || (value == 0 && Compat.IsNegative(value));
 			double magnitude = Math.Abs(value);
 			if (double.IsNaN(value))
 			{
@@ -261,7 +261,7 @@ namespace OpenBve.X86
 				if (e == 0)
 				{
 					// Subnormal double: normalise it.
-					int shift = System.Numerics.BitOperations.LeadingZeroCount(fraction) - 11;
+					int shift = Compat.LeadingZeroCount(fraction) - 11;
 					fraction <<= shift + 1;
 					fraction &= 0xFFFFFFFFFFFFF;
 					e = 1 - shift - 1;
@@ -278,7 +278,7 @@ namespace OpenBve.X86
 		private void Fxam()
 		{
 			double value = ST(0);
-			c1 = double.IsNegative(value);
+			c1 = Compat.IsNegative(value);
 			if (stEmpty[top])
 			{
 				c3 = true; c2 = false; c0 = true;
@@ -295,7 +295,7 @@ namespace OpenBve.X86
 			{
 				c3 = true; c2 = false; c0 = false;
 			}
-			else if (double.IsSubnormal(value))
+			else if (Compat.IsSubnormal(value))
 			{
 				c3 = true; c2 = true; c0 = false;
 			}
@@ -484,8 +484,8 @@ namespace OpenBve.X86
 						case 0x24: FpuCompare(ST(0), 0.0); return; // FTST
 						case 0x25: Fxam(); return;
 						case 0x28: FPush(1.0); return;
-						case 0x29: FPush(Math.Log2(10.0)); return;
-						case 0x2A: FPush(Math.Log2(Math.E)); return;
+						case 0x29: FPush(Compat.Log2(10.0)); return;
+						case 0x2A: FPush(Compat.Log2(Math.E)); return;
 						case 0x2B: FPush(Math.PI); return;
 						case 0x2C: FPush(Math.Log10(2.0)); return;
 						case 0x2D: FPush(Math.Log(2.0)); return;
@@ -494,7 +494,7 @@ namespace OpenBve.X86
 						case 0x31: // FYL2X
 						{
 							double x = FPop();
-							SetST(0, ST(0) * Math.Log2(x));
+							SetST(0, ST(0) * Compat.Log2(x));
 							return;
 						}
 						case 0x32: // FPTAN
@@ -511,7 +511,7 @@ namespace OpenBve.X86
 						case 0x34: // FXTRACT
 						{
 							double v = ST(0);
-							int exponent = v == 0 ? 0 : (int)Math.Floor(Math.Log2(Math.Abs(v)));
+							int exponent = v == 0 ? 0 : (int)Math.Floor(Compat.Log2(Math.Abs(v)));
 							SetST(0, exponent);
 							FPush(v / Math.Pow(2, exponent));
 							return;
@@ -532,7 +532,7 @@ namespace OpenBve.X86
 						case 0x39: // FYL2XP1
 						{
 							double x = FPop();
-							SetST(0, ST(0) * Math.Log2(x + 1));
+							SetST(0, ST(0) * Compat.Log2(x + 1));
 							return;
 						}
 						case 0x3A: SetST(0, Math.Sqrt(ST(0))); return;

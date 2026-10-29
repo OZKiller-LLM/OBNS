@@ -157,12 +157,12 @@ namespace OpenBve.X86
 
 		public float ReadSingle(uint address)
 		{
-			return BitConverter.Int32BitsToSingle((int)Read32(address));
+			return Compat.Int32BitsToSingle((int)Read32(address));
 		}
 
 		public void WriteSingle(uint address, float value)
 		{
-			Write32(address, (uint)BitConverter.SingleToInt32Bits(value));
+			Write32(address, (uint)Compat.SingleToInt32Bits(value));
 		}
 
 		public double ReadDouble(uint address)
@@ -225,7 +225,7 @@ namespace OpenBve.X86
 				buffer[length++] = b;
 			}
 
-			return (encoding ?? Encoding.Latin1).GetString(buffer, 0, length);
+			return (encoding ?? Compat.Latin1).GetString(buffer, 0, length);
 		}
 
 		/// <summary>Reads a NUL-terminated UTF-16 string.</summary>
@@ -254,7 +254,7 @@ namespace OpenBve.X86
 		/// <summary>Writes a NUL-terminated byte string, returning the bytes written excluding the terminator.</summary>
 		public int WriteCString(uint address, string text, Encoding encoding = null)
 		{
-			byte[] bytes = (encoding ?? Encoding.Latin1).GetBytes(text);
+			byte[] bytes = (encoding ?? Compat.Latin1).GetBytes(text);
 			WriteBytes(address, bytes);
 			Write8(address + (uint)bytes.Length, 0);
 			return bytes.Length;

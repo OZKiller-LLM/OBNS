@@ -44,12 +44,12 @@ namespace OpenBve.X86
 		private float XmmSingle(int reg, int lane)
 		{
 			ulong half = lane < 2 ? xmmLo[reg] : xmmHi[reg];
-			return BitConverter.Int32BitsToSingle((int)(uint)(half >> (32 * (lane & 1))));
+			return Compat.Int32BitsToSingle((int)(uint)(half >> (32 * (lane & 1))));
 		}
 
 		private void SetXmmSingle(int reg, int lane, float value)
 		{
-			ulong bits = (uint)BitConverter.SingleToInt32Bits(value);
+			ulong bits = (uint)Compat.SingleToInt32Bits(value);
 			int shift = 32 * (lane & 1);
 			ulong mask = 0xFFFFFFFFUL << shift;
 			if (lane < 2)
@@ -130,9 +130,9 @@ namespace OpenBve.X86
 			}
 		}
 
-		private static float AsSingle(uint bits) => BitConverter.Int32BitsToSingle((int)bits);
+		private static float AsSingle(uint bits) => Compat.Int32BitsToSingle((int)bits);
 		private static double AsDouble(ulong bits) => BitConverter.Int64BitsToDouble((long)bits);
-		private static uint Bits(float value) => (uint)BitConverter.SingleToInt32Bits(value);
+		private static uint Bits(float value) => (uint)Compat.SingleToInt32Bits(value);
 		private static ulong Bits(double value) => (ulong)BitConverter.DoubleToInt64Bits(value);
 
 		private static double SseArith(byte op, double a, double b)
@@ -357,7 +357,7 @@ namespace OpenBve.X86
 				}
 				case 0x51: // SQRT
 					DecodeModRm();
-					if (pF3) SetXmmSingle(modReg, 0, MathF.Sqrt(AsSingle(ReadXmmRm32())));
+					if (pF3) SetXmmSingle(modReg, 0, Compat.Sqrt(AsSingle(ReadXmmRm32())));
 					else if (pF2) xmmLo[modReg] = Bits(Math.Sqrt(AsDouble(ReadXmmRm64())));
 					else if (p66)
 					{
@@ -371,7 +371,7 @@ namespace OpenBve.X86
 						for (int i = 0; i < 4; i++)
 						{
 							ulong half = i < 2 ? lo : hi;
-							SetXmmSingle(modReg, i, MathF.Sqrt(AsSingle((uint)(half >> (32 * (i & 1))))));
+							SetXmmSingle(modReg, i, Compat.Sqrt(AsSingle((uint)(half >> (32 * (i & 1))))));
 						}
 					}
 
@@ -738,17 +738,21 @@ namespace OpenBve.X86
 					int width = op == 0x60 ? 8 : op == 0x61 ? 16 : 32;
 					ulong a = xmmLo[d];
 					ulong m = (1UL << width) - 1;
-					System.UInt128 result = System.UInt128.Zero;
+					// The 128-bit result as two halves: element i of each source lands at bit 2 * i * width (a) and
+					// 2 * i * width + width (b), so the low 64 bits take the first half of the elements.
+					ulong resultLo = 0, resultHi = 0;
 					for (int i = 0; i < 64 / width; i++)
 					{
-						System.UInt128 ea = (a >> (width * i)) & m;
-						System.UInt128 eb = (lo >> (width * i)) & m;
-						result |= ea << (2 * i * width);
-						result |= eb << (2 * i * width + width);
+						ulong ea = (a >> (width * i)) & m;
+						ulong eb = (lo >> (width * i)) & m;
+						int at = 2 * i * width;
+						if (at < 64) resultLo |= ea << at; else resultHi |= ea << (at - 64);
+						at += width;
+						if (at < 64) resultLo |= eb << at; else resultHi |= eb << (at - 64);
 					}
 
-					xmmLo[d] = (ulong)result;
-					xmmHi[d] = (ulong)(result >> 64);
+					xmmLo[d] = resultLo;
+					xmmHi[d] = resultHi;
 					return true;
 				}
 				// Shifts of every lane by the count in the low quadword of an XMM register or memory.
@@ -814,11 +818,27 @@ namespace OpenBve.X86
 						case 3: // PSRLDQ: bytes
 						case 7: // PSLLDQ
 						{
-							System.UInt128 v = new System.UInt128(xmmHi[r], xmmLo[r]);
+							// The register shifted as one 128-bit value, in its two halves.
+							ulong hi = xmmHi[r], low = xmmLo[r];
 							int bits = Math.Min(count, (byte)16) * 8;
-							v = bits >= 128 ? System.UInt128.Zero : modReg == 3 ? v >> bits : v << bits;
-							xmmLo[r] = (ulong)v;
-							xmmHi[r] = (ulong)(v >> 64);
+							if (bits >= 128)
+							{
+								hi = 0;
+								low = 0;
+							}
+							else if (bits >= 64)
+							{
+								if (modReg == 3) { low = hi >> (bits - 64); hi = 0; }
+								else { hi = low << (bits - 64); low = 0; }
+							}
+							else if (bits > 0)
+							{
+								if (modReg == 3) { low = (low >> bits) | (hi << (64 - bits)); hi >>= bits; }
+								else { hi = (hi << bits) | (low >> (64 - bits)); low <<= bits; }
+							}
+
+							xmmLo[r] = low;
+							xmmHi[r] = hi;
 							return true;
 						}
 					}

@@ -43,13 +43,17 @@ Both trains' `train.txt` are UTF-16; this matters (see "Recently fixed").
 - `Android/` — SDK-style shim projects (`*.Android.csproj`) compiling upstream folders for
   `net10.0-android36.0`, plus:
   - `OpenBve.GLES` — hand-written OpenTK-shaped GLES 3 binding, EGL/ANGLE selection.
-  - `OpenBve.Android` — the app (activities, host, renderer glue, UI, native-plugin bridge).
-  - `OpenBve.X86` — the x86/Win32 compatibility layer (net10.0 library): IA-32 interpreter
-    (`Cpu*.cs`), paged memory, PE loader and Win32 process (`Win32Process.cs`), kernel32/msvcrt
-    shims, the BVE ATS ABI (`AtsPlugin.cs`), and call recording/replay (`AtsTrace.cs`).
+  - `OpenBve.Android` — the app (activities, host, renderer glue, UI, its way into the
+    native-plugin bridge: `NativePlugins/NativePluginBridge.Android.cs`).
+- `OBNS/shared/` — shared with the desktop build (which runs Win32 plugins this way on Linux and macOS):
+  - `OpenBve.X86` — the x86/Win32 compatibility layer (net10.0 library; the desktop compiles the
+    same files for .NET Framework 4.8): IA-32 interpreter (`Cpu*.cs`), paged memory, PE loader and
+    Win32 process (`Win32Process.cs`), kernel32/msvcrt shims, the BVE ATS ABI (`AtsPlugin.cs`), and
+    call recording/replay (`AtsTrace.cs`).
   - `OpenBve.X86.Tests` — desktop console harness for plugins (see "Plugin debugging").
+  - `NativePlugins` — the plugin bridge (emulate, else translate), compiled into `OpenBve.Android`.
 - `Android/Directory.Build.props` — `EnableDefaultCompileItems=false` for shim projects, `true`
-  in `OpenBve.Android`, `OpenBve.X86`, `OpenBve.X86.Tests`.
+  in `OpenBve.Android` (`OpenBve.X86` and `OpenBve.X86.Tests` set it themselves).
 - `Android/OpenBve.Android/UpstreamFacade.cs` — `OpenBve.Program` (CurrentHost, Renderer,
   CurrentRoute, Sounds, TrainManager), `OpenBve.Interface.CurrentOptions`, and an abstract
   `OpenBve.TrainManager` so desktop files compile unchanged. Linked upstream desktop files:
@@ -66,7 +70,7 @@ dotnet build OpenBve.Android/OpenBve.Android.csproj -c Release -p:RuntimeIdentif
 Release is AOT (~3–4 min). The SDK prints Chinese: check for `0 個錯誤`. **A failed build still
 exits 0 through a pipe and the phone keeps the old APK** — confirm with
 `adb -s R5CT41WNFSV shell "dumpsys package net.openbve | grep lastUpdateTime"`.
-Harness: `dotnet build OpenBve.X86.Tests -c Release`.
+Harness: `dotnet build OBNS/shared/OpenBve.X86.Tests -c Release` (from the repository root).
 
 Gotchas seen in this environment:
 - Bash heredocs containing quotes/backslashes sometimes get mangled by the tool layer; write
@@ -129,7 +133,7 @@ Keys per `Train.txt`: E pantograph, F–I run number, B1/B2 destination, C1 coup
 
 ## Plugin debugging (x86 layer)
 
-- Harness: `dotnet run --project OpenBve.X86.Tests -c Release --no-build -- <root> <dll> [mode]`
+- Harness: `dotnet run --project OBNS/shared/OpenBve.X86.Tests -c Release --no-build -- <root> <dll> [mode]`
   where root is the folder above `Train` (e.g. `D:\TEMP\mtr`, `D:\TEMP\kcr`), dll e.g.
   `"D:/TEMP/mtr/MTR R-Train EMU 2023/plugin/DetailManager.dll"`. Modes: frame count (default
   drive), `probe` (which input releases traction), `ato` (TBL start), `horn` (horns/keys/doors

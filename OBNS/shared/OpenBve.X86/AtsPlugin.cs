@@ -111,7 +111,7 @@ namespace OpenBve.X86
 			Win32Process process = new Win32Process(rootFolder)
 			{
 				Log = log ?? (_ => { }),
-				AnsiEncoding = ansiEncoding ?? Encoding.Latin1
+				AnsiEncoding = ansiEncoding ?? Compat.Latin1
 			};
 			beforeLoad?.Invoke(process);
 			string windows = process.ToWindowsPath(dllPath);
@@ -255,11 +255,11 @@ namespace OpenBve.X86
 
 		public void SetBeaconData(int type, int signal, float distance, int optional)
 		{
-			Trace?.Op(AtsTrace.OpSetBeaconData, type, signal, BitConverter.SingleToInt32Bits(distance), optional);
+			Trace?.Op(AtsTrace.OpSetBeaconData, type, signal, Compat.SingleToInt32Bits(distance), optional);
 			if (setBeaconData == 0) return;
 			uint esp = Cpu.R[Cpu.ESP];
 			// struct ATS_BEACONDATA { int Type; int Signal; float Distance; int Optional; } by value.
-			Cpu.Call(setBeaconData, (uint)type, (uint)signal, (uint)BitConverter.SingleToInt32Bits(distance), (uint)optional);
+			Cpu.Call(setBeaconData, (uint)type, (uint)signal, (uint)Compat.SingleToInt32Bits(distance), (uint)optional);
 			Cpu.R[Cpu.ESP] = esp;
 		}
 	}

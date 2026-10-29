@@ -1647,7 +1647,7 @@ namespace OpenBve.X86
 					}
 
 					ZF = false;
-					int bit = op == 0xBC ? System.Numerics.BitOperations.TrailingZeroCount(value) : 31 - System.Numerics.BitOperations.LeadingZeroCount(value);
+					int bit = op == 0xBC ? Compat.TrailingZeroCount(value) : 31 - Compat.LeadingZeroCount(value);
 					SetReg(modReg, osz, (uint)bit);
 					return;
 				}

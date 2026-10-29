@@ -25,10 +25,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Android.Util;
 using OpenBveApi.Runtime;
 
-namespace OpenBve.Android.NativePlugins
+namespace OpenBve.NativePlugins
 {
 	/// <summary>
 	/// The catalogue of Win32 train plugins this port can run, and the managed re-implementations
@@ -49,8 +48,6 @@ namespace OpenBve.Android.NativePlugins
 	/// </remarks>
 	public static class TranslatedPlugins
 	{
-		private const string Tag = "OpenBVE";
-
 		/// <summary>Returns a managed module for a plugin file, or a pass-through module if there is no translation.</summary>
 		public static IRuntime Translate(NativePluginImage image, out string description)
 		{
@@ -74,7 +71,7 @@ namespace OpenBve.Android.NativePlugins
 		/// <summary>Logs what a plugin file is, whether or not it can be translated.</summary>
 		public static void Report(NativePluginImage image, string description)
 		{
-			Log.Info(Tag, "train plugin: " + image + ": " + description);
+			PluginLog.Info("train plugin: " + image + ": " + description);
 		}
 	}
 
@@ -173,8 +170,6 @@ namespace OpenBve.Android.NativePlugins
 	/// </remarks>
 	public class DetailManagerRuntime : IRuntime
 	{
-		private const string Tag = "OpenBVE";
-
 		private readonly NativePluginImage image;
 		private readonly List<Module> modules = new List<Module>();
 		private int[] panel = Array.Empty<int>();
@@ -218,7 +213,7 @@ namespace OpenBve.Android.NativePlugins
 				string file = Path.Combine(folder, entry);
 				if (!File.Exists(file))
 				{
-					Log.Warn(Tag, "detailmodules.txt lists " + entry + ", which is not there");
+					PluginLog.Warn("detailmodules.txt lists " + entry + ", which is not there");
 					continue;
 				}
 
@@ -231,7 +226,7 @@ namespace OpenBve.Android.NativePlugins
 					properties.OpenDoors, properties.CloseDoors);
 				if (!runtime.Load(moduleProperties))
 				{
-					Log.Warn(Tag, "module " + entry + " did not load: " + (moduleProperties.FailureReason ?? "no reason given"));
+					PluginLog.Warn("module " + entry + " did not load: " + (moduleProperties.FailureReason ?? "no reason given"));
 					continue;
 				}
 
@@ -249,7 +244,7 @@ namespace OpenBve.Android.NativePlugins
 				return false;
 			}
 
-			Log.Info(Tag, "DetailManager: " + modules.Count + " module(s) running");
+			PluginLog.Info("DetailManager: " + modules.Count + " module(s) running");
 			return true;
 		}
 

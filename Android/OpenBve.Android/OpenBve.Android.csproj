@@ -57,6 +57,8 @@
     -->
     <!-- OBNS's shared parallel-update helpers (the desktop build compiles them too). -->
     <Compile Include="..\..\OBNS\shared\*.cs" LinkBase="OBNS" />
+    <!-- OBNS's plugin bridge, shared with the desktop build (which runs Win32 plugins in the x86 layer on Linux and macOS). -->
+    <Compile Include="..\..\OBNS\shared\NativePlugins\*.cs" LinkBase="OBNS\NativePlugins" />
     <Compile Include="$(UpstreamSource)OpenBVE\Game\ObjectManager\AnimatedObjects\FunctionScripts.cs" Link="Upstream\FunctionScripts.cs" />
     <!--
       The AI drivers: SimpleHumanDriverAI drives preceding trains (Train.RunInterval, and
@@ -149,7 +151,7 @@
     <ProjectReference Include="..\OpenBve.Compat\OpenBve.Compat.csproj" />
     <ProjectReference Include="..\OpenBve.GLES\OpenBve.GLES.csproj" />
     <ProjectReference Include="..\OpenBve.Vulkan\OpenBve.Vulkan.csproj" />
-    <ProjectReference Include="..\OpenBve.X86\OpenBve.X86.csproj" />
+    <ProjectReference Include="..\..\OBNS\shared\OpenBve.X86\OpenBve.X86.csproj" />
     <ProjectReference Include="..\OpenBve.OpenAL\OpenBve.OpenAL.csproj" />
     <ProjectReference Include="..\LibRender2.Android\LibRender2.Android.csproj" />
     <ProjectReference Include="..\SoundManager.Android\SoundManager.Android.csproj" />
