@@ -87,8 +87,18 @@ namespace OpenBve.Graphics
 					break;
 			}
 
-			Touch.UpdateViewport();
+			// OBNS: the touch buffer (a full-screen texture) made again only when the size changes. Upstream makes it again on
+			// each viewport update, twice a frame (scenery, then cab): a texture freed and allocated each time, which the
+			// driver waits on the GPU for (frames of 25-90 ms in Nsight Systems on the TML).
+			if (width != obnsTouchWidth || height != obnsTouchHeight)
+			{
+				obnsTouchWidth = width;
+				obnsTouchHeight = height;
+				Touch.UpdateViewport();
+			}
 		}
+
+		private int obnsTouchWidth = -1, obnsTouchHeight = -1;
 		
 		internal void RenderScene(double TimeElapsed, double RealTimeElapsed)
 		{
