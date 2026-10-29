@@ -404,7 +404,17 @@ namespace OpenBve.Graphics
 
             CurrentViewMatrix = Matrix4D.LookAt(Vector3.Zero, new Vector3(Camera.AbsoluteDirection.X, Camera.AbsoluteDirection.Y, -Camera.AbsoluteDirection.Z), new Vector3(Camera.AbsoluteUp.X, Camera.AbsoluteUp.Y, -Camera.AbsoluteUp.Z));
 			
-			if (Camera.CurrentRestriction == CameraRestrictionMode.NotAvailable || Camera.CurrentRestriction == CameraRestrictionMode.Restricted3D)
+			if (vulkanWorld && Vulkan.VulkanWorld.Instance.DrawsCab)
+			{
+				// OBNS: the cab layer Vulkan has drawn with the world layer, laid over the frame (OBNS/VULKAN.md).
+				Vulkan.VulkanWorld.Instance.CompositeCab();
+				DefaultShader.Deactivate();
+				DefaultShader.Activate();
+				lastVAO = -1;
+				LastBoundTexture = null;
+				ResetOpenGlState();
+			}
+			else if (Camera.CurrentRestriction == CameraRestrictionMode.NotAvailable || Camera.CurrentRestriction == CameraRestrictionMode.Restricted3D)
 			{
 				ResetOpenGlState(); // TODO: inserted
 				GL.Clear(ClearBufferMask.DepthBufferBit);
@@ -707,6 +717,8 @@ namespace OpenBve.Graphics
 						scene.Face(face.Object, face.Face);
 					}
 				}
+
+				GatherVulkanCab(scene, overlayOpaqueFaces, overlayAlphaFaces);
 			}
 			finally
 			{
@@ -717,6 +729,84 @@ namespace OpenBve.Graphics
 			GL.GetInteger(GetPName.Viewport, viewport);
 			Vulkan.VulkanWorld.Instance.Start(viewport[0], viewport[1], viewport[2], viewport[3]);
 			vulkanGatherTicks = System.Diagnostics.Stopwatch.GetTimestamp() - gatherStart;
+		}
+
+		/// <summary>
+		/// OBNS: gives the Vulkan world layer the overlay (cab) layer's faces, in the passes upstream draws them in (in
+		/// RenderScene, after the particles), with its projection, view and light: a 3D cab with the depth cleared and lit
+		/// light grey, a 2D panel blended in order without depth or light.
+		/// </summary>
+		private void GatherVulkanCab(Vulkan.VulkanScene scene, List<FaceState> overlayOpaqueFaces, List<FaceState> overlayAlphaFaces)
+		{
+			if (overlayOpaqueFaces.Count == 0 && overlayAlphaFaces.Count == 0)
+			{
+				return;
+			}
+
+			double nearClipCab = Math.Max(0.01, Interface.CurrentOptions.NearClipCab);
+			Matrix4D projection = Matrix4D.CreatePerspectiveFieldOfView(Camera.VerticalViewingAngle, Screen.Width / (double)Screen.Height, nearClipCab, 50.0);
+			Matrix4D view = Matrix4D.LookAt(Vector3.Zero, new Vector3(Camera.AbsoluteDirection.X, Camera.AbsoluteDirection.Y, -Camera.AbsoluteDirection.Z), new Vector3(Camera.AbsoluteUp.X, Camera.AbsoluteUp.Y, -Camera.AbsoluteUp.Z));
+			if (Camera.CurrentRestriction == CameraRestrictionMode.NotAvailable || Camera.CurrentRestriction == CameraRestrictionMode.Restricted3D)
+			{
+				scene.BeginCab(projection, view, true, new Vector3(Lighting.OptionLightPosition.X, Lighting.OptionLightPosition.Y, -Lighting.OptionLightPosition.Z));
+				scene.Pass(Vulkan.VulkanScene.Blend.None, Vulkan.VulkanScene.AlphaGreater, 0.9f, true, false);
+				foreach (FaceState face in overlayOpaqueFaces)
+				{
+					scene.Face(face.Object, face.Face);
+				}
+
+				if (Interface.CurrentOptions.TransparencyMode == TransparencyMode.Performance)
+				{
+					scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaGreater, 0.0f, false, true);
+					foreach (FaceState face in overlayAlphaFaces)
+					{
+						scene.Face(face.Object, face.Face);
+					}
+				}
+				else
+				{
+					scene.Pass(Vulkan.VulkanScene.Blend.None, Vulkan.VulkanScene.AlphaEqual, 1.0f, true, false);
+					foreach (FaceState face in overlayAlphaFaces)
+					{
+						MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
+						if (material.BlendMode == MeshMaterialBlendMode.Normal && material.GlowAttenuationData == 0 && material.Color.A == 255)
+						{
+							scene.Face(face.Object, face.Face);
+						}
+					}
+
+					scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaLess, 1.0f, false, true);
+					bool additive = false;
+					foreach (FaceState face in overlayAlphaFaces)
+					{
+						if (face.Object.Prototype.Mesh.Materials[face.Face.Material].BlendMode == MeshMaterialBlendMode.Additive)
+						{
+							if (!additive)
+							{
+								scene.SetAlphaFunction(Vulkan.VulkanScene.AlphaNever, 0.0f);
+								additive = true;
+							}
+						}
+						else if (additive)
+						{
+							scene.SetAlphaFunction(Vulkan.VulkanScene.AlphaLess, 1.0f);
+							additive = false;
+						}
+
+						scene.Face(face.Object, face.Face);
+					}
+				}
+			}
+			else
+			{
+				// The 2D panel: blended, in order, no alpha test, no depth, no light.
+				scene.BeginCab(projection, view, false, Vector3.Zero);
+				scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaNever, 0.0f, false, true, false);
+				foreach (FaceState face in overlayAlphaFaces)
+				{
+					scene.Face(face.Object, face.Face);
+				}
+			}
 		}
 
 		/// <summary>OBNS: lays the Vulkan world layer's frame over the background, then puts back the GL state upstream's renderer expects.</summary>

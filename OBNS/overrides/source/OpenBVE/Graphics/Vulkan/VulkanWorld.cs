@@ -217,7 +217,7 @@ namespace OpenBve.Graphics.Vulkan
 					world.Scene.LastObjects, world.Scene.ObjectTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames);
 				world.gatherTicks = world.drawTicks = world.timedFrames = 0;
 				world.Scene.ObjectTicks = 0;
-				return "on (" + times + "; OpenGL's loaded textures " + Program.Renderer.TextureManager.GetNumberOfLoadedTextures() + "; " + world.Scene.LastDraws + " draws in " + world.Scene.LastIndirectCalls + " indirect calls; " + world.Scene.Textures.Describe() + "; " + world.Scene.Meshes.Describe() +
+				return "on (" + times + "; OpenGL's loaded textures " + Program.Renderer.TextureManager.GetNumberOfLoadedTextures() + "; " + world.Scene.LastDraws + " draws (" + world.Scene.LastCabDraws + " of them the cab's) in " + world.Scene.LastIndirectCalls + " indirect calls; " + world.Scene.Textures.Describe() + "; " + world.Scene.Meshes.Describe() +
 				       (world.Scene.SkippedFaces > 0 ? "; " + world.Scene.SkippedFaces + " faces without a copy" : "") + ")";
 			}
 		}
@@ -311,14 +311,17 @@ namespace OpenBve.Graphics.Vulkan
 
 			glColorMemory = ImportMemory(target.ColorHandle, target.ColorSize);
 			glDepthMemory = ImportMemory(target.DepthHandle, target.DepthSize);
+			glCabColorMemory = ImportMemory(target.CabColorHandle, target.CabColorSize);
 			glColorTexture = ImportTexture(glColorMemory, (int)All.Rgba8, width, height);
 			glDepthTexture = ImportTexture(glDepthMemory, (int)All.DepthComponent32f, width, height);
+			glCabColorTexture = ImportTexture(glCabColorMemory, (int)All.Rgba8, width, height);
 			glDoneSemaphore = ImportSemaphore(target.GLDoneHandle);
 			glVulkanDoneSemaphore = ImportSemaphore(target.VulkanDoneHandle);
 
 			// Windows NT handles are not taken over by the import: they are closed here.
 			CloseHandle(target.ColorHandle);
 			CloseHandle(target.DepthHandle);
+			CloseHandle(target.CabColorHandle);
 			CloseHandle(target.GLDoneHandle);
 			CloseHandle(target.VulkanDoneHandle);
 		}
@@ -359,7 +362,16 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly System.Collections.Generic.List<TextureLayout> signalLayouts = new System.Collections.Generic.List<TextureLayout>();
 
 		/// <summary>OpenGL's layout names for the layouts the images are handed over in (<see cref="SharedTarget"/>).</summary>
-		private static readonly TextureLayout[] glLayouts = { TextureLayout.LayoutShaderReadOnlyExt, TextureLayout.LayoutDepthStencilReadOnlyExt };
+		private static readonly TextureLayout[] glLayouts = { TextureLayout.LayoutShaderReadOnlyExt, TextureLayout.LayoutDepthStencilReadOnlyExt, TextureLayout.LayoutShaderReadOnlyExt };
+
+		/// <summary>The cab layer's image, made with the frame's world layer; laid over by CompositeCab.</summary>
+		private int glCabColorMemory, glCabColorTexture;
+
+		/// <summary>Whether the frame being made has a cab layer (main thread: known once its faces are given).</summary>
+		private bool cabStarted;
+
+		/// <summary>Whether Vulkan draws the frame's cab layer (it does whenever it draws the world layer).</summary>
+		internal bool DrawsCab => cabStarted;
 
 		// The frame started and not laid over yet: its slot, what OpenGL handed over with it, and the thread making it.
 		private bool started, failed;
@@ -409,6 +421,8 @@ namespace OpenBve.Graphics.Vulkan
 			signalTextures.Clear();
 			signalTextures.Add(glColorTexture);
 			signalTextures.Add(glDepthTexture);
+			signalTextures.Add(glCabColorTexture);
+			cabStarted = Scene.HasCab;
 			signalLayouts.Clear();
 			signalLayouts.AddRange(glLayouts);
 			while (signalLayouts.Count < signalTextures.Count)
@@ -483,9 +497,9 @@ namespace OpenBve.Graphics.Vulkan
 				return;
 			}
 
-			int[] textures = { glColorTexture, glDepthTexture };
+			int[] textures = { glColorTexture, glDepthTexture, glCabColorTexture };
 			Step.Main = "OpenGL's wait";
-			GL.Ext.WaitSemaphore(glVulkanDoneSemaphore, 0, (int[])null, 2, textures, glLayouts);
+			GL.Ext.WaitSemaphore(glVulkanDoneSemaphore, 0, (int[])null, 3, textures, glLayouts);
 			if (debugFrames < 3 && Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
 			{
 				// What OpenGL reads of the images: for checking the exchange.
@@ -667,10 +681,24 @@ namespace OpenBve.Graphics.Vulkan
 				PColorAttachments = &color,
 				PDepthAttachment = &depth
 			};
+			Scene.Upload(slot);
 			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
-			if (!Scene.Empty)
+			if (!Scene.Empty(VulkanScene.WorldLayer))
 			{
-				Scene.Record(commandBuffer, slot, target.Width, target.Height);
+				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.WorldLayer);
+			}
+
+			Vk.vkCmdEndRendering(commandBuffer);
+
+			// The cab layer, in its own image (laid over after OpenGL's particles, as upstream draws it), its depth its own.
+			color.ImageView = target.CabColorView;
+			color.ClearValue = new Vk.ClearValue();
+			depth.ImageView = target.CabDepthView;
+			depth.StoreOp = Vk.AttachmentStoreOpDontCare;
+			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			if (!Scene.Empty(VulkanScene.CabLayer))
+			{
+				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.CabLayer);
 			}
 
 			Vk.vkCmdEndRendering(commandBuffer);
@@ -765,6 +793,34 @@ void main()
 			return shader;
 		}
 
+		/// <summary>
+		/// Lays the frame's cab layer over the framebuffer, where upstream draws it (after the particles): colour only,
+		/// as nothing after it reads the depth. Leaves upstream's renderer to set its own state again.
+		/// </summary>
+		internal void CompositeCab()
+		{
+			if (!cabStarted)
+			{
+				return;
+			}
+
+			GL.UseProgram(compositeProgram);
+			GL.BindVertexArray(compositeVao);
+			GL.ActiveTexture(TextureUnit.Texture1);
+			GL.BindTexture(TextureTarget.Texture2D, glDepthTexture);
+			GL.ActiveTexture(TextureUnit.Texture0);
+			GL.BindTexture(TextureTarget.Texture2D, glCabColorTexture);
+			GL.Enable(EnableCap.Blend);
+			GL.BlendFunc(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
+			GL.Disable(EnableCap.DepthTest);
+			GL.DepthMask(false);
+			GL.Disable(EnableCap.CullFace);
+			GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+			GL.BindTexture(TextureTarget.Texture2D, 0);
+			GL.BindVertexArray(0);
+			GL.UseProgram(0);
+		}
+
 		/// <summary>Lays the world image over the framebuffer and writes its depth. Leaves upstream's renderer to set its own state again.</summary>
 		private void Composite()
 		{
@@ -798,8 +854,10 @@ void main()
 			GL.Finish();
 			GL.DeleteTexture(glColorTexture);
 			GL.DeleteTexture(glDepthTexture);
+			GL.DeleteTexture(glCabColorTexture);
 			GL.Ext.DeleteMemoryObjects(1, ref glColorMemory);
 			GL.Ext.DeleteMemoryObjects(1, ref glDepthMemory);
+			GL.Ext.DeleteMemoryObjects(1, ref glCabColorMemory);
 			GL.Ext.DeleteSemaphores(1, ref glDoneSemaphore);
 			GL.Ext.DeleteSemaphores(1, ref glVulkanDoneSemaphore);
 			target.Dispose();

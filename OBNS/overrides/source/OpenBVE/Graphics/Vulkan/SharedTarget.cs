@@ -7,7 +7,8 @@ namespace OpenBve.Graphics.Vulkan
 	/// <summary>
 	/// A colour and a depth image whose memory OpenGL imports, and the two semaphores ordering the APIs: OpenGL
 	/// signals <see cref="GLDone"/> when it has finished with the images, Vulkan draws and signals
-	/// <see cref="VulkanDone"/>, which OpenGL waits on before reading them.
+	/// <see cref="VulkanDone"/>, which OpenGL waits on before reading them. The cab layer has a colour image OpenGL
+	/// imports too, and a depth image of Vulkan's own (nothing after the cab reads its depth).
 	/// </summary>
 	internal sealed unsafe class SharedTarget : IDisposable
 	{
@@ -20,13 +21,13 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly VulkanDevice device;
 
 		internal readonly uint Width, Height;
-		internal ulong ColorImage, DepthImage, ColorView, DepthView;
-		private ulong colorMemory, depthMemory;
+		internal ulong ColorImage, DepthImage, ColorView, DepthView, CabColorImage, CabDepthImage, CabColorView, CabDepthView;
+		private ulong colorMemory, depthMemory, cabColorMemory, cabDepthMemory;
 		internal ulong GLDone, VulkanDone;
 
 		/// <summary>The Win32 handles OpenGL imports: memory (with its size) and semaphores; closed once imported (VulkanWorld).</summary>
-		internal IntPtr ColorHandle, DepthHandle, GLDoneHandle, VulkanDoneHandle;
-		internal ulong ColorSize, DepthSize;
+		internal IntPtr ColorHandle, DepthHandle, CabColorHandle, GLDoneHandle, VulkanDoneHandle;
+		internal ulong ColorSize, DepthSize, CabColorSize;
 
 		internal SharedTarget(VulkanDevice device, uint width, uint height)
 		{
@@ -39,6 +40,10 @@ namespace OpenBve.Graphics.Vulkan
 					out ColorImage, out colorMemory, out ColorView, out ColorHandle, out ColorSize);
 				CreateImage(DepthFormat, Vk.ImageUsageDepthStencilAttachment | Vk.ImageUsageSampled, Vk.ImageAspectDepth,
 					out DepthImage, out depthMemory, out DepthView, out DepthHandle, out DepthSize);
+				CreateImage(ColorFormat, Vk.ImageUsageColorAttachment | Vk.ImageUsageSampled, Vk.ImageAspectColor,
+					out CabColorImage, out cabColorMemory, out CabColorView, out CabColorHandle, out CabColorSize);
+				CreateImage(DepthFormat, Vk.ImageUsageDepthStencilAttachment, Vk.ImageAspectDepth,
+					out CabDepthImage, out cabDepthMemory, out CabDepthView, out IntPtr _, out ulong _, false);
 				GLDone = CreateSemaphore(out GLDoneHandle);
 				VulkanDone = CreateSemaphore(out VulkanDoneHandle);
 			}
@@ -49,7 +54,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 		}
 
-		private void CreateImage(uint format, uint usage, uint aspect, out ulong image, out ulong memory, out ulong view, out IntPtr handle, out ulong size)
+		private void CreateImage(uint format, uint usage, uint aspect, out ulong image, out ulong memory, out ulong view, out IntPtr handle, out ulong size, bool shared = true)
 		{
 			image = 0;
 			memory = 0;
@@ -63,7 +68,7 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.ImageCreateInfo imageInfo = new Vk.ImageCreateInfo
 			{
 				SType = Vk.StructureTypeImageCreateInfo,
-				PNext = &external,
+				PNext = shared ? &external : null,
 				ImageType = 1, // 2D
 				Format = format,
 				Extent = new Vk.Extent3D { Width = Width, Height = Height, Depth = 1 },
@@ -88,21 +93,23 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.MemoryAllocateInfo allocateInfo = new Vk.MemoryAllocateInfo
 			{
 				SType = Vk.StructureTypeMemoryAllocateInfo,
-				PNext = &export,
+				PNext = shared ? (void*)&export : null,
 				AllocationSize = requirements.Size,
 				MemoryTypeIndex = device.MemoryType(requirements.MemoryTypeBits, Vk.MemoryPropertyDeviceLocal)
 			};
 			Vk.Check(Vk.vkAllocateMemory(device.Device, &allocateInfo, null, out memory), "vkAllocateMemory");
 			Vk.Check(Vk.vkBindImageMemory(device.Device, image, memory, 0), "vkBindImageMemory");
 			size = requirements.Size;
-
-			Vk.MemoryGetWin32HandleInfoKHR handleInfo = new Vk.MemoryGetWin32HandleInfoKHR
+			if (shared)
+			{
+				Vk.MemoryGetWin32HandleInfoKHR handleInfo = new Vk.MemoryGetWin32HandleInfoKHR
 			{
 				SType = Vk.StructureTypeMemoryGetWin32HandleInfoKhr,
 				Memory = memory,
 				HandleType = Vk.ExternalMemoryHandleTypeOpaqueWin32
 			};
-			Vk.Check(device.GetMemoryWin32Handle(device.Device, &handleInfo, out handle), "vkGetMemoryWin32HandleKHR");
+				Vk.Check(device.GetMemoryWin32Handle(device.Device, &handleInfo, out handle), "vkGetMemoryWin32HandleKHR");
+			}
 
 			Vk.ImageViewCreateInfo viewInfo = new Vk.ImageViewCreateInfo
 			{
@@ -140,20 +147,24 @@ namespace OpenBve.Graphics.Vulkan
 		/// </summary>
 		internal void AcquireForDrawing(IntPtr commandBuffer)
 		{
-			Vk.ImageMemoryBarrier* barriers = stackalloc Vk.ImageMemoryBarrier[2];
+			Vk.ImageMemoryBarrier* barriers = stackalloc Vk.ImageMemoryBarrier[4];
 			barriers[0] = Barrier(ColorImage, Vk.ImageAspectColor, 0, Vk.AccessColorAttachmentWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutColorAttachmentOptimal, Vk.QueueFamilyExternal, device.QueueFamily);
 			barriers[1] = Barrier(DepthImage, Vk.ImageAspectDepth, 0, Vk.AccessDepthStencilAttachmentRead | Vk.AccessDepthStencilAttachmentWrite,
 				Vk.ImageLayoutUndefined, Vk.ImageLayoutDepthStencilAttachmentOptimal, Vk.QueueFamilyExternal, device.QueueFamily);
-			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTopOfPipe, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageEarlyFragmentTests, 0, 0, null, 0, null, 2, barriers);
+			barriers[2] = Barrier(CabColorImage, Vk.ImageAspectColor, 0, Vk.AccessColorAttachmentWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutColorAttachmentOptimal, Vk.QueueFamilyExternal, device.QueueFamily);
+			barriers[3] = Barrier(CabDepthImage, Vk.ImageAspectDepth, 0, Vk.AccessDepthStencilAttachmentRead | Vk.AccessDepthStencilAttachmentWrite,
+				Vk.ImageLayoutUndefined, Vk.ImageLayoutDepthStencilAttachmentOptimal, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTopOfPipe, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageEarlyFragmentTests, 0, 0, null, 0, null, 4, barriers);
 		}
 
 		/// <summary>Records the barriers that hand the drawn images to OpenGL, in the layouts it is told of.</summary>
 		internal void ReleaseToGL(IntPtr commandBuffer)
 		{
-			Vk.ImageMemoryBarrier* barriers = stackalloc Vk.ImageMemoryBarrier[2];
+			Vk.ImageMemoryBarrier* barriers = stackalloc Vk.ImageMemoryBarrier[3];
 			barriers[0] = Barrier(ColorImage, Vk.ImageAspectColor, Vk.AccessColorAttachmentWrite, 0, Vk.ImageLayoutColorAttachmentOptimal, ColorLayoutForGL, device.QueueFamily, Vk.QueueFamilyExternal);
 			barriers[1] = Barrier(DepthImage, Vk.ImageAspectDepth, Vk.AccessDepthStencilAttachmentWrite, 0, Vk.ImageLayoutDepthStencilAttachmentOptimal, DepthLayoutForGL, device.QueueFamily, Vk.QueueFamilyExternal);
-			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageLateFragmentTests, Vk.PipelineStageBottomOfPipe, 0, 0, null, 0, null, 2, barriers);
+			barriers[2] = Barrier(CabColorImage, Vk.ImageAspectColor, Vk.AccessColorAttachmentWrite, 0, Vk.ImageLayoutColorAttachmentOptimal, ColorLayoutForGL, device.QueueFamily, Vk.QueueFamilyExternal);
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageLateFragmentTests, Vk.PipelineStageBottomOfPipe, 0, 0, null, 0, null, 3, barriers);
 		}
 
 		private static Vk.ImageMemoryBarrier Barrier(ulong image, uint aspect, uint srcAccess, uint dstAccess, uint oldLayout, uint newLayout, uint srcFamily, uint dstFamily)
@@ -183,13 +194,20 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.vkDeviceWaitIdle(d);
 			if (ColorView != 0) Vk.vkDestroyImageView(d, ColorView, null);
 			if (DepthView != 0) Vk.vkDestroyImageView(d, DepthView, null);
+			if (CabColorView != 0) Vk.vkDestroyImageView(d, CabColorView, null);
+			if (CabDepthView != 0) Vk.vkDestroyImageView(d, CabDepthView, null);
 			if (ColorImage != 0) Vk.vkDestroyImage(d, ColorImage, null);
 			if (DepthImage != 0) Vk.vkDestroyImage(d, DepthImage, null);
+			if (CabColorImage != 0) Vk.vkDestroyImage(d, CabColorImage, null);
+			if (CabDepthImage != 0) Vk.vkDestroyImage(d, CabDepthImage, null);
 			if (colorMemory != 0) Vk.vkFreeMemory(d, colorMemory, null);
 			if (depthMemory != 0) Vk.vkFreeMemory(d, depthMemory, null);
+			if (cabColorMemory != 0) Vk.vkFreeMemory(d, cabColorMemory, null);
+			if (cabDepthMemory != 0) Vk.vkFreeMemory(d, cabDepthMemory, null);
 			if (GLDone != 0) Vk.vkDestroySemaphore(d, GLDone, null);
 			if (VulkanDone != 0) Vk.vkDestroySemaphore(d, VulkanDone, null);
 			ColorView = DepthView = ColorImage = DepthImage = colorMemory = depthMemory = GLDone = VulkanDone = 0;
+			CabColorView = CabDepthView = CabColorImage = CabDepthImage = cabColorMemory = cabDepthMemory = 0;
 		}
 	}
 }

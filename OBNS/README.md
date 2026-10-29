@@ -115,14 +115,14 @@ swap under 0.5 ms: the time is the CPU submitting draw calls, not the GPU.
 Less than on phones, where a draw call costs far more; the exterior's remaining rendering is next
 for Vulkan (3), which makes each call cheaper.
 
-### 3. Vulkan for the world, with pipelined frames (done)
+### 3. Vulkan for the world and the cab, with pipelined frames (done)
 
 Not Android's renderer: on phones `OpenBve.Vulkan` (`VulkanGL`) carries out GL ES calls with Vulkan,
 which does not suit desktop drivers. The desktop's is a hybrid, designed for them (`OBNS/VULKAN.md`):
-Vulkan draws the world layer - upstream's scenery, trains and their faces, as draw records made on
-every core and drawn with bindless textures and indirect draws - into images OpenGL shares, and OpenGL
-draws the background, the cab, the overlays and the menus as upstream does, laying Vulkan's image over
-the background. Each frame is made and submitted on a thread of its own while OpenGL draws the
+Vulkan draws the world layer and the cab layer - upstream's scenery, trains, cab and panel, as draw
+records made on every core and drawn with bindless textures and indirect draws - into images OpenGL
+shares, and OpenGL draws the background, particles, the overlays and the menus as upstream does,
+laying Vulkan's world image over the background and its cab image over the particles. Each frame is made and submitted on a thread of its own while OpenGL draws the
 background. The vertex buffers are shared between the two; textures are Vulkan's own, with upstream's
 preloads sent to it, so there is one copy of each on the GPU.
 

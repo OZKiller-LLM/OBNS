@@ -98,7 +98,8 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Where each pass's commands start, and whether they must be drawn in order.</summary>
 		private readonly List<int> segmentStarts = new List<int>();
 		private readonly List<bool> segmentOrdered = new List<bool>();
-		private FrameData frameData;
+		/// <summary>The layers' frame records: the world's (0) and the cab's (1), chosen by the push constant.</summary>
+		private readonly FrameData[] frameData = new FrameData[2];
 		private BaseRenderer renderer;
 
 		/// <summary>A face to draw, as upstream's passes give it, with the alpha test in force for it.</summary>
@@ -116,16 +117,22 @@ namespace OpenBve.Graphics.Vulkan
 
 		// Upstream's renderer state for the frame, taken by Begin: the frame's records are made from these (on other
 		// threads, while the main thread goes on) rather than from the renderer.
-		private Matrix4D cameraTranslation, viewMatrix;
+		private Matrix4D cameraTranslation, viewMatrix, cabViewMatrix;
 		private bool backFaceCulling, fogEnabled;
 		private float lightingAmount;
 
-		/// <summary>A pass's state: blending, depth writes, and whether its faces are drawn in the order given.</summary>
+		/// <summary>The layers: upstream's world layer, and its overlay (cab) layer, drawn into an image of its own.</summary>
+		internal const int WorldLayer = 0, CabLayer = 1;
+
+		/// <summary>A pass's state: its layer, blending, depth test and writes, and whether its faces are drawn in the order given.</summary>
 		private struct PassInfo
 		{
+			public int Layer;
 			public Blend Blend;
-			public bool DepthWrite, Ordered;
+			public bool DepthTest, DepthWrite, Ordered;
 		}
+
+		private int currentLayer;
 
 		private Item[] items = new Item[8192];
 		private int itemCount;
@@ -155,6 +162,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Draw records and indirect draws in the last frame, for the log.</summary>
 		internal int LastDraws { get; private set; }
 		internal int LastIndirectCalls { get; private set; }
+		internal int LastCabDraws { get; private set; }
 		private int skippedFaces;
 
 		internal VulkanScene(VulkanDevice device, Uploader uploader, BaseRenderer renderer)
@@ -317,7 +325,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			Blend blend = (Blend)(key & 3);
-			bool depthWrite = (key & 4) != 0, cull = (key & 8) != 0;
+			bool depthWrite = (key & 4) != 0, cull = (key & 8) != 0, depthTest = (key & 16) == 0;
 			IntPtr main = Marshal.StringToHGlobalAnsi("main");
 			try
 			{
@@ -360,7 +368,7 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.PipelineDepthStencilStateCreateInfo depth = new Vk.PipelineDepthStencilStateCreateInfo
 				{
 					SType = Vk.StructureTypePipelineDepthStencilStateCreateInfo,
-					DepthTestEnable = 1,
+					DepthTestEnable = depthTest ? 1u : 0u,
 					DepthWriteEnable = depthWrite ? 1u : 0u,
 					DepthCompareOp = Vk.CompareOpLessOrEqual,
 					MaxDepthBounds = 1.0f
@@ -438,6 +446,8 @@ namespace OpenBve.Graphics.Vulkan
 			renderer = baseRenderer;
 			itemCount = 0;
 			passes.Clear();
+			currentLayer = WorldLayer;
+			cabItemStart = -1;
 			cameraTranslation = renderer.Camera.TranslationMatrix;
 			viewMatrix = renderer.CurrentViewMatrix;
 			backFaceCulling = renderer.OptionBackFaceCulling;
@@ -465,7 +475,40 @@ namespace OpenBve.Graphics.Vulkan
 			data.FogDensity = renderer.Fog.Density;
 			data.FogIsLinear = renderer.Fog.IsLinear ? 1 : 0;
 			data.IsLight = renderer.OptionLighting ? 1 : 0;
-			frameData = data;
+			frameData[WorldLayer] = data;
+		}
+
+		/// <summary>Where the cab layer's faces start, or -1 if it has none this frame.</summary>
+		private int cabItemStart;
+
+		/// <summary>Whether the frame has a cab layer to draw (and lay over).</summary>
+		internal bool HasCab => cabItemStart >= 0 && cabItemStart < itemCount;
+
+		/// <summary>
+		/// Starts the frame's overlay (cab) layer, as upstream's renderer draws it after the world: its own projection
+		/// (the cab's near plane, 50 m far), the view, no fog, and for a 3D cab the light-grey light upstream sets for it.
+		/// The passes given from now are the cab's.
+		/// </summary>
+		internal void BeginCab(Matrix4D projection, Matrix4D view, bool lit, Vector3 lightPosition)
+		{
+			currentLayer = CabLayer;
+			cabItemStart = itemCount;
+			cabViewMatrix = view;
+			FrameData data = frameData[WorldLayer];
+			Store(projection, data.Projection);
+			if (lit)
+			{
+				Vector3 light = lightPosition;
+				light.Normalize();
+				data.Light[0] = (float)light.X;
+				data.Light[1] = (float)light.Y;
+				data.Light[2] = (float)light.Z;
+				StoreColor(Color24.LightGrey, data.Light, 4);
+				StoreColor(Color24.LightGrey, data.Light, 8);
+			}
+
+			data.IsLight = lit ? 1 : 0;
+			frameData[CabLayer] = data;
 		}
 
 		private static void StoreColor(Color24 color, float* to, int at)
@@ -489,9 +532,9 @@ namespace OpenBve.Graphics.Vulkan
 		/// Starts a pass with upstream's state for it: blending, the alpha function, depth writes, and whether its faces
 		/// must be drawn in the order given (blended faces), or may be grouped (the rest).
 		/// </summary>
-		internal void Pass(Blend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered)
+		internal void Pass(Blend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered, bool depthTest = true)
 		{
-			passes.Add(new PassInfo { Blend = blend, DepthWrite = depthWrite, Ordered = ordered });
+			passes.Add(new PassInfo { Layer = currentLayer, Blend = blend, DepthTest = depthTest, DepthWrite = depthWrite, Ordered = ordered });
 			currentAlphaFunction = alphaFunction;
 			currentAlphaReference = alphaReference;
 		}
@@ -604,9 +647,17 @@ namespace OpenBve.Graphics.Vulkan
 			chunk.ObjectTicks = 0;
 			ObjectState lastState = null;
 			Matrix4D lastModelMatrix = Matrix4D.Identity;
-			int lastObject = 0;
+			int lastObject = 0, lastLayer = -1;
 			for (int i = start; i < end; i++)
 			{
+				int layer = passes[items[i].Pass].Layer;
+				if (layer != lastLayer)
+				{
+					// An object's record holds its model-view, which is the layer's.
+					lastState = null;
+					lastLayer = layer;
+				}
+
 				BuildFace(chunk, ref items[i], ref lastState, ref lastModelMatrix, ref lastObject);
 			}
 		}
@@ -628,18 +679,18 @@ namespace OpenBve.Graphics.Vulkan
 			ObjectState state = item.State;
 			Mesh mesh = state.Prototype.Mesh;
 			uint firstIndex = item.FirstIndex, indexCount = item.IndexCount;
+			PassInfo pass = passes[item.Pass];
 
 			// The object: its matrices, once per object as upstream sends them.
 			if (state != lastState || state.Prototype.Dynamic)
 			{
 				long objectStart = System.Diagnostics.Stopwatch.GetTimestamp();
 				lastModelMatrix = state.ModelMatrix * cameraTranslation;
-				lastObject = AddObject(chunk, state, lastModelMatrix * viewMatrix);
+				lastObject = AddObject(chunk, state, lastModelMatrix * (pass.Layer == CabLayer ? cabViewMatrix : viewMatrix));
 				lastState = state;
 				chunk.ObjectTicks += System.Diagnostics.Stopwatch.GetTimestamp() - objectStart;
 			}
 
-			PassInfo pass = passes[item.Pass];
 			ref MeshMaterial material = ref mesh.Materials[item.Face.Material];
 			bool cull = backFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0;
 			OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
@@ -655,7 +706,7 @@ namespace OpenBve.Graphics.Vulkan
 				Flags = (int)material.Flags,
 				Object = lastObject,
 				Sampler = (int)wrap & 3,
-				Fog = fogEnabled ? 1 : 0,
+				Fog = fogEnabled && pass.Layer == WorldLayer ? 1 : 0,
 				AlphaFunction = item.AlphaFunction,
 				AlphaReference = item.AlphaReference,
 				Shininess = 1.0f
@@ -809,7 +860,7 @@ namespace OpenBve.Graphics.Vulkan
 			// Grouped passes cull in the pipeline; ordered ones draw both sides and discard OpenGL's front faces.
 			bool pipelineCull = cull && !pass.Ordered;
 			draw.CullFront = cull && pass.Ordered ? 1 : 0;
-			int pipelineKey = (int)blend | (pass.DepthWrite ? 4 : 0) | (pipelineCull ? 8 : 0);
+			int pipelineKey = (int)blend | (pass.DepthWrite ? 4 : 0) | (pipelineCull ? 8 : 0) | (pass.DepthTest ? 0 : 16);
 			// Grouped by: nighttime draws after daytime ones (they blend over them), then pipeline, then vertex and index blocks.
 			long key = ((night ? 1L : 0L) << 62) | ((long)pipelineKey << 32) | ((long)(mesh.VertexBlock & 0xFFFF) << 16) | (long)(mesh.IndexBlock & 0xFFFF);
 			chunk.Draws[chunk.DrawCount] = draw;
@@ -863,6 +914,7 @@ namespace OpenBve.Graphics.Vulkan
 
 			segmentStarts.Clear();
 			segmentOrdered.Clear();
+			cabCommandStart = commandCount;
 			int lastPass = -1;
 			for (int i = 0; i < commandCount; i++)
 			{
@@ -871,9 +923,16 @@ namespace OpenBve.Graphics.Vulkan
 					lastPass = commands[i].Pass;
 					segmentStarts.Add(i);
 					segmentOrdered.Add(passes[lastPass].Ordered);
+					if (passes[lastPass].Layer == CabLayer && cabCommandStart == commandCount)
+					{
+						cabCommandStart = i;
+					}
 				}
 			}
 		}
+
+		/// <summary>Where the cab layer's commands start among the merged ones (commandCount if none).</summary>
+		private int cabCommandStart;
 
 		private static void Grow<T>(ref T[] array, int needed)
 		{
@@ -885,11 +944,11 @@ namespace OpenBve.Graphics.Vulkan
 
 		// --- recording ---
 
-		/// <summary>Whether there is anything to draw.</summary>
-		internal bool Empty => commandCount == 0;
+		/// <summary>Whether a layer has anything to draw.</summary>
+		internal bool Empty(int layer) => layer == WorldLayer ? cabCommandStart == 0 : cabCommandStart == commandCount;
 
-		/// <summary>Copies the frame's records into the slot's buffers and records its draws (inside the rendering).</summary>
-		internal void Record(IntPtr commandBuffer, int slot, uint width, uint height)
+		/// <summary>Copies the frame's records into the slot's buffers (before its renderings).</summary>
+		internal void Upload(int slot)
 		{
 			// Grouped passes sorted by key; ordered ones kept as they are.
 			for (int s = 0; s < segmentStarts.Count; s++)
@@ -902,8 +961,11 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			EnsureBuffers(slot);
-			FrameData frame = frameData;
-			Buffer.MemoryCopy(&frame, frameBuffers[slot].Data, (long)frameBuffers[slot].Size, sizeof(FrameData));
+			fixed (FrameData* frames = frameData)
+			{
+				Buffer.MemoryCopy(frames, frameBuffers[slot].Data, (long)frameBuffers[slot].Size, (long)frameData.Length * sizeof(FrameData));
+			}
+
 			fixed (ObjectData* data = objects)
 			{
 				Buffer.MemoryCopy(data, objectBuffers[slot].Data, (long)objectBuffers[slot].Size, (long)objectCount * sizeof(ObjectData));
@@ -932,24 +994,32 @@ namespace OpenBve.Graphics.Vulkan
 				};
 			}
 
+			LastDraws = commandCount;
+			LastCabDraws = commandCount - cabCommandStart;
+			LastIndirectCalls = 0;
+		}
+
+		/// <summary>Records a layer's draws (inside its rendering), from the records Upload copied.</summary>
+		internal void Draw(IntPtr commandBuffer, int slot, uint width, uint height, int layer)
+		{
 			Vk.Viewport viewport = new Vk.Viewport { Width = width, Height = height, MaxDepth = 1.0f };
 			Vk.Rect2D scissor = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = width, Height = height } };
 			Vk.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 			Vk.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 			ulong set = DescriptorSets[slot];
 			Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 0, 1, &set, 0, null);
-			int frameIndex = 0;
+			int frameIndex = layer;
 			Vk.vkCmdPushConstants(commandBuffer, pipelineLayout, Vk.ShaderStageVertex | Vk.ShaderStageFragment, 0, 4, &frameIndex);
 
 			// Runs of the same pipeline and buffer blocks, each one indirect draw.
 			int calls = 0;
 			int boundPipeline = -1, boundVertexBlock = -1, boundIndexBlock = -1;
-			int run = 0;
-			while (run < commandCount)
+			int run = layer == WorldLayer ? 0 : cabCommandStart, end = layer == WorldLayer ? cabCommandStart : commandCount;
+			while (run < end)
 			{
 				long key = commands[run].Key & ~(1L << 62);
 				int next = run + 1;
-				while (next < commandCount && (commands[next].Key & ~(1L << 62)) == key)
+				while (next < end && (commands[next].Key & ~(1L << 62)) == key)
 				{
 					next++;
 				}
@@ -981,8 +1051,7 @@ namespace OpenBve.Graphics.Vulkan
 				run = next;
 			}
 
-			LastDraws = commandCount;
-			LastIndirectCalls = calls;
+			LastIndirectCalls += calls;
 		}
 
 		private sealed class KeyComparer : IComparer<DrawCommand>
@@ -995,7 +1064,7 @@ namespace OpenBve.Graphics.Vulkan
 		private void EnsureBuffers(int slot)
 		{
 			bool changed = false;
-			changed |= Ensure(ref frameBuffers[slot], (ulong)sizeof(FrameData), Vk.BufferUsageStorageBuffer);
+			changed |= Ensure(ref frameBuffers[slot], (ulong)frameData.Length * (ulong)sizeof(FrameData), Vk.BufferUsageStorageBuffer);
 			changed |= Ensure(ref objectBuffers[slot], (ulong)Math.Max(1, objectCount) * (ulong)sizeof(ObjectData), Vk.BufferUsageStorageBuffer);
 			changed |= Ensure(ref drawBuffers[slot], (ulong)Math.Max(1, drawCount) * (ulong)sizeof(DrawData), Vk.BufferUsageStorageBuffer);
 			changed |= Ensure(ref matrixBuffers[slot], (ulong)Math.Max(1, matrixCount) * 64UL, Vk.BufferUsageStorageBuffer);

@@ -1074,8 +1074,8 @@ namespace OpenBve
 			World.InitializeCameraRestriction();
 			Loading.SimulationSetup = true;
 			Program.Renderer.CurrentInterface = InterfaceType.Normal;
-			// OBNS: with the Vulkan world layer, the train's exterior textures are preloaded by it, not into OpenGL: one
-			// copy of each on the GPU (OBNS/VULKAN.md).
+			// OBNS: with the Vulkan world layer (which draws the cab too), the train's textures are preloaded by it, not
+			// into OpenGL: one copy of each on the GPU (OBNS/VULKAN.md).
 			if (OpenBve.Graphics.Vulkan.VulkanWorld.Enabled)
 			{
 				OpenBve.Graphics.Vulkan.VulkanWorld.Instance.Scene.Textures.PreloadTrain(TrainManager.PlayerTrain);

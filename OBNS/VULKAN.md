@@ -15,7 +15,7 @@ Upstream's frame (OBNS's copy of `NewRenderer.RenderScene`) is split:
 | Background (sky cylinder / background objects) | OpenGL, as upstream (drawn first, no depth) |
 | World layer: opaque faces, static batches, transparent faces | **Vulkan** |
 | Motion blur, particles, event cubes | OpenGL, as upstream |
-| Overlay layer (3D cab, 2D panel) | OpenGL first; Vulkan in a later step |
+| Overlay layer (3D cab, 2D panel) | **Vulkan**, into an image of its own, laid over where upstream draws it |
 | Touch areas, HUD, text, menus, loading screen | OpenGL, as upstream |
 
 Vulkan draws the world layer into a colour image and a depth image whose memory OpenGL imports
@@ -23,7 +23,15 @@ Vulkan draws the world layer into a colour image and a depth image whose memory 
 
 1. lays the colour over the background it drew, as premultiplied colour (`One, OneMinusSrcAlpha`);
 2. writes Vulkan's depth into its own depth buffer (a full-screen pass writing `gl_FragDepth`), so the
-   particles and event cubes drawn after are hidden by the scenery as before.
+   particles and event cubes drawn after are hidden by the scenery as before;
+3. after the particles and event cubes, lays the cab layer's image over the frame the same way, colour only.
+
+The cab layer is drawn in the same submission as the world, after it, into a second colour image OpenGL
+imports and a depth image of Vulkan's own, cleared for it as upstream clears the depth before the cab (nothing
+after the cab reads its depth: touch areas have a framebuffer of their own). It has its own frame record:
+upstream's cab projection (the cab near plane, 50 m far), no fog, and for a 3D cab the light-grey light
+upstream sets; a 2D panel is blended in order with no depth test and no light. Drawn in its own image rather
+than into the world's, it is laid over after the particles, as upstream draws it.
 
 The composite is exact: Vulkan clears to (0, 0, 0, 0) and blends colour as upstream but alpha separately
 (`One, OneMinusSrcAlpha`), so the image's alpha is the world's coverage. Normal blending gives
@@ -49,10 +57,10 @@ layer to Vulkan, for macOS, is a later step that the 3D renderer is built not to
   2 ms or more a frame on the CPU (measured: it is the textures, not the buffers, and not the number of
   blocks). Vulkan keeps its own copy of each texture the world draws, made from upstream's decode
   (`TextureManager.ObnsDecoded` in OBNS's copy) and never uploaded to OpenGL, which keeps textures only for
-  what it draws itself (the cab, the background, the HUD); animated textures are animated by OpenGL and their
+  what it draws itself (the background, the HUD); animated textures are animated by OpenGL and their
   frames copied. Upstream's preloads go to Vulkan instead of OpenGL ("load textures in advance", and a
-  train's exterior; its cab still to OpenGL): with both copies, the Tuen Ma Line's SP1900 (hundreds of
-  destination display textures) filled the 8 GB card and the driver reset.
+  train's: the cab's made at load, the exterior's when first drawn): with both copies, the Tuen Ma Line's
+  SP1900 (hundreds of destination display textures) filled the 8 GB card and the driver reset.
 - **Meshes.** Upstream gives each face corner its own vertex and draws a face as triangles, a strip, quads, a
   quad strip or a polygon. Vulkan has no quads or polygons, so each mesh gets a triangle index list of Vulkan's
   own over the shared vertices (fans for quads and polygons), made when upstream makes or updates its VAO (a hook
@@ -154,6 +162,10 @@ it; `GameWindow.cs` sets it up and sends upstream's texture preloads to it; `Gra
    showed that was OpenGL drawing with textures over shared memory, now gone (see "One copy on the GPU").
    On the Tuen Ma Line, in one run: cab 9.8-10.2 ms a frame against OpenGL's 10.8-11.2, exterior 15.6-17
    against 19.4-22.9; Vulkan's world on the GPU takes 0.6 ms in the cab and 0.9 outside.
-4. The overlay layer (cab).
+4. The overlay layer (cab). Done: drawn as described above, checked with the validation layer (no errors or
+   warnings) and against OpenGL by snapshot (the same picture). On the Tuen Ma Line the cab section's main
+   thread time went from 1.09-1.53 ms (OpenGL drawing the cab) to 0.55-0.66 ms, which is upstream's fixed
+   work there (the viewport change, touch's viewport, the shader reset); cab frames 9.1-9.9 ms against
+   OpenGL's 15.0-17.4 in the same run.
 5. Shadows.
 6. Linux (`_fd` handles); later, the 2D layer for macOS.

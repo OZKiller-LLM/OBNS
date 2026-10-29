@@ -249,39 +249,50 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		/// <summary>
-		/// Upstream's train texture preload (TrainBase.PreloadTextures) when Vulkan draws the world: for the exterior, the
-		/// wrap modes upstream works out (AnimatedObject.LoadTextures), its textures made when first drawn (a train may
-		/// have hundreds it seldom shows, such as destination displays; OpenGL can page those out of video memory, but
-		/// Vulkan's would stay in it); the cab's (interior and head-out views, which OpenGL draws) preloaded into OpenGL
-		/// as upstream does.
+		/// Upstream's train texture preload (TrainBase.PreloadTextures) when Vulkan draws the world and the cab: the wrap
+		/// modes upstream works out (AnimatedObject.LoadTextures) for every section. The exterior's textures are made when
+		/// first drawn (a train may have hundreds it seldom shows, such as destination displays; OpenGL can page those out
+		/// of video memory, but Vulkan's would stay in it); the cab's (interior and head-out views), shown from the start,
+		/// are made now, as upstream preloads them.
 		/// </summary>
 		internal void PreloadTrain(global::TrainManager.Trains.TrainBase train)
 		{
+			List<KeyValuePair<Texture, OpenGlTextureWrapMode>> cab = new List<KeyValuePair<Texture, OpenGlTextureWrapMode>>();
+			foreach (global::TrainManager.Car.CarBase car in train.Cars)
 			{
-				foreach (global::TrainManager.Car.CarBase car in train.Cars)
+				foreach (KeyValuePair<LibRender2.Trains.CarSectionType, LibRender2.Trains.CarSection> section in car.CarSections)
 				{
-					foreach (System.Collections.Generic.KeyValuePair<LibRender2.Trains.CarSectionType, LibRender2.Trains.CarSection> section in car.CarSections)
+					foreach (LibRender2.Trains.ElementsGroup group in section.Value.Groups)
 					{
-						foreach (LibRender2.Trains.ElementsGroup group in section.Value.Groups)
+						foreach (OpenBveApi.Objects.AnimatedObject element in group.Elements)
 						{
-							if (section.Key != LibRender2.Trains.CarSectionType.Exterior)
-							{
-								group.PreloadTextures();
-								continue;
-							}
-
-							foreach (OpenBveApi.Objects.AnimatedObject element in group.Elements)
-							{
-								PreloadObject(element);
-							}
+							PreloadObject(element, section.Key == LibRender2.Trains.CarSectionType.Exterior ? null : cab);
 						}
 					}
 				}
 			}
+
+			loadingAll = true;
+			try
+			{
+				foreach (KeyValuePair<Texture, OpenGlTextureWrapMode> texture in cab)
+				{
+					Prepare(texture.Key, texture.Value, out bool _);
+				}
+			}
+			finally
+			{
+				loadingAll = false;
+			}
+
+			uploader.Submit(true);
 		}
 
-		/// <summary>AnimatedObject.LoadTextures (upstream) without the loads: the wrap modes, and the textures kept loaded.</summary>
-		private void PreloadObject(OpenBveApi.Objects.AnimatedObject element)
+		/// <summary>
+		/// AnimatedObject.LoadTextures (upstream) without the loads: the wrap modes, and the textures kept loaded; the
+		/// textures with their wrap modes added to the list, if one is given, to be made now.
+		/// </summary>
+		private void PreloadObject(OpenBveApi.Objects.AnimatedObject element, List<KeyValuePair<Texture, OpenGlTextureWrapMode>> made)
 		{
 			foreach (OpenBveApi.Objects.ObjectState state in element.States)
 			{
@@ -330,11 +341,13 @@ namespace OpenBve.Graphics.Vulkan
 					if (material.DaytimeTexture != null)
 					{
 						material.DaytimeTexture.AvailableToUnload = false;
+						made?.Add(new KeyValuePair<Texture, OpenGlTextureWrapMode>(material.DaytimeTexture, wrap));
 					}
 
 					if (material.NighttimeTexture != null)
 					{
 						material.NighttimeTexture.AvailableToUnload = false;
+						made?.Add(new KeyValuePair<Texture, OpenGlTextureWrapMode>(material.NighttimeTexture, wrap));
 					}
 				}
 			}
