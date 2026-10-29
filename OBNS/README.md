@@ -175,3 +175,9 @@ work, keys reach it, and a frame costs the same as with the proxy (9.2 against 9
 survey (`OpenBve.X86.Tests survey`, every 32-bit plugin in a library for a simulated minute) gives the
 same results before and after the layer was made to build for .NET Framework. Not yet run on Linux or
 macOS themselves.
+
+### 5. The main menu on macOS: formMain drawn with OpenGL
+
+Upstream shows only a small in-window menu on 64-bit macOS, where Windows Forms cannot show a window. OBNS shows
+formMain itself there - every page, control and layout of the Windows menu - with its controls drawn by OpenGL in a
+window of its own (`OBNS_GLFORMS=1` shows it on Windows, for testing). See [GLFORMS.md](GLFORMS.md).

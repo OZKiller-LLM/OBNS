@@ -64,6 +64,10 @@ if (Test-Path $overrides) {
     if ($LASTEXITCODE -ge 8) { throw "Laying OBNS's files over the mirror failed (robocopy $LASTEXITCODE)" }
 }
 
+# 2b. The in-window main menu's copies of upstream's forms (OBNS/GLFORMS.md), outside the mirror so that an unchanged
+#     form is not compiled again.
+& (Join-Path $PSScriptRoot 'glforms.ps1') -Mirror $mirror -Output (Join-Path $build 'glforms')
+
 # 3. MSBuild: Visual Studio's if it has the C# compiler, else the .NET SDK's.
 $msbuild = $null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'

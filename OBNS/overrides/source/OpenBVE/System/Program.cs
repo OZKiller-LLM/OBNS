@@ -1,6 +1,7 @@
 // OBNS: a copy of upstream's source/OpenBVE/System/Program.cs (OpenBVE 1.14.1.2), laid over the desktop build's
 // mirror (OBNS/build-desktop.ps1): a train given on the command line may be a file (a BVE5 vehicle, an MSTS
-// consist), as in the train lists, and a BVE5 scenario's suggested vehicle is taken as it is (see Main).
+// consist), as in the train lists, and a BVE5 scenario's suggested vehicle is taken as it is (see Main); the main
+// menu may be OBNS's drawn with OpenGL (GLformMain, OBNS/GLFORMS.md).
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 using System;
 using System.Reflection;
@@ -284,7 +285,14 @@ namespace OpenBve {
 			if (result.RouteFile == null | result.TrainFolder == null) {
 				Joysticks.RefreshJoysticks();
 
-				if (CurrentHost.Platform == HostPlatform.AppleOSX && IntPtr.Size != 4)
+				// OBNS: the main menu drawn with OpenGL (OBNS/GLFORMS.md) - upstream's own form, every page of it - where
+				// Windows Forms cannot show it, and with OBNS_GLFORMS=1 anywhere; OBNS_GLFORMS=0 keeps upstream's way.
+				string glForms = Environment.GetEnvironmentVariable("OBNS_GLFORMS");
+				if (glForms == "1" || CurrentHost.Platform == HostPlatform.AppleOSX && IntPtr.Size != 4 && glForms != "0" && !result.ExperimentalGLMenu)
+				{
+					result = GLformMain.ShowMainDialog(result);
+				}
+				else if (CurrentHost.Platform == HostPlatform.AppleOSX && IntPtr.Size != 4)
 				{
 					//WinForms are not supported on 64-bit Apple, so show the experimental GL menu
 					result.ExperimentalGLMenu = true;
