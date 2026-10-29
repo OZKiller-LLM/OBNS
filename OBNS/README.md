@@ -166,8 +166,18 @@ ATS-Sx brake its real system would not have applied.
   few runtime functions .NET Framework 4.8 lacks are in `OpenBve.X86/Compat.cs`). Android builds the
   same files for net10.0, with its own way into the bridge (`NativePluginBridge.Android.cs`).
 - Log: what was installed goes to the log file; `OBNS_X86_DEBUG=1` adds every key, signal, beacon
-  and panel change; `OBNS_PLUGIN_TRACE=<folder>` records the calls (`plugin-trace.bin`) for
-  `OpenBve.X86.Tests <root> <dll> replay <trace>`.
+  and panel change; `OBNS_PLUGIN_TRACE=<folder>` (or `1`, for `plugin-trace` in the settings
+  folder) records the calls (`plugin-trace.bin`) for `OpenBve.X86.Tests <root> <dll> replay <trace>`.
+- Running it (2026-10-29): Linux needs Mono (`mono-complete`; Ubuntu 22.04's 6.8 works) with OpenAL and
+  SDL2. macOS needs Mono, `mono-libgdiplus` and SDL2 (Homebrew; arm64 on Apple silicon), and on Apple
+  silicon `preferNativeBackend = false` under `[display]` in options.cfg: OpenTK 3's native Cocoa
+  backend crashes there (a variadic objc_msgSend called as a fixed one), its SDL2 backend works. Start
+  it as `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib mono OpenBve.exe`.
+- Checked on Linux (Ubuntu 22.04, Mono 6.8, Intel Iris 6100): the Keisei 3500's KqAts.dll runs in the
+  layer and drives; the Tuen Ma Line's DetailManager runs OS_Ats1 and kcrwr_seltrac in it. The E217's
+  DetailManager runs four of its five modules (the C runtime's text mode, the bounds-checked string
+  functions, `_wstat64i32`, `_wsplitpath_s` and `mbstowcs` added for it); its TIMS_MON_Disp.dll is C++
+  with iostreams (MSVCP140, not provided), so that train still runs on the managed module loader.
 
 Checked (2026-10-29), on Windows with `OBNS_X86_PLUGINS=1`: the Tuen Ma Line's SP1900 runs its
 DetailManager.dll with both modules (OS_Ats1, kcrwr_seltrac) in the layer; the TBL display and panel
@@ -181,3 +191,18 @@ macOS themselves.
 Upstream shows only a small in-window menu on 64-bit macOS, where Windows Forms cannot show a window. OBNS shows
 formMain itself there - every page, control and layout of the Windows menu - with its controls drawn by OpenGL in a
 window of its own (`OBNS_GLFORMS=1` shows it on Windows, for testing). See [GLFORMS.md](GLFORMS.md).
+Checked on an M1 Mac (2026-10-29, Mono 6.14, SDL2 backend): it opens; the route browser, a BVE5 scenario's
+details, the options and the language list work. The language list is sorted by code, as Windows lists the
+folder; the renderer choice shows OpenGL only away from Windows (Vulkan draws only there so far).
+
+### 6. Texture memory
+
+Upstream decodes every texture when a route registers it (to learn its format) and keeps that decode on the
+handle, and in the texture cache, until it is uploaded; "released" decodes kept their pixels too, through the
+decode's ByteArrayOrigin. The Tuen Ma Line registers 9,672 textures: 7.5 GB of pixels held, 8.7 GB of managed
+heap, 13-15 GB private on Windows, and more than Linux's 16 GB machines could load. OBNS lets the register-time
+decode's pixels go at once, keeping it for its transparency (as the Android port does), and its releases free
+the pixels for good (`Texture.ObnsDropPixels`, in OBNS's copies of OpenBveApi's texture files); a texture is
+decoded again from its file when uploaded. On the Tuen Ma Line: 1.1 GB live managed heap, 3.9 GB private when
+loaded (5.5 GB driving), loading as fast as before. `OBNS_MEMSTATS=1` logs a census of what a loaded route holds
+(`2`: after a full collection).

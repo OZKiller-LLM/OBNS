@@ -45,10 +45,20 @@ namespace OpenBve
 				Size = comboboxVSync.Size
 			};
 			comboboxObnsRenderer.Items.Add("OpenGL");
-			comboboxObnsRenderer.Items.Add("Vulkan");
-			comboboxObnsRenderer.SelectedIndex = ObnsOptions.Renderer == ObnsOptions.RendererKind.Vulkan ? 1 : 0;
 			ToolTip tip = new ToolTip();
-			tip.SetToolTip(comboboxObnsRenderer, "Vulkan draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
+			if (System.Environment.OSVersion.Platform == System.PlatformID.Win32NT)
+			{
+				comboboxObnsRenderer.Items.Add("Vulkan");
+				comboboxObnsRenderer.SelectedIndex = ObnsOptions.Renderer == ObnsOptions.RendererKind.Vulkan ? 1 : 0;
+				tip.SetToolTip(comboboxObnsRenderer, "Vulkan draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
+			}
+			else
+			{
+				// Vulkan draws only on Windows so far (OBNS/VULKAN.md): OpenGL is shown, and the saved choice is kept as it is.
+				comboboxObnsRenderer.SelectedIndex = 0;
+				comboboxObnsRenderer.Enabled = false;
+				tip.SetToolTip(comboboxObnsRenderer, "OpenGL draws everything here: the Vulkan renderer is available on Windows only so far.");
+			}
 
 			// Room for the row: the group grows, and what is below it in the panel moves down.
 			int groupBottom = groupboxDisplayMode.Bottom;
@@ -68,7 +78,7 @@ namespace OpenBve
 		/// <summary>Saves OBNS's options, with upstream's.</summary>
 		private void ObnsSaveOptions()
 		{
-			if (comboboxObnsRenderer != null)
+			if (comboboxObnsRenderer != null && comboboxObnsRenderer.Enabled)
 			{
 				ObnsOptions.Renderer = comboboxObnsRenderer.SelectedIndex == 0 ? ObnsOptions.RendererKind.OpenGL : ObnsOptions.RendererKind.Vulkan;
 				ObnsOptions.Save();

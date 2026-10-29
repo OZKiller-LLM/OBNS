@@ -159,6 +159,11 @@ namespace LibRender2.Textures
 					textureCache.Add(handle.Origin, handle.DecodedTexture);
 				}
 
+				// OBNS: the decode made to learn the format is kept for its transparency only; its pixels are let go now
+				// (decoded again at upload), or a route holds every texture it registers in memory at once (the Tuen Ma
+				// Line: 7.5 GB, more than Linux's 16 GB machines can load). As the Android port does (AndroidHost).
+				handle.DecodedTexture?.ObnsDropPixels();
+
 				/*
 				 * Maintain the registration lookup table.
 				 * */
@@ -284,7 +289,7 @@ namespace LibRender2.Textures
 
 			lock (TextureLookupLock)
 			{
-				if (handle.Origin != null && textureCache.TryGetValue(handle.Origin, out Texture cachedTexture) && cachedTexture != null && !cachedTexture.MultipleFrames)
+				if (handle.Origin != null && textureCache.TryGetValue(handle.Origin, out Texture cachedTexture) && cachedTexture != null && !cachedTexture.MultipleFrames && !cachedTexture.ObnsPixelsDropped)
 				{
 					// As below: a cached decode is used when its parameters are the handle's.
 					PathOrigin cachedPathOrigin = cachedTexture.Origin as PathOrigin;
@@ -300,7 +305,7 @@ namespace LibRender2.Textures
 				}
 			}
 
-			if (decoded == null && handle.Origin is PathOrigin && TextureFileUnchanged(handle.Origin) && handle.DecodedTexture != null)
+			if (decoded == null && handle.Origin is PathOrigin && TextureFileUnchanged(handle.Origin) && handle.DecodedTexture != null && !handle.DecodedTexture.ObnsPixelsDropped)
 			{
 				decoded = handle.DecodedTexture;
 			}
@@ -315,27 +320,94 @@ namespace LibRender2.Textures
 		}
 
 		/// <summary>
+		/// OBNS: the decoded pixels still held in memory, for the memory census (OBNS_MEMSTATS): in the decode cache, and
+		/// on the registered handles (their register-time decodes); each array counted once, read without the Bytes
+		/// getter (which decodes a released texture again). A released decode whose origin still holds the pixels (a
+		/// ByteArrayOrigin) is counted too, as those pixels are still in memory.
+		/// </summary>
+		public long ObnsHeldPixelBytes(out int cached, out int onHandles, out string origins)
+		{
+			System.Reflection.FieldInfo textureBytes = typeof(Texture).GetField("MyBytes", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+			System.Reflection.FieldInfo originBytes = typeof(ByteArrayOrigin).GetField("TextureBytes", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+			HashSet<object> arrays = new HashSet<object>();
+			Dictionary<string, int> originTypes = new Dictionary<string, int>();
+			long total = 0;
+			int counted = 0;
+
+			bool Count(Texture texture)
+			{
+				bool any = false;
+				foreach (object frames in new[] { textureBytes?.GetValue(texture), texture.Origin is ByteArrayOrigin ? originBytes?.GetValue(texture.Origin) : null })
+				{
+					if (frames is byte[][] list)
+					{
+						foreach (byte[] frame in list)
+						{
+							if (frame != null && arrays.Add(frame))
+							{
+								total += frame.LongLength;
+								any = true;
+							}
+						}
+					}
+				}
+
+				string type = texture.Origin?.GetType().Name ?? "no origin";
+				originTypes.TryGetValue(type, out int n);
+				originTypes[type] = n + 1;
+				return any;
+			}
+
+			lock (TextureLookupLock)
+			{
+				foreach (Texture texture in textureCache.Values)
+				{
+					if (texture != null && Count(texture))
+					{
+						counted++;
+					}
+				}
+			}
+
+			cached = counted;
+			counted = 0;
+			Texture[] registered = RegisteredTextures;
+			for (int i = 0; registered != null && i < Math.Min(RegisteredTexturesCount, registered.Length); i++)
+			{
+				Texture decoded = registered[i]?.DecodedTexture;
+				if (decoded != null && Count(decoded))
+				{
+					counted++;
+				}
+			}
+
+			onHandles = counted;
+			origins = string.Join(", ", originTypes.Select(pair => pair.Key + " " + pair.Value));
+			return total;
+		}
+
+		/// <summary>
 		/// OBNS: lets go of a decode's pixels once the Vulkan world layer has its copy, as upstream's upload does once
 		/// OpenGL has the pixels (their transparency worked out first; they are decoded again if needed).
 		/// </summary>
 		public void ObnsReleaseDecoded(Texture handle, Texture decoded)
 		{
 			decoded.GetTransparencyType();
-			decoded.ReleaseBytes();
+			decoded.ObnsDropPixels();
 			Texture cachedTexture = null;
 			lock (TextureLookupLock)
 			{
 				if (handle.Origin != null && textureCache.TryGetValue(handle.Origin, out cachedTexture) && cachedTexture != null)
 				{
 					cachedTexture.GetTransparencyType();
-					cachedTexture.ReleaseBytes();
+					cachedTexture.ObnsDropPixels();
 				}
 			}
 
 			if (handle.DecodedTexture != null && handle.DecodedTexture != cachedTexture)
 			{
 				handle.DecodedTexture.GetTransparencyType();
-				handle.DecodedTexture.ReleaseBytes();
+				handle.DecodedTexture.ObnsDropPixels();
 			}
 		}
 
@@ -553,6 +625,10 @@ namespace LibRender2.Textures
 							// Purged poisoned entry cached by a failed decode (e.g. missing texture on BVE5/BVE6 .txt route)
 							textureCache.Remove(handle.Origin);
 						}
+						else if (cachedTexture.ObnsPixelsDropped)
+						{
+							// OBNS: its pixels were let go (ObnsDropPixels): decoded again below.
+						}
 						// The cache value is the DecodedTexture (ByteArrayOrigin) created at registration – its Origin is not PathOrigin,
 						// so the original check (cachedPathOrigin != null) never succeeds for decoded GIFs and caused a second decode (2× memory).
 						// Reuse if the cached entry is animated (GIF video) or its ByteArrayOrigin, and parameters match (or both null).
@@ -591,7 +667,7 @@ namespace LibRender2.Textures
 					}
 				}
 			}
-			if (texture == null && handle.Origin is PathOrigin && TextureFileUnchanged(handle.Origin) && handle.DecodedTexture != null)
+			if (texture == null && handle.Origin is PathOrigin && TextureFileUnchanged(handle.Origin) && handle.DecodedTexture != null && !handle.DecodedTexture.ObnsPixelsDropped)
 			{
 				// Reuse the register-time decode when the on-disk file is unchanged (the cache
 				// entry was dropped by the unload): same bytes GetTexture would decode, no 2nd copy.
@@ -898,7 +974,7 @@ namespace LibRender2.Textures
 						 * and the entry in the texture cache.
 						 * The data is lazily re-decoded from the origin if required again.
 						 */
-						texture.ReleaseBytes();
+						texture.ObnsDropPixels();
 						Texture cachedTexture = null;
 						lock (TextureLookupLock)
 						{
@@ -914,14 +990,14 @@ namespace LibRender2.Textures
 									// Compute the transparency type whilst the data is still available,
 									// as otherwise a later query would have to re-decode the file from disk
 									cachedTexture.GetTransparencyType();
-									cachedTexture.ReleaseBytes();
+									cachedTexture.ObnsDropPixels();
 								}
 							}
 						}
 						if (handle.DecodedTexture != null && handle.DecodedTexture != cachedTexture)
 						{
 							handle.DecodedTexture.GetTransparencyType();
-							handle.DecodedTexture.ReleaseBytes();
+							handle.DecodedTexture.ObnsDropPixels();
 						}
 					}
 					return true;

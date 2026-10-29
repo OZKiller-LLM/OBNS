@@ -204,6 +204,7 @@
     <Compile Include="Graphics\GpuStats.cs" />
     <!-- OBNS: OBNS's options, and their rows in the options. -->
     <Compile Include="System\ObnsOptions.cs" />
+    <Compile Include="System\MemoryCensus.cs" />
     <Compile Include="UserInterface\formMain.Obns.cs">
       <SubType>Form</SubType>
     </Compile>

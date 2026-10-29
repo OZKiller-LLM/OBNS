@@ -1186,6 +1186,7 @@ namespace OpenBve
 			Program.FileSystem.AppendToLogFile("Texture stats @load: decodes " + Program.CurrentHost.TextureDecodeCalls + " calls / " + Program.CurrentHost.TextureDecodeMs + " ms | uploads " + LibRender2.Textures.TextureManager.UploadCount + " calls / " + LibRender2.Textures.TextureManager.UploadMs + " ms | GC gen0/1/2: " + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2));
 			setupTickCount = Environment.TickCount;
 			Program.FileSystem.AppendToLogFile(@"--------------------", false);
+			MemoryCensus.Log();
 		}
 
 		private bool simulationSetup = false;
@@ -1347,14 +1348,31 @@ namespace OpenBve
 				double ms(long ticks) => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames;
 				double span = (now - windowStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 				Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms; world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms ({12}), swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}; Vulkan world layer {11}; {13}; {14}",
+					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms; world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms ({12}), swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}; Vulkan world layer {11}; {13}; {14}; managed heap {15:0} MB, process private {16:0} MB",
 					frames, span / frames, frames * 1000.0 / span, worstFrame * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
 					ms(totals[(int)Part.WorldObjects]), ms(totals[(int)Part.TrainObjects]), ms(totals[(int)Part.Render]), ms(totals[(int)Part.Swap]), ms(totals[(int)Part.Other]),
-					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off", GLFilterSummary(), OpenBve.Graphics.Vulkan.VulkanWorld.Summary, NewRenderer.SceneParts.Take(), GpuStats.Take(), NewRenderer.SceneLaps.Take()));
+					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off", GLFilterSummary(), OpenBve.Graphics.Vulkan.VulkanWorld.Summary, NewRenderer.SceneParts.Take(), GpuStats.Take(), NewRenderer.SceneLaps.Take(),
+					GC.GetTotalMemory(false) / 1048576.0, ProcessPrivateMegabytes()));
 				Array.Clear(totals, 0, totals.Length);
 				frames = 0;
 				worstFrame = 0;
 				windowStart = now;
+			}
+		}
+
+		/// <summary>The process's private memory in MB, for the frame stats (0 where it cannot be read).</summary>
+		private static double ProcessPrivateMegabytes()
+		{
+			try
+			{
+				using (System.Diagnostics.Process process = System.Diagnostics.Process.GetCurrentProcess())
+				{
+					return process.PrivateMemorySize64 / 1048576.0;
+				}
+			}
+			catch
+			{
+				return 0;
 			}
 		}
 

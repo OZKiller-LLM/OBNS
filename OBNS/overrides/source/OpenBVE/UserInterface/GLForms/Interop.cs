@@ -35,7 +35,16 @@ namespace OpenBve.GLForms
 				int index = -1;
 				if (languages != null)
 				{
+					// In the order of their file names (the language codes), as Windows lists the folder for upstream; other
+					// file systems (APFS, ext4) list it in no particular order.
+					List<DictionaryEntry> entries = new List<DictionaryEntry>();
 					foreach (DictionaryEntry entry in languages)
+					{
+						entries.Add(entry);
+					}
+
+					entries.Sort((x, y) => string.Compare((string)x.Key, (string)y.Key, StringComparison.OrdinalIgnoreCase));
+					foreach (DictionaryEntry entry in entries)
 					{
 						// The items are the dictionary's own pairs, as upstream's binding gives them.
 						Type pairType = typeof(KeyValuePair<,>).MakeGenericType(typeof(string), entry.Value.GetType());
