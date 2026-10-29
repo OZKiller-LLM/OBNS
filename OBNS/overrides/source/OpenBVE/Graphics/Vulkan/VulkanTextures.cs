@@ -139,6 +139,15 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Whether textures are being made in advance (LoadAll): the whole load, no budget.</summary>
 		private bool loadingAll;
 
+		/// <summary>
+		/// Textures being decoded on worker threads (the register-time decodes are let go, TextureManager): one first
+		/// needed while driving is decoded off the main thread and made a few frames later, not decoded there at once (a
+		/// large one took up to 0.4 s, a frame).
+		/// </summary>
+		private readonly Dictionary<Texture, System.Threading.Tasks.Task<Texture>> decoding = new Dictionary<Texture, System.Threading.Tasks.Task<Texture>>();
+
+		private static readonly int maximumDecodes = Math.Max(2, Environment.ProcessorCount / 2);
+
 		private bool BudgetSpent => !loadingAll && budgetBytes >= BudgetBytes || !loadingAll && (System.Diagnostics.Stopwatch.GetTimestamp() - budgetStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency >= BudgetMilliseconds;
 
 		/// <summary>
@@ -169,7 +178,33 @@ namespace OpenBve.Graphics.Vulkan
 			{
 				TextureManager manager = Program.Renderer.TextureManager;
 				long start = System.Diagnostics.Stopwatch.GetTimestamp();
-				if (manager.ObnsDecoded(texture, out Texture decoded))
+				Texture decoded;
+				bool haveDecode;
+				if (loadingAll)
+				{
+					haveDecode = manager.ObnsDecoded(texture, out decoded);
+				}
+				else if (!decoding.TryGetValue(texture, out System.Threading.Tasks.Task<Texture> task))
+				{
+					if (decoding.Count < maximumDecodes)
+					{
+						decoding[texture] = System.Threading.Tasks.Task.Run(() => manager.ObnsDecoded(texture, out Texture result) ? result : null);
+					}
+
+					return Later;
+				}
+				else if (!task.IsCompleted)
+				{
+					return Later;
+				}
+				else
+				{
+					decoding.Remove(texture);
+					decoded = task.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? task.Result : null;
+					haveDecode = decoded != null;
+				}
+
+				if (haveDecode)
 				{
 					TextureTransparencyType transparency = decoded.GetTransparencyType();
 					texture.Transparency = transparency;
