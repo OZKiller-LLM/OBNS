@@ -179,8 +179,12 @@ ATS-Sx brake its real system would not have applied.
   functions, `_wstat64i32`, `_wsplitpath_s`, `mbstowcs` and the Universal CRT's printf entry points, and
   for its TIMS_MON_Disp.dll (C++ with file streams) a shim of Microsoft's C++ runtime (`Msvcp.cs`:
   basic_streambuf, basic_ios, basic_istream, the char codecvt, locales, call_once), laid out as Visual C++
-  lays them out, as the plugin's own inline template code reads them. All five modules run in the layer
-  (checked in `OpenBve.X86.Tests`; `calls` now also presses each ATS key).
+  lays them out, as the plugin's own inline template code reads them, and C++ exceptions as Visual C++
+  raises and catches them on x86 (`CxxExceptions.cs`; the TIMS skips its IC card's comment lines by
+  catching std::stoi's invalid_argument). All five modules run in the layer, and on Linux (2026-10-30)
+  the TIMS loads the IC card a route beacon names and its station rows follow the line (Chiba, Hon-Chiba,
+  Soga, Hamano), where before it showed Chiba three times. `OpenBve.X86.Tests <root> <dll> calls` presses
+  each ATS key and passes `OBNS_PROBE_BEACON=type:optional,...` beacons first.
 
 Checked (2026-10-29), on Windows with `OBNS_X86_PLUGINS=1`: the Tuen Ma Line's SP1900 runs its
 DetailManager.dll with both modules (OS_Ats1, kcrwr_seltrac) in the layer; the TBL display and panel
