@@ -453,6 +453,8 @@ namespace OpenBve.Graphics.Vulkan
 			ulong fence = fences[startedSlot];
 			Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
 			Vk.Check(Vk.vkResetFences(device.Device, 1, &fence), "vkResetFences");
+			// Pages of textures (no descriptor indexing): the slot's sets are free to take the writes made since.
+			Scene.TakeTextureWrites(startedSlot);
 			if (stamped[startedSlot])
 			{
 				// The slot's last frame is done: its time on the GPU.

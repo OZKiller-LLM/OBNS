@@ -89,6 +89,13 @@ namespace OpenBve.Graphics.Vulkan
 		internal readonly VulkanShadows Shadows;
 		private readonly ulong[] shadowPipelines = new ulong[2];
 		internal readonly ulong[] DescriptorSets = new ulong[FramesInFlight];
+
+		/// <summary>
+		/// The pages of textures (set 1), where the device has no descriptor indexing (else null, the textures one bindless
+		/// array in set 0): draws are grouped by their texture's page too, and each page bound for its draws.
+		/// </summary>
+		private readonly VulkanTexturePages pages;
+		private readonly int texturePage;
 		private readonly Dictionary<int, ulong> pipelines = new Dictionary<int, ulong>();
 
 		// Per frame in flight: the records and the indirect commands.
@@ -181,16 +188,22 @@ namespace OpenBve.Graphics.Vulkan
 		{
 			this.device = device;
 			buildChunks = BuildChunks;
+			if (!device.Bindless)
+			{
+				pages = new VulkanTexturePages(device, device.TexturePageSize, FramesInFlight);
+				texturePage = device.TexturePageSize;
+			}
+
 			CreateDescriptors();
-			Textures = new VulkanTextures(device, uploader, DescriptorSets, TextureBinding, Interface.CurrentOptions.Interpolation, Interface.CurrentOptions.AnisotropicFilteringLevel);
+			Textures = new VulkanTextures(device, uploader, DescriptorSets, TextureBinding, pages, Interface.CurrentOptions.Interpolation, Interface.CurrentOptions.AnisotropicFilteringLevel);
 			Meshes = new VulkanMeshes(device, uploader);
 			WriteSamplers();
 			Shadows = new VulkanShadows(device);
 			WriteShadowMaps();
 			vertexModule = ShaderModule("world.vert.spv");
-			fragmentModule = ShaderModule("world.frag.spv");
+			fragmentModule = ShaderModule(pages == null ? "world.frag.spv" : "world.paged.frag.spv");
 			shadowVertexModule = ShaderModule("shadow.vert.spv");
-			shadowFragmentModule = ShaderModule("shadow.frag.spv");
+			shadowFragmentModule = ShaderModule(pages == null ? "shadow.frag.spv" : "shadow.paged.frag.spv");
 		}
 
 		// --- set-up ---
@@ -206,6 +219,8 @@ namespace OpenBve.Graphics.Vulkan
 			bindings[4] = new Vk.DescriptorSetLayoutBinding { Binding = SamplerBinding, DescriptorType = Vk.DescriptorTypeSampler, DescriptorCount = 4, StageFlags = Vk.ShaderStageFragment };
 			bindings[5] = new Vk.DescriptorSetLayoutBinding { Binding = ShadowBinding, DescriptorType = Vk.DescriptorTypeCombinedImageSampler, DescriptorCount = 1, StageFlags = Vk.ShaderStageFragment };
 			bindings[6] = new Vk.DescriptorSetLayoutBinding { Binding = TextureBinding, DescriptorType = Vk.DescriptorTypeSampledImage, DescriptorCount = VulkanTextures.Capacity, StageFlags = Vk.ShaderStageFragment };
+			// With pages, the textures are not in this set (and nothing in it is written while in use).
+			uint bindingCount = pages == null ? 7u : 6u;
 			uint* flags = stackalloc uint[7];
 			for (int i = 0; i < 6; i++)
 			{
@@ -223,21 +238,23 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.DescriptorSetLayoutCreateInfo layoutInfo = new Vk.DescriptorSetLayoutCreateInfo
 			{
 				SType = Vk.StructureTypeDescriptorSetLayoutCreateInfo,
-				PNext = &flagsInfo,
-				Flags = Vk.DescriptorSetLayoutCreateUpdateAfterBindPool,
-				BindingCount = 7,
+				PNext = pages == null ? &flagsInfo : null,
+				Flags = pages == null ? Vk.DescriptorSetLayoutCreateUpdateAfterBindPool : 0,
+				BindingCount = bindingCount,
 				PBindings = bindings
 			};
 			Vk.Check(Vk.vkCreateDescriptorSetLayout(device.Device, &layoutInfo, null, out setLayout), "vkCreateDescriptorSetLayout");
 
 			// The frame's index, and the cascade the shadow pass draws.
 			Vk.PushConstantRange push = new Vk.PushConstantRange { StageFlags = vertexAndFragment, Size = 8 };
-			ulong layout = setLayout;
+			ulong* layoutsUsed = stackalloc ulong[2];
+			layoutsUsed[0] = setLayout;
+			layoutsUsed[1] = pages?.Layout ?? 0;
 			Vk.PipelineLayoutCreateInfo pipelineLayoutInfo = new Vk.PipelineLayoutCreateInfo
 			{
 				SType = Vk.StructureTypePipelineLayoutCreateInfo,
-				SetLayoutCount = 1,
-				PSetLayouts = &layout,
+				SetLayoutCount = pages == null ? 1u : 2u,
+				PSetLayouts = layoutsUsed,
 				PushConstantRangeCount = 1,
 				PPushConstantRanges = &push
 			};
@@ -246,14 +263,14 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.DescriptorPoolSize* sizes = stackalloc Vk.DescriptorPoolSize[4];
 			sizes[0] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeStorageBuffer, DescriptorCount = 4 * FramesInFlight };
 			sizes[1] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeSampler, DescriptorCount = 4 * FramesInFlight };
-			sizes[2] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeSampledImage, DescriptorCount = VulkanTextures.Capacity * FramesInFlight };
-			sizes[3] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeCombinedImageSampler, DescriptorCount = FramesInFlight };
+			sizes[2] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeCombinedImageSampler, DescriptorCount = FramesInFlight };
+			sizes[3] = new Vk.DescriptorPoolSize { Type = Vk.DescriptorTypeSampledImage, DescriptorCount = VulkanTextures.Capacity * FramesInFlight };
 			Vk.DescriptorPoolCreateInfo poolInfo = new Vk.DescriptorPoolCreateInfo
 			{
 				SType = Vk.StructureTypeDescriptorPoolCreateInfo,
-				Flags = Vk.DescriptorPoolCreateUpdateAfterBind,
+				Flags = pages == null ? Vk.DescriptorPoolCreateUpdateAfterBind : 0,
 				MaxSets = FramesInFlight,
-				PoolSizeCount = 4,
+				PoolSizeCount = pages == null ? 4u : 3u,
 				PPoolSizes = sizes
 			};
 			Vk.Check(Vk.vkCreateDescriptorPool(device.Device, &poolInfo, null, out descriptorPool), "vkCreateDescriptorPool");
@@ -275,7 +292,7 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.DescriptorSetAllocateInfo allocateInfo = new Vk.DescriptorSetAllocateInfo
 			{
 				SType = Vk.StructureTypeDescriptorSetAllocateInfo,
-				PNext = &variableInfo,
+				PNext = pages == null ? &variableInfo : null,
 				DescriptorPool = descriptorPool,
 				DescriptorSetCount = FramesInFlight,
 				PSetLayouts = layouts
@@ -355,7 +372,11 @@ namespace OpenBve.Graphics.Vulkan
 			{
 				Vk.PipelineShaderStageCreateInfo* stages = stackalloc Vk.PipelineShaderStageCreateInfo[2];
 				stages[0] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageVertexBit, Module = shadowVertexModule, PName = (byte*)main };
-				stages[1] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageFragmentBit, Module = shadowFragmentModule, PName = (byte*)main };
+				// With pages, their size (constant 1).
+				uint pageSize = (uint)texturePage;
+				Vk.SpecializationMapEntry pageEntry = new Vk.SpecializationMapEntry { ConstantID = 1, Offset = 0, Size = (UIntPtr)4 };
+				Vk.SpecializationInfo pageSpecialization = new Vk.SpecializationInfo { MapEntryCount = 1, PMapEntries = &pageEntry, DataSize = (UIntPtr)4, PData = &pageSize };
+				stages[1] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageFragmentBit, Module = shadowFragmentModule, PName = (byte*)main, PSpecializationInfo = pages == null ? null : &pageSpecialization };
 				Vk.VertexInputBindingDescription binding = new Vk.VertexInputBindingDescription { Binding = 0, Stride = (uint)VulkanMeshes.VertexSize, InputRate = Vk.VertexInputRateVertex };
 				Vk.VertexInputAttributeDescription* attributes = stackalloc Vk.VertexInputAttributeDescription[3];
 				attributes[0] = Attribute(0, Vk.FormatR32G32B32Sfloat, nameof(LibRenderVertex.Position));
@@ -466,9 +487,14 @@ namespace OpenBve.Graphics.Vulkan
 			try
 			{
 				// Opaque drawing writes full coverage (specialization constant 0).
-				uint opaque = blend == Blend.None ? 1u : 0u;
-				Vk.SpecializationMapEntry entry = new Vk.SpecializationMapEntry { ConstantID = 0, Offset = 0, Size = (UIntPtr)4 };
-				Vk.SpecializationInfo specialization = new Vk.SpecializationInfo { MapEntryCount = 1, PMapEntries = &entry, DataSize = (UIntPtr)4, PData = &opaque };
+				// With pages, their size too (constant 1).
+				uint* constants = stackalloc uint[2];
+				constants[0] = blend == Blend.None ? 1u : 0u;
+				constants[1] = (uint)texturePage;
+				Vk.SpecializationMapEntry* entries = stackalloc Vk.SpecializationMapEntry[2];
+				entries[0] = new Vk.SpecializationMapEntry { ConstantID = 0, Offset = 0, Size = (UIntPtr)4 };
+				entries[1] = new Vk.SpecializationMapEntry { ConstantID = 1, Offset = 4, Size = (UIntPtr)4 };
+				Vk.SpecializationInfo specialization = new Vk.SpecializationInfo { MapEntryCount = pages == null ? 1u : 2u, PMapEntries = entries, DataSize = (UIntPtr)8, PData = constants };
 				Vk.PipelineShaderStageCreateInfo* stages = stackalloc Vk.PipelineShaderStageCreateInfo[2];
 				stages[0] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageVertexBit, Module = vertexModule, PName = (byte*)main };
 				stages[1] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageFragmentBit, Module = fragmentModule, PName = (byte*)main, PSpecializationInfo = &specialization };
@@ -1035,7 +1061,7 @@ namespace OpenBve.Graphics.Vulkan
 			return chunk.ObjectCount++;
 		}
 
-		private static void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, VulkanMesh mesh, bool night, int shadow)
+		private void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, VulkanMesh mesh, bool night, int shadow)
 		{
 			if (chunk.DrawCount == chunk.Draws.Length)
 			{
@@ -1051,8 +1077,10 @@ namespace OpenBve.Graphics.Vulkan
 			bool pipelineCull = cull && !pass.Ordered;
 			draw.CullFront = cull && pass.Ordered ? 1 : 0;
 			int pipelineKey = (int)blend | (pass.DepthWrite ? 4 : 0) | (pipelineCull ? 8 : 0) | (pass.DepthTest ? 0 : 16);
-			// Grouped by: nighttime draws after daytime ones (they blend over them), then pipeline, then vertex and index blocks.
-			long key = ((night ? 1L : 0L) << 62) | ((long)pipelineKey << 32) | ((long)(mesh.VertexBlock & 0xFFFF) << 16) | (long)(mesh.IndexBlock & 0xFFFF);
+			// Grouped by: nighttime draws after daytime ones (they blend over them), then pipeline, then (with pages) the
+			// texture's page, then vertex and index blocks.
+			long page = texturePage == 0 ? 0 : draw.Texture / texturePage;
+			long key = ((night ? 1L : 0L) << 62) | ((long)pipelineKey << 48) | ((page & 0xFFFF) << 32) | ((long)(mesh.VertexBlock & 0xFFFF) << 16) | (long)(mesh.IndexBlock & 0xFFFF);
 			chunk.Draws[chunk.DrawCount] = draw;
 			chunk.Commands[chunk.CommandCount++] = new DrawCommand { Key = key, FirstIndex = firstIndex, IndexCount = indexCount, VertexBase = mesh.VertexBase, Draw = chunk.DrawCount, Pass = passIndex, Shadow = shadow };
 			chunk.DrawCount++;
@@ -1160,7 +1188,7 @@ namespace OpenBve.Graphics.Vulkan
 					if (commands[i].Shadow != 0)
 					{
 						DrawCommand command = commands[i];
-						command.Key = ((long)command.Shadow << 32) | (command.Key & 0xFFFFFFFFL);
+						command.Key = ((long)command.Shadow << 48) | (command.Key & 0xFFFFFFFFFFFFL);
 						shadowCommands[shadowCount++] = command;
 					}
 				}
@@ -1233,7 +1261,7 @@ namespace OpenBve.Graphics.Vulkan
 
 			// Runs of the same pipeline and buffer blocks, each one indirect draw.
 			int calls = 0;
-			int boundPipeline = -1, boundVertexBlock = -1, boundIndexBlock = -1;
+			int boundPipeline = -1, boundPage = -1, boundVertexBlock = -1, boundIndexBlock = -1;
 			int run = layer == WorldLayer ? 0 : cabCommandStart, end = layer == WorldLayer ? cabCommandStart : commandCount;
 			while (run < end)
 			{
@@ -1244,13 +1272,15 @@ namespace OpenBve.Graphics.Vulkan
 					next++;
 				}
 
-				int pipelineKey = (int)(key >> 32);
+				int pipelineKey = (int)(key >> 48);
 				int vertexBlock = (int)((key >> 16) & 0xFFFF), indexBlock = (int)(key & 0xFFFF);
 				if (pipelineKey != boundPipeline)
 				{
 					Vk.vkCmdBindPipeline(commandBuffer, Vk.PipelineBindPointGraphics, Pipeline(pipelineKey));
 					boundPipeline = pipelineKey;
 				}
+
+				BindPage(commandBuffer, slot, (int)((key >> 32) & 0xFFFF), ref boundPage);
 
 				if (vertexBlock != boundVertexBlock)
 				{
@@ -1273,6 +1303,22 @@ namespace OpenBve.Graphics.Vulkan
 
 			LastIndirectCalls += calls;
 		}
+
+		/// <summary>With pages, binds a draw's page of textures (set 1) for the frame slot, if it is not bound already.</summary>
+		private void BindPage(IntPtr commandBuffer, int slot, int page, ref int boundPage)
+		{
+			if (pages == null || page == boundPage)
+			{
+				return;
+			}
+
+			ulong set = pages.Set(page, slot);
+			Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 1, 1, &set, 0, null);
+			boundPage = page;
+		}
+
+		/// <summary>With pages, the slot's pages take the texture writes made since (its last frame done, before recording).</summary>
+		internal void TakeTextureWrites(int slot) => pages?.Take(slot);
 
 		private DrawCommand[] shadowCommands = new DrawCommand[1024];
 		private int shadowCount;
@@ -1320,7 +1366,7 @@ namespace OpenBve.Graphics.Vulkan
 					push[0] = WorldLayer;
 					push[1] = cascade;
 					Vk.vkCmdPushConstants(commandBuffer, pipelineLayout, Vk.ShaderStageVertex | Vk.ShaderStageFragment, 0, 8, push);
-					int boundCull = -1, boundVertexBlock = -1, boundIndexBlock = -1;
+					int boundCull = -1, boundPage = -1, boundVertexBlock = -1, boundIndexBlock = -1;
 					int run = 0;
 					while (run < shadowCount)
 					{
@@ -1331,13 +1377,15 @@ namespace OpenBve.Graphics.Vulkan
 							next++;
 						}
 
-						int cull = (int)(key >> 32) == 1 ? 1 : 0;
+						int cull = (int)(key >> 48) == 1 ? 1 : 0;
 						int vertexBlock = (int)((key >> 16) & 0xFFFF), indexBlock = (int)(key & 0xFFFF);
 						if (cull != boundCull)
 						{
 							Vk.vkCmdBindPipeline(commandBuffer, Vk.PipelineBindPointGraphics, ShadowPipeline(cull == 1));
 							boundCull = cull;
 						}
+
+						BindPage(commandBuffer, slot, (int)((key >> 32) & 0xFFFF), ref boundPage);
 
 						if (vertexBlock != boundVertexBlock)
 						{
@@ -1462,6 +1510,7 @@ namespace OpenBve.Graphics.Vulkan
 			Shadows?.Dispose();
 			if (pipelineLayout != 0) Vk.vkDestroyPipelineLayout(device.Device, pipelineLayout, null);
 			if (setLayout != 0) Vk.vkDestroyDescriptorSetLayout(device.Device, setLayout, null);
+			pages?.Dispose();
 		}
 	}
 }

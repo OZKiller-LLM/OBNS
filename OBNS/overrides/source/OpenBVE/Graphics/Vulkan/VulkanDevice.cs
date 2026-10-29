@@ -27,6 +27,13 @@ namespace OpenBve.Graphics.Vulkan
 		internal float TimestampPeriod { get; private set; }
 		internal bool Timestamps { get; private set; }
 
+		/// <summary>
+		/// Whether the textures are one bindless array (descriptor indexing); if not, pages of TexturePageSize textures, a
+		/// draw's page bound for it (OBNS_VULKAN_PAGED=1 asks for pages where both work, to try them; =N, pages of at most N).
+		/// </summary>
+		internal bool Bindless { get; private set; }
+		internal int TexturePageSize { get; private set; }
+
 		internal Vk.GetMemoryWin32HandleKHR GetMemoryWin32Handle { get; private set; }
 		internal Vk.GetSemaphoreWin32HandleKHR GetSemaphoreWin32Handle { get; private set; }
 		private Vk.GetMemoryFdKHR getMemoryFd;
@@ -202,6 +209,7 @@ namespace OpenBve.Graphics.Vulkan
 			IntPtr* devices = stackalloc IntPtr[(int)Math.Max(count, 1)];
 			Vk.Check(Vk.vkEnumeratePhysicalDevices(Instance, ref count, devices), "vkEnumeratePhysicalDevices");
 			List<string> seen = new List<string>();
+			uint sampledImagesPerStage = 0, sampledImagesPerSet = 0;
 			for (int i = 0; i < count; i++)
 			{
 				Vk.PhysicalDeviceIDProperties id = new Vk.PhysicalDeviceIDProperties { SType = Vk.StructureTypePhysicalDeviceIdProperties };
@@ -209,7 +217,9 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.vkGetPhysicalDeviceProperties2(devices[i], &properties);
 				string deviceName = Marshal.PtrToStringAnsi((IntPtr)properties.Properties.DeviceName);
 				seen.Add(deviceName);
-				bool same = glDeviceUuid != null && glDeviceUuid.Length == 16;
+				// Never a CPU device (llvmpipe), whatever its UUID: OpenGL is not drawing there.
+				const uint cpuDevice = 4;
+				bool same = glDeviceUuid != null && glDeviceUuid.Length == 16 && properties.Properties.DeviceType != cpuDevice;
 				for (int b = 0; same && b < 16; b++)
 				{
 					same = id.DeviceUuid[b] == glDeviceUuid[b];
@@ -221,6 +231,9 @@ namespace OpenBve.Graphics.Vulkan
 					Description = deviceName + ", Vulkan " + VersionText(properties.Properties.ApiVersion);
 					// timestampPeriod: 428 bytes into the limits as they are kept here (720 into VkPhysicalDeviceProperties).
 					TimestampPeriod = *(float*)(properties.Properties.LimitsAndSparseProperties + 428);
+					// maxPerStageDescriptorSampledImages and maxDescriptorSetSampledImages (80 and 116 into the limits).
+					sampledImagesPerStage = *(uint*)(properties.Properties.LimitsAndSparseProperties + 84);
+					sampledImagesPerSet = *(uint*)(properties.Properties.LimitsAndSparseProperties + 120);
 					if (properties.Properties.ApiVersion < Vk.MakeVersion(1, 3, 0))
 					{
 						return deviceName + " has Vulkan " + VersionText(properties.Properties.ApiVersion) + "; 1.3 is needed";
@@ -250,19 +263,52 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.PhysicalDeviceVulkan12Features features12 = new Vk.PhysicalDeviceVulkan12Features { SType = Vk.StructureTypePhysicalDeviceVulkan12Features, PNext = &features13 };
 			Vk.PhysicalDeviceFeatures2 features = new Vk.PhysicalDeviceFeatures2 { SType = Vk.StructureTypePhysicalDeviceFeatures2, PNext = &features12 };
 			Vk.vkGetPhysicalDeviceFeatures2(PhysicalDevice, &features);
-			int[] needed12 =
+			if (features12.Features[Vk.PhysicalDeviceVulkan12Features.ScalarBlockLayout] == 0)
+			{
+				return "the device lacks scalarBlockLayout";
+			}
+
+			// Textures: one bindless array (descriptor indexing), else pages of them a draw's page is bound for (core
+			// Vulkan: a fixed array, indexed the same for the whole draw), as on Intel's Broadwell (Mesa's hasvk).
+			int[] bindless =
 			{
 				Vk.PhysicalDeviceVulkan12Features.DescriptorIndexing, Vk.PhysicalDeviceVulkan12Features.ShaderSampledImageArrayNonUniformIndexing,
 				Vk.PhysicalDeviceVulkan12Features.DescriptorBindingSampledImageUpdateAfterBind, Vk.PhysicalDeviceVulkan12Features.DescriptorBindingUpdateUnusedWhilePending,
 				Vk.PhysicalDeviceVulkan12Features.DescriptorBindingPartiallyBound, Vk.PhysicalDeviceVulkan12Features.DescriptorBindingVariableDescriptorCount,
-				Vk.PhysicalDeviceVulkan12Features.RuntimeDescriptorArray, Vk.PhysicalDeviceVulkan12Features.ScalarBlockLayout
+				Vk.PhysicalDeviceVulkan12Features.RuntimeDescriptorArray
 			};
-			foreach (int feature in needed12)
+			string pagedAsked = Environment.GetEnvironmentVariable("OBNS_VULKAN_PAGED");
+			int.TryParse(pagedAsked, out int pageAsked);
+			Bindless = pageAsked <= 0;
+			foreach (int feature in bindless)
 			{
-				if (features12.Features[feature] == 0)
+				Bindless &= features12.Features[feature] != 0;
+			}
+
+			int[] needed12 = Bindless ? new int[bindless.Length + 1] : new[] { Vk.PhysicalDeviceVulkan12Features.ScalarBlockLayout };
+			if (Bindless)
+			{
+				bindless.CopyTo(needed12, 0);
+				needed12[bindless.Length] = Vk.PhysicalDeviceVulkan12Features.ScalarBlockLayout;
+			}
+			else
+			{
+				// shaderSampledImageArrayDynamicIndexing (VkPhysicalDeviceFeatures 34); a page as large as the device lets a
+				// stage and a pipeline layout have, less the shadow map.
+				const int sampledImageArrayDynamicIndexing = 34;
+				if (features.Features[sampledImageArrayDynamicIndexing] == 0)
 				{
-					return "the device lacks Vulkan 1.2 feature " + feature + " (descriptor indexing)";
+					return "the device has neither descriptor indexing nor shaderSampledImageArrayDynamicIndexing";
 				}
+
+				uint perStage = sampledImagesPerStage, perSet = sampledImagesPerSet;
+				TexturePageSize = (int)Math.Min(Math.Min(perStage, perSet) - 1, pageAsked > 1 ? (uint)pageAsked : 1024);
+				if (TexturePageSize < 16)
+				{
+					return "the device allows too few sampled images (" + perStage + " a stage) for pages of textures";
+				}
+
+				Description += ", textures in pages of " + TexturePageSize;
 			}
 
 			if (features13.Features[Vk.PhysicalDeviceVulkan13Features.DynamicRendering] == 0 || features13.Features[Vk.PhysicalDeviceVulkan13Features.Synchronization2] == 0 ||

@@ -57,22 +57,30 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly ulong[] descriptorSets;
 		private readonly uint textureBinding;
 
+		/// <summary>The pages the textures are written to, where the device has no descriptor indexing (else null).</summary>
+		private readonly VulkanTexturePages pages;
+
 		/// <summary>The samplers by OpenGL wrap mode (ClampClamp, ClampRepeat, RepeatClamp, RepeatRepeat).</summary>
 		internal readonly ulong[] Samplers = new ulong[4];
 
 		/// <summary>Changes whenever a texture's place in the array may have changed (one made, deleted or unloaded).</summary>
 		internal int Generation { get; private set; } = 1;
 
-		internal VulkanTextures(VulkanDevice device, Uploader uploader, ulong[] descriptorSets, uint textureBinding, InterpolationMode interpolation, int anisotropy)
+		internal VulkanTextures(VulkanDevice device, Uploader uploader, ulong[] descriptorSets, uint textureBinding, VulkanTexturePages pages, InterpolationMode interpolation, int anisotropy)
 		{
 			this.device = device;
 			this.uploader = uploader;
 			this.descriptorSets = descriptorSets;
 			this.textureBinding = textureBinding;
+			this.pages = pages;
 			memory = new GpuPool(device, 256UL << 20, 0, "textures");
 			CreateSamplers(interpolation, anisotropy);
 			white = new Entry { Index = White };
 			Upload(white, Pixels.Rgba(1, 1, new byte[] { 255, 255, 255, 255 }), false);
+			if (pages != null)
+			{
+				pages.WhiteView = white.View;
+			}
 		}
 
 		private void CreateSamplers(InterpolationMode interpolation, int anisotropy)
@@ -454,6 +462,8 @@ namespace OpenBve.Graphics.Vulkan
 				{
 					entry.FreedAt = frame;
 					freed.Add(entry);
+					// Pages: its element white again before it is destroyed (every element of a bound set must be valid).
+					pages?.Write(entry.Index, white.View);
 				}
 			}
 		}
@@ -703,9 +713,15 @@ namespace OpenBve.Graphics.Vulkan
 			};
 		}
 
-		/// <summary>Points the array's element at a texture, in every frame's descriptor set (update-after-bind).</summary>
+		/// <summary>Points the array's element at a texture, in every frame's descriptor set (update-after-bind), or its page's.</summary>
 		private void WriteDescriptor(Entry entry)
 		{
+			if (pages != null)
+			{
+				pages.Write(entry.Index, entry.View);
+				return;
+			}
+
 			Vk.DescriptorImageInfo image = new Vk.DescriptorImageInfo { ImageView = entry.View, ImageLayout = Vk.ImageLayoutShaderReadOnlyOptimal };
 			foreach (ulong set in descriptorSets)
 			{

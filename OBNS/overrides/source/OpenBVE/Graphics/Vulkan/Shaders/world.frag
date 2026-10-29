@@ -2,8 +2,11 @@
 // BSD-2-Clause, Christopher Lees, S520, Aditiya Afrizal, The OpenBVE Project), its uniforms read from the frame's
 // buffers; its shadow maps are one array, a layer per cascade. Output alpha is coverage for the composite: opaque pipelines write 1.
 // Compiled with: glslang -V --target-env vulkan1.3 -o world.frag.spv world.frag
+// and the paged variant: glslang -V --target-env vulkan1.3 -DOBNS_PAGED -o world.paged.frag.spv world.frag
 #version 450
+#ifndef OBNS_PAGED
 #extension GL_EXT_nonuniform_qualifier : require
+#endif
 
 struct Frame
 {
@@ -53,7 +56,16 @@ layout(std430, set = 0, binding = 0) readonly buffer Frames { Frame frames[]; };
 layout(std430, set = 0, binding = 2) readonly buffer Draws { Draw draws[]; };
 layout(set = 0, binding = 4) uniform sampler samplers[4];
 layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;
+#ifdef OBNS_PAGED
+// The paged variant, for devices without descriptor indexing: the draw's page of textures (set 1), as large as
+// the device allows; a draw's texture is the same for all its fragments (dynamically uniform), as core Vulkan needs.
+layout(constant_id = 1) const int texturePage = 64;
+layout(set = 1, binding = 0) uniform texture2D textures[texturePage];
+#define TEXTURE(i) textures[(i) % texturePage]
+#else
 layout(set = 0, binding = 6) uniform texture2D textures[];
+#define TEXTURE(i) textures[nonuniformEXT(i)]
+#endif
 
 layout(push_constant) uniform Push { int frameIndex; } push;
 
@@ -205,7 +217,7 @@ void main()
 		discard;
 	}
 
-	vec4 texel = texture(sampler2D(textures[nonuniformEXT(d.textureIndex)], samplers[d.samplerIndex]), oUv);
+	vec4 texel = texture(sampler2D(TEXTURE(d.textureIndex), samplers[d.samplerIndex]), oUv);
 	vec4 finalColor;
 	if ((d.flags & 16) == 0)
 	{
