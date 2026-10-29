@@ -108,11 +108,51 @@ namespace OpenBve.Graphics
 
 			double gl = Math.Max(1, glFrames), vk = Math.Max(1, vulkanFrames), cpu = Math.Max(1, cpuFrames), ms = 1000.0 / Stopwatch.Frequency;
 			string text = string.Format(CultureInfo.InvariantCulture,
-				"GPU: OpenGL background {0:0.00}, world {1:0.00}, after {2:0.00}, frame {3:0.00} ms; Vulkan frame {4:0.00} ms; main thread in glClear {5:0.00}, background {6:0.00}, waiting for Vulkan {7:0.00} ms",
-				glBackground / gl, glWorld / gl, glAfter / gl, glFrame / gl, vulkanFrames == 0 ? 0.0 : vulkanFrame / vk, clearTicks * ms / cpu, backgroundTicks * ms / cpu, joinTicks * ms / cpu);
+				"GPU: OpenGL background {0:0.00}, world {1:0.00}, after {2:0.00}, frame {3:0.00} ms; Vulkan frame {4:0.00} ms; main thread in glClear {5:0.00}, background {6:0.00}, waiting for Vulkan {7:0.00} ms; {8}",
+				glBackground / gl, glWorld / gl, glAfter / gl, glFrame / gl, vulkanFrames == 0 ? 0.0 : vulkanFrame / vk, clearTicks * ms / cpu, backgroundTicks * ms / cpu, joinTicks * ms / cpu, VideoMemory());
 			glBackground = glWorld = glAfter = glFrame = vulkanFrame = 0;
 			glFrames = vulkanFrames = cpuFrames = 0;
 			clearTicks = backgroundTicks = joinTicks = 0;
+			return text;
+		}
+
+		// GL_NVX_gpu_memory_info (NVIDIA): the whole card's memory in KB, Vulkan's allocations included, and the driver's
+		// evictions (memory moved out of video memory to make room) since start.
+		private const GetPName TotalVideoMemory = (GetPName)0x9048, FreeVideoMemory = (GetPName)0x9049, Evictions = (GetPName)0x904A, EvictedMemory = (GetPName)0x904B;
+		private static int videoMemoryKnown; // 0 not asked yet, 1 known, -1 not reported by this driver
+		private static int lastEvictions, lastEvicted;
+
+		/// <summary>The card's free video memory and the evictions since the last call, where the driver reports them.</summary>
+		private static string VideoMemory()
+		{
+			if (videoMemoryKnown == 0)
+			{
+				while (GL.GetError() != ErrorCode.NoError)
+				{
+				}
+
+				GL.GetInteger(TotalVideoMemory, out int _);
+				videoMemoryKnown = GL.GetError() == ErrorCode.NoError ? 1 : -1;
+				if (videoMemoryKnown == 1)
+				{
+					GL.GetInteger(Evictions, out lastEvictions);
+					GL.GetInteger(EvictedMemory, out lastEvicted);
+				}
+			}
+
+			if (videoMemoryKnown < 0)
+			{
+				return "video memory not reported";
+			}
+
+			GL.GetInteger(TotalVideoMemory, out int total);
+			GL.GetInteger(FreeVideoMemory, out int free);
+			GL.GetInteger(Evictions, out int evictions);
+			GL.GetInteger(EvictedMemory, out int evicted);
+			string text = string.Format(CultureInfo.InvariantCulture, "video memory {0:0} of {1:0} MB free, evictions {2} ({3:0} MB)",
+				free / 1024.0, total / 1024.0, evictions - lastEvictions, (evicted - lastEvicted) / 1024.0);
+			lastEvictions = evictions;
+			lastEvicted = evicted;
 			return text;
 		}
 	}

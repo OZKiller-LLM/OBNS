@@ -1381,6 +1381,14 @@ namespace OpenBve
 			}
 			else if (frameStart != 0)
 			{
+				if (now - frameStart > System.Diagnostics.Stopwatch.Frequency / 8)
+				{
+					// Each frame over 125 ms at once, to the millisecond, to line up with outside samples (e.g. nvidia-smi's).
+					double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+					Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture, "OBNS long frame at {0:HH:mm:ss.fff}: {1:0} ms (swap {2:0}, render {3:0} ms)",
+						DateTime.Now, (now - frameStart) * ms, current[(int)Part.Swap] * ms, current[(int)Part.Render] * ms));
+				}
+
 				if (now - frameStart > worstFrame)
 				{
 					worstFrame = now - frameStart;
