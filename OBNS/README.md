@@ -22,6 +22,8 @@ Linux later), and the libraries the Android port and the desktop build share.
    plugins, on Android and Windows.
 4. The Android port's features on the desktop: per-frame updates on all cores, fewer draw calls,
    Vulkan with pipelined frames, then the Win32 plugin layer (x86) for macOS and Linux.
+5. Further renderers: Direct3D 9.0c, 11 and 12 for the Windows x86-64 and ARM64 builds, and Metal for
+   macOS, each an option beside OpenGL and Vulkan.
 
 ## The desktop build (Windows x64)
 
