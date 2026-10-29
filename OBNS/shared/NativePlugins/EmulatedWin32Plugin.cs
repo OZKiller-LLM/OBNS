@@ -89,9 +89,18 @@ namespace OpenBve.NativePlugins
 				plugin = AtsPlugin.Open(rootFolder, pluginFile, encoding, message => PluginLog.Info("x86 " + PluginTitle + ": " + message));
 				if (NativePluginBridge.TraceFolder != null)
 				{
+					// A recording that cannot be made is reported, and the plugin runs without it.
 					string traceFile = Path.Combine(NativePluginBridge.TraceFolder, "plugin-trace.bin");
-					plugin.Trace = new AtsTrace.Writer(File.Create(traceFile), encoding.CodePage);
-					PluginLog.Info("x86 " + PluginTitle + ": recording calls to " + traceFile);
+					try
+					{
+						Directory.CreateDirectory(NativePluginBridge.TraceFolder);
+						plugin.Trace = new AtsTrace.Writer(File.Create(traceFile), encoding.CodePage);
+						PluginLog.Info("x86 " + PluginTitle + ": recording calls to " + traceFile);
+					}
+					catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is NotSupportedException)
+					{
+						PluginLog.Warn("x86 " + PluginTitle + ": calls not recorded, " + traceFile + " could not be made: " + ex.Message);
+					}
 				}
 
 				plugin.Load();

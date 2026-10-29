@@ -291,8 +291,14 @@ namespace TrainManager.Trains
 			{
 				if (OpenBve.NativePlugins.NativePluginBridge.TraceFolder == null)
 				{
+					// A folder, or 1 (or true) for plugin-trace in the settings folder; 0 or unset for none.
 					string trace = Environment.GetEnvironmentVariable("OBNS_PLUGIN_TRACE");
-					OpenBve.NativePlugins.NativePluginBridge.TraceFolder = string.IsNullOrEmpty(trace) ? null : trace;
+					if (trace == "1" || string.Equals(trace, "true", StringComparison.OrdinalIgnoreCase))
+					{
+						trace = System.IO.Path.Combine(TrainManagerBase.FileSystem.SettingsFolder, "plugin-trace");
+					}
+
+					OpenBve.NativePlugins.NativePluginBridge.TraceFolder = string.IsNullOrEmpty(trace) || trace == "0" ? null : trace;
 				}
 
 				if (OpenBve.NativePlugins.NativePluginBridge.TryRun(this, pluginFile, trainFolder, pluginEncoding, mode, out string summary))
@@ -353,6 +359,21 @@ namespace TrainManager.Trains
 						if (Plugin.Load(GetVehicleSpecs(), mode))
 						{
 							return true;
+						}
+
+						// OBNS: a proxy that did not answer (seen now and then: the call timing out after a minute, the
+						// next load fine) is stopped, and the plugin tried once more in a new one.
+						if (Plugin is ProxyPlugin failed && failed.FailureReason != null)
+						{
+							failed.Stop();
+							TrainManagerBase.FileSystem?.AppendToLogFile("Loading " + pluginTitle + " again in a new plugin proxy.");
+							Plugin = new ProxyPlugin(AnsiSafePluginPath(pluginFile), this);
+							if (Plugin.Load(GetVehicleSpecs(), mode))
+							{
+								return true;
+							}
+
+							(Plugin as ProxyPlugin)?.Stop();
 						}
 
 						Plugin = null;

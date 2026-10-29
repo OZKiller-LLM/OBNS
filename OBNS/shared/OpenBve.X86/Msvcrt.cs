@@ -37,7 +37,7 @@ namespace OpenBve.X86
 		private uint errnoAddress;
 		private uint iobAddress;
 		private uint randomState = 1;
-		private readonly Dictionary<uint, FileStream> crtFiles = new Dictionary<uint, FileStream>();
+		private readonly Dictionary<uint, Stream> crtFiles = new Dictionary<uint, Stream>();
 
 		private void RegisterMsvcrt()
 		{
@@ -214,6 +214,10 @@ namespace OpenBve.X86
 			Export(m, "vsprintf", 0, c => (uint)Memory.WriteCString(c.Arg(0), Format(c.Arg(1), c.Arg(2)), AnsiEncoding));
 			Export(m, "_snprintf", 0, c => WriteLimited(c.Arg(0), c.Arg(1), Format(c.Arg(2), c.R[Cpu.ESP] + 16)));
 			Export(m, "_vsnprintf", 0, c => WriteLimited(c.Arg(0), c.Arg(1), Format(c.Arg(2), c.Arg(3))));
+			Export(m, "sprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), false, 0, Format(c.Arg(2), c.R[Cpu.ESP] + 16)));
+			Export(m, "vsprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), false, 0, Format(c.Arg(2), c.Arg(3))));
+			Export(m, "_snprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), true, c.Arg(2), Format(c.Arg(3), c.R[Cpu.ESP] + 20)));
+			Export(m, "_vsnprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), true, c.Arg(2), Format(c.Arg(3), c.Arg(4))));
 			Export(m, "printf", 0, c => { string s = Format(c.Arg(0), c.R[Cpu.ESP] + 8); Log("plugin: " + s.TrimEnd()); return (uint)s.Length; });
 			Export(m, "vprintf", 0, c => { string s = Format(c.Arg(0), c.Arg(1)); Log("plugin: " + s.TrimEnd()); return (uint)s.Length; });
 			Export(m, "fprintf", 0, c => { string s = Format(c.Arg(1), c.R[Cpu.ESP] + 12); WriteStream(c.Arg(0), AnsiEncoding.GetBytes(s)); return (uint)s.Length; });
@@ -233,9 +237,11 @@ namespace OpenBve.X86
 			// --- files ---
 			Export(m, "fopen", 0, c => CrtOpen(Memory.ReadCString(c.Arg(0), AnsiEncoding), Memory.ReadCString(c.Arg(1))));
 			Export(m, "_wfopen", 0, c => CrtOpen(Memory.ReadWString(c.Arg(0)), Memory.ReadWString(c.Arg(1))));
+			Export(m, "fopen_s", 0, c => OpenInto(c.Arg(0), CrtOpen(Memory.ReadCString(c.Arg(1), AnsiEncoding), Memory.ReadCString(c.Arg(2)))));
+			Export(m, "_wfopen_s", 0, c => OpenInto(c.Arg(0), CrtOpen(Memory.ReadWString(c.Arg(1)), Memory.ReadWString(c.Arg(2)))));
 			Export(m, "fclose", 0, c =>
 			{
-				if (crtFiles.TryGetValue(c.Arg(0), out FileStream stream))
+				if (crtFiles.TryGetValue(c.Arg(0), out Stream stream))
 				{
 					stream.Dispose();
 					crtFiles.Remove(c.Arg(0));
@@ -245,7 +251,7 @@ namespace OpenBve.X86
 			});
 			Export(m, "fread", 0, c =>
 			{
-				if (!crtFiles.TryGetValue(c.Arg(3), out FileStream stream)) return 0;
+				if (!crtFiles.TryGetValue(c.Arg(3), out Stream stream)) return 0;
 				uint size = c.Arg(1), count = c.Arg(2);
 				byte[] bytes = new byte[size * count];
 				int total = 0;
@@ -261,7 +267,7 @@ namespace OpenBve.X86
 			});
 			Export(m, "fgets", 0, c =>
 			{
-				if (!crtFiles.TryGetValue(c.Arg(2), out FileStream stream)) return 0;
+				if (!crtFiles.TryGetValue(c.Arg(2), out Stream stream)) return 0;
 				int limit = (int)c.Arg(1) - 1;
 				List<byte> line = new List<byte>();
 				while (line.Count < limit)
@@ -277,16 +283,46 @@ namespace OpenBve.X86
 				Memory.Write8(c.Arg(0) + (uint)line.Count, 0);
 				return c.Arg(0);
 			});
-			Export(m, "fgetc", 0, c => crtFiles.TryGetValue(c.Arg(0), out FileStream stream) ? (uint)stream.ReadByte() : 0xFFFFFFFF);
+			Export(m, "fgetc", 0, c => crtFiles.TryGetValue(c.Arg(0), out Stream stream) ? (uint)stream.ReadByte() : 0xFFFFFFFF);
 			Export(m, "fseek", 0, c =>
 			{
-				if (!crtFiles.TryGetValue(c.Arg(0), out FileStream stream)) return 0xFFFFFFFF;
+				if (!crtFiles.TryGetValue(c.Arg(0), out Stream stream)) return 0xFFFFFFFF;
 				stream.Seek((int)c.Arg(1), (SeekOrigin)c.Arg(2));
 				return 0;
 			});
-			Export(m, "ftell", 0, c => crtFiles.TryGetValue(c.Arg(0), out FileStream stream) ? (uint)stream.Position : 0xFFFFFFFF);
-			Export(m, "feof", 0, c => crtFiles.TryGetValue(c.Arg(0), out FileStream stream) && stream.Position >= stream.Length ? 1u : 0u);
-			Export(m, "rewind", 0, c => { if (crtFiles.TryGetValue(c.Arg(0), out FileStream stream)) stream.Position = 0; return 0; });
+			Export(m, "ftell", 0, c => crtFiles.TryGetValue(c.Arg(0), out Stream stream) ? (uint)stream.Position : 0xFFFFFFFF);
+			Export(m, "feof", 0, c => crtFiles.TryGetValue(c.Arg(0), out Stream stream) && stream.Position >= stream.Length ? 1u : 0u);
+			Export(m, "rewind", 0, c => { if (crtFiles.TryGetValue(c.Arg(0), out Stream stream)) stream.Position = 0; return 0; });
+
+			// --- file information and path names ---
+			// _stat64i32 (x86): st_dev 0, st_ino 4, st_mode 6, st_nlink 8, st_uid 10, st_gid 12, st_rdev 16, st_size 20,
+			// then 64-bit times at 24, 32 and 40 (48 bytes); _stat32 has 32-bit times at 24, 28 and 32 (36 bytes).
+			Export(m, "_stat64i32", 0, c => Stat(Memory.ReadCString(c.Arg(0), AnsiEncoding), c.Arg(1), true));
+			Export(m, "_wstat64i32", 0, c => Stat(Memory.ReadWString(c.Arg(0)), c.Arg(1), true));
+			Export(m, "_stat32", 0, c => Stat(Memory.ReadCString(c.Arg(0), AnsiEncoding), c.Arg(1), false));
+			Export(m, "_wstat32", 0, c => Stat(Memory.ReadWString(c.Arg(0)), c.Arg(1), false));
+			Export(m, "_stat", 0, c => Stat(Memory.ReadCString(c.Arg(0), AnsiEncoding), c.Arg(1), false));
+			Export(m, "_wstat", 0, c => Stat(Memory.ReadWString(c.Arg(0)), c.Arg(1), false));
+			Export(m, "_splitpath_s", 0, c => SplitPath(Memory.ReadCString(c.Arg(0), AnsiEncoding), false, c, true));
+			Export(m, "_wsplitpath_s", 0, c => SplitPath(Memory.ReadWString(c.Arg(0)), true, c, true));
+			Export(m, "_splitpath", 0, c => SplitPath(Memory.ReadCString(c.Arg(0), AnsiEncoding), false, c, false));
+			Export(m, "_wsplitpath", 0, c => SplitPath(Memory.ReadWString(c.Arg(0)), true, c, false));
+
+			// --- the bounds-checked string functions (sizes in characters; errors returned, the target emptied) ---
+			Export(m, "strcpy_s", 0, c => SecureCopy(c.Arg(0), c.Arg(1), c.Arg(2), uint.MaxValue, false, 1, false));
+			Export(m, "strcat_s", 0, c => SecureCopy(c.Arg(0), c.Arg(1), c.Arg(2), uint.MaxValue, false, 1, true));
+			Export(m, "strncpy_s", 0, c => SecureCopy(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3), c.Arg(3) == Truncate, 1, false));
+			Export(m, "strncat_s", 0, c => SecureCopy(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3), c.Arg(3) == Truncate, 1, true));
+			Export(m, "wcscpy_s", 0, c => SecureCopy(c.Arg(0), c.Arg(1), c.Arg(2), uint.MaxValue, false, 2, false));
+			Export(m, "wcscat_s", 0, c => SecureCopy(c.Arg(0), c.Arg(1), c.Arg(2), uint.MaxValue, false, 2, true));
+			Export(m, "wcsncpy_s", 0, c => SecureCopy(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3), c.Arg(3) == Truncate, 2, false));
+			Export(m, "wcsncat_s", 0, c => SecureCopy(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3), c.Arg(3) == Truncate, 2, true));
+			Export(m, "memcpy_s", 0, c => SecureMove(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3)));
+			Export(m, "memmove_s", 0, c => SecureMove(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3)));
+
+			// --- multibyte and wide strings, in the plugin's ANSI code page ---
+			Export(m, "mbstowcs", 0, c => MultibyteToWide(c.Arg(0), c.Arg(1), c.Arg(2)));
+			Export(m, "wcstombs", 0, c => WideToMultibyte(c.Arg(0), c.Arg(1), c.Arg(2)));
 
 			// --- maths: doubles on the stack, results in ST(0) ---
 			Export(m, "pow", 0, c => { c.ReturnDouble(Math.Pow(c.ArgDouble(0), c.ArgDouble(8))); return 0; });
@@ -522,7 +558,7 @@ namespace OpenBve.X86
 
 		private void WriteStream(uint file, byte[] bytes)
 		{
-			if (crtFiles.TryGetValue(file, out FileStream stream) && stream.CanWrite)
+			if (crtFiles.TryGetValue(file, out Stream stream) && stream.CanWrite)
 			{
 				stream.Write(bytes, 0, bytes.Length);
 			}
@@ -530,6 +566,327 @@ namespace OpenBve.X86
 			{
 				Log("plugin: " + AnsiEncoding.GetString(bytes).TrimEnd());
 			}
+		}
+
+		private const uint ErrnoNoEntry = 2, ErrnoInvalid = 22, ErrnoRange = 34, ErrnoTruncated = 80;
+
+		/// <summary>_TRUNCATE: as much as fits.</summary>
+		private const uint Truncate = 0xFFFFFFFF;
+
+		/// <summary>A string's length in characters of one or two bytes, at most limit.</summary>
+		private uint UnitLength(uint address, uint unit, uint limit)
+		{
+			uint n = 0;
+			while (n < limit && (unit == 1 ? Memory.Read8(address + n) : Memory.Read16(address + 2 * n)) != 0) n++;
+			return n;
+		}
+
+		private void WriteTerminator(uint address, uint unit)
+		{
+			if (unit == 1) Memory.Write8(address, 0); else Memory.Write16(address, 0);
+		}
+
+		/// <summary>
+		/// strcpy_s, strcat_s, strncpy_s, strncat_s and the wide forms: at most count characters of the source (all of it
+		/// with no count), copied or appended to a target of size characters; 0, or an errno with the target emptied (or,
+		/// with _TRUNCATE, as much as fits and STRUNCATE).
+		/// </summary>
+		private uint SecureCopy(uint target, uint size, uint source, uint count, bool truncate, uint unit, bool append)
+		{
+			if (target == 0 || size == 0)
+			{
+				SetErrno(ErrnoInvalid);
+				return ErrnoInvalid;
+			}
+
+			uint start = append ? UnitLength(target, unit, size) : 0;
+			if (start == size || source == 0)
+			{
+				WriteTerminator(target, unit);
+				SetErrno(ErrnoInvalid);
+				return ErrnoInvalid;
+			}
+
+			uint length = UnitLength(source, unit, truncate ? uint.MaxValue : count);
+			uint room = size - start - 1;
+			bool truncated = false;
+			if (length > room)
+			{
+				if (!truncate)
+				{
+					WriteTerminator(target, unit);
+					SetErrno(ErrnoRange);
+					return ErrnoRange;
+				}
+
+				length = room;
+				truncated = true;
+			}
+
+			CopyMemory(target + start * unit, source, length * unit);
+			WriteTerminator(target + (start + length) * unit, unit);
+			return truncated ? ErrnoTruncated : 0;
+		}
+
+		/// <summary>memcpy_s and memmove_s: count bytes to a target of size bytes; 0, or an errno (the target zeroed).</summary>
+		private uint SecureMove(uint target, uint size, uint source, uint count)
+		{
+			if (count == 0)
+			{
+				return 0;
+			}
+
+			if (target == 0)
+			{
+				SetErrno(ErrnoInvalid);
+				return ErrnoInvalid;
+			}
+
+			if (source == 0 || count > size)
+			{
+				Memory.Fill(target, 0, size);
+				uint error = source == 0 ? ErrnoInvalid : ErrnoRange;
+				SetErrno(error);
+				return error;
+			}
+
+			CopyMemory(target, source, count);
+			return 0;
+		}
+
+		/// <summary>
+		/// sprintf_s and _snprintf_s (and their v forms): the text in a buffer of size bytes, at most count of them
+		/// (_TRUNCATE: as many as fit); its length, or -1 (with the buffer emptied when even a cut text is not allowed).
+		/// </summary>
+		private uint WriteSecure(uint buffer, uint size, bool counted, uint count, string text)
+		{
+			if (buffer == 0 || size == 0)
+			{
+				SetErrno(ErrnoInvalid);
+				return 0xFFFFFFFF;
+			}
+
+			byte[] bytes = AnsiEncoding.GetBytes(text);
+			uint limit = !counted || count == Truncate ? size - 1 : Math.Min(count, size - 1);
+			if ((uint)bytes.Length <= limit)
+			{
+				Memory.WriteBytes(buffer, bytes);
+				Memory.Write8(buffer + (uint)bytes.Length, 0);
+				return (uint)bytes.Length;
+			}
+
+			// Too long: _snprintf_s cuts it when told to (_TRUNCATE, or a count within the buffer); sprintf_s never does.
+			bool cut = counted && (count == Truncate || count < size);
+			if (cut)
+			{
+				Memory.WriteBytes(buffer, bytes.AsSpan(0, (int)limit));
+				Memory.Write8(buffer + limit, 0);
+			}
+			else
+			{
+				Memory.Write8(buffer, 0);
+				SetErrno(ErrnoRange);
+			}
+
+			return 0xFFFFFFFF;
+		}
+
+		private void SetErrno(uint value)
+		{
+			if (errnoAddress == 0)
+			{
+				errnoAddress = AllocateStatic(4);
+			}
+
+			Memory.Write32(errnoAddress, value);
+		}
+
+		/// <summary>_stat and its kin: what Windows' C runtime fills in for a file or folder (drive C:); -1 if missing.</summary>
+		private uint Stat(string name, uint buffer, bool wideTimes)
+		{
+			string host = name == null ? null : ToHostPath(name);
+			FileSystemInfo info = host == null ? null : Directory.Exists(host) ? new DirectoryInfo(host) : File.Exists(host) ? new FileInfo(host) : (FileSystemInfo)null;
+			if (info == null)
+			{
+				SetErrno(ErrnoNoEntry);
+				return 0xFFFFFFFF;
+			}
+
+			bool folder = info is DirectoryInfo;
+			uint mode = (folder ? 0x4000u : 0x8000u) | 0x100u | ((info.Attributes & System.IO.FileAttributes.ReadOnly) == 0 ? 0x80u : 0u);
+			string extension = Path.GetExtension(host).ToLowerInvariant();
+			if (folder || extension == ".exe" || extension == ".bat" || extension == ".cmd" || extension == ".com")
+			{
+				mode |= 0x40;
+			}
+
+			mode |= (mode & 0x1C0) >> 3 | (mode & 0x1C0) >> 6;
+			Memory.Fill(buffer, 0, wideTimes ? 48u : 36u);
+			Memory.Write32(buffer, 2);
+			Memory.Write16(buffer + 6, (ushort)mode);
+			Memory.Write16(buffer + 8, 1);
+			Memory.Write32(buffer + 16, 2);
+			Memory.Write32(buffer + 20, folder ? 0 : (uint)Math.Min(((FileInfo)info).Length, int.MaxValue));
+			long[] times = { UnixTime(info.LastAccessTimeUtc), UnixTime(info.LastWriteTimeUtc), UnixTime(info.CreationTimeUtc) };
+			for (int i = 0; i < 3; i++)
+			{
+				if (wideTimes)
+				{
+					Memory.Write64(buffer + 24 + 8 * (uint)i, (ulong)times[i]);
+				}
+				else
+				{
+					Memory.Write32(buffer + 24 + 4 * (uint)i, (uint)times[i]);
+				}
+			}
+
+			return 0;
+		}
+
+		private static long UnixTime(DateTime utc) => (long)(utc - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+
+		/// <summary>
+		/// _splitpath(_s) and the wide forms: the drive ("C:"), the folder (to its last slash), the name and the extension
+		/// (from its last dot). The _s forms take (path, drive, size, dir, size, fname, size, ext, size), sizes in
+		/// characters, and return 0 or an errno (each part emptied then); the others take (path, drive, dir, fname, ext).
+		/// </summary>
+		private uint SplitPath(string path, bool wide, Cpu c, bool sized)
+		{
+			uint[] buffers = new uint[4], sizes = new uint[4];
+			for (int i = 0; i < 4; i++)
+			{
+				buffers[i] = sized ? c.Arg(1 + 2 * i) : c.Arg(1 + i);
+				sizes[i] = sized ? c.Arg(2 + 2 * i) : uint.MaxValue;
+				if (sized && (buffers[i] == 0) != (sizes[i] == 0))
+				{
+					SetErrno(ErrnoInvalid);
+					return ErrnoInvalid;
+				}
+			}
+
+			if (path == null)
+			{
+				SetErrno(ErrnoInvalid);
+				return ErrnoInvalid;
+			}
+
+			string drive = path.Length >= 2 && path[1] == ':' ? path.Substring(0, 2) : "";
+			string rest = path.Substring(drive.Length);
+			int slash = Math.Max(rest.LastIndexOf('\\'), rest.LastIndexOf('/'));
+			string folder = rest.Substring(0, slash + 1);
+			string file = rest.Substring(slash + 1);
+			int dot = file.LastIndexOf('.');
+			string[] parts = { drive, folder, dot >= 0 ? file.Substring(0, dot) : file, dot >= 0 ? file.Substring(dot) : "" };
+			for (int i = 0; i < 4; i++)
+			{
+				int length = wide ? parts[i].Length : AnsiEncoding.GetByteCount(parts[i]);
+				if (buffers[i] != 0 && (uint)length >= sizes[i])
+				{
+					for (int j = 0; j < 4; j++)
+					{
+						if (buffers[j] != 0)
+						{
+							if (wide) Memory.Write16(buffers[j], 0); else Memory.Write8(buffers[j], 0);
+						}
+					}
+
+					SetErrno(ErrnoRange);
+					return ErrnoRange;
+				}
+			}
+
+			for (int i = 0; i < 4; i++)
+			{
+				if (buffers[i] != 0)
+				{
+					if (wide) Memory.WriteWString(buffers[i], parts[i]); else Memory.WriteCString(buffers[i], parts[i], AnsiEncoding);
+				}
+			}
+
+			return 0;
+		}
+
+		/// <summary>mbstowcs: the plugin's ANSI text as UTF-16, at most count characters (a NUL if there is room); without a buffer, the length.</summary>
+		private uint MultibyteToWide(uint target, uint source, uint count)
+		{
+			if (source == 0)
+			{
+				SetErrno(ErrnoInvalid);
+				return 0xFFFFFFFF;
+			}
+
+			string text = Memory.ReadCString(source, AnsiEncoding);
+			if (target == 0)
+			{
+				return (uint)text.Length;
+			}
+
+			int length = (int)Math.Min((uint)text.Length, count);
+			for (int i = 0; i < length; i++)
+			{
+				Memory.Write16(target + 2 * (uint)i, text[i]);
+			}
+
+			if ((uint)length < count)
+			{
+				Memory.Write16(target + 2 * (uint)length, 0);
+			}
+
+			return (uint)length;
+		}
+
+		/// <summary>wcstombs: UTF-16 text in the plugin's ANSI code page, at most count bytes (whole characters only).</summary>
+		private uint WideToMultibyte(uint target, uint source, uint count)
+		{
+			if (source == 0)
+			{
+				SetErrno(ErrnoInvalid);
+				return 0xFFFFFFFF;
+			}
+
+			string text = Memory.ReadWString(source) ?? "";
+			byte[] bytes = AnsiEncoding.GetBytes(text);
+			if (target == 0)
+			{
+				return (uint)bytes.Length;
+			}
+
+			if ((uint)bytes.Length > count)
+			{
+				// Not part of a character: cut back to the last whole one that fits.
+				int characters = text.Length;
+				while (characters > 0 && (uint)AnsiEncoding.GetByteCount(text.Substring(0, characters)) > count)
+				{
+					characters--;
+				}
+
+				bytes = AnsiEncoding.GetBytes(text.Substring(0, characters));
+			}
+
+			Memory.WriteBytes(target, bytes);
+			if ((uint)bytes.Length < count)
+			{
+				Memory.Write8(target + (uint)bytes.Length, 0);
+			}
+
+			return (uint)bytes.Length;
+		}
+
+		/// <summary>fopen_s and _wfopen_s: the FILE* stored where the plugin asks; 0, or ENOENT.</summary>
+		private uint OpenInto(uint target, uint file)
+		{
+			if (target != 0)
+			{
+				Memory.Write32(target, file);
+			}
+
+			if (file == 0)
+			{
+				SetErrno(ErrnoNoEntry);
+				return ErrnoNoEntry;
+			}
+
+			return 0;
 		}
 
 		private uint CrtOpen(string name, string mode)
@@ -548,8 +905,37 @@ namespace OpenBve.X86
 
 			try
 			{
-				FileStream stream = new FileStream(host, mode.IndexOf('w') >= 0 ? FileMode.Create : mode.IndexOf('a') >= 0 ? FileMode.Append : FileMode.Open,
-					write ? FileAccess.ReadWrite : FileAccess.Read, FileShare.ReadWrite);
+				Stream stream;
+				if (!write && mode.IndexOf('b') < 0)
+				{
+					// Text mode (the C runtime's default), as Windows reads it: CR LF as LF, and a Ctrl+Z ends the file.
+					// Plugins rely on it, e.g. a module list with CR LF lines read with fgets and passed to LoadLibrary.
+					byte[] bytes = File.ReadAllBytes(host);
+					MemoryStream text = new MemoryStream(bytes.Length);
+					for (int i = 0; i < bytes.Length; i++)
+					{
+						if (bytes[i] == 0x1A)
+						{
+							break;
+						}
+
+						if (bytes[i] == 0x0D && i + 1 < bytes.Length && bytes[i + 1] == 0x0A)
+						{
+							continue;
+						}
+
+						text.WriteByte(bytes[i]);
+					}
+
+					text.Position = 0;
+					stream = text;
+				}
+				else
+				{
+					stream = new FileStream(host, mode.IndexOf('w') >= 0 ? FileMode.Create : mode.IndexOf('a') >= 0 ? FileMode.Append : FileMode.Open,
+						write ? FileAccess.ReadWrite : FileAccess.Read, FileShare.ReadWrite);
+				}
+
 				uint file = AllocateStatic(32);
 				crtFiles[file] = stream;
 				return file;

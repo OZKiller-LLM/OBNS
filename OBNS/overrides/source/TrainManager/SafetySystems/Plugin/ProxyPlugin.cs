@@ -52,6 +52,12 @@ namespace TrainManager.SafetySystems {
 		/// <summary>Whether the external plugin proxy has encountered a critical error / crashed</summary>
 		private bool externalCrashed;
 
+		/// <summary>OBNS: this plugin's proxy process, stopped if it fails to load the plugin (see Stop).</summary>
+		private Process hostProcess;
+
+		/// <summary>OBNS: why the proxy could not load the plugin (logged), or null.</summary>
+		internal string FailureReason { get; private set; }
+
 		/// <summary>OBNS: how many proxies this game has started, for their names.</summary>
 		private static int proxiesStarted;
 
@@ -77,7 +83,7 @@ namespace TrainManager.SafetySystems {
 				string name = ProxyName();
 				using (EventWaitHandle ready = new EventWaitHandle(false, EventResetMode.AutoReset, @"OBNS_eventHostReady_" + name))
 				{
-					Process hostProcess = new Process();
+					hostProcess = new Process();
 					hostProcess.StartInfo.FileName = @"Win32PluginProxy.exe";
 					hostProcess.StartInfo.Arguments = name;
 					hostProcess.Start();
@@ -91,10 +97,12 @@ namespace TrainManager.SafetySystems {
 				pipeProxy.SetPluginFile(pluginFile, Process.GetCurrentProcess().Id);
 				SetForegroundWindow(handle.ToInt32());
 			}
-			catch
+			catch (Exception ex)
 			{
 				//That didn't work
 				externalCrashed = true;
+				// OBNS: why, in the log (upstream drops it).
+				Failed("could not start", ex);
 			}
 			PluginValid = true;
 			PluginMessage = null;
@@ -150,14 +158,46 @@ namespace TrainManager.SafetySystems {
 				//Most likely the plugin proxy app failed to launch or something
 				return false;
 			}
-			if (pipeProxy.Load(specs, mode))
+			// OBNS: a proxy that does not answer is reported (and stopped by the caller), not left to fail the load silently.
+			try
 			{
-				UpdatePower();
-				UpdateBrake();
-				UpdateReverser();
-				return true;
+				if (pipeProxy.Load(specs, mode))
+				{
+					UpdatePower();
+					UpdateBrake();
+					UpdateReverser();
+					return true;
+				}
+			}
+			catch (Exception ex)
+			{
+				externalCrashed = true;
+				Failed("failed in Load", ex);
 			}
 			return false;
+		}
+
+		/// <summary>OBNS: logs why the proxy failed this plugin.</summary>
+		private void Failed(string what, Exception ex)
+		{
+			FailureReason = ex.GetType().Name + ": " + ex.Message;
+			TrainManagerBase.FileSystem?.AppendToLogFile("The plugin proxy for " + PluginTitle + " " + what + " (" + FailureReason + ")");
+		}
+
+		/// <summary>OBNS: ends this plugin's proxy process (after a failed load: it may be holding the plugin, hung).</summary>
+		internal void Stop()
+		{
+			try
+			{
+				if (hostProcess != null && !hostProcess.HasExited)
+				{
+					hostProcess.Kill();
+				}
+			}
+			catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception)
+			{
+				// Already gone.
+			}
 		}
 
 		public override void Unload()

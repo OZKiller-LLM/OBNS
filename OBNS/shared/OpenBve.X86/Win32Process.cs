@@ -660,7 +660,7 @@ namespace OpenBve.X86
 			// Unknown: bind to a stub that reports the call, so a plugin that never calls it still runs.
 			string key = dll + "!" + function;
 			Log("import not provided: " + key + " (needed by " + importer.Name + ")");
-			return Cpu.AddHostFunction(key, cpu => throw new X86Exception("the plugin called " + key + ", which the Android compatibility layer does not provide"), 0);
+			return Cpu.AddHostFunction(key, cpu => throw new X86Exception("the plugin called " + key + ", which the x86 compatibility layer does not provide"), 0);
 		}
 	}
 }

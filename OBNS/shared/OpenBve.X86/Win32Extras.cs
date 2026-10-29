@@ -263,23 +263,23 @@ namespace OpenBve.X86
 			// --- C library odds and ends ---
 			dataImports[m + "!_ctype"] = () => CtypeTable();
 			Export(m, "_isctype", 0, c => c.Arg(0) < 256 ? Memory.Read16(CtypeTable() + 2 + 2 * c.Arg(0)) & c.Arg(1) : 0u);
-			Export(m, "getc", 0, c => crtFiles.TryGetValue(c.Arg(0), out FileStream stream) ? (uint)stream.ReadByte() : 0xFFFFFFFF);
+			Export(m, "getc", 0, c => crtFiles.TryGetValue(c.Arg(0), out Stream stream) ? (uint)stream.ReadByte() : 0xFFFFFFFF);
 			Export(m, "putc", 0, c => { WriteStream(c.Arg(1), new[] { (byte)c.Arg(0) }); return c.Arg(0); });
 			Export(m, "ungetc", 0, c =>
 			{
-				if (c.Arg(0) == 0xFFFFFFFF || !crtFiles.TryGetValue(c.Arg(1), out FileStream stream) || stream.Position == 0) return 0xFFFFFFFF;
+				if (c.Arg(0) == 0xFFFFFFFF || !crtFiles.TryGetValue(c.Arg(1), out Stream stream) || stream.Position == 0) return 0xFFFFFFFF;
 				stream.Position--;
 				return c.Arg(0);
 			});
 			Export(m, "fgetpos", 0, c =>
 			{
-				if (!crtFiles.TryGetValue(c.Arg(0), out FileStream stream)) return 0xFFFFFFFF;
+				if (!crtFiles.TryGetValue(c.Arg(0), out Stream stream)) return 0xFFFFFFFF;
 				Memory.Write64(c.Arg(1), (ulong)stream.Position);
 				return 0;
 			});
 			Export(m, "fsetpos", 0, c =>
 			{
-				if (!crtFiles.TryGetValue(c.Arg(0), out FileStream stream)) return 0xFFFFFFFF;
+				if (!crtFiles.TryGetValue(c.Arg(0), out Stream stream)) return 0xFFFFFFFF;
 				stream.Position = (long)Memory.Read64(c.Arg(1));
 				return 0;
 			});
