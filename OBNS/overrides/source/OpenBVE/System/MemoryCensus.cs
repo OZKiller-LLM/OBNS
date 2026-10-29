@@ -29,7 +29,7 @@ namespace OpenBve
 			}
 
 			long before = GC.GetTotalMemory(false);
-			long live = mode == "2" ? GC.GetTotalMemory(true) : -1048576;
+			long live = mode == "2" ? GC.GetTotalMemory(true) : -1;
 			long pixels = Program.Renderer.TextureManager.ObnsHeldPixelBytes(out int cached, out int onHandles, out string origins);
 
 			HashSet<StaticObject> prototypes = new HashSet<StaticObject>();
@@ -82,9 +82,9 @@ namespace OpenBve
 			}
 
 			Program.FileSystem.AppendToLogFile(string.Format(CultureInfo.InvariantCulture,
-				"OBNS memory census: managed heap {0:N0} MB before a full collection, {1:N0} MB live after it; decoded texture pixels held {2:N0} MB ({3} in the decode cache, {4} on texture handles, of {5} registered; origins: {15}); " +
+				"OBNS memory census: managed heap {0:N0} MB before a full collection, {1} live after it; decoded texture pixels held {2:N0} MB ({3} in the decode cache, {4} on texture handles, of {5} registered; origins: {15}); " +
 				"{6:N0} object states (~{7:N0} MB), {8:N0} distinct meshes: {9:N0} vertices ({10}), {11:N0} faces, {12:N0} face vertices (~{13:N0} MB); process private {14:N0} MB",
-				before / 1048576.0, live / 1048576.0, pixels / 1048576.0, cached, onHandles, Program.Renderer.TextureManager.RegisteredTexturesCount,
+				before / 1048576.0, live < 0 ? "not measured (OBNS_MEMSTATS=2 collects first)" : (live / 1048576.0).ToString("N0", CultureInfo.InvariantCulture) + " MB", pixels / 1048576.0, cached, onHandles, Program.Renderer.TextureManager.RegisteredTexturesCount,
 				states, states * StateBytes / 1048576.0, prototypes.Count, vertices, types, faces, faceVertices, meshBytes / 1048576.0,
 				System.Diagnostics.Process.GetCurrentProcess().PrivateMemorySize64 / 1048576.0, origins));
 		}

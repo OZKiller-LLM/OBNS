@@ -53,8 +53,8 @@ namespace OpenBve {
 				mainDialog.DisposePreviewRouteThread();
 				if (!OpenTK.Configuration.RunningOnMacOS)
 				{
-					mainDialog.trainWatcher.Dispose();
-					mainDialog.routeWatcher.Dispose();
+					mainDialog.trainWatcher?.Dispose();
+					mainDialog.routeWatcher?.Dispose();
 				}
 				return result;
 			}
@@ -1509,14 +1509,24 @@ namespace OpenBve {
 				Program.CurrentHost.UnloadPlugins(out _);
 			}
 
-			routeWatcher.EnableRaisingEvents = false;
-			trainWatcher.EnableRaisingEvents = false;
+			// OBNS: the watchers are not made on macOS (formMain.Start.cs), or where a folder could not be watched: closing
+			// threw there, before the options were saved.
+			if (routeWatcher != null)
+			{
+				routeWatcher.EnableRaisingEvents = false;
+			}
+
+			if (trainWatcher != null)
+			{
+				trainWatcher.EnableRaisingEvents = false;
+			}
+
 			if (Program.CurrentHost.Platform != HostPlatform.AppleOSX && Program.CurrentHost.Platform != HostPlatform.FreeBSD)
 			{
 				// A FileSystemWatcher may crash when disposed as the game is closing (without launching a route) on these platforms
 				// This is a Mono issue
-				routeWatcher.Dispose();
-				trainWatcher.Dispose();
+				routeWatcher?.Dispose();
+				trainWatcher?.Dispose();
 			}
 			workerThread.Dispose();
 			// finish
