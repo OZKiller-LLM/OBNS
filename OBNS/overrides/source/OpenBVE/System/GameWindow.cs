@@ -1363,6 +1363,9 @@ namespace OpenBve
 		private static readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
 		private static readonly long[] totals = new long[5];
 		private static long frameStart, lastMark, windowStart = -1, frames, worstFrame;
+		// The worst frame's own parts, RenderScene laps and garbage collections, to tell what a single long frame was.
+		private static readonly long[] current = new long[5], worstParts = new long[5], worstLaps = new long[7];
+		private static int frameGen0, frameGen2, worstGen0, worstGen2;
 
 		internal static void BeginFrame()
 		{
@@ -1378,27 +1381,48 @@ namespace OpenBve
 			}
 			else if (frameStart != 0)
 			{
-				worstFrame = Math.Max(worstFrame, now - frameStart);
+				if (now - frameStart > worstFrame)
+				{
+					worstFrame = now - frameStart;
+					Array.Copy(current, worstParts, current.Length);
+					Array.Copy(NewRenderer.SceneLaps.Frame, worstLaps, worstLaps.Length);
+					worstGen0 = GC.CollectionCount(0) - frameGen0;
+					worstGen2 = GC.CollectionCount(2) - frameGen2;
+				}
+
 				frames++;
 			}
 
 			frameStart = now;
 			lastMark = now;
+			Array.Clear(current, 0, current.Length);
+			frameGen0 = GC.CollectionCount(0);
+			frameGen2 = GC.CollectionCount(2);
 			if (now - windowStart >= 10 * System.Diagnostics.Stopwatch.Frequency && frames > 0)
 			{
 				double ms(long ticks) => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames;
 				double span = (now - windowStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 				Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms; world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms ({12}), swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}; Vulkan world layer {11}; {13}; {14}; managed heap {15:0} MB, process private {16:0} MB",
+					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms ({17}); world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms ({12}), swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}; Vulkan world layer {11}; {13}; {14}; managed heap {15:0} MB, process private {16:0} MB",
 					frames, span / frames, frames * 1000.0 / span, worstFrame * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
 					ms(totals[(int)Part.WorldObjects]), ms(totals[(int)Part.TrainObjects]), ms(totals[(int)Part.Render]), ms(totals[(int)Part.Swap]), ms(totals[(int)Part.Other]),
 					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off", GLFilterSummary(), OpenBve.Graphics.Vulkan.VulkanWorld.Summary, NewRenderer.SceneParts.Take(), GpuStats.Take(), NewRenderer.SceneLaps.Take(),
-					GC.GetTotalMemory(false) / 1048576.0, ProcessPrivateMegabytes()));
+					GC.GetTotalMemory(false) / 1048576.0, ProcessPrivateMegabytes(), WorstFrame()));
 				Array.Clear(totals, 0, totals.Length);
 				frames = 0;
 				worstFrame = 0;
 				windowStart = now;
 			}
+		}
+
+		/// <summary>The worst frame's parts in ms and the garbage collections during it, for the frame stats.</summary>
+		private static string WorstFrame()
+		{
+			double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+			return string.Format(System.Globalization.CultureInfo.InvariantCulture,
+				"world objects {0:0.0}, train objects {1:0.0}, render {2:0.0} [{3}], swap {4:0.0}, other {5:0.0} ms; collections gen0 {6}, gen2 {7}",
+				worstParts[(int)Part.WorldObjects] * ms, worstParts[(int)Part.TrainObjects] * ms, worstParts[(int)Part.Render] * ms, NewRenderer.SceneLaps.Describe(worstLaps),
+				worstParts[(int)Part.Swap] * ms, worstParts[(int)Part.Other] * ms, worstGen0, worstGen2);
 		}
 
 		/// <summary>The process's private memory in MB, for the frame stats (0 where it cannot be read).</summary>
@@ -1438,6 +1462,7 @@ namespace OpenBve
 
 			long now = clock.ElapsedTicks;
 			totals[(int)part] += now - lastMark;
+			current[(int)part] += now - lastMark;
 			lastMark = now;
 		}
 	}

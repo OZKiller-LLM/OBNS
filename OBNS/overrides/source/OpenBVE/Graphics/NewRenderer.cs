@@ -570,17 +570,35 @@ namespace OpenBve.Graphics
 			private static readonly long[] totals = new long[7];
 			private static long last, frames;
 
+			/// <summary>The current frame's parts (ticks), for the frame stats' worst frame.</summary>
+			internal static readonly long[] Frame = new long[7];
+
 			internal static void Start()
 			{
 				last = System.Diagnostics.Stopwatch.GetTimestamp();
 				frames++;
+				Array.Clear(Frame, 0, Frame.Length);
 			}
 
 			internal static void Lap(int part)
 			{
 				long now = System.Diagnostics.Stopwatch.GetTimestamp();
 				totals[part] += now - last;
+				Frame[part] += now - last;
 				last = now;
+			}
+
+			/// <summary>One frame's parts, as the log shows them.</summary>
+			internal static string Describe(long[] laps)
+			{
+				double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+				System.Text.StringBuilder text = new System.Text.StringBuilder();
+				for (int i = 0; i < laps.Length; i++)
+				{
+					text.Append(i == 0 ? "" : ", ").Append(names[i]).Append(' ').Append((laps[i] * ms).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+				}
+
+				return text.ToString();
 			}
 
 			internal static string Take()
