@@ -248,8 +248,8 @@ private class MKTable: NSScrollView, NSTableViewDataSource, NSTableViewDelegate 
 		table.usesAlternatingRowBackgroundColors = true
 		table.target = self
 		table.doubleAction = #selector(activated)
-		table.rowHeight = 17
-		table.intercellSpacing = NSSize(width: 0, height: 2)
+		table.rowHeight = 19
+		table.intercellSpacing = NSSize(width: 0, height: 0)
 		table.style = .fullWidth
 	}
 
@@ -265,7 +265,9 @@ private class MKTable: NSScrollView, NSTableViewDataSource, NSTableViewDelegate 
 		guard let tableColumn = tableColumn, let column = tableView.tableColumns.firstIndex(of: tableColumn) else { return nil }
 		let cell = NSTableCellView()
 		let text = NSTextField(labelWithString: column < rows[row].count ? rows[row][column] : "")
-		text.font = NSFont.systemFont(ofSize: 11)
+		// A little under the labels' 11: the columns are as wide as the Windows font needs.
+		text.font = NSFont.systemFont(ofSize: 10.5)
+		text.allowsDefaultTighteningForTruncation = true
 		text.lineBreakMode = .byTruncatingTail
 		text.translatesAutoresizingMaskIntoConstraints = false
 		cell.addSubview(text)
@@ -303,7 +305,6 @@ private class MKTable: NSScrollView, NSTableViewDataSource, NSTableViewDelegate 
 private class MKTabs: FlippedView {
 	let strip = FlippedView()
 	let frameBox = NSBox()
-	let tabFont = NSFont.systemFont(ofSize: 11)
 	var tabs: [NSButton] = []
 
 	func setUp() {
@@ -325,7 +326,6 @@ private class MKTabs: FlippedView {
 
 		tabs = titles.map { title in
 			let tab = NSButton(title: title, target: self, action: #selector(tabClicked(_:)))
-			tab.font = tabFont
 			tab.isBordered = false
 			tab.focusRingType = .none
 			tab.wantsLayer = true
@@ -353,12 +353,25 @@ private class MKTabs: FlippedView {
 
 	override func layout() {
 		super.layout()
-		// Each tab as wide as its title, with what room is left shared between them.
-		let widths = tabs.map { ceil(($0.title as NSString).size(withAttributes: [.font: tabFont]).width) }
-		let room = max(0, bounds.width - 8) - widths.reduce(0, +)
-		let padding = tabs.isEmpty ? 0 : min(18, max(4, room / CGFloat(tabs.count)))
+		// Each tab as wide as its title, with what room is left shared between them; a smaller font where four don't fit.
+		let measure = { (font: NSFont) -> [CGFloat] in
+			self.tabs.map { ceil(($0.title as NSString).size(withAttributes: [.font: font]).width) + 2 }
+		}
+
+		let room = max(0, bounds.width - 8)
+		let least = CGFloat(tabs.count) * 6
+		var font = NSFont.systemFont(ofSize: 11)
+		var widths = measure(font)
+		let total = widths.reduce(0, +)
+		if total + least > room && total > 0 {
+			font = NSFont.systemFont(ofSize: max(8, 11 * max(0, room - least) / total))
+			widths = measure(font)
+		}
+
+		let padding = tabs.isEmpty ? 0 : min(18, max(6, (room - widths.reduce(0, +)) / CGFloat(tabs.count)))
 		var x: CGFloat = 1
 		for (index, tab) in tabs.enumerated() {
+			tab.font = font
 			tab.frame = NSRect(x: x, y: 1, width: widths[index] + padding, height: 18)
 			x += widths[index] + padding
 		}
