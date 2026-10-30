@@ -105,13 +105,17 @@ update threads. It is much slower than OpenGL there, mostly in GPU time, for a r
 | Default position | 47 fps | 14 fps |
 | Camera moved forward | 38 fps | 8.6 fps |
 
-So OpenGL is the default on Linux on such a computer (Vulkan lists a "(BDW" device and no discrete one); choosing Vulkan
-in the options, or `OBNS_VULKAN=1`, still gives it, with the CPU ordering. Other old Intel GPUs keep Vulkan by default.
+So OpenGL is the default on Linux on such a computer (Vulkan lists a "(BDW" or Cherry View's "(CHV" device and no
+discrete one); choosing Vulkan in the options, or `OBNS_VULKAN=1`, still gives it, with the CPU ordering.
+
+Vulkan isn't supported on Intel's GPUs older than Broadwell (the user, 2026-10-31; Mesa's names "(HSW", "(BYT", "(IVB"):
+OpenGL is the default there, and draws even if Vulkan is chosen in the options, logged; `OBNS_VULKAN=1` still tries it.
 
 ## Fallback and switches
 
 The renderer is chosen in the options (Options, display group: Renderer, OpenGL or Vulkan; Vulkan by default, except
-OpenGL on Linux on Broadwell's integrated GPU with no discrete GPU beside it, the user's decision of 2026-10-31),
+OpenGL on Linux on Intel's integrated GPUs from Broadwell back with no discrete GPU beside them, the user's decision of
+2026-10-31),
 kept in `Settings/1.5.0/obns.cfg` beside upstream's `options.cfg`, and takes effect when a game starts. The
 debug overlay's renderer line says which is drawing. Vulkan is used when the driver can share memory and
 semaphores with OpenGL on the same GPU (matched by device UUID), on one of the two tiers below; otherwise the

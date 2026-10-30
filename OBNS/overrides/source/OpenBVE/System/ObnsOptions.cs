@@ -31,7 +31,7 @@ namespace OpenBve
 		private static RendererKind renderer = RendererKind.Vulkan;
 		/// <summary>Whether Vulkan was picked in the options, rather than being the default (the file says "renderer = vulkan" for both).</summary>
 		private static bool vulkanChosen;
-		private static bool? broadwellAlone;
+		private static bool? oldIntelAlone;
 
 		/// <summary>The renderer in force (taking effect when a game starts): the one chosen in the options, else the default.</summary>
 		internal static RendererKind Renderer
@@ -53,7 +53,7 @@ namespace OpenBve
 			}
 		}
 
-		/// <summary>OpenGL by default on Linux on Broadwell's integrated GPU with no discrete GPU; Vulkan by default everywhere else.</summary>
+		/// <summary>OpenGL by default on Linux on Intel's integrated GPUs from Broadwell back with no discrete GPU; Vulkan by default everywhere else.</summary>
 		internal static bool OpenGLByDefault
 		{
 			get
@@ -64,12 +64,12 @@ namespace OpenBve
 					return false;
 				}
 
-				if (broadwellAlone == null)
+				if (oldIntelAlone == null)
 				{
-					broadwellAlone = Graphics.Vulkan.VulkanDevice.BroadwellWithoutDiscreteGpu();
+					oldIntelAlone = Graphics.Vulkan.VulkanDevice.OldIntelWithoutDiscreteGpu();
 				}
 
-				return broadwellAlone.Value;
+				return oldIntelAlone.Value;
 			}
 		}
 

@@ -73,7 +73,7 @@ namespace OpenBve.Graphics.Vulkan
 			string forced = Environment.GetEnvironmentVariable("OBNS_VULKAN");
 			if (forced == "0" || forced != "1" && ObnsOptions.Renderer == ObnsOptions.RendererKind.OpenGL)
 			{
-				Log("OBNS Vulkan world layer off (" + (forced == "0" ? "OBNS_VULKAN=0" : ObnsOptions.OpenGLByDefault ? "OpenGL is the default on Broadwell without a discrete GPU; the options can choose Vulkan" : "the OpenGL renderer is chosen in the options") + "); OpenGL draws it");
+				Log("OBNS Vulkan world layer off (" + (forced == "0" ? "OBNS_VULKAN=0" : ObnsOptions.OpenGLByDefault ? "OpenGL is the default on Intel's GPUs from Broadwell back without a discrete GPU" : "the OpenGL renderer is chosen in the options") + "); OpenGL draws it");
 				return;
 			}
 

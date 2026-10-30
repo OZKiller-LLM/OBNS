@@ -130,13 +130,13 @@ background. The vertex buffers are shared between the two; textures are Vulkan's
 preloads sent to it, so there is one copy of each on the GPU.
 
 The renderer is chosen in the options (display: Renderer; Vulkan by default on Windows and Linux, except OpenGL on
-Linux on Broadwell's integrated GPU with no discrete GPU) and
+Linux on Intel's integrated GPUs from Broadwell back with no discrete GPU) and
 the debug overlay names it. OpenGL draws the world when the GPU or driver cannot share images with
 Vulkan, while the wireframe and normals views are on, and for the rest of the session if a
 Vulkan frame fails; `OBNS_VULKAN=0` or `1` overrides the option. Devices with Vulkan 1.3 use the path
 described here; anything older that can share images with OpenGL gets a core Vulkan 1.0 tier, and Mesa's
-Intel GPUs from Broadwell back have the CPU order OpenGL and Vulkan, because the semaphores they share hang
-those GPUs. Broadwell is drivable that way if chosen, but slow: see `VULKAN.md`.
+Broadwell-class GPUs have the CPU order OpenGL and Vulkan, because the semaphores they share hang them. Broadwell
+is drivable that way if chosen, but slow; older Intel GPUs aren't supported on Vulkan: see `VULKAN.md`.
 
 | Tuen Ma Line, steady state (each view's first 10 s left out), a loaded machine, runs interleaved | OpenGL | Vulkan |
 |---|---|---|

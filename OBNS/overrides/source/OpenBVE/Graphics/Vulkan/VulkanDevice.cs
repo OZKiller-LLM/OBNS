@@ -222,11 +222,18 @@ namespace OpenBve.Graphics.Vulkan
 			return false;
 		}
 
+		/// <summary>Intel's integrated GPUs older than Broadwell, by Mesa's names for them: Vulkan isn't supported on them.</summary>
+		private static bool OlderThanBroadwell(string deviceName)
+		{
+			return deviceName.Contains("(HSW") || deviceName.Contains("(BYT") || deviceName.Contains("(IVB");
+		}
+
 		/// <summary>
-		/// Whether the computer's GPUs are Broadwell's integrated one and no discrete GPU, as Vulkan lists them. OpenGL is the
-		/// default on such a computer on Linux (ObnsOptions): it is 3-4 times as fast there as Vulkan can be made to run.
+		/// Whether the computer's GPUs are an Intel integrated one from Broadwell back and no discrete GPU, as Vulkan lists them.
+		/// OpenGL is the default on such a computer on Linux (ObnsOptions): on Broadwell it is 3-4 times as fast as Vulkan can be
+		/// made to run, and older ones aren't supported.
 		/// </summary>
-		internal static bool BroadwellWithoutDiscreteGpu()
+		internal static bool OldIntelWithoutDiscreteGpu()
 		{
 			IntPtr instance = IntPtr.Zero;
 			try
@@ -242,16 +249,17 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.Check(Vk.vkEnumeratePhysicalDevices(instance, ref count, null), "vkEnumeratePhysicalDevices");
 				IntPtr* devices = stackalloc IntPtr[(int)count];
 				Vk.Check(Vk.vkEnumeratePhysicalDevices(instance, ref count, devices), "vkEnumeratePhysicalDevices");
-				bool broadwell = false, discrete = false;
+				bool oldIntel = false, discrete = false;
 				for (uint i = 0; i < count; i++)
 				{
 					Vk.PhysicalDeviceProperties properties;
 					Vk.vkGetPhysicalDeviceProperties(devices[i], &properties);
 					discrete |= properties.DeviceType == Vk.PhysicalDeviceTypeDiscreteGpu;
-					broadwell |= Marshal.PtrToStringAnsi((IntPtr)properties.DeviceName).Contains("(BDW");
+					string deviceName = Marshal.PtrToStringAnsi((IntPtr)properties.DeviceName);
+					oldIntel |= deviceName.Contains("(BDW") || deviceName.Contains("(CHV") || OlderThanBroadwell(deviceName);
 				}
 
-				return broadwell && !discrete;
+				return oldIntel && !discrete;
 			}
 			catch (Exception ex) when (ex is DllNotFoundException || ex is EntryPointNotFoundException || ex is InvalidOperationException)
 			{
@@ -407,6 +415,12 @@ namespace OpenBve.Graphics.Vulkan
 				{
 					PhysicalDevice = devices[i];
 					Description = deviceName + ", Vulkan " + VersionText(properties.Properties.ApiVersion);
+					// OBNS_VULKAN=1 still tries it, for testing.
+					if (OlderThanBroadwell(deviceName) && Environment.GetEnvironmentVariable("OBNS_VULKAN") != "1")
+					{
+						return deviceName + ": Vulkan is not supported on Intel's GPUs older than Broadwell";
+					}
+
 					CpuSync = OrderedByCpu(properties.Properties.VendorID, deviceName);
 					if (CpuSync)
 					{
