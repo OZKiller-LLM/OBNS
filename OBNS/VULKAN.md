@@ -103,6 +103,18 @@ same GPU (matched by device UUID); otherwise the world layer is drawn by OpenGL 
 debug views are on, OpenGL draws the world layer (frame by frame); a Vulkan frame that fails stops Vulkan for
 the session, logged, and OpenGL draws the world from then on.
 
+Two tiers (the user's direction, 2026-10-30: newer devices as they are, borderline ones such as Broadwell's iGPUs
+on full Vulkan 1.0):
+- **1.2/1.3**: Vulkan 1.3 with descriptor indexing (one bindless texture array), dynamic rendering, indirect draws
+  of many commands; for devices that have all of it.
+- **Core Vulkan 1.0**: anything else that can share images with OpenGL: a Vulkan 1.0 instance and device, with only
+  the extensions the interop needs (external memory and semaphores, dedicated allocation, the device's UUID through
+  `VK_KHR_get_physical_device_properties2`); render passes and framebuffers for the world, cab and shadow passes;
+  textures in pages (`shaderSampledImageArrayDynamicIndexing`); the shaders built for Vulkan 1.0 (`*.vk10.*.spv`:
+  `discard` as `OpKill`, no demote); `VkPhysicalDeviceFeatures` alone; each draw its own `vkCmdDrawIndexed` where
+  the device lacks `multiDrawIndirect` or `drawIndirectFirstInstance`. The log's world-layer line names the tier
+  and why. On the RTX 2060 SUPER (forced) the same picture as the 1.2/1.3 path's.
+
 Switches, for testing and measuring (environment variables):
 
 | Variable | Effect |
@@ -113,6 +125,10 @@ Switches, for testing and measuring (environment variables):
 | `OBNS_GPUSTATS=1` | with it, GPU timestamps (OpenGL's parts, Vulkan's frame) and a finer CPU split |
 | `OBNS_SNAPSHOT_EVERY=<s>` | the frame saved (back buffer, before the swap) as `snapshot-N.png` beside the log |
 | `OBNS_VULKAN_TINT=1` | Vulkan's image cleared to a faint green (shows where the background is) |
+| `OBNS_VULKAN_TIER=1.0` / `=1.3` | the core Vulkan 1.0 tier, or the 1.2/1.3 path (with `OBNS_VULKAN_PAGED`, textures in pages there), whatever the device has |
+| `OBNS_VULKAN_CPUSYNC=1` | OpenGL and Vulkan ordered by the CPU waiting for each, not by shared semaphores (for finding what a driver fails on) |
+| `OBNS_VULKAN_DIRECT=1` | each draw its own `vkCmdDrawIndexed`, not runs of indirect draws (the same) |
+| `OBNS_START_VIEW=exterior` | the exterior view from the start, as F2 would (for comparing renderers without keys) |
 | `OBNS_VULKAN_PAGED=1` / `=N` | textures in pages (as without descriptor indexing) where bindless works too; `=N`: pages of at most N |
 | `OBNS_VULKAN_WHITE=1` | no textures made, all drawn white (for finding what a driver fails on) |
 | `OBNS_VULKAN_NOMIPS=1` | textures made without mipmaps, no blits (the same) |

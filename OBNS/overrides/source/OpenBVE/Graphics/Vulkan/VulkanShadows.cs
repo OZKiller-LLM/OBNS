@@ -14,6 +14,26 @@ namespace OpenBve.Graphics.Vulkan
 		internal ulong Image, Memory, ArrayView, Sampler;
 		internal ulong[] LayerViews = new ulong[0];
 
+		/// <summary>The core Vulkan 1.0 tier's shadow render pass (set by the scene), and each cascade's framebuffer of it (made when first needed).</summary>
+		internal ulong RenderPass;
+		private ulong[] framebuffers = new ulong[0];
+
+		/// <summary>A cascade's framebuffer (the 1.0 tier).</summary>
+		internal ulong Framebuffer(int cascade)
+		{
+			if (framebuffers.Length != LayerViews.Length)
+			{
+				framebuffers = new ulong[LayerViews.Length];
+			}
+
+			if (framebuffers[cascade] == 0)
+			{
+				framebuffers[cascade] = Vk.CreateFramebuffer(device.Device, RenderPass, 0, LayerViews[cascade], (uint)Resolution, (uint)Resolution);
+			}
+
+			return framebuffers[cascade];
+		}
+
 		/// <summary>A cascade's size in texels (the map is square), and how many cascades it has.</summary>
 		internal int Resolution { get; private set; }
 
@@ -127,6 +147,12 @@ namespace OpenBve.Graphics.Vulkan
 		private void DestroyImage()
 		{
 			IntPtr d = device.Device;
+			foreach (ulong framebuffer in framebuffers)
+			{
+				if (framebuffer != 0) Vk.vkDestroyFramebuffer(d, framebuffer, null);
+			}
+
+			framebuffers = new ulong[0];
 			foreach (ulong view in LayerViews)
 			{
 				Vk.vkDestroyImageView(d, view, null);

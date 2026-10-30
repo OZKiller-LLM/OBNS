@@ -137,14 +137,58 @@ namespace OpenBve.Graphics.Vulkan
 			? new[] { "VK_KHR_external_memory_fd", "VK_KHR_external_semaphore_fd" }
 			: new[] { "VK_KHR_external_memory_win32", "VK_KHR_external_semaphore_win32" };
 
+		/// <summary>The core Vulkan 1.0 tier's further device extensions: what Vulkan 1.1 made core, that the interop needs.</summary>
+		private static readonly string[] core10Extensions = { "VK_KHR_external_memory", "VK_KHR_external_semaphore", "VK_KHR_dedicated_allocation", "VK_KHR_get_memory_requirements2" };
+
+		/// <summary>The core Vulkan 1.0 tier's instance extensions: the device's UUID and external handles' capabilities.</summary>
+		private static readonly string[] core10InstanceExtensions = { "VK_KHR_get_physical_device_properties2", "VK_KHR_external_memory_capabilities", "VK_KHR_external_semaphore_capabilities" };
+
+		/// <summary>
+		/// The core Vulkan 1.0 tier (OBNS_VULKAN_TIER=1.0, or a device the 1.2/1.3 path cannot use, such as Intel's Broadwell
+		/// on Mesa's hasvk): render passes in place of dynamic rendering, texture pages, the 1.0 features and the shaders built
+		/// for Vulkan 1.0, and only the extensions OpenGL's interop needs.
+		/// </summary>
+		internal bool Core10 { get; private set; }
+
+		/// <summary>Each draw recorded as its own vkCmdDrawIndexed (the device lacks multiDrawIndirect or drawIndirectFirstInstance).</summary>
+		internal bool DirectDraws { get; private set; }
+
 		private VulkanDevice()
 		{
 		}
 
-		/// <summary>Creates the device on the GPU whose UUID OpenGL reports; null, with the reason, when it cannot be used.</summary>
+		/// <summary>
+		/// Creates the device on the GPU whose UUID OpenGL reports, on the 1.2/1.3 path where the device has all it needs, else
+		/// on the core Vulkan 1.0 tier (OBNS_VULKAN_TIER=1.0 or 1.3 chooses one); null, with the reason, when it cannot be used.
+		/// </summary>
 		internal static VulkanDevice Create(byte[] glDeviceUuid, out string reason)
 		{
-			VulkanDevice device = new VulkanDevice();
+			string tier = Environment.GetEnvironmentVariable("OBNS_VULKAN_TIER");
+			string modernReason = null;
+			if (tier != "1.0")
+			{
+				VulkanDevice modern = TryCreate(glDeviceUuid, false, out modernReason);
+				if (modern != null || tier == "1.3")
+				{
+					reason = modernReason;
+					return modern;
+				}
+			}
+
+			VulkanDevice device = TryCreate(glDeviceUuid, true, out reason);
+			if (device == null)
+			{
+				reason = modernReason == null ? reason : "the 1.2/1.3 path: " + modernReason + "; the core 1.0 tier: " + reason;
+				return null;
+			}
+
+			device.Description += " (core Vulkan 1.0 tier: " + (modernReason ?? "OBNS_VULKAN_TIER=1.0") + ")";
+			return device;
+		}
+
+		private static VulkanDevice TryCreate(byte[] glDeviceUuid, bool core10, out string reason)
+		{
+			VulkanDevice device = new VulkanDevice { Core10 = core10 };
 			try
 			{
 				reason = device.Initialize(glDeviceUuid);
@@ -173,34 +217,80 @@ namespace OpenBve.Graphics.Vulkan
 
 		private string Initialize(byte[] glDeviceUuid)
 		{
-			Vk.vkEnumerateInstanceVersion(out uint loaderVersion);
-			if (loaderVersion < Vk.MakeVersion(1, 3, 0))
+			// A Vulkan 1.0 loader has no vkEnumerateInstanceVersion.
+			uint loaderVersion;
+			try
+			{
+				Vk.vkEnumerateInstanceVersion(out loaderVersion);
+			}
+			catch (EntryPointNotFoundException)
+			{
+				loaderVersion = Vk.MakeVersion(1, 0, 0);
+			}
+
+			if (!Core10 && loaderVersion < Vk.MakeVersion(1, 3, 0))
 			{
 				return "the Vulkan loader is version " + VersionText(loaderVersion) + "; 1.3 is needed";
 			}
 
-			// The instance.
+			string[] instanceExtensions = Core10 ? core10InstanceExtensions : new string[0];
+			HashSet<string> loaderExtensions = Core10 ? Vk.InstanceExtensions() : null;
+			foreach (string extension in instanceExtensions)
+			{
+				if (!loaderExtensions.Contains(extension))
+				{
+					return "the Vulkan loader has no " + extension;
+				}
+			}
+
+			// The instance: Vulkan 1.3, or 1.0 with the extensions the interop needs.
 			IntPtr name = Marshal.StringToHGlobalAnsi("OpenBVE (OBNS)");
+			IntPtr[] instanceNames = new IntPtr[instanceExtensions.Length];
 			try
 			{
+				for (int i = 0; i < instanceNames.Length; i++)
+				{
+					instanceNames[i] = Marshal.StringToHGlobalAnsi(instanceExtensions[i]);
+				}
+
 				Vk.ApplicationInfo application = new Vk.ApplicationInfo
 				{
 					SType = Vk.StructureTypeApplicationInfo,
 					PApplicationName = (byte*)name,
 					PEngineName = (byte*)name,
-					ApiVersion = Vk.MakeVersion(1, 3, 0)
+					ApiVersion = Core10 ? Vk.MakeVersion(1, 0, 0) : Vk.MakeVersion(1, 3, 0)
 				};
-				Vk.InstanceCreateInfo instanceInfo = new Vk.InstanceCreateInfo
+				fixed (IntPtr* names = instanceNames)
 				{
-					SType = Vk.StructureTypeInstanceCreateInfo,
-					PApplicationInfo = &application
-				};
-				Vk.Check(Vk.vkCreateInstance(&instanceInfo, null, out IntPtr instance), "vkCreateInstance");
-				Instance = instance;
+					Vk.InstanceCreateInfo instanceInfo = new Vk.InstanceCreateInfo
+					{
+						SType = Vk.StructureTypeInstanceCreateInfo,
+						PApplicationInfo = &application,
+						EnabledExtensionCount = (uint)instanceNames.Length,
+						PpEnabledExtensionNames = (byte**)names
+					};
+					Vk.Check(Vk.vkCreateInstance(&instanceInfo, null, out IntPtr instance), "vkCreateInstance");
+					Instance = instance;
+				}
 			}
 			finally
 			{
 				Marshal.FreeHGlobal(name);
+				foreach (IntPtr instanceName in instanceNames)
+				{
+					Marshal.FreeHGlobal(instanceName);
+				}
+			}
+
+			// The device's UUID: vkGetPhysicalDeviceProperties2 (1.1), or its KHR form on the 1.0 tier.
+			Vk.GetPhysicalDeviceProperties2KHR properties2KHR = null;
+			if (Core10)
+			{
+				properties2KHR = Vk.InstanceFunction<Vk.GetPhysicalDeviceProperties2KHR>(Instance, "vkGetPhysicalDeviceProperties2KHR");
+				if (properties2KHR == null)
+				{
+					return "the Vulkan loader has no vkGetPhysicalDeviceProperties2KHR";
+				}
 			}
 
 			// The physical device OpenGL is on: the same device UUID.
@@ -214,7 +304,15 @@ namespace OpenBve.Graphics.Vulkan
 			{
 				Vk.PhysicalDeviceIDProperties id = new Vk.PhysicalDeviceIDProperties { SType = Vk.StructureTypePhysicalDeviceIdProperties };
 				Vk.PhysicalDeviceProperties2 properties = new Vk.PhysicalDeviceProperties2 { SType = Vk.StructureTypePhysicalDeviceProperties2, PNext = &id };
-				Vk.vkGetPhysicalDeviceProperties2(devices[i], &properties);
+				if (Core10)
+				{
+					properties2KHR(devices[i], &properties);
+				}
+				else
+				{
+					Vk.vkGetPhysicalDeviceProperties2(devices[i], &properties);
+				}
+
 				string deviceName = Marshal.PtrToStringAnsi((IntPtr)properties.Properties.DeviceName);
 				seen.Add(deviceName);
 				// Never a CPU device (llvmpipe), whatever its UUID: OpenGL is not drawing there.
@@ -236,7 +334,7 @@ namespace OpenBve.Graphics.Vulkan
 					sampledImagesPerSet = *(uint*)(properties.Properties.LimitsAndSparseProperties + 120);
 					// maxPerStageResources (92 into the limits).
 					resourcesPerStage = *(uint*)(properties.Properties.LimitsAndSparseProperties + 96);
-					if (properties.Properties.ApiVersion < Vk.MakeVersion(1, 3, 0))
+					if (!Core10 && properties.Properties.ApiVersion < Vk.MakeVersion(1, 3, 0))
 					{
 						return deviceName + " has Vulkan " + VersionText(properties.Properties.ApiVersion) + "; 1.3 is needed";
 					}
@@ -251,8 +349,15 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			// Extensions.
+			string[] deviceExtensions = Core10 ? new string[requiredExtensions.Length + core10Extensions.Length] : requiredExtensions;
+			if (Core10)
+			{
+				requiredExtensions.CopyTo(deviceExtensions, 0);
+				core10Extensions.CopyTo(deviceExtensions, requiredExtensions.Length);
+			}
+
 			HashSet<string> available = DeviceExtensions(PhysicalDevice);
-			foreach (string extension in requiredExtensions)
+			foreach (string extension in deviceExtensions)
 			{
 				if (!available.Contains(extension))
 				{
@@ -260,12 +365,21 @@ namespace OpenBve.Graphics.Vulkan
 				}
 			}
 
-			// Features: what the renderer uses, if the device has it.
+			// Features: what the renderer uses, if the device has it (the 1.0 tier: VkPhysicalDeviceFeatures alone).
 			Vk.PhysicalDeviceVulkan13Features features13 = new Vk.PhysicalDeviceVulkan13Features { SType = Vk.StructureTypePhysicalDeviceVulkan13Features };
 			Vk.PhysicalDeviceVulkan12Features features12 = new Vk.PhysicalDeviceVulkan12Features { SType = Vk.StructureTypePhysicalDeviceVulkan12Features, PNext = &features13 };
 			Vk.PhysicalDeviceFeatures2 features = new Vk.PhysicalDeviceFeatures2 { SType = Vk.StructureTypePhysicalDeviceFeatures2, PNext = &features12 };
-			Vk.vkGetPhysicalDeviceFeatures2(PhysicalDevice, &features);
-			if (features12.Features[Vk.PhysicalDeviceVulkan12Features.ScalarBlockLayout] == 0)
+			if (Core10)
+			{
+				Vk.vkGetPhysicalDeviceFeatures(PhysicalDevice, features.Features);
+			}
+			else
+			{
+				Vk.vkGetPhysicalDeviceFeatures2(PhysicalDevice, &features);
+			}
+
+			// The 1.2/1.3 path's own needs (the 1.0 tier's textures are in pages, its draws direct where they must be).
+			if (!Core10 && features12.Features[Vk.PhysicalDeviceVulkan12Features.ScalarBlockLayout] == 0)
 			{
 				return "the device lacks scalarBlockLayout";
 			}
@@ -281,10 +395,16 @@ namespace OpenBve.Graphics.Vulkan
 			};
 			string pagedAsked = Environment.GetEnvironmentVariable("OBNS_VULKAN_PAGED");
 			int.TryParse(pagedAsked, out int pageAsked);
-			Bindless = pageAsked <= 0;
+			Bindless = pageAsked <= 0 && !Core10;
 			foreach (int feature in bindless)
 			{
 				Bindless &= features12.Features[feature] != 0;
+			}
+
+			// Textures in pages only on the 1.0 tier, unless asked for on the 1.2/1.3 path (OBNS_VULKAN_TIER=1.3 and OBNS_VULKAN_PAGED).
+			if (!Core10 && !Bindless && Environment.GetEnvironmentVariable("OBNS_VULKAN_TIER") != "1.3")
+			{
+				return "the device has no descriptor indexing";
 			}
 
 			int[] needed12 = Bindless ? new int[bindless.Length + 1] : new[] { Vk.PhysicalDeviceVulkan12Features.ScalarBlockLayout };
@@ -318,8 +438,8 @@ namespace OpenBve.Graphics.Vulkan
 				Description += ", textures in pages of " + TexturePageSize + " (the device: " + perStage + " sampled images and " + resourcesPerStage + " resources a stage)";
 			}
 
-			if (features13.Features[Vk.PhysicalDeviceVulkan13Features.DynamicRendering] == 0 || features13.Features[Vk.PhysicalDeviceVulkan13Features.Synchronization2] == 0 ||
-			    features13.Features[Vk.PhysicalDeviceVulkan13Features.ShaderDemoteToHelperInvocation] == 0)
+			if (!Core10 && (features13.Features[Vk.PhysicalDeviceVulkan13Features.DynamicRendering] == 0 || features13.Features[Vk.PhysicalDeviceVulkan13Features.Synchronization2] == 0 ||
+			    features13.Features[Vk.PhysicalDeviceVulkan13Features.ShaderDemoteToHelperInvocation] == 0))
 			{
 				return "the device lacks dynamic rendering";
 			}
@@ -339,15 +459,19 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.PhysicalDeviceFeatures2 enable = new Vk.PhysicalDeviceFeatures2 { SType = Vk.StructureTypePhysicalDeviceFeatures2, PNext = &enable12 };
 			// VkPhysicalDeviceFeatures: indirect draws of many commands with their own first instance (9, 10), which the
 			// renderer needs, and samplerAnisotropy (19) when the device has it.
-			const int multiDrawIndirect = 9, drawIndirectFirstInstance = 10, samplerAnisotropy = 19;
-			if (features.Features[multiDrawIndirect] == 0 || features.Features[drawIndirectFirstInstance] == 0)
+			const int multiDrawIndirect = 9, drawIndirectFirstInstance = 10, samplerAnisotropy = 19, imageArrayDynamicIndexing = 34;
+			bool indirect = features.Features[multiDrawIndirect] != 0 && features.Features[drawIndirectFirstInstance] != 0;
+			if (!Core10 && !indirect)
 			{
 				return "the device lacks multiDrawIndirect";
 			}
 
-			enable.Features[multiDrawIndirect] = 1;
-			enable.Features[drawIndirectFirstInstance] = 1;
+			// The 1.0 tier draws each draw directly where the device cannot draw runs of them indirectly.
+			DirectDraws = !indirect;
+			enable.Features[multiDrawIndirect] = indirect ? 1u : 0u;
+			enable.Features[drawIndirectFirstInstance] = indirect ? 1u : 0u;
 			enable.Features[samplerAnisotropy] = features.Features[samplerAnisotropy];
+			enable.Features[imageArrayDynamicIndexing] = Bindless ? 0u : 1u;
 
 			// A graphics queue.
 			uint familyCount = 0;
@@ -379,12 +503,12 @@ namespace OpenBve.Graphics.Vulkan
 				QueueCount = 1,
 				PQueuePriorities = &priority
 			};
-			IntPtr[] extensionNames = new IntPtr[requiredExtensions.Length];
+			IntPtr[] extensionNames = new IntPtr[deviceExtensions.Length];
 			try
 			{
 				for (int i = 0; i < extensionNames.Length; i++)
 				{
-					extensionNames[i] = Marshal.StringToHGlobalAnsi(requiredExtensions[i]);
+					extensionNames[i] = Marshal.StringToHGlobalAnsi(deviceExtensions[i]);
 				}
 
 				fixed (IntPtr* names = extensionNames)
@@ -392,7 +516,9 @@ namespace OpenBve.Graphics.Vulkan
 					Vk.DeviceCreateInfo deviceInfo = new Vk.DeviceCreateInfo
 					{
 						SType = Vk.StructureTypeDeviceCreateInfo,
-						PNext = &enable,
+						// The 1.0 tier: VkPhysicalDeviceFeatures (pEnabledFeatures) alone, no 1.1+ structures.
+						PNext = Core10 ? null : &enable,
+						PEnabledFeatures = Core10 ? enable.Features : null,
 						QueueCreateInfoCount = 1,
 						PQueueCreateInfos = &queueInfo,
 						EnabledExtensionCount = (uint)extensionNames.Length,

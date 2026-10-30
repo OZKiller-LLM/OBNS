@@ -54,7 +54,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>A run of draws [run, next) of a list whose indirect commands start at first: one indirect draw, or each its own.</summary>
 		private void DrawRun(IntPtr commandBuffer, int slot, DrawCommand[] list, int first, int run, int next)
 		{
-			if (directDraws)
+			if (directDraws || device.DirectDraws)
 			{
 				for (int i = run; i < next; i++)
 				{
@@ -85,11 +85,28 @@ namespace OpenBve.Graphics.Vulkan
 			WriteSamplers();
 			Shadows = new VulkanShadows(device);
 			WriteShadowMaps();
+			if (device.Core10)
+			{
+				// The core Vulkan 1.0 tier: render passes in place of dynamic rendering (the world's and the cab's alike but for
+				// keeping the depth, so their pipelines are the same), and the shaders built for Vulkan 1.0 (texture pages).
+				WorldRenderPass = Vk.CreateRenderPass(device.Device, SharedTarget.ColorFormat, SharedTarget.DepthFormat, true);
+				CabRenderPass = Vk.CreateRenderPass(device.Device, SharedTarget.ColorFormat, SharedTarget.DepthFormat, false);
+				Shadows.RenderPass = Vk.CreateRenderPass(device.Device, 0, VulkanShadows.Format, true);
+				vertexModule = ShaderModule("world.vk10.vert.spv");
+				fragmentModule = ShaderModule("world.vk10.frag.spv");
+				shadowVertexModule = ShaderModule("shadow.vk10.vert.spv");
+				shadowFragmentModule = ShaderModule("shadow.vk10.frag.spv");
+				return;
+			}
+
 			vertexModule = ShaderModule("world.vert.spv");
 			fragmentModule = ShaderModule(pages == null ? "world.frag.spv" : "world.paged.frag.spv");
 			shadowVertexModule = ShaderModule("shadow.vert.spv");
 			shadowFragmentModule = ShaderModule(pages == null ? "shadow.frag.spv" : "shadow.paged.frag.spv");
 		}
+
+		/// <summary>The core Vulkan 1.0 tier's render passes for the world and cab layers (0 on the 1.2/1.3 path).</summary>
+		internal ulong WorldRenderPass, CabRenderPass;
 
 		// --- set-up ---
 
@@ -307,7 +324,8 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.GraphicsPipelineCreateInfo info = new Vk.GraphicsPipelineCreateInfo
 				{
 					SType = Vk.StructureTypeGraphicsPipelineCreateInfo,
-					PNext = &rendering,
+					// The 1.0 tier: the shadow render pass in place of dynamic rendering's formats.
+					PNext = device.Core10 ? null : &rendering,
 					StageCount = 2,
 					PStages = stages,
 					PVertexInputState = &vertexInput,
@@ -319,6 +337,7 @@ namespace OpenBve.Graphics.Vulkan
 					PColorBlendState = &colorBlend,
 					PDynamicState = &dynamic,
 					Layout = pipelineLayout,
+					RenderPass = Shadows.RenderPass,
 					BasePipelineIndex = -1
 				};
 				Vk.Check(Vk.vkCreateGraphicsPipelines(device.Device, 0, 1, &info, null, &pipeline), "vkCreateGraphicsPipelines (shadows)");
@@ -455,7 +474,8 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.GraphicsPipelineCreateInfo info = new Vk.GraphicsPipelineCreateInfo
 				{
 					SType = Vk.StructureTypeGraphicsPipelineCreateInfo,
-					PNext = &rendering,
+					// The 1.0 tier: the world's render pass (the cab's is compatible) in place of dynamic rendering's formats.
+					PNext = device.Core10 ? null : &rendering,
 					StageCount = 2,
 					PStages = stages,
 					PVertexInputState = &vertexInput,
@@ -467,6 +487,7 @@ namespace OpenBve.Graphics.Vulkan
 					PColorBlendState = &colorBlend,
 					PDynamicState = &dynamic,
 					Layout = pipelineLayout,
+					RenderPass = WorldRenderPass,
 					BasePipelineIndex = -1
 				};
 				Vk.Check(Vk.vkCreateGraphicsPipelines(device.Device, 0, 1, &info, null, &pipeline), "vkCreateGraphicsPipelines");
@@ -641,7 +662,15 @@ namespace OpenBve.Graphics.Vulkan
 					LayerCount = 1,
 					PDepthAttachment = &depth
 				};
-				Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+				if (device.Core10)
+				{
+					Vk.BeginRenderPass(commandBuffer, Shadows.RenderPass, Shadows.Framebuffer(cascade), size, size, null);
+				}
+				else
+				{
+					Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+				}
+
 				if (cascade < shadowCascades && shadowCount > 0)
 				{
 					Vk.Viewport viewport = new Vk.Viewport { Width = size, Height = size, MaxDepth = 1.0f };
@@ -693,7 +722,14 @@ namespace OpenBve.Graphics.Vulkan
 					}
 				}
 
-				Vk.vkCmdEndRendering(commandBuffer);
+				if (device.Core10)
+				{
+					Vk.vkCmdEndRenderPass(commandBuffer);
+				}
+				else
+				{
+					Vk.vkCmdEndRendering(commandBuffer);
+				}
 			}
 
 			Shadows.EndWriting(commandBuffer);
@@ -780,6 +816,9 @@ namespace OpenBve.Graphics.Vulkan
 			if (shadowVertexModule != 0) Vk.vkDestroyShaderModule(device.Device, shadowVertexModule, null);
 			if (shadowFragmentModule != 0) Vk.vkDestroyShaderModule(device.Device, shadowFragmentModule, null);
 			Shadows?.Dispose();
+			if (Shadows != null && Shadows.RenderPass != 0) Vk.vkDestroyRenderPass(device.Device, Shadows.RenderPass, null);
+			if (WorldRenderPass != 0) Vk.vkDestroyRenderPass(device.Device, WorldRenderPass, null);
+			if (CabRenderPass != 0) Vk.vkDestroyRenderPass(device.Device, CabRenderPass, null);
 			if (pipelineLayout != 0) Vk.vkDestroyPipelineLayout(device.Device, pipelineLayout, null);
 			if (setLayout != 0) Vk.vkDestroyDescriptorSetLayout(device.Device, setLayout, null);
 			pages?.Dispose();

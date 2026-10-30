@@ -3,6 +3,7 @@
 // at most 0.5, or its material casts none.
 // Compiled with: glslang -V --target-env vulkan1.3 -o shadow.frag.spv shadow.frag
 // and the paged variant: glslang -V --target-env vulkan1.3 -DOBNS_PAGED -o shadow.paged.frag.spv shadow.frag
+// and the core Vulkan 1.0 tier's: glslang -V --target-env vulkan1.0 -DOBNS_PAGED -o shadow.vk10.frag.spv shadow.frag
 #version 450
 #ifndef OBNS_PAGED
 #extension GL_EXT_nonuniform_qualifier : require

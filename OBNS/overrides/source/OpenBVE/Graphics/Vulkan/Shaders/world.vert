@@ -2,6 +2,7 @@
 // BSD-2-Clause, Christopher Lees, S520, Aditiya Afrizal, The OpenBVE Project), its uniforms read from the frame's
 // buffers by the draw's index (gl_InstanceIndex, the indirect draw's firstInstance).
 // Compiled with: glslang -V --target-env vulkan1.3 -o world.vert.spv world.vert
+// and the core Vulkan 1.0 tier's: glslang -V --target-env vulkan1.0 -o world.vk10.vert.spv world.vert
 #version 450
 
 struct Frame

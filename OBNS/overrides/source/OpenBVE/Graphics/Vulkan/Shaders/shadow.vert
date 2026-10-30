@@ -2,6 +2,7 @@
 // BSD-2-Clause, Aditiya Afrizal, The OpenBVE Project) - a caster in the cascade's light space - with the world
 // layer's records: the draw's object, its animation matrices and texture matrix.
 // Compiled with: glslang -V --target-env vulkan1.3 -o shadow.vert.spv shadow.vert
+// and the core Vulkan 1.0 tier's: glslang -V --target-env vulkan1.0 -o shadow.vk10.vert.spv shadow.vert
 #version 450
 
 struct Frame

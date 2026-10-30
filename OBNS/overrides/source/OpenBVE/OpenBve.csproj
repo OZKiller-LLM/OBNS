@@ -228,6 +228,7 @@
     <Compile Include="Graphics\Vulkan\VulkanScene.cs" />
     <Compile Include="Graphics\Vulkan\VulkanShadows.cs" />
     <Compile Include="Graphics\Vulkan\Vk.Drawing.cs" />
+    <Compile Include="Graphics\Vulkan\Vk.Core10.cs" />
     <!-- OBNS: the world layer drawn by Direct3D 11 (OBNS/DIRECT3D.md). -->
     <Compile Include="Graphics\Direct3D11\Dx.cs" />
     <Compile Include="Graphics\Direct3D11\D3D11Device.cs" />
@@ -281,6 +282,18 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Graphics\Vulkan\Shaders\shadow.paged.frag.spv">
       <LogicalName>OBNS.Vulkan.shadow.paged.frag.spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.vk10.vert.spv">
+      <LogicalName>OBNS.Vulkan.world.vk10.vert.spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.vk10.frag.spv">
+      <LogicalName>OBNS.Vulkan.world.vk10.frag.spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\shadow.vk10.vert.spv">
+      <LogicalName>OBNS.Vulkan.shadow.vk10.vert.spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\shadow.vk10.frag.spv">
+      <LogicalName>OBNS.Vulkan.shadow.vk10.frag.spv</LogicalName>
     </EmbeddedResource>
     <Compile Include="Graphics\Renderers\Events.cs" />
     <Compile Include="Graphics\Renderers\Overlays.Lamp.cs" />

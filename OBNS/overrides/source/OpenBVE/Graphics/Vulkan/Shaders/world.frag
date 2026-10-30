@@ -3,6 +3,7 @@
 // buffers; its shadow maps are one array, a layer per cascade. Output alpha is coverage for the composite: opaque pipelines write 1.
 // Compiled with: glslang -V --target-env vulkan1.3 -o world.frag.spv world.frag
 // and the paged variant: glslang -V --target-env vulkan1.3 -DOBNS_PAGED -o world.paged.frag.spv world.frag
+// and the core Vulkan 1.0 tier's: glslang -V --target-env vulkan1.0 -DOBNS_PAGED -o world.vk10.frag.spv world.frag
 #version 450
 #ifndef OBNS_PAGED
 #extension GL_EXT_nonuniform_qualifier : require

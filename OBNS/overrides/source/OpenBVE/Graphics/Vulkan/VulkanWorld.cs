@@ -256,6 +256,12 @@ namespace OpenBve.Graphics.Vulkan
 
 			ReleaseTarget();
 			target = new SharedTarget(device, (uint)width, (uint)height);
+			if (device.Core10)
+			{
+				// The core Vulkan 1.0 tier's framebuffers of the images, for the world's and the cab's render passes.
+				worldFramebuffer = Vk.CreateFramebuffer(device.Device, Scene.WorldRenderPass, target.ColorView, target.DepthView, target.Width, target.Height);
+				cabFramebuffer = Vk.CreateFramebuffer(device.Device, Scene.CabRenderPass, target.CabColorView, target.CabDepthView, target.Width, target.Height);
+			}
 
 			glColorMemory = ImportMemory(target.ColorHandle, target.ColorSize);
 			glDepthMemory = ImportMemory(target.DepthHandle, target.DepthSize);
@@ -648,26 +654,26 @@ namespace OpenBve.Graphics.Vulkan
 			Scene.Upload(slot);
 			// The shadow maps first (cleared only, with shadows off), then the world layer that samples them.
 			Scene.RecordShadows(commandBuffer, slot);
-			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			BeginLayer(commandBuffer, &renderingInfo, Scene.WorldRenderPass, worldFramebuffer, color.ClearValue);
 			if (!Scene.Empty(VulkanScene.WorldLayerIndex))
 			{
 				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.WorldLayerIndex);
 			}
 
-			Vk.vkCmdEndRendering(commandBuffer);
+			EndLayer(commandBuffer);
 
 			// The cab layer, in its own image (laid over after OpenGL's particles, as upstream draws it), its depth its own.
 			color.ImageView = target.CabColorView;
 			color.ClearValue = new Vk.ClearValue();
 			depth.ImageView = target.CabDepthView;
 			depth.StoreOp = Vk.AttachmentStoreOpDontCare;
-			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			BeginLayer(commandBuffer, &renderingInfo, Scene.CabRenderPass, cabFramebuffer, color.ClearValue);
 			if (!Scene.Empty(VulkanScene.CabLayer))
 			{
 				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.CabLayer);
 			}
 
-			Vk.vkCmdEndRendering(commandBuffer);
+			EndLayer(commandBuffer);
 
 			target.ReleaseToGL(commandBuffer);
 			if (queryPool != 0)
@@ -684,6 +690,31 @@ namespace OpenBve.Graphics.Vulkan
 		/// waiting for each (glFinish, the frame's fence) rather than by the semaphores they share.
 		/// </summary>
 		private static readonly bool cpuSync = Environment.GetEnvironmentVariable("OBNS_VULKAN_CPUSYNC") == "1";
+
+		/// <summary>Begins a layer's drawing: its render pass on the core Vulkan 1.0 tier, dynamic rendering on the 1.2/1.3 path.</summary>
+		private void BeginLayer(IntPtr commandBuffer, Vk.RenderingInfo* renderingInfo, ulong renderPass, ulong framebuffer, Vk.ClearValue clear)
+		{
+			if (device.Core10)
+			{
+				Vk.BeginRenderPass(commandBuffer, renderPass, framebuffer, target.Width, target.Height, clear);
+			}
+			else
+			{
+				Vk.vkCmdBeginRendering(commandBuffer, renderingInfo);
+			}
+		}
+
+		private void EndLayer(IntPtr commandBuffer)
+		{
+			if (device.Core10)
+			{
+				Vk.vkCmdEndRenderPass(commandBuffer);
+			}
+			else
+			{
+				Vk.vkCmdEndRendering(commandBuffer);
+			}
+		}
 
 		private void Submit(IntPtr commandBuffer, ulong fence)
 		{
@@ -720,6 +751,9 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Lays the world image over the framebuffer and writes its depth.</summary>
 		private void Composite() => composite.World(glColorTexture, glDepthTexture);
 
+		/// <summary>The core Vulkan 1.0 tier's framebuffers of the world's and the cab's images (0 on the 1.2/1.3 path).</summary>
+		private ulong worldFramebuffer, cabFramebuffer;
+
 		private void ReleaseTarget()
 		{
 			if (target == null)
@@ -737,6 +771,11 @@ namespace OpenBve.Graphics.Vulkan
 			GL.Ext.DeleteMemoryObjects(1, ref glCabColorMemory);
 			GL.Ext.DeleteSemaphores(1, ref glDoneSemaphore);
 			GL.Ext.DeleteSemaphores(1, ref glVulkanDoneSemaphore);
+			// (SharedTarget waits for the device too: the framebuffers are not in use.)
+			Vk.vkDeviceWaitIdle(device.Device);
+			if (worldFramebuffer != 0) Vk.vkDestroyFramebuffer(device.Device, worldFramebuffer, null);
+			if (cabFramebuffer != 0) Vk.vkDestroyFramebuffer(device.Device, cabFramebuffer, null);
+			worldFramebuffer = cabFramebuffer = 0;
 			target.Dispose();
 			target = null;
 		}
