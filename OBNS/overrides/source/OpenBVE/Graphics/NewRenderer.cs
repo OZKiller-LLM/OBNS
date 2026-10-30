@@ -146,7 +146,7 @@ namespace OpenBve.Graphics
 
 			// OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md), unless the debug views are on (not drawn by it):
 			// its shadows are drawn by Vulkan too, so upstream's OpenGL shadow pass is not needed then.
-			bool vulkanWorld = Vulkan.VulkanWorld.Enabled && !OptionWireFrame && !OptionNormals;
+			bool vulkanWorld = WorldLayer.Enabled && !OptionWireFrame && !OptionNormals;
 			if (!vulkanWorld)
 			{
 				PerformCSMShadowPass();
@@ -421,10 +421,10 @@ namespace OpenBve.Graphics
 
             CurrentViewMatrix = Matrix4D.LookAt(Vector3.Zero, new Vector3(Camera.AbsoluteDirection.X, Camera.AbsoluteDirection.Y, -Camera.AbsoluteDirection.Z), new Vector3(Camera.AbsoluteUp.X, Camera.AbsoluteUp.Y, -Camera.AbsoluteUp.Z));
 			
-			if (vulkanWorld && Vulkan.VulkanWorld.Instance.DrawsCab)
+			if (vulkanWorld && WorldLayer.Instance.DrawsCab)
 			{
 				// OBNS: the cab layer Vulkan has drawn with the world layer, laid over the frame (OBNS/VULKAN.md).
-				Vulkan.VulkanWorld.Instance.CompositeCab();
+				WorldLayer.Instance.CompositeCab();
 				DefaultShader.Deactivate();
 				DefaultShader.Activate();
 				lastVAO = -1;
@@ -560,7 +560,7 @@ namespace OpenBve.Graphics
 			SceneParts.Add(worldStart - sceneStart, worldEnd - worldStart, System.Diagnostics.Stopwatch.GetTimestamp() - worldEnd);
 			GpuStats.Mark(GpuStats.Point.FrameEnd);
 			SceneLaps.Lap(6);
-			GpuStats.Cpu(clearTicks, backgroundTicks, vulkanWorld ? Vulkan.VulkanWorld.Instance.LastJoinTicks : 0);
+			GpuStats.Cpu(clearTicks, backgroundTicks, vulkanWorld ? WorldLayer.Instance.LastJoinTicks : 0);
 		}
 
 		/// <summary>OBNS: RenderScene's time in finer parts (OBNS_GPUSTATS), for the log.</summary>
@@ -670,7 +670,7 @@ namespace OpenBve.Graphics
 		/// OBNS: the Vulkan world layer's shadows this frame, as upstream's shadow pass and Shadows.Bind would make them
 		/// (LibRender2/Shadows/Shadows.cs): the same cascades from the same options, the light and the scenery's camera.
 		/// </summary>
-		private void SetVulkanShadows(Vulkan.VulkanScene scene)
+		private void SetVulkanShadows(IWorldScene scene)
 		{
 			BaseOptions options = Interface.CurrentOptions;
 			Vector3 lightDir = new Vector3(-Lighting.OptionLightPosition.X, -Lighting.OptionLightPosition.Y, Lighting.OptionLightPosition.Z);
@@ -738,14 +738,14 @@ namespace OpenBve.Graphics
 			batcher = batcher ?? new StaticBatcher(this);
 			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
 
-			Vulkan.VulkanScene scene = Vulkan.VulkanWorld.Instance.Scene;
+			IWorldScene scene = WorldLayer.Instance.Scene;
 			scene.Begin(this);
 			SetVulkanShadows(scene);
 			vulkanGathering = true;
 			try
 			{
 				// Opaque: no blending, alpha above 0.9 (ResetOpenGlState), any order.
-				scene.Pass(Vulkan.VulkanScene.Blend.None, Vulkan.VulkanScene.AlphaGreater, 0.9f, true, false);
+				scene.Pass(WorldBlend.None, WorldLayer.AlphaGreater, 0.9f, true, false);
 				foreach (FaceState face in opaqueFaces)
 				{
 					scene.Face(face.Object, face.Face);
@@ -754,7 +754,7 @@ namespace OpenBve.Graphics
 				batcher.DrawOpaque();
 				if (Interface.CurrentOptions.TransparencyMode == TransparencyMode.Performance)
 				{
-					scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaGreater, 0.0f, false, true);
+					scene.Pass(WorldBlend.Normal, WorldLayer.AlphaGreater, 0.0f, false, true);
 					foreach (FaceState face in alphaFaces)
 					{
 						scene.Face(face.Object, face.Face);
@@ -762,7 +762,7 @@ namespace OpenBve.Graphics
 				}
 				else
 				{
-					scene.Pass(Vulkan.VulkanScene.Blend.None, Vulkan.VulkanScene.AlphaEqual, 1.0f, true, false);
+					scene.Pass(WorldBlend.None, WorldLayer.AlphaEqual, 1.0f, true, false);
 					foreach (FaceState face in alphaFaces)
 					{
 						MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
@@ -773,7 +773,7 @@ namespace OpenBve.Graphics
 					}
 
 					batcher.DrawAlpha();
-					scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaLess, 1.0f, false, true);
+					scene.Pass(WorldBlend.Normal, WorldLayer.AlphaLess, 1.0f, false, true);
 					batcher.DrawAlpha();
 					bool additive = false;
 					foreach (FaceState face in alphaFaces)
@@ -782,13 +782,13 @@ namespace OpenBve.Graphics
 						{
 							if (!additive)
 							{
-								scene.SetAlphaFunction(Vulkan.VulkanScene.AlphaNever, 0.0f);
+								scene.SetAlphaFunction(WorldLayer.AlphaNever, 0.0f);
 								additive = true;
 							}
 						}
 						else if (additive)
 						{
-							scene.SetAlphaFunction(Vulkan.VulkanScene.AlphaLess, 1.0f);
+							scene.SetAlphaFunction(WorldLayer.AlphaLess, 1.0f);
 							additive = false;
 						}
 
@@ -805,7 +805,7 @@ namespace OpenBve.Graphics
 
 			int[] viewport = new int[4];
 			GL.GetInteger(GetPName.Viewport, viewport);
-			Vulkan.VulkanWorld.Instance.Start(viewport[0], viewport[1], viewport[2], viewport[3]);
+			WorldLayer.Instance.Start(viewport[0], viewport[1], viewport[2], viewport[3]);
 			vulkanGatherTicks = System.Diagnostics.Stopwatch.GetTimestamp() - gatherStart;
 		}
 
@@ -814,7 +814,7 @@ namespace OpenBve.Graphics
 		/// RenderScene, after the particles), with its projection, view and light: a 3D cab with the depth cleared and lit
 		/// light grey, a 2D panel blended in order without depth or light.
 		/// </summary>
-		private void GatherVulkanCab(Vulkan.VulkanScene scene, List<FaceState> overlayOpaqueFaces, List<FaceState> overlayAlphaFaces)
+		private void GatherVulkanCab(IWorldScene scene, List<FaceState> overlayOpaqueFaces, List<FaceState> overlayAlphaFaces)
 		{
 			if (overlayOpaqueFaces.Count == 0 && overlayAlphaFaces.Count == 0)
 			{
@@ -827,7 +827,7 @@ namespace OpenBve.Graphics
 			if (Camera.CurrentRestriction == CameraRestrictionMode.NotAvailable || Camera.CurrentRestriction == CameraRestrictionMode.Restricted3D)
 			{
 				scene.BeginCab(projection, view, true, new Vector3(Lighting.OptionLightPosition.X, Lighting.OptionLightPosition.Y, -Lighting.OptionLightPosition.Z));
-				scene.Pass(Vulkan.VulkanScene.Blend.None, Vulkan.VulkanScene.AlphaGreater, 0.9f, true, false);
+				scene.Pass(WorldBlend.None, WorldLayer.AlphaGreater, 0.9f, true, false);
 				foreach (FaceState face in overlayOpaqueFaces)
 				{
 					scene.Face(face.Object, face.Face);
@@ -835,7 +835,7 @@ namespace OpenBve.Graphics
 
 				if (Interface.CurrentOptions.TransparencyMode == TransparencyMode.Performance)
 				{
-					scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaGreater, 0.0f, false, true);
+					scene.Pass(WorldBlend.Normal, WorldLayer.AlphaGreater, 0.0f, false, true);
 					foreach (FaceState face in overlayAlphaFaces)
 					{
 						scene.Face(face.Object, face.Face);
@@ -843,7 +843,7 @@ namespace OpenBve.Graphics
 				}
 				else
 				{
-					scene.Pass(Vulkan.VulkanScene.Blend.None, Vulkan.VulkanScene.AlphaEqual, 1.0f, true, false);
+					scene.Pass(WorldBlend.None, WorldLayer.AlphaEqual, 1.0f, true, false);
 					foreach (FaceState face in overlayAlphaFaces)
 					{
 						MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
@@ -853,7 +853,7 @@ namespace OpenBve.Graphics
 						}
 					}
 
-					scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaLess, 1.0f, false, true);
+					scene.Pass(WorldBlend.Normal, WorldLayer.AlphaLess, 1.0f, false, true);
 					bool additive = false;
 					foreach (FaceState face in overlayAlphaFaces)
 					{
@@ -861,13 +861,13 @@ namespace OpenBve.Graphics
 						{
 							if (!additive)
 							{
-								scene.SetAlphaFunction(Vulkan.VulkanScene.AlphaNever, 0.0f);
+								scene.SetAlphaFunction(WorldLayer.AlphaNever, 0.0f);
 								additive = true;
 							}
 						}
 						else if (additive)
 						{
-							scene.SetAlphaFunction(Vulkan.VulkanScene.AlphaLess, 1.0f);
+							scene.SetAlphaFunction(WorldLayer.AlphaLess, 1.0f);
 							additive = false;
 						}
 
@@ -879,7 +879,7 @@ namespace OpenBve.Graphics
 			{
 				// The 2D panel: blended, in order, no alpha test, no depth, no light.
 				scene.BeginCab(projection, view, false, Vector3.Zero);
-				scene.Pass(Vulkan.VulkanScene.Blend.Normal, Vulkan.VulkanScene.AlphaNever, 0.0f, false, true, false);
+				scene.Pass(WorldBlend.Normal, WorldLayer.AlphaNever, 0.0f, false, true, false);
 				foreach (FaceState face in overlayAlphaFaces)
 				{
 					scene.Face(face.Object, face.Face);
@@ -891,8 +891,8 @@ namespace OpenBve.Graphics
 		private void FinishVulkanWorld()
 		{
 			long finishStart = System.Diagnostics.Stopwatch.GetTimestamp();
-			Vulkan.VulkanWorld.Instance.Finish();
-			Vulkan.VulkanWorld.Instance.Timed(vulkanGatherTicks, System.Diagnostics.Stopwatch.GetTimestamp() - finishStart);
+			WorldLayer.Instance.Finish();
+			WorldLayer.Instance.Timed(vulkanGatherTicks, System.Diagnostics.Stopwatch.GetTimestamp() - finishStart);
 
 			// The composite used its own program, vertex array and textures.
 			DefaultShader.Deactivate();
@@ -954,7 +954,7 @@ namespace OpenBve.Graphics
 			// OBNS: to the Vulkan world layer while it is gathering the frame.
 			if (vulkanGathering)
 			{
-				Vulkan.VulkanWorld.Instance.Scene.Face(state, face);
+				WorldLayer.Instance.Scene.Face(state, face);
 			}
 			else
 			{

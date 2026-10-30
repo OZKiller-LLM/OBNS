@@ -12,10 +12,11 @@ using OpenBveApi.Colors;
 using OpenBveApi.Math;
 using OpenBveApi.Objects;
 using OpenBveApi.Textures;
+using Blend = OpenBve.Graphics.WorldBlend;
 
 namespace OpenBve.Graphics.Vulkan
 {
-	internal sealed unsafe class VulkanScene : IDisposable
+	internal sealed unsafe class VulkanScene : IWorldScene, IDisposable
 	{
 		// --- the shaders' records (std430; see Shaders/world.vert) ---
 
@@ -75,9 +76,7 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		/// <summary>OpenGL's alpha functions as upstream's shader numbers them; Never means none.</summary>
-		internal const int AlphaNever = 512, AlphaLess = 513, AlphaEqual = 514, AlphaGreater = 516;
-
-		internal enum Blend { None = 0, Normal = 1, Additive = 2 }
+		internal const int AlphaNever = Graphics.WorldLayer.AlphaNever, AlphaLess = Graphics.WorldLayer.AlphaLess, AlphaEqual = Graphics.WorldLayer.AlphaEqual, AlphaGreater = Graphics.WorldLayer.AlphaGreater;
 
 		private const int FramesInFlight = 2;
 		private const uint FrameBinding = 0, ObjectBinding = 1, DrawBinding = 2, MatrixBinding = 3, SamplerBinding = 4, ShadowBinding = 5, TextureBinding = 6;
@@ -346,7 +345,7 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		/// <summary>The shadow maps for a resolution and cascade count, made again (with the GPU idle) when they change.</summary>
-		internal void EnsureShadowMaps(int resolution, int cascades)
+		public void EnsureShadowMaps(int resolution, int cascades)
 		{
 			if (!Shadows.Differs(resolution, cascades))
 			{
@@ -603,7 +602,7 @@ namespace OpenBve.Graphics.Vulkan
 		// --- gathering the frame: upstream's passes give their faces (main thread), then Build makes the records ---
 
 		/// <summary>Starts a frame's world layer with upstream's renderer state: camera, lighting and fog.</summary>
-		internal void Begin(BaseRenderer baseRenderer)
+		public void Begin(BaseRenderer baseRenderer)
 		{
 			renderer = baseRenderer;
 			itemCount = 0;
@@ -651,7 +650,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// (the cab's near plane, 50 m far), the view, no fog, and for a 3D cab the light-grey light upstream sets for it.
 		/// The passes given from now are the cab's.
 		/// </summary>
-		internal void BeginCab(Matrix4D projection, Matrix4D view, bool lit, Vector3 lightPosition)
+		public void BeginCab(Matrix4D projection, Matrix4D view, bool lit, Vector3 lightPosition)
 		{
 			currentLayer = CabLayer;
 			cabItemStart = itemCount;
@@ -679,7 +678,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// The world layer's shadows this frame, as upstream binds them to its shader (LibRender2's Shadows.Bind): the
 		/// cascades' light-space matrices and splits, the biases, strength and filter; null for none.
 		/// </summary>
-		internal void SetShadows(CascadedShadowCaster caster, float strength, bool smooth, float filterRadius, float userBias, float normalBiasTexels)
+		public void SetShadows(CascadedShadowCaster caster, float strength, bool smooth, float filterRadius, float userBias, float normalBiasTexels)
 		{
 			FrameData data = frameData[WorldLayer];
 			shadowCascades = 0;
@@ -741,7 +740,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// Starts a pass with upstream's state for it: blending, the alpha function, depth writes, and whether its faces
 		/// must be drawn in the order given (blended faces), or may be grouped (the rest).
 		/// </summary>
-		internal void Pass(Blend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered, bool depthTest = true)
+		public void Pass(Blend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered, bool depthTest = true)
 		{
 			passes.Add(new PassInfo { Layer = currentLayer, Blend = blend, DepthTest = depthTest, DepthWrite = depthWrite, Ordered = ordered });
 			currentAlphaFunction = alphaFunction;
@@ -749,14 +748,14 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		/// <summary>Changes the pass's alpha function (upstream's additive faces have none) without starting a new pass.</summary>
-		internal void SetAlphaFunction(int alphaFunction, float alphaReference)
+		public void SetAlphaFunction(int alphaFunction, float alphaReference)
 		{
 			currentAlphaFunction = alphaFunction;
 			currentAlphaReference = alphaReference;
 		}
 
 		/// <summary>A face for the pass, drawn as upstream's RenderFace would draw it.</summary>
-		internal void Face(ObjectState state, MeshFace face)
+		public void Face(ObjectState state, MeshFace face)
 		{
 			if (itemCount == items.Length)
 			{

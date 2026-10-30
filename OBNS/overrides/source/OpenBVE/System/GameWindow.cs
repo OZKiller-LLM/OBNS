@@ -470,7 +470,7 @@ namespace OpenBve
 			// OBNS: with OBNS_GL_FILTER=1, sets of GL state that change nothing are skipped (Graphics/GLStateFilter.cs); the context is current here.
 			GLStateFilter.Install();
 			// OBNS: the world layer drawn by Vulkan where it can share images with OpenGL (OBNS/VULKAN.md).
-			OpenBve.Graphics.Vulkan.VulkanWorld.Initialize();
+			OpenBve.Graphics.WorldLayer.Initialize();
 			// OBNS: OBNS_D3D11_TEST=1 checks the Direct3D 11 world layer's device and its images' path to OpenGL (OBNS/DIRECT3D.md).
 			if (Environment.GetEnvironmentVariable("OBNS_D3D11_TEST") == "1")
 			{
@@ -687,9 +687,9 @@ namespace OpenBve
 			{
 				// OBNS: with the Vulkan world layer, the world's textures are loaded in advance by it, not by OpenGL: one
 				// copy of each on the GPU (OBNS/VULKAN.md).
-				if (OpenBve.Graphics.Vulkan.VulkanWorld.Enabled)
+				if (OpenBve.Graphics.WorldLayer.Enabled)
 				{
-					OpenBve.Graphics.Vulkan.VulkanWorld.Instance.Scene.Textures.LoadAll();
+					OpenBve.Graphics.WorldLayer.Instance.LoadAllTextures();
 				}
 				else
 				{
@@ -1084,9 +1084,9 @@ namespace OpenBve
 			Program.Renderer.CurrentInterface = InterfaceType.Normal;
 			// OBNS: with the Vulkan world layer (which draws the cab too), the train's textures are preloaded by it, not
 			// into OpenGL: one copy of each on the GPU (OBNS/VULKAN.md).
-			if (OpenBve.Graphics.Vulkan.VulkanWorld.Enabled)
+			if (OpenBve.Graphics.WorldLayer.Enabled)
 			{
-				OpenBve.Graphics.Vulkan.VulkanWorld.Instance.Scene.Textures.PreloadTrain(TrainManager.PlayerTrain);
+				OpenBve.Graphics.WorldLayer.Instance.PreloadTrain(TrainManager.PlayerTrain);
 			}
 			else
 			{
@@ -1422,7 +1422,7 @@ namespace OpenBve
 					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms ({17}); world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms ({12}), swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}; Vulkan world layer {11}; {13}; {14}; managed heap {15:0} MB, process private {16:0} MB",
 					frames, span / frames, frames * 1000.0 / span, worstFrame * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
 					ms(totals[(int)Part.WorldObjects]), ms(totals[(int)Part.TrainObjects]), ms(totals[(int)Part.Render]), ms(totals[(int)Part.Swap]), ms(totals[(int)Part.Other]),
-					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off", GLFilterSummary(), OpenBve.Graphics.Vulkan.VulkanWorld.Summary, NewRenderer.SceneParts.Take(), GpuStats.Take(), NewRenderer.SceneLaps.Take(),
+					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off", GLFilterSummary(), OpenBve.Graphics.WorldLayer.Summary, NewRenderer.SceneParts.Take(), GpuStats.Take(), NewRenderer.SceneLaps.Take(),
 					GC.GetTotalMemory(false) / 1048576.0, ProcessPrivateMegabytes(), WorstFrame()));
 				Array.Clear(totals, 0, totals.Length);
 				frames = 0;

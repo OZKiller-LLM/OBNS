@@ -15,7 +15,7 @@ namespace OpenBve.Graphics.Vulkan
 	/// side of the exchange (importing the images, the semaphores, laying the image over the background and writing
 	/// its depth). Used on the main thread, with upstream's GL context current.
 	/// </summary>
-	internal sealed unsafe class VulkanWorld : IDisposable
+	internal sealed unsafe class VulkanWorld : IWorldLayer, IDisposable
 	{
 		/// <summary>Whether the world layer is drawn by Vulkan (this session, unless a frame has failed).</summary>
 		internal static bool Enabled => instance != null && !instance.failed;
@@ -31,6 +31,12 @@ namespace OpenBve.Graphics.Vulkan
 
 		/// <summary>The world layer's draws for the frame being drawn.</summary>
 		internal VulkanScene Scene { get; private set; }
+
+		IWorldScene IWorldLayer.Scene => Scene;
+
+		public void LoadAllTextures() => Scene.Textures.LoadAll();
+
+		public void PreloadTrain(global::TrainManager.Trains.TrainBase train) => Scene.Textures.PreloadTrain(train);
 
 		/// <summary>Frames drawn, from 1 (the textures and meshes free what is let go of by it).</summary>
 		private long frameNumber;
@@ -180,7 +186,7 @@ namespace OpenBve.Graphics.Vulkan
 		private long gatherTicks, drawTicks, timedFrames;
 
 		/// <summary>Adds a frame's times: gathering its faces and drawing them.</summary>
-		internal void Timed(long gather, long draw)
+		public void Timed(long gather, long draw)
 		{
 			gatherTicks += gather;
 			drawTicks += draw;
@@ -372,13 +378,13 @@ namespace OpenBve.Graphics.Vulkan
 		private bool cabStarted;
 
 		/// <summary>Whether Vulkan draws the frame's cab layer (it does whenever it draws the world layer).</summary>
-		internal bool DrawsCab => cabStarted;
+		public bool DrawsCab => cabStarted;
 
 		// The frame started and not laid over yet: its slot, what OpenGL handed over with it, and the thread making it.
 		private bool started, failed;
 
 		/// <summary>The main thread's wait for the last frame's thread (OBNS_GPUSTATS).</summary>
-		internal long LastJoinTicks;
+		public long LastJoinTicks { get; private set; }
 
 		// The frames' timestamps (OBNS_GPUSTATS): two a set of commands, start and end.
 		private ulong queryPool;
@@ -393,7 +399,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// done here; OpenGL hands the images over, with what it has written into shared storage; then the frame is made
 		/// and submitted on its own thread, while OpenGL goes on (the background). The viewport is the scene's.
 		/// </summary>
-		internal void Start(int x, int y, int width, int height)
+		public void Start(int x, int y, int width, int height)
 		{
 			started = false;
 			if (width <= 0 || height <= 0 || failed)
@@ -477,7 +483,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// Lays the frame's world layer over what OpenGL has drawn (the background) and writes its depth, for what it
 		/// draws next. OpenGL's wait is queued only once Vulkan's frame is submitted (its signal must be submitted first).
 		/// </summary>
-		internal void Finish()
+		public void Finish()
 		{
 			if (!started)
 			{
@@ -802,7 +808,7 @@ void main()
 		/// Lays the frame's cab layer over the framebuffer, where upstream draws it (after the particles): colour only,
 		/// as nothing after it reads the depth. Leaves upstream's renderer to set its own state again.
 		/// </summary>
-		internal void CompositeCab()
+		public void CompositeCab()
 		{
 			if (!cabStarted)
 			{

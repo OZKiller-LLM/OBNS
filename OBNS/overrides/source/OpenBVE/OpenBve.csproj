@@ -209,6 +209,7 @@
       <SubType>Form</SubType>
     </Compile>
     <!-- OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md). -->
+    <Compile Include="Graphics\WorldLayer.cs" />
     <Compile Include="Graphics\Vulkan\Vk.cs" />
     <Compile Include="Graphics\Vulkan\VulkanDevice.cs" />
     <Compile Include="Graphics\Vulkan\SharedTarget.cs" />

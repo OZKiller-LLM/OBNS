@@ -200,7 +200,7 @@ namespace OpenBve.Graphics.Renderers
 				"",
 				"=renderer",
 				// OBNS: Vulkan's world layer when it draws it.
-				"renderer type: " + OpenBve.Graphics.Vulkan.VulkanWorld.RendererName,
+				"renderer type: " + OpenBve.Graphics.WorldLayer.RendererName,
 				"opaque faces: " + Program.Renderer.VisibleObjects.OpaqueFaces.Count.ToString(Culture),
 				"alpha faces: " + Program.Renderer.VisibleObjects.AlphaFaces.Count.ToString(Culture),
 				"overlay opaque faces: " + Program.Renderer.VisibleObjects.OverlayOpaqueFaces.Count.ToString(Culture),
