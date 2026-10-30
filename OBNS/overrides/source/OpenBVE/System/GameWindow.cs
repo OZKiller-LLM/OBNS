@@ -52,6 +52,8 @@ namespace OpenBve
 		private double TotalTimeElapsedForSectionUpdate;
 		private bool loadComplete;
 		private bool firstFrame;
+		/// <summary>OBNS: whether OBNS_START_VIEW has been seen to (once, after loading).</summary>
+		private bool startViewChosen;
 		private double RenderTimeElapsed;
 		private double RenderRealTimeElapsed;
 		//We need to explicitly specify the default constructor
@@ -288,6 +290,24 @@ namespace OpenBve
 			MainLoop.UpdateControlRepeats(RealTimeElapsed);
 			MainLoop.ProcessKeyboard();
 			MainLoop.UpdateMouse(RealTimeElapsed);
+			// OBNS: OBNS_START_VIEW=exterior starts in the exterior view (F2), as a key would: for comparing renderers from a
+			// camera that does not depend on timing, with no keys sent (they cannot be while the screen is locked).
+			if (simulationSetup && !startViewChosen)
+			{
+				startViewChosen = true;
+				if (Environment.GetEnvironmentVariable("OBNS_START_VIEW") == "exterior")
+				{
+					for (int i = 0; i < Interface.CurrentControls.Length; i++)
+					{
+						if (Interface.CurrentControls[i].Command == Translations.Command.CameraExterior)
+						{
+							Interface.CurrentControls[i].DigitalState = DigitalControlState.Pressed;
+							break;
+						}
+					}
+				}
+			}
+
 			MainLoop.ProcessControls(TimeElapsed);
 			if (Program.Joysticks.AttachedJoysticks.TryGetTypedValue(AbstractRailDriver.Guid, out AbstractRailDriver railDriver))
 			{
