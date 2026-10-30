@@ -127,7 +127,9 @@ Switches, for testing and measuring (environment variables):
 | `OBNS_VULKAN_TINT=1` | Vulkan's image cleared to a faint green (shows where the background is) |
 | `OBNS_VULKAN_TIER=1.0` / `=1.3` | the core Vulkan 1.0 tier, or the 1.2/1.3 path (with `OBNS_VULKAN_PAGED`, textures in pages there), whatever the device has |
 | `OBNS_VULKAN_CPUSYNC=1` | OpenGL and Vulkan ordered by the CPU waiting for each, not by shared semaphores (for finding what a driver fails on) |
+| `OBNS_VULKAN_NOCAB=1` | OpenGL draws the cab layer, as upstream's does (the same) |
 | `OBNS_VULKAN_DIRECT=1` | each draw its own `vkCmdDrawIndexed`, not runs of indirect draws (the same) |
+| `OBNS_START_DELAY=<s>` | waits so long before the first frame (for testing on a machine loading leaves hot) |
 | `OBNS_START_VIEW=exterior` | the exterior view from the start, as F2 would (for comparing renderers without keys) |
 | `OBNS_VULKAN_PAGED=1` / `=N` | textures in pages (as without descriptor indexing) where bindless works too; `=N`: pages of at most N |
 | `OBNS_VULKAN_WHITE=1` | no textures made, all drawn white (for finding what a driver fails on) |

@@ -370,6 +370,14 @@ namespace OpenBve
 					 * Also update the viewing distances in case of jumps etc.
 					 */
 					Program.Renderer.UpdateViewingDistances(Program.CurrentRoute.CurrentBackground.BackgroundImageDistance);
+					// OBNS: OBNS_START_DELAY=<seconds> waits before the first frame, for testing on a machine loading leaves hot.
+					if (int.TryParse(Environment.GetEnvironmentVariable("OBNS_START_DELAY"), out int startDelay) && startDelay > 0)
+					{
+						Program.FileSystem.AppendToLogFile("OBNS waiting " + startDelay + " s before the first frame (OBNS_START_DELAY)");
+						System.Threading.Thread.Sleep(startDelay * 1000);
+						CPreciseTimer.GetElapsedTime();
+					}
+
 					RealTimeElapsed = 0.0;
 					TimeElapsed = 0.0;
 					firstFrame = true;

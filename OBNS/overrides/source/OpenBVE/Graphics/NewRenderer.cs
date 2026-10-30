@@ -809,6 +809,8 @@ namespace OpenBve.Graphics
 			vulkanGatherTicks = System.Diagnostics.Stopwatch.GetTimestamp() - gatherStart;
 		}
 
+		private static readonly bool noVulkanCab = Environment.GetEnvironmentVariable("OBNS_VULKAN_NOCAB") == "1";
+
 		/// <summary>
 		/// OBNS: gives the Vulkan world layer the overlay (cab) layer's faces, in the passes upstream draws them in (in
 		/// RenderScene, after the particles), with its projection, view and light: a 3D cab with the depth cleared and lit
@@ -816,7 +818,8 @@ namespace OpenBve.Graphics
 		/// </summary>
 		private void GatherVulkanCab(IWorldScene scene, List<FaceState> overlayOpaqueFaces, List<FaceState> overlayAlphaFaces)
 		{
-			if (overlayOpaqueFaces.Count == 0 && overlayAlphaFaces.Count == 0)
+			// OBNS_VULKAN_NOCAB=1: OpenGL draws the cab as upstream's does (for finding what a driver fails on).
+			if (noVulkanCab || overlayOpaqueFaces.Count == 0 && overlayAlphaFaces.Count == 0)
 			{
 				return;
 			}
