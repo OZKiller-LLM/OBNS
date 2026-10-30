@@ -226,6 +226,7 @@
     <!-- OBNS: the world layer drawn by Direct3D 11 (OBNS/DIRECT3D.md). -->
     <Compile Include="Graphics\Direct3D11\Dx.cs" />
     <Compile Include="Graphics\Direct3D11\D3D11Device.cs" />
+    <Compile Include="Graphics\Direct3D11\D3D11World.cs" />
     <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.vert.spv">
       <LogicalName>OBNS.Vulkan.world.vert.spv</LogicalName>
     </EmbeddedResource>

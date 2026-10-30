@@ -42,7 +42,8 @@ about 3,000 lines:
 1. The device on OpenGL's GPU and the images' path to OpenGL, checked by `OBNS_D3D11_TEST=1`
    (Direct3D clears an image, OpenGL reads it back). **Done** (5cecf2b): RTX 2060 SUPER, feature level 11.1.
 2. `WorldLayer`, and the composite shared by both layers; the Direct3D 11 frame's images, laid over
-   OpenGL's frame (a tinted clear first).
+   OpenGL's frame (a tinted clear first). **Done** (a4d1ba7, 522f28e, and the layer by `OBNS_D3D11=1`):
+   OpenGL's background with Direct3D's cleared images over it, 94 fps on the Tuen Ma Line.
 3. Meshes and textures split into shared logic and per-API storage; Direct3D 11's.
 4. The scene's records shared; Direct3D 11's recording and HLSL shaders; the cab layer.
 5. Shadows; the options' renderer list (OpenGL, Vulkan, Direct3D 11); measured on the Tuen Ma Line.
@@ -54,4 +55,6 @@ Then Direct3D 12 (closest to Vulkan: the records, and memory shared with OpenGL 
 
 | Variable | Effect |
 | --- | --- |
+| `OBNS_D3D11=1` | the world layer drawn by Direct3D 11 (while it is being built; in place of Vulkan) |
+| `OBNS_D3D11_TINT=0` | its images cleared to nothing (at step 2 they are cleared to a faint green, to show they arrive) |
 | `OBNS_D3D11_TEST=1` | at start, the Direct3D 11 device and its images' path to OpenGL checked and logged |

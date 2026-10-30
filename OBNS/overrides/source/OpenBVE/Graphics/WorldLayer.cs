@@ -1,5 +1,5 @@
 // OBNS: not an upstream file. The world layer drawn by an API of its own (OBNS/VULKAN.md, OBNS/DIRECT3D.md): what the
-// renderer calls, whichever API draws it (Vulkan now; Direct3D 11 next).
+// renderer calls, whichever API draws it (Vulkan; Direct3D 11 being built).
 
 using LibRender2;
 using LibRender2.ShadowMapping;
@@ -73,20 +73,25 @@ namespace OpenBve.Graphics
 		/// <summary>OpenGL's alpha functions, as the faces' alpha tests take them.</summary>
 		internal const int AlphaNever = 512, AlphaLess = 513, AlphaEqual = 514, AlphaGreater = 516;
 
-		internal static IWorldLayer Instance => Vulkan.VulkanWorld.Enabled ? Vulkan.VulkanWorld.Instance : null;
+		internal static IWorldLayer Instance => Vulkan.VulkanWorld.Enabled ? Vulkan.VulkanWorld.Instance : Direct3D11.D3D11World.Enabled ? (IWorldLayer)Direct3D11.D3D11World.Instance : null;
 
 		internal static bool Enabled => Instance != null;
 
 		/// <summary>Makes the layer the options (or the switches) ask for, where it can share images with OpenGL; logs which, and why.</summary>
 		internal static void Initialize()
 		{
-			Vulkan.VulkanWorld.Initialize();
+			// Direct3D 11 while it is being built (OBNS/DIRECT3D.md): by OBNS_D3D11=1 only, in place of Vulkan.
+			Direct3D11.D3D11World.Initialize();
+			if (!Direct3D11.D3D11World.Enabled)
+			{
+				Vulkan.VulkanWorld.Initialize();
+			}
 		}
 
 		/// <summary>Which renderer draws the world, for the debug overlay.</summary>
-		internal static string RendererName => Vulkan.VulkanWorld.RendererName;
+		internal static string RendererName => Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.RendererName : Vulkan.VulkanWorld.RendererName;
 
 		/// <summary>The layer's line in the frame statistics.</summary>
-		internal static string Summary => Vulkan.VulkanWorld.Summary;
+		internal static string Summary => Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.Summary : Vulkan.VulkanWorld.Summary;
 	}
 }
