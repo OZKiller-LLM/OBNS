@@ -632,9 +632,9 @@ namespace OpenBve.Graphics.Vulkan
 			// The shadow maps first (cleared only, with shadows off), then the world layer that samples them.
 			Scene.RecordShadows(commandBuffer, slot);
 			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
-			if (!Scene.Empty(VulkanScene.WorldLayer))
+			if (!Scene.Empty(VulkanScene.WorldLayerIndex))
 			{
-				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.WorldLayer);
+				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.WorldLayerIndex);
 			}
 
 			Vk.vkCmdEndRendering(commandBuffer);

@@ -48,7 +48,11 @@ about 3,000 lines:
    `WorldTextures`, `WorldHooks` and `WorldMemory` shared; Vulkan unchanged (snapshots on the Tuen Ma Line);
    Direct3D 11 copies the vertex buffers (`ObnsSharedMemory.Mirror`: OpenGL keeps its own) and makes its textures
    (levels by `GenerateMips`): on the Tuen Ma Line about 14,800 meshes, 448 MB of vertices, the cab's 238 textures.
-4. The scene's records shared; Direct3D 11's recording and HLSL shaders; the cab layer.
+4. The scene's records shared; Direct3D 11's recording and HLSL shaders; the cab layer. **Done**: `WorldScene`
+   shared (Vulkan unchanged by snapshot); `D3D11Scene` draws each record with `DrawIndexedInstanced`, bound per
+   draw only where the pipeline, texture, sampler or buffer block changes (the draws are sorted by them);
+   `Shaders/world.hlsl` is the Vulkan shaders' port. On the Tuen Ma Line at Tuen Mun: the same picture as Vulkan's
+   but for the shadows, 7.8 ms a frame (Vulkan 6.8 ms), about 4,100 draws with about 1,300 changes.
 5. Shadows; the options' renderer list (OpenGL, Vulkan, Direct3D 11); measured on the Tuen Ma Line.
 
 Then Direct3D 12 (closest to Vulkan: the records, and memory shared with OpenGL as Vulkan's is), Direct3D
@@ -59,7 +63,7 @@ Then Direct3D 12 (closest to Vulkan: the records, and memory shared with OpenGL 
 | Variable | Effect |
 | --- | --- |
 | `OBNS_D3D11=1` | the world layer drawn by Direct3D 11 (while it is being built; in place of Vulkan) |
-| `OBNS_D3D11_TINT=0` | its images cleared to nothing (at step 2 they are cleared to a faint green, to show they arrive) |
+| `OBNS_D3D11_TINT=1` | its world image cleared to a faint green, not to nothing (to show it arrives) |
 | `OBNS_D3D11_DEBUG=1` | each texture made, and the copies' counts every 5 seconds, logged |
 | `OBNS_D3D11_WHITE=1`, `OBNS_D3D11_NOMIPS=1` | no textures (all white); textures without mipmaps (as Vulkan's) |
 | `OBNS_D3D11_TEST=1` | at start, the Direct3D 11 device and its images' path to OpenGL checked and logged |

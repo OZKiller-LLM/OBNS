@@ -137,7 +137,8 @@ In `OBNS/overrides/source/OpenBVE/Graphics/Vulkan/`, compiled into the desktop p
 
 Shared with the other APIs' world layers (`DIRECT3D.md`), in `Graphics/`: `WorldLayer.cs` (what the renderer calls),
 `WorldComposite.cs` (the composite), `WorldMeshes.cs` (the faces as triangle lists, and the meshes' bookkeeping),
-`WorldTextures.cs` (decoding, the frame's budget, preloads, animated frames, the white texture), `WorldHooks.cs`
+`WorldTextures.cs` (decoding, the frame's budget, preloads, animated frames, the white texture), `WorldScene.cs`
+(the faces' records, made on every core, and their order), `WorldHooks.cs`
 (LibRender2's hooks) and `WorldMemory.cs` (ranges of blocks).
 
 Elsewhere: OBNS's `NewRenderer.cs` gives the world's faces to it before the background and lays the frame over

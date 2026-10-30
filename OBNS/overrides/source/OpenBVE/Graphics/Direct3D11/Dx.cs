@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 
 namespace OpenBve.Graphics.Direct3D11
 {
-	internal static unsafe class Dx
+	internal static unsafe partial class Dx
 	{
 		[DllImport("dxgi.dll")]
 		private static extern int CreateDXGIFactory1(ref Guid riid, out IntPtr factory);

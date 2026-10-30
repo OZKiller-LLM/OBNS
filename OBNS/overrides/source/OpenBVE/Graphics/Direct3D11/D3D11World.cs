@@ -1,7 +1,6 @@
 // OBNS: not an upstream file. The world layer drawn by Direct3D 11 (OBNS/DIRECT3D.md): Direct3D draws the world and cab
 // layers into images OpenGL has registered (WGL_NV_DX_interop2), OpenGL lays them over its frame (WorldComposite).
-// Step 3: the images, the composite, and the meshes' and textures' copies; the scene's records are not drawn yet (the
-// layer is chosen by OBNS_D3D11=1 only).
+// Step 4: the world and cab layers drawn (no shadows yet; the layer is chosen by OBNS_D3D11=1 only).
 
 using System;
 using LibRender2;
@@ -23,7 +22,7 @@ namespace OpenBve.Graphics.Direct3D11
 
 		private readonly D3D11Device device;
 		private WorldComposite composite;
-		private readonly D3D11Scene scene = new D3D11Scene();
+		private D3D11Scene scene;
 		private bool failed;
 
 		/// <summary>The copies of upstream's meshes and of the world's textures.</summary>
@@ -36,13 +35,14 @@ namespace OpenBve.Graphics.Direct3D11
 		// The frame's images: the world's colour, its depth as a single-channel colour (what the composite reads), the cab
 		// layer's colour; Direct3D's own depth buffer; OpenGL's names for the first three, and its interop handles.
 		private uint width, height;
-		private IntPtr colorTexture, depthTexture, cabTexture, depthBuffer;
-		private IntPtr colorView, depthView, cabView, depthStencilView;
+		private IntPtr colorTexture, depthTexture, cabTexture, depthBuffer, cabDepthBuffer;
+		private IntPtr colorView, depthView, cabView, depthStencilView, cabDepthStencilView;
 		private int glColor, glDepth, glCab;
 		private IntPtr[] handles;
 		private bool locked;
 
-		private static readonly bool tint = Environment.GetEnvironmentVariable("OBNS_D3D11_TINT") != "0";
+		/// <summary>A tint for testing the exchange (OBNS_D3D11_TINT=1): the cleared image is a faint green, not clear.</summary>
+		private static readonly bool tint = Environment.GetEnvironmentVariable("OBNS_D3D11_TINT") == "1";
 
 		private D3D11World(D3D11Device device)
 		{
@@ -74,6 +74,7 @@ namespace OpenBve.Graphics.Direct3D11
 				world.composite = new WorldComposite();
 				world.Meshes = new D3D11Meshes(device);
 				world.Textures = new D3D11Textures(device);
+				world.scene = new D3D11Scene(device, world.Meshes, world.Textures);
 				WorldHooks.Install("Direct3D 11", "OBNS_D3D11", world.Meshes, world.Textures);
 			}
 			catch (Exception ex)
@@ -84,12 +85,15 @@ namespace OpenBve.Graphics.Direct3D11
 			}
 
 			instance = world;
-			Log("OBNS Direct3D 11 world layer on: " + device.Description + " (step 3: its images laid over OpenGL's frame, meshes and textures copied; the world is not drawn yet)");
+			Log("OBNS Direct3D 11 world layer on: " + device.Description + " (step 4: the world and cab layers; no shadows yet)");
 		}
 
 		public IWorldScene Scene => scene;
 
-		public bool DrawsCab => false;
+		/// <summary>Whether the frame being made has a cab layer (Direct3D draws it whenever it draws the world layer).</summary>
+		private bool cabStarted;
+
+		public bool DrawsCab => cabStarted;
 
 		public long LastJoinTicks => 0;
 
@@ -120,10 +124,12 @@ namespace OpenBve.Graphics.Direct3D11
 			desc.Format = Dx.FormatD32Float;
 			desc.BindFlags = Dx.BindDepthStencil;
 			depthBuffer = Dx.CreateTexture2D(device.Device, desc);
+			cabDepthBuffer = Dx.CreateTexture2D(device.Device, desc);
 			colorView = Dx.CreateRenderTargetView(device.Device, colorTexture);
 			cabView = Dx.CreateRenderTargetView(device.Device, cabTexture);
 			depthView = Dx.CreateRenderTargetView(device.Device, depthTexture);
 			depthStencilView = Dx.CreateDepthStencilView(device.Device, depthBuffer);
+			cabDepthStencilView = Dx.CreateDepthStencilView(device.Device, cabDepthBuffer);
 
 			glColor = GL.GenTexture();
 			glDepth = GL.GenTexture();
@@ -156,31 +162,48 @@ namespace OpenBve.Graphics.Direct3D11
 			try
 			{
 				EnsureTarget(viewportWidth, viewportHeight);
+				// The faces resolved (meshes, textures made), what the frames before let go of freed, the textures' uploads sent.
+				scene.Prepare();
 				frameNumber++;
 				Textures.FrameStarted(frameNumber);
 				Meshes.FrameStarted(frameNumber);
-				Textures.StartBudget();
 				Textures.Send();
+				cabStarted = scene.HasCab;
+				scene.BuildRecords();
+				scene.Upload();
 				if (locked)
 				{
 					device.Unlock(handles);
 					locked = false;
 				}
 
-				// Cleared to nothing (coverage 0) and the far plane; OBNS_D3D11_TINT (on by default at this step) clears to a
-				// faint green, to show the images reach OpenGL's frame.
+				// The world layer: cleared to nothing (coverage 0) and the far plane, its colour and its depth as a colour.
+				IntPtr context = device.Context;
 				if (tint)
 				{
-					Dx.ClearRenderTargetView(device.Context, colorView, 0.0f, 0.12f, 0.0f, 0.12f);
+					Dx.ClearRenderTargetView(context, colorView, 0.0f, 0.12f, 0.0f, 0.12f);
 				}
 				else
 				{
-					Dx.ClearRenderTargetView(device.Context, colorView, 0, 0, 0, 0);
+					Dx.ClearRenderTargetView(context, colorView, 0, 0, 0, 0);
 				}
 
-				Dx.ClearRenderTargetView(device.Context, depthView, 1, 1, 1, 1);
-				Dx.ClearRenderTargetView(device.Context, cabView, 0, 0, 0, 0);
-				Dx.ClearDepth(device.Context, depthStencilView, 1.0f);
+				Dx.ClearRenderTargetView(context, depthView, 1, 1, 1, 1);
+				Dx.ClearDepth(context, depthStencilView, 1.0f);
+				IntPtr* targets = stackalloc IntPtr[2];
+				targets[0] = colorView;
+				targets[1] = depthView;
+				Dx.OMSetRenderTargets(context, 2, targets, depthStencilView);
+				scene.Draw(WorldScene.WorldLayerIndex, width, height);
+
+				// The cab layer, in its own image (laid over after OpenGL's particles, as upstream draws it), its depth its own.
+				Dx.ClearRenderTargetView(context, cabView, 0, 0, 0, 0);
+				Dx.ClearDepth(context, cabDepthStencilView, 1.0f);
+				targets[0] = cabView;
+				Dx.OMSetRenderTargets(context, 1, targets, cabDepthStencilView);
+				scene.Draw(WorldScene.CabLayer, width, height);
+				targets[0] = IntPtr.Zero;
+				Dx.OMSetRenderTargets(context, 0, targets, IntPtr.Zero);
 				Dx.Flush(device.Context);
 			}
 			catch (Exception ex)
@@ -249,60 +272,42 @@ namespace OpenBve.Graphics.Direct3D11
 				glColor = glDepth = glCab = 0;
 			}
 
-			foreach (IntPtr com in new[] { colorView, depthView, cabView, depthStencilView, colorTexture, depthTexture, cabTexture, depthBuffer })
+			foreach (IntPtr com in new[] { colorView, depthView, cabView, depthStencilView, cabDepthStencilView, colorTexture, depthTexture, cabTexture, depthBuffer, cabDepthBuffer })
 			{
 				Dx.Release(com);
 			}
 
-			colorView = depthView = cabView = depthStencilView = colorTexture = depthTexture = cabTexture = depthBuffer = IntPtr.Zero;
+			colorView = depthView = cabView = depthStencilView = cabDepthStencilView = colorTexture = depthTexture = cabTexture = depthBuffer = cabDepthBuffer = IntPtr.Zero;
 		}
 
 		/// <summary>The renderer as it is drawing, for the debug overlay.</summary>
 		internal static string RendererName => "Direct3D 11 world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
 
 		/// <summary>The layer's state for the frame statistics.</summary>
-		internal static string Summary => Enabled ? "on (Direct3D 11, step 3: images, " + instance.Textures.Describe() + "; " + instance.Meshes.Describe() + ")" : "off";
+		internal static string Summary
+		{
+			get
+			{
+				if (!Enabled)
+				{
+					return "off";
+				}
+
+				D3D11Scene scene = instance.scene;
+				return "on (Direct3D 11: " + scene.LastDraws + " draws (" + scene.LastCabDraws + " of them the cab's), " + scene.LastStateChanges + " pipeline and texture changes; " + instance.Textures.Describe() + "; " + instance.Meshes.Describe() +
+				       (scene.SkippedFaces > 0 ? "; " + scene.SkippedFaces + " faces without a copy" : "") + ")";
+			}
+		}
 
 		public void Dispose()
 		{
 			ReleaseTarget();
 			composite?.Dispose();
 			composite = null;
+			scene?.Dispose();
 			Meshes?.Dispose();
 			Textures?.Dispose();
 			device.Dispose();
-		}
-	}
-
-	/// <summary>The Direct3D 11 layer's records (step 2: kept nowhere; the world is not drawn yet).</summary>
-	internal sealed class D3D11Scene : IWorldScene
-	{
-		public void Begin(BaseRenderer renderer)
-		{
-		}
-
-		public void BeginCab(Matrix4D projection, Matrix4D view, bool lit, Vector3 lightPosition)
-		{
-		}
-
-		public void Pass(WorldBlend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered, bool depthTest = true)
-		{
-		}
-
-		public void SetAlphaFunction(int alphaFunction, float alphaReference)
-		{
-		}
-
-		public void Face(ObjectState state, MeshFace face)
-		{
-		}
-
-		public void EnsureShadowMaps(int resolution, int cascades)
-		{
-		}
-
-		public void SetShadows(CascadedShadowCaster caster, float strength, bool smooth, float filterRadius, float userBias, float normalBiasTexels)
-		{
 		}
 	}
 }
