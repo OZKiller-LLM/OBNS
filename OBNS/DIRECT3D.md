@@ -60,8 +60,34 @@ about 3,000 lines:
    (Vulkan's own runs by 0.8). Seven minutes of the AI driving from Tuen Mun: 8.7 ms a frame, the worst frame of
    each 10 s 18 ms (median); Vulkan 7.0 and 19 ms (RTX 2060 SUPER).
 
-Then Direct3D 12 (closest to Vulkan: the records, and memory shared with OpenGL as Vulkan's is), Direct3D
-9.0c (D3D9Ex, `WGL_NV_DX_interop`; no instancing of records, the slowest), and Metal (IOSurface to OpenGL).
+6. Direct3D 12 (below). **Done**: in the options as "Direct3D 12" (64-bit Windows; where it cannot be used,
+   Direct3D 11 is tried, then Vulkan, then OpenGL; the Direct3D entries are listed on Windows only, not in
+   any 64-bit program as before). Snapshots at Tuen Mun differ from Vulkan's by 1.0 levels on
+   average. Seven minutes of the AI driving from Tuen Mun: 8.0 ms a frame, the worst frame of each 10 s 21 ms
+   (median); its 50 pipeline objects made at the start in 11 ms (RTX 2060 SUPER).
+
+Then Direct3D 9.0c (D3D9Ex, `WGL_NV_DX_interop`; no instancing of records, the slowest), and Metal (IOSurface
+to OpenGL). Later, for Direct3D 12: its records made and its commands recorded on a thread of their own while
+OpenGL draws the background (as Vulkan's are; it is the main thread's now, as Direct3D 11's), and the vertex
+buffers shared with OpenGL rather than copied.
+
+## Direct3D 12: what changes from Direct3D 11
+
+| | Direct3D 11 | Direct3D 12 |
+| --- | --- | --- |
+| Images OpenGL sees | registered (`WGL_NV_DX_interop2`) | Direct3D's memory imported, as Vulkan's (`GL_EXT_memory_object_win32`, `GL_HANDLE_TYPE_D3D12_RESOURCE_EXT`) |
+| Ordering | `wglDXLockObjectsNV` / `wglDXUnlockObjectsNV` | one fence both share (`GL_EXT_semaphore_win32`, `GL_HANDLE_TYPE_D3D12_FENCE_EXT`): OpenGL signals it is done with the images, the queue waits, draws and signals, OpenGL waits |
+| Frames | drawn as they are given | two in flight: each has its commands and its records' buffers, used again once the GPU is done with them |
+| Uploads | `UpdateSubresource` | written into mapped upload memory (64 MB blocks, 512 MB at most before the CPU waits), copied by a list sent before the frame's |
+| Mipmap levels | `GenerateMips` | made on every core as the pixels are written (the same box filter) |
+| States | state objects, set separately | 48 pipeline objects (and the shadow pass's two), made at the start |
+| Bindings | slots | a root signature: the layer as constants, the records as root views, the texture, shadow maps and sampler by tables (one shader-visible heap, a view per texture at its index) |
+| Shaders | `world.hlsl`, shader model 5.0 | the same |
+
+The device is made on OpenGL's adapter (by LUID), at feature level 11.0 or later; any Direct3D 12 GPU will do
+(the draws bind one texture each, so resource binding tier 1 is enough). It needs OpenGL's
+`GL_EXT_memory_object_win32` and `GL_EXT_semaphore_win32`, as Vulkan's layer does; without them (or if the
+self-test fails) Direct3D 11 is tried. The structures' sizes are checked against `d3d12.h`'s at the start.
 
 ## Switches
 
@@ -72,3 +98,8 @@ Then Direct3D 12 (closest to Vulkan: the records, and memory shared with OpenGL 
 | `OBNS_D3D11_DEBUG=1` | each texture made, and the copies' counts every 5 seconds, logged |
 | `OBNS_D3D11_WHITE=1`, `OBNS_D3D11_NOMIPS=1` | no textures (all white); textures without mipmaps (as Vulkan's) |
 | `OBNS_D3D11_TEST=1` | at start, the Direct3D 11 device and its images' path to OpenGL checked and logged |
+| `OBNS_D3D12=1`, `=0` | the world layer drawn by Direct3D 12, or not, whatever the options say |
+| `OBNS_D3D12_TINT=1` | its world image cleared to a faint green, not to nothing |
+| `OBNS_D3D12_DEBUG=1` | each texture made logged; a frame whose start takes 10 ms or more logged with its steps' times |
+| `OBNS_D3D12_WHITE=1`, `OBNS_D3D12_NOMIPS=1` | no textures (all white); textures without mipmaps |
+| `OBNS_D3D12_TEST=1` | at start, the Direct3D 12 device and its images' path to OpenGL checked and logged |

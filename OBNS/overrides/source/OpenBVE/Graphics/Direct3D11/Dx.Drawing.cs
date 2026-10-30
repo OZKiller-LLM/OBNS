@@ -161,10 +161,10 @@ namespace OpenBve.Graphics.Direct3D11
 		}
 
 		/// <summary>ID3DBlob::GetBufferPointer (3).</summary>
-		private static IntPtr BlobPointer(IntPtr blob) => ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr>)Table(blob)[3])(blob);
+		internal static IntPtr BlobPointer(IntPtr blob) => ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr>)Table(blob)[3])(blob);
 
 		/// <summary>ID3DBlob::GetBufferSize (4).</summary>
-		private static ulong BlobSize(IntPtr blob) => (ulong)((delegate* unmanaged[Stdcall]<IntPtr, UIntPtr>)Table(blob)[4])(blob);
+		internal static ulong BlobSize(IntPtr blob) => (ulong)((delegate* unmanaged[Stdcall]<IntPtr, UIntPtr>)Table(blob)[4])(blob);
 
 		// --- the device ---
 

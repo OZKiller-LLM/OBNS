@@ -236,6 +236,13 @@
     <Compile Include="Graphics\Direct3D11\D3D11Textures.cs" />
     <Compile Include="Graphics\Direct3D11\D3D11Scene.cs" />
     <Compile Include="Graphics\Direct3D11\Dx.Drawing.cs" />
+    <Compile Include="Graphics\Direct3D12\D12.cs" />
+    <Compile Include="Graphics\Direct3D12\D3D12Device.cs" />
+    <Compile Include="Graphics\Direct3D12\D3D12Uploads.cs" />
+    <Compile Include="Graphics\Direct3D12\D3D12Meshes.cs" />
+    <Compile Include="Graphics\Direct3D12\D3D12Textures.cs" />
+    <Compile Include="Graphics\Direct3D12\D3D12Scene.cs" />
+    <Compile Include="Graphics\Direct3D12\D3D12World.cs" />
     <EmbeddedResource Include="Graphics\Direct3D11\Shaders\world.hlsl">
       <LogicalName>OBNS.Direct3D11.world.hlsl</LogicalName>
     </EmbeddedResource>

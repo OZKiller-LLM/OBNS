@@ -479,6 +479,14 @@ namespace OpenBve
 				Program.FileSystem.AppendToLogFile(device == null ? "OBNS Direct3D 11: not usable: " + reason : "OBNS Direct3D 11: " + device.Description + "; images to OpenGL: " + (test ?? "right"));
 				device?.Dispose();
 			}
+			// OBNS: OBNS_D3D12_TEST=1 checks the Direct3D 12 world layer's device and its images' path to OpenGL (OBNS/DIRECT3D.md).
+			if (Environment.GetEnvironmentVariable("OBNS_D3D12_TEST") == "1")
+			{
+				OpenBve.Graphics.Direct3D12.D3D12Device device = OpenBve.Graphics.Direct3D12.D3D12Device.Create(out string reason);
+				string test = device?.SelfTest();
+				Program.FileSystem.AppendToLogFile(device == null ? "OBNS Direct3D 12: not usable: " + reason : "OBNS Direct3D 12: " + device.Description + "; images to OpenGL: " + (test ?? "right"));
+				device?.Dispose();
+			}
 			if (Program.CurrentHost.Platform == HostPlatform.MicrosoftWindows && WindowState != WindowState.Fullscreen)
 			{
 				int w = DisplayDevice.Default.Width;
