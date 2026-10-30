@@ -29,6 +29,7 @@ namespace OpenBve.GLForms
 		[DllImport(Kit)] private static extern void mk_init(NativeEvent events);
 		[DllImport(Kit)] private static extern void mk_shutdown();
 		[DllImport(Kit)] private static extern void mk_pump(double wait);
+		[DllImport(Kit)] private static extern void mk_key_consumed();
 		[DllImport(Kit)] private static extern int mk_window_create(byte[] title, int width, int height, int resizable);
 		[DllImport(Kit)] private static extern void mk_window_show(int id, int parent);
 		[DllImport(Kit)] private static extern void mk_window_destroy(int id);
@@ -190,10 +191,13 @@ namespace OpenBve.GLForms
 			}
 		}
 
+		/// <summary>The form's focus is being moved to where AppKit's already is.</summary>
+		private static bool followingNativeFocus;
+
 		/// <summary>The keyboard focus moved by the form: AppKit's follows.</summary>
 		private static void FocusNative(Control control)
 		{
-			if (NativeActive && control != null && peers.TryGetValue(control, out Peer peer))
+			if (NativeActive && !followingNativeFocus && control != null && peers.TryGetValue(control, out Peer peer))
 			{
 				mk_view_focus(peer.Id);
 			}
@@ -448,7 +452,7 @@ namespace OpenBve.GLForms
 
 			peer.Back = back;
 			peer.Fore = fore;
-			if (peer.Kind == KindContainer || peer.Kind == KindGroup || peer.Kind == KindTabs)
+			if (peer.Kind == KindContainer || peer.Kind == KindGroup || peer.Kind == KindTabs || peer.Kind == KindScroll)
 			{
 				mk_view_fill(peer.Id, back.R, back.G, back.B, back.IsEmpty || control is TabPage ? 0 : back.A);
 			}
@@ -474,12 +478,25 @@ namespace OpenBve.GLForms
 
 		private static int AlignmentOf(ContentAlignment alignment)
 		{
+			// Across, and 3 times up and down.
 			switch (alignment)
 			{
-				case ContentAlignment.TopCenter: case ContentAlignment.MiddleCenter: case ContentAlignment.BottomCenter:
+				case ContentAlignment.TopCenter:
 					return 1;
-				case ContentAlignment.TopRight: case ContentAlignment.MiddleRight: case ContentAlignment.BottomRight:
+				case ContentAlignment.TopRight:
 					return 2;
+				case ContentAlignment.MiddleLeft:
+					return 3;
+				case ContentAlignment.MiddleCenter:
+					return 4;
+				case ContentAlignment.MiddleRight:
+					return 5;
+				case ContentAlignment.BottomLeft:
+					return 6;
+				case ContentAlignment.BottomCenter:
+					return 7;
+				case ContentAlignment.BottomRight:
+					return 8;
 				default:
 					return 0;
 			}
@@ -641,7 +658,8 @@ namespace OpenBve.GLForms
 			string[] items = new string[combo.Items.Count];
 			for (int i = 0; i < items.Length; i++)
 			{
-				items[i] = combo.GetItemText(combo.Items[i]);
+				// A font's list is one the form draws itself, by the font's name.
+				items[i] = combo.Items[i] is FontFamily family ? family.Name : combo.GetItemText(combo.Items[i]);
 			}
 
 			string signature = string.Join("\n", items);
@@ -668,7 +686,7 @@ namespace OpenBve.GLForms
 		{
 			bool details = list.View == View.Details && list.Columns.Count > 0;
 			string[] names = details ? list.Columns.Cast<ColumnHeader>().Select(column => column.Text).ToArray() : new[] { string.Empty };
-			int[] widths = details ? list.Columns.Cast<ColumnHeader>().Select(column => column.Width < 0 ? 120 : column.Width).ToArray() : new[] { Math.Max(1, list.Width - 20) };
+			int[] widths = details ? list.ShownColumnWidths() : new[] { Math.Max(1, list.Width - 20) };
 			string columns = string.Join("\n", names) + "|" + string.Join(",", widths);
 			if (columns != peer.Columns)
 			{
@@ -719,9 +737,10 @@ namespace OpenBve.GLForms
 
 		private static void SyncGrid(Peer peer, DataGridView grid)
 		{
-			DataGridViewColumn[] gridColumns = grid.Columns.Cast<DataGridViewColumn>().ToArray();
+			DataGridViewColumn[] gridColumns = grid.Columns.Cast<DataGridViewColumn>().Where(column => column.Visible).ToArray();
 			string[] names = gridColumns.Select(column => column.HeaderText ?? string.Empty).ToArray();
-			int[] widths = gridColumns.Select(column => Math.Max(20, column.Width)).ToArray();
+			int[] shownWidths = grid.ShownColumnWidths();
+			int[] widths = gridColumns.Select(column => Math.Max(20, shownWidths[column.Index])).ToArray();
 			string columns = string.Join("\n", names) + "|" + string.Join(",", widths);
 			if (columns != peer.Columns)
 			{
@@ -736,7 +755,8 @@ namespace OpenBve.GLForms
 			{
 				for (int column = 0; column < names.Length; column++)
 				{
-					cells[row * names.Length + column] = column < gridRows[row].Cells.Count ? Convert.ToString(gridRows[row].Cells[column].Value, CultureInfo.CurrentCulture) ?? string.Empty : string.Empty;
+					int index = gridColumns[column].Index;
+					cells[row * names.Length + column] = index < gridRows[row].Cells.Count ? Convert.ToString(gridRows[row].Cells[index].Value, CultureInfo.CurrentCulture) ?? string.Empty : string.Empty;
 				}
 			}
 
@@ -867,6 +887,11 @@ namespace OpenBve.GLForms
 				if (peersById.TryGetValue(view, out Peer peer))
 				{
 					string value = text == IntPtr.Zero ? null : PtrToUtf8(text);
+					if (debug && kind != EventMouseMove)
+					{
+						Log("event " + kind + " on " + peer.Control.Name + " (" + a + ", " + b + (value == null ? ")" : ", " + value + ")"));
+					}
+
 					HandleEvent(peer, kind, a, b, value);
 					RequestRender();
 				}
@@ -901,6 +926,11 @@ namespace OpenBve.GLForms
 					{
 						// The model decides (a check box toggles, a radio button checks): the native state follows it.
 						peer.State = -1;
+						if (button.CanTakeFocus)
+						{
+							SetFocus(button);
+						}
+
 						button.PerformClick();
 					}
 
@@ -1028,9 +1058,31 @@ namespace OpenBve.GLForms
 				case EventKey:
 				{
 					Keys keys = MapNativeKey(a, b);
-					if (keys != Keys.None)
+					if (keys == Keys.None)
 					{
-						control.RaiseKeyDown(new KeyEventArgs(keys));
+						break;
+					}
+
+					// What a click gives AppKit's focus to, without a click's event: the form's focus catches up.
+					if (control is TextBoxBase || control is ListView || control is DataGridView || control is NumericUpDown || control is ComboBox)
+					{
+						followingNativeFocus = true;
+						try
+						{
+							SetFocus(control);
+						}
+						finally
+						{
+							followingNativeFocus = false;
+						}
+					}
+
+					const Keys modifiers = Keys.Shift | Keys.Control | Keys.Alt;
+					ModifierKeys = keys & modifiers;
+					Form top = Forms.Count > 0 ? Forms[Forms.Count - 1] : null;
+					if (top != null && DispatchKey(top, new KeyEventArgs(keys), keys & ~modifiers))
+					{
+						mk_key_consumed();
 					}
 
 					break;

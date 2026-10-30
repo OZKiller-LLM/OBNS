@@ -1192,6 +1192,13 @@ void main()
 				return;
 			}
 
+			DispatchKey(form, e, code);
+			RequestRender();
+		}
+
+		/// <summary>A key on the top form, as Windows Forms has it (shared with the native host); whether it was dealt with.</summary>
+		private static bool DispatchKey(Form form, KeyEventArgs e, Keys code)
+		{
 			if (form.KeyPreview)
 			{
 				form.RaiseKeyDown(e);
@@ -1206,8 +1213,7 @@ void main()
 			suppressKeyPress = e.SuppressKeyPress;
 			if (e.Handled)
 			{
-				RequestRender();
-				return;
+				return true;
 			}
 
 			bool inputKey = target != null && target.IsInputKey(e.KeyData);
@@ -1260,7 +1266,7 @@ void main()
 					break;
 			}
 
-			RequestRender();
+			return suppressKeyPress;
 		}
 
 		private static void OnKeyUp(Key key, KeyModifiers modifiers)

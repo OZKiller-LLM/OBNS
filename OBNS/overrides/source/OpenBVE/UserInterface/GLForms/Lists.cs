@@ -1537,6 +1537,9 @@ namespace OpenBve.GLForms
 			Invalidate();
 		}
 
+		/// <summary>The columns' widths as shown here (for the native host).</summary>
+		internal int[] ShownColumnWidths() => ColumnWidths();
+
 		/// <summary>The columns' widths, as shown: in a view without columns, one as wide as the list.</summary>
 		private int[] ColumnWidths()
 		{
@@ -2923,6 +2926,9 @@ namespace OpenBve.GLForms
 		{
 			first = Math.Max(0, Math.Min(first, Rows.Count - VisibleRows));
 		}
+
+		/// <summary>The columns' widths as shown here, every column's (for the native host).</summary>
+		internal int[] ShownColumnWidths() => ColumnWidths(Width - 2 - RowHeaderWidth - (Scrolls ? ListScroller.Width : 0));
 
 		private int[] ColumnWidths(int available)
 		{

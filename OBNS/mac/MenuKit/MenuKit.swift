@@ -23,6 +23,20 @@ private var nextId: Int32 = 1
 private var views: [Int32: NSView] = [:]
 private var windows: [Int32: MKWindow] = [:]
 private var images: [Int32: NSImage] = [:]
+/// Where the forms place each control (fit may make a control's own frame a little wider).
+private var placed: [Int32: NSRect] = [:]
+/// The check boxes and radio buttons.
+private var checks: Set<Int32> = []
+/// The push buttons.
+private var pushes: Set<Int32> = []
+/// The buttons that stay down (a form's Appearance.Button).
+private var toggles: Set<Int32> = []
+/// Labels' fonts as the forms give them (fit may use a little smaller).
+private var labelFonts: [Int32: NSFont] = [:]
+/// The dialogs open, the last on top: the windows under them take no clicks or keys.
+private var modals: [MKWindow] = []
+/// Set by the form during a key's event: AppKit isn't to act on the key as well.
+private var keyConsumed = false
 
 private func emit(_ id: Int32, _ event: Event, _ a: Int32 = 0, _ b: Int32 = 0, _ text: String? = nil) {
 	guard let callback = callback else { return }
@@ -60,8 +74,25 @@ private class FlippedView: NSView {
 	override func draw(_ dirtyRect: NSRect) {
 		if let fill = fill {
 			fill.setFill()
-			dirtyRect.fill()
+			// Not dirtyRect alone: from macOS 14 it can reach beyond the view, and the fill would cover its neighbours.
+			bounds.intersection(dirtyRect).fill()
 		}
+	}
+}
+
+/// A label's text, placed up and down as the form has it: 0 top, 1 middle, 2 bottom.
+private class MKLabelCell: NSTextFieldCell {
+	var vertical = 0
+
+	override func drawingRect(forBounds rect: NSRect) -> NSRect {
+		var place = super.drawingRect(forBounds: rect)
+		let height = cellSize(forBounds: rect).height
+		if vertical != 0 && height < place.height {
+			place.origin.y += (place.height - height) * (vertical == 1 ? 0.5 : 1)
+			place.size.height = height
+		}
+
+		return place
 	}
 }
 
@@ -94,7 +125,7 @@ private class MKImageView: NSImageView {
 private class MKWindow: NSWindow, NSWindowDelegate {
 	var id: Int32 = 0
 	var root: FlippedView!
-	var parentSheet: NSWindow?
+	var owner: NSWindow?
 
 	func windowShouldClose(_ sender: NSWindow) -> Bool {
 		emit(id, .close)
@@ -132,10 +163,6 @@ private class Target: NSObject, NSTextFieldDelegate, NSTextViewDelegate, NSCombo
 
 	@objc func selected(_ sender: NSPopUpButton) {
 		emit(Int32(sender.tag), .select, Int32(sender.indexOfSelectedItem))
-	}
-
-	@objc func segment(_ sender: NSSegmentedControl) {
-		emit(Int32(sender.tag), .select, Int32(sender.selectedSegment))
 	}
 
 	@objc func slid(_ sender: NSSlider) {
@@ -222,6 +249,7 @@ private class MKTable: NSScrollView, NSTableViewDataSource, NSTableViewDelegate 
 		table.target = self
 		table.doubleAction = #selector(activated)
 		table.rowHeight = 17
+		table.intercellSpacing = NSSize(width: 0, height: 2)
 		table.style = .fullWidth
 	}
 
@@ -273,8 +301,10 @@ private class MKTable: NSScrollView, NSTableViewDataSource, NSTableViewDelegate 
 
 /// A tab control: its tabs at the top of its frame, its pages placed by the form below them.
 private class MKTabs: FlippedView {
-	let strip = NSSegmentedControl()
+	let strip = FlippedView()
 	let frameBox = NSBox()
+	let tabFont = NSFont.systemFont(ofSize: 11)
+	var tabs: [NSButton] = []
 
 	func setUp() {
 		frameBox.boxType = .custom
@@ -282,29 +312,74 @@ private class MKTabs: FlippedView {
 		frameBox.fillColor = NSColor.clear
 		frameBox.titlePosition = .noTitle
 		addSubview(frameBox)
-		strip.segmentStyle = .automatic
-		strip.controlSize = .small
-		strip.trackingMode = .selectOne
-		strip.target = Target.shared
-		strip.action = #selector(Target.segment(_:))
+		strip.wantsLayer = true
+		strip.layer?.cornerRadius = 6
+		strip.layer?.backgroundColor = NSColor(white: 0.87, alpha: 1).cgColor
 		addSubview(strip)
+	}
+
+	func setTitles(_ titles: [String]) {
+		for tab in tabs {
+			tab.removeFromSuperview()
+		}
+
+		tabs = titles.map { title in
+			let tab = NSButton(title: title, target: self, action: #selector(tabClicked(_:)))
+			tab.font = tabFont
+			tab.isBordered = false
+			tab.focusRingType = .none
+			tab.wantsLayer = true
+			tab.layer?.cornerRadius = 5
+			strip.addSubview(tab)
+			return tab
+		}
+
+		needsLayout = true
+	}
+
+	func select(_ index: Int) {
+		for (position, tab) in tabs.enumerated() {
+			tab.layer?.backgroundColor = position == index ? NSColor.white.cgColor : NSColor.clear.cgColor
+			tab.layer?.borderWidth = position == index ? 0.5 : 0
+			tab.layer?.borderColor = NSColor(white: 0.65, alpha: 1).cgColor
+		}
+	}
+
+	@objc func tabClicked(_ sender: NSButton) {
+		if let index = tabs.firstIndex(of: sender) {
+			emit(id, .select, Int32(index))
+		}
 	}
 
 	override func layout() {
 		super.layout()
-		strip.sizeToFit()
-		strip.frame = NSRect(x: max(0, (bounds.width - strip.frame.width) / 2), y: 0, width: min(bounds.width, strip.frame.width), height: 21)
+		// Each tab as wide as its title, with what room is left shared between them.
+		let widths = tabs.map { ceil(($0.title as NSString).size(withAttributes: [.font: tabFont]).width) }
+		let room = max(0, bounds.width - 8) - widths.reduce(0, +)
+		let padding = tabs.isEmpty ? 0 : min(18, max(4, room / CGFloat(tabs.count)))
+		var x: CGFloat = 1
+		for (index, tab) in tabs.enumerated() {
+			tab.frame = NSRect(x: x, y: 1, width: widths[index] + padding, height: 18)
+			x += widths[index] + padding
+		}
+
+		strip.frame = NSRect(x: max(0, (bounds.width - x - 1) / 2), y: 0, width: x + 1, height: 20)
 		frameBox.frame = NSRect(x: 0, y: 10, width: bounds.width, height: max(0, bounds.height - 10))
 	}
 }
 
-/// A group box: a titled frame behind its children, which the form places itself.
+/// A group box: a frame behind its children, which the form places itself, with its title above the frame (in the 16 points
+/// the forms leave there).
 private class MKGroup: FlippedView {
 	let box = NSBox()
+	let title = NSTextField(labelWithString: "")
 
 	override func layout() {
 		super.layout()
-		box.frame = bounds
+		title.sizeToFit()
+		title.frame.origin = NSPoint(x: 4, y: 0)
+		let top: CGFloat = title.stringValue.isEmpty ? 0 : 14
+		box.frame = NSRect(x: 0, y: top, width: bounds.width, height: max(0, bounds.height - top))
 	}
 }
 
@@ -355,6 +430,12 @@ public func mk_shutdown() {
 	callback = nil
 }
 
+/// During a key's event: the form has dealt with the key.
+@_cdecl("mk_key_consumed")
+public func mk_key_consumed() {
+	keyConsumed = true
+}
+
 /// Handles the events waiting, after waiting up to so many seconds for the first.
 @_cdecl("mk_pump")
 public func mk_pump(_ wait: Double) {
@@ -362,12 +443,17 @@ public func mk_pump(_ wait: Double) {
 		let app = NSApplication.shared
 		var until = wait > 0 ? Date(timeIntervalSinceNow: wait) : Date.distantPast
 		while let event = app.nextEvent(matching: .any, until: until, inMode: .default, dequeue: true) {
-			if event.type == .keyDown, let responder = app.keyWindow?.firstResponder {
-				var view = responder as? NSView
-				if let text = responder as? MKTextView {
-					view = text
-				}
+			until = Date.distantPast
+			// A dialog is open: the windows under it wait, as under a Windows dialog.
+			if let top = modals.last, let target = event.window as? MKWindow, target !== top, [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown].contains(event.type) {
+				top.makeKeyAndOrderFront(nil)
+				NSSound.beep()
+				continue
+			}
 
+			// The form hears each key first, as in the OpenGL host: its keys (Tab, Return, Escape...) don't reach AppKit too.
+			if event.type == .keyDown, let window = app.keyWindow as? MKWindow {
+				var view = window.firstResponder as? NSView
 				var id: Int32 = 0
 				while let current = view, id == 0 {
 					if let field = current as? NSControl, field.tag != 0 {
@@ -376,19 +462,22 @@ public func mk_pump(_ wait: Double) {
 						id = text.id
 					} else if let table = current as? MKTable {
 						id = table.id
+					} else if let flipped = current as? FlippedView {
+						id = flipped.id
 					}
 
 					view = current.superview
 				}
 
-				if id != 0 {
-					emit(id, .key, Int32(event.keyCode), Int32(event.modifierFlags.rawValue >> 16))
+				keyConsumed = false
+				emit(id != 0 ? id : window.id, .key, Int32(event.keyCode), Int32(event.modifierFlags.rawValue >> 16))
+				if keyConsumed {
+					continue
 				}
 			}
 
 			app.sendEvent(event)
 			app.updateWindows()
-			until = Date.distantPast
 		}
 	}
 }
@@ -424,8 +513,14 @@ public func mk_window_create(_ title: UnsafePointer<CChar>?, _ width: Int32, _ h
 public func mk_window_show(_ id: Int32, _ parent: Int32) {
 	guard let window = windows[id] else { return }
 	if parent != 0, let owner = windows[parent] {
-		window.parentSheet = owner
-		owner.beginSheet(window, completionHandler: nil)
+		// A dialog: a window of its own with its title and close box, as on Windows, centred over its owner.
+		window.owner = owner
+		window.styleMask.remove(.miniaturizable)
+		let place = owner.frame
+		window.setFrameOrigin(NSPoint(x: place.midX - window.frame.width / 2, y: place.midY - window.frame.height / 2))
+		owner.addChildWindow(window, ordered: .above)
+		modals.append(window)
+		window.makeKeyAndOrderFront(nil)
 	} else {
 		window.makeKeyAndOrderFront(nil)
 	}
@@ -434,15 +529,19 @@ public func mk_window_show(_ id: Int32, _ parent: Int32) {
 @_cdecl("mk_window_destroy")
 public func mk_window_destroy(_ id: Int32) {
 	guard let window = windows[id] else { return }
-	if let owner = window.parentSheet {
-		owner.endSheet(window)
-	}
+	autoreleasepool {
+		modals.removeAll { $0 === window }
+		if let owner = window.owner {
+			owner.removeChildWindow(window)
+			owner.makeKeyAndOrderFront(nil)
+		}
 
-	window.delegate = nil
-	window.orderOut(nil)
-	window.close()
-	windows[id] = nil
-	views[id] = nil
+		window.delegate = nil
+		window.orderOut(nil)
+		window.close()
+		windows[id] = nil
+		views[id] = nil
+	}
 }
 
 @_cdecl("mk_window_title")
@@ -479,11 +578,16 @@ public func mk_view_create(_ parent: Int32, _ kindValue: Int32) -> Int32 {
 		v.id = id
 		view = v
 	case .label, .link:
-		let v = NSTextField(wrappingLabelWithString: "")
+		let v = NSTextField(frame: .zero)
+		v.cell = MKLabelCell(textCell: "")
 		v.tag = Int(id)
-		v.font = NSFont.systemFont(ofSize: 11)
+		v.isEditable = false
 		v.isSelectable = false
-		v.lineBreakMode = .byWordWrapping
+		v.isBordered = false
+		v.isBezeled = false
+		v.drawsBackground = false
+		v.textColor = NSColor.labelColor
+		v.font = NSFont.systemFont(ofSize: 11)
 		if kind == .link {
 			v.textColor = NSColor.linkColor
 			let click = NSClickGestureRecognizer(target: Target.shared, action: #selector(Target.linkClicked(_:)))
@@ -495,22 +599,33 @@ public func mk_view_create(_ parent: Int32, _ kindValue: Int32) -> Int32 {
 		let v = NSButton(title: "", target: Target.shared, action: #selector(Target.clicked(_:)))
 		v.tag = Int(id)
 		v.font = NSFont.systemFont(ofSize: 11)
-		v.bezelStyle = kind == .toggle ? .smallSquare : .rounded
+		v.bezelStyle = .rounded
 		v.controlSize = .small
 		if kind == .toggle {
-			v.setButtonType(.pushOnPushOff)
+			// Its state shown as the forms show it (AppKit's own on state doesn't always show).
+			toggles.insert(id)
+			v.isBordered = false
+			v.focusRingType = .none
+			v.wantsLayer = true
+			v.layer?.cornerRadius = 5
+			v.layer?.borderWidth = 1
+			paintToggle(v, false)
+		} else {
+			pushes.insert(id)
 		}
 
 		view = v
 	case .check:
 		let v = NSButton(checkboxWithTitle: "", target: Target.shared, action: #selector(Target.clicked(_:)))
 		v.tag = Int(id)
+		checks.insert(id)
 		v.font = NSFont.systemFont(ofSize: 11)
 		v.controlSize = .small
 		view = v
 	case .radio:
 		let v = NSButton(radioButtonWithTitle: "", target: Target.shared, action: #selector(Target.clicked(_:)))
 		v.tag = Int(id)
+		checks.insert(id)
 		v.font = NSFont.systemFont(ofSize: 11)
 		v.controlSize = .small
 		view = v
@@ -518,8 +633,10 @@ public func mk_view_create(_ parent: Int32, _ kindValue: Int32) -> Int32 {
 		let v = MKGroup()
 		v.id = id
 		v.box.boxType = .primary
-		v.box.titleFont = NSFont.systemFont(ofSize: 11)
+		v.box.titlePosition = .noTitle
+		v.title.font = NSFont.systemFont(ofSize: 11)
 		v.addSubview(v.box)
+		v.addSubview(v.title)
 		view = v
 	case .field:
 		let v = NSTextField(string: "")
@@ -545,6 +662,7 @@ public func mk_view_create(_ parent: Int32, _ kindValue: Int32) -> Int32 {
 		view = scroll
 	case .popup:
 		let v = NSPopUpButton(frame: .zero, pullsDown: false)
+		v.autoenablesItems = false
 		v.tag = Int(id)
 		v.font = NSFont.systemFont(ofSize: 11)
 		v.controlSize = .small
@@ -587,7 +705,6 @@ public func mk_view_create(_ parent: Int32, _ kindValue: Int32) -> Int32 {
 		let v = MKTabs()
 		v.id = id
 		v.setUp()
-		v.strip.tag = Int(id)
 		view = v
 	case .image:
 		let v = MKImageView()
@@ -605,20 +722,106 @@ public func mk_view_create(_ parent: Int32, _ kindValue: Int32) -> Int32 {
 		view = v
 	}
 
+	// As in the forms, a panel's children show only inside it.
+	if #available(macOS 14.0, *), let container = view as? FlippedView {
+		container.clipsToBounds = true
+	}
+
 	views[id] = view
 	content(of: parentView).addSubview(view)
 	return id
+}
+
+/// Gives a control the frame the form places it in, with room for its text. The forms were laid out for a Windows font and
+/// the Mac's is a little wider. A line that doesn't fit stays one line where the Windows font would: a little smaller in a
+/// frame the form left taller, else running on past the frame, as there's usually space after it, as far as its parent's
+/// edge, and smaller from there.
+private func fit(_ id: Int32) {
+	guard let view = views[id], let place = placed[id] else { return }
+	var frame = place
+	if let label = view as? NSTextField, let cell = label.cell as? MKLabelCell {
+		let text = label.stringValue
+		let base = labelFonts[id] ?? label.font ?? NSFont.systemFont(ofSize: 11)
+		let huge = CGFloat.greatestFiniteMagnitude
+		label.font = base
+		cell.isScrollable = false
+		cell.wraps = false
+		let natural = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: huge, height: huge))
+		let line = NSLayoutManager().defaultLineHeight(for: base)
+		func shrink(to width: CGFloat) {
+			label.font = NSFont(descriptor: base.fontDescriptor, size: max(8, base.pointSize * width / natural.width * 0.98)) ?? base
+		}
+
+		if text.contains("\n") || text.contains("\r") {
+			cell.wraps = true
+		} else if !text.isEmpty && natural.width > place.width {
+			if place.height >= line * 2 {
+				if natural.width * 0.85 > place.width {
+					cell.wraps = true
+				} else {
+					shrink(to: place.width)
+				}
+			} else {
+				let parent = view.superview?.bounds.width ?? huge
+				let room = max(place.width, label.alignment == .center ? 2 * min(place.midX, parent - place.midX) : label.alignment == .right ? place.maxX : parent - place.minX) - 2
+				let width = min(ceil(natural.width), max(room, place.width))
+				if natural.width > width {
+					shrink(to: width)
+				}
+
+				let extra = width - place.width
+				frame.size.width += extra
+				if label.alignment == .center {
+					frame.origin.x -= floor(extra / 2)
+				} else if label.alignment == .right {
+					frame.origin.x -= extra
+				}
+			}
+		}
+
+		if !text.isEmpty && !cell.wraps {
+			frame.size.height = max(frame.height, ceil(natural.height))
+		}
+	} else if checks.contains(id), let button = view as? NSButton {
+		frame.size.width = max(frame.width, ceil(button.cell?.cellSize.width ?? 0))
+	} else if pushes.contains(id), let button = view as? NSButton {
+		// A smaller bezel where the title needs the room; then a little past the frame, into the gap the forms leave.
+		button.controlSize = .small
+		if ceil(button.cell?.cellSize.width ?? 0) > place.width {
+			button.controlSize = .mini
+		}
+
+		let extra = min(12, ceil(button.cell?.cellSize.width ?? 0) - place.width)
+		if extra > 0 {
+			frame.origin.x -= floor(extra / 2)
+			frame.size.width += extra
+		}
+	}
+
+	view.frame = frame
+}
+
+/// A button that stays down, in the colours the forms' host gives it.
+private func paintToggle(_ button: NSButton, _ on: Bool) {
+	button.layer?.backgroundColor = on ? NSColor(srgbRed: 204 / 255, green: 228 / 255, blue: 247 / 255, alpha: 1).cgColor : NSColor(white: 0.96, alpha: 1).cgColor
+	button.layer?.borderColor = on ? NSColor(srgbRed: 0, green: 84 / 255, blue: 153 / 255, alpha: 1).cgColor : NSColor(white: 0.7, alpha: 1).cgColor
 }
 
 @_cdecl("mk_view_destroy")
 public func mk_view_destroy(_ id: Int32) {
 	views[id]?.removeFromSuperview()
 	views[id] = nil
+	placed[id] = nil
+	labelFonts[id] = nil
+	checks.remove(id)
+	pushes.remove(id)
+	toggles.remove(id)
 }
 
 @_cdecl("mk_view_frame")
 public func mk_view_frame(_ id: Int32, _ x: Int32, _ y: Int32, _ width: Int32, _ height: Int32) {
-	views[id]?.frame = NSRect(x: Int(x), y: Int(y), width: Int(width), height: Int(height))
+	placed[id] = NSRect(x: Int(x), y: Int(y), width: Int(width), height: Int(height))
+	fit(id)
 }
 
 @_cdecl("mk_view_visible")
@@ -635,7 +838,9 @@ public func mk_view_enabled(_ id: Int32, _ enabled: Int32) {
 		stepper.field.isEnabled = enabled != 0
 		stepper.stepper.isEnabled = enabled != 0
 	} else if let tabs = view as? MKTabs {
-		tabs.strip.isEnabled = enabled != 0
+		for tab in tabs.tabs {
+			tab.isEnabled = enabled != 0
+		}
 	} else if let table = view as? MKTable {
 		table.table.isEnabled = enabled != 0
 	} else if let scroll = view as? NSScrollView, let text = scroll.documentView as? MKTextView {
@@ -652,8 +857,15 @@ public func mk_view_tooltip(_ id: Int32, _ text: UnsafePointer<CChar>?) {
 
 @_cdecl("mk_view_fill")
 public func mk_view_fill(_ id: Int32, _ red: Int32, _ green: Int32, _ blue: Int32, _ alpha: Int32) {
+	let color = alpha == 0 ? nil : NSColor(srgbRed: CGFloat(red) / 255, green: CGFloat(green) / 255, blue: CGFloat(blue) / 255, alpha: CGFloat(alpha) / 255)
 	if let view = views[id] as? FlippedView {
-		view.fill = alpha == 0 ? nil : NSColor(srgbRed: CGFloat(red) / 255, green: CGFloat(green) / 255, blue: CGFloat(blue) / 255, alpha: CGFloat(alpha) / 255)
+		view.fill = color
+	} else if let scroll = views[id] as? MKScroll {
+		scroll.content.fill = color
+		scroll.drawsBackground = color != nil
+		if let color = color {
+			scroll.backgroundColor = color
+		}
 	}
 }
 
@@ -675,8 +887,8 @@ public func mk_view_text(_ id: Int32, _ text: UnsafePointer<CChar>?) {
 	if let button = view as? NSButton {
 		button.title = value
 	} else if let group = view as? MKGroup {
-		group.box.title = value
-		group.box.titlePosition = value.isEmpty ? .noTitle : .atTop
+		group.title.stringValue = value
+		group.needsLayout = true
 	} else if let combo = view as? NSComboBox {
 		combo.stringValue = value
 	} else if let field = view as? NSTextField {
@@ -697,14 +909,21 @@ public func mk_view_text(_ id: Int32, _ text: UnsafePointer<CChar>?) {
 
 		area.textStorage?.setAttributedString(text)
 	}
+
+	fit(id)
 }
 
-/// A label's or field's alignment: 0 left, 1 centre, 2 right.
+/// A label's alignment: 0 left, 1 centre, 2 right, and 3 times 0 top, 1 middle, 2 bottom.
 @_cdecl("mk_view_align")
 public func mk_view_align(_ id: Int32, _ alignment: Int32) {
 	if let control = views[id] as? NSControl {
-		control.alignment = alignment == 1 ? .center : alignment == 2 ? .right : .left
+		let across = alignment % 3
+		control.alignment = across == 1 ? .center : across == 2 ? .right : .left
+		(control.cell as? MKLabelCell)?.vertical = Int(alignment / 3)
+		control.needsDisplay = true
 	}
+
+	fit(id)
 }
 
 @_cdecl("mk_view_font")
@@ -712,15 +931,34 @@ public func mk_view_font(_ id: Int32, _ size: Float, _ bold: Int32) {
 	let font = bold != 0 ? NSFont.boldSystemFont(ofSize: CGFloat(size)) : NSFont.systemFont(ofSize: CGFloat(size))
 	if let control = views[id] as? NSControl {
 		control.font = font
+		if control.cell is MKLabelCell {
+			labelFonts[id] = font
+		}
+	} else if let group = views[id] as? MKGroup {
+		group.title.font = font
+		group.needsLayout = true
 	} else if let scroll = views[id] as? NSScrollView, let area = scroll.documentView as? MKTextView {
 		area.font = font
 	}
+
+	fit(id)
 }
 
 @_cdecl("mk_view_focus")
 public func mk_view_focus(_ id: Int32) {
-	if let view = views[id] {
-		view.window?.makeFirstResponder(view)
+	guard let view = views[id], let window = view.window else { return }
+	var target = view
+	if let table = view as? MKTable {
+		target = table.table
+	} else if let stepper = view as? MKStepper {
+		target = stepper.field
+	} else if let scroll = view as? NSScrollView, let text = scroll.documentView as? MKTextView {
+		target = text
+	}
+
+	// What can't hold AppKit's focus (a link) leaves none: the form still knows where it is.
+	if !window.makeFirstResponder(target) {
+		window.makeFirstResponder(nil)
 	}
 }
 
@@ -730,6 +968,9 @@ public func mk_view_focus(_ id: Int32) {
 public func mk_button_state(_ id: Int32, _ state: Int32) {
 	if let button = views[id] as? NSButton {
 		button.state = state == 2 ? .mixed : state == 1 ? .on : .off
+		if toggles.contains(id) {
+			paintToggle(button, state == 1)
+		}
 	}
 }
 
@@ -764,12 +1005,7 @@ public func mk_items(_ id: Int32, _ list: UnsafePointer<UnsafePointer<CChar>?>?,
 		combo.removeAllItems()
 		combo.addItems(withObjectValues: items)
 	} else if let tabs = view as? MKTabs {
-		tabs.strip.segmentCount = items.count
-		for (index, item) in items.enumerated() {
-			tabs.strip.setLabel(item, forSegment: index)
-		}
-
-		tabs.needsLayout = true
+		tabs.setTitles(items)
 	}
 }
 
@@ -788,9 +1024,7 @@ public func mk_selected(_ id: Int32, _ index: Int32) {
 
 		combo.delegate = Target.shared
 	} else if let tabs = view as? MKTabs {
-		if index >= 0 && Int(index) < tabs.strip.segmentCount {
-			tabs.strip.selectedSegment = Int(index)
-		}
+		tabs.select(Int(index))
 	}
 }
 

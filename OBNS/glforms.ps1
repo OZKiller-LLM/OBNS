@@ -23,6 +23,11 @@ foreach ($file in Get-ChildItem $source -Filter 'form*.cs') {
         $text = $text -replace "\b$form\b", "GL$form"
     }
 
+    # About's Close button: upstream's ends the whole program on Mono. The Windows flow is that it closes the dialog.
+    if ($file.BaseName -eq 'formAbout') {
+        $text = $text -replace 'Environment\.Exit\(0\);', 'Close();'
+    }
+
     # What the forms ask of the rest of OpenBVE through Windows Forms types (a combo box to fill, a window to own a
     # plugin's settings) goes to OBNS's equivalents (GLForms\Interop.cs).
     $text = $text -replace '\bTranslations\.ListLanguages\(', 'OpenBve.GLForms.Interop.ListLanguages('

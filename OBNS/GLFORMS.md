@@ -70,7 +70,10 @@ design for looks only. So it keeps everything above that decides layout and flow
   through `PerformClick`, a choice through the same selection events. Upstream's formMain, its designer layout, anchors,
   docking, tab pages and logic are untouched.
 - A control a form paints itself, or one with no counterpart, is an image view of its bitmap, so nothing is lost.
-- Message boxes are `NSAlert`, file and folder choosers `NSOpenPanel` and `NSSavePanel`, dialogs sheets on the main window,
-  context menus `NSMenu`.
+- Message boxes are `NSAlert`, file and folder choosers `NSOpenPanel` and `NSSavePanel`, context menus `NSMenu`. Dialogs are
+  windows of their own with their title and close box, over the main window, which waits for them.
+- Keys go to the form first (`DispatchKey`, shared with the OpenGL host): Tab order, Return and Escape are the forms'.
+- Text in the Mac's font can be wider than the forms were laid out for: `fit` in MenuKit keeps a line whole, past its frame
+  or a little smaller, without moving anything.
 
 Used on macOS when the library is beside the program; else, or with `OBNS_MENU_NATIVE=0`, the OpenGL host as above.
