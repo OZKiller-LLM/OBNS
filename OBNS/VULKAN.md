@@ -130,10 +130,15 @@ In `OBNS/overrides/source/OpenBVE/Graphics/Vulkan/`, compiled into the desktop p
 - `VulkanWorld.cs`: the frame (OpenGL hands over, Vulkan makes and submits the frame on its own thread, OpenGL
   composites) and OpenGL's side.
 - `SharedHeap.cs`, `GpuMemory.cs`: memory shared with OpenGL (vertex buffers), Vulkan's own, and uploads.
-- `VulkanTextures.cs`: Vulkan's own textures; `VulkanMeshes.cs`: the shared vertex buffers and the triangle
-  indices.
+- `VulkanTextures.cs`: the textures' Vulkan images; `VulkanMeshes.cs`: the shared vertex buffers and the triangle
+  indices' buffers.
 - `VulkanScene.cs`: upstream's per-face drawing (`RenderFace`) as draw records, made on every core, pipelines,
   and the recording.
+
+Shared with the other APIs' world layers (`DIRECT3D.md`), in `Graphics/`: `WorldLayer.cs` (what the renderer calls),
+`WorldComposite.cs` (the composite), `WorldMeshes.cs` (the faces as triangle lists, and the meshes' bookkeeping),
+`WorldTextures.cs` (decoding, the frame's budget, preloads, animated frames, the white texture), `WorldHooks.cs`
+(LibRender2's hooks) and `WorldMemory.cs` (ranges of blocks).
 
 Elsewhere: OBNS's `NewRenderer.cs` gives the world's faces to it before the background and lays the frame over
 it; `GameWindow.cs` sets it up and sends upstream's texture preloads to it; `Graphics/GpuStats.cs` measures;

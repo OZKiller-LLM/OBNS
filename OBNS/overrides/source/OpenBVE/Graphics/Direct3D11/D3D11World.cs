@@ -1,6 +1,7 @@
 // OBNS: not an upstream file. The world layer drawn by Direct3D 11 (OBNS/DIRECT3D.md): Direct3D draws the world and cab
 // layers into images OpenGL has registered (WGL_NV_DX_interop2), OpenGL lays them over its frame (WorldComposite).
-// Step 2: the images and the composite; the scene's records are not drawn yet (the layer is chosen by OBNS_D3D11=1 only).
+// Step 3: the images, the composite, and the meshes' and textures' copies; the scene's records are not drawn yet (the
+// layer is chosen by OBNS_D3D11=1 only).
 
 using System;
 using LibRender2;
@@ -24,6 +25,13 @@ namespace OpenBve.Graphics.Direct3D11
 		private WorldComposite composite;
 		private readonly D3D11Scene scene = new D3D11Scene();
 		private bool failed;
+
+		/// <summary>The copies of upstream's meshes and of the world's textures.</summary>
+		internal D3D11Meshes Meshes { get; private set; }
+		internal D3D11Textures Textures { get; private set; }
+
+		/// <summary>Frames drawn, from 1 (the textures and meshes free what is let go of by it).</summary>
+		private long frameNumber;
 
 		// The frame's images: the world's colour, its depth as a single-channel colour (what the composite reads), the cab
 		// layer's colour; Direct3D's own depth buffer; OpenGL's names for the first three, and its interop handles.
@@ -64,6 +72,9 @@ namespace OpenBve.Graphics.Direct3D11
 			try
 			{
 				world.composite = new WorldComposite();
+				world.Meshes = new D3D11Meshes(device);
+				world.Textures = new D3D11Textures(device);
+				WorldHooks.Install("Direct3D 11", "OBNS_D3D11", world.Meshes, world.Textures);
 			}
 			catch (Exception ex)
 			{
@@ -73,7 +84,7 @@ namespace OpenBve.Graphics.Direct3D11
 			}
 
 			instance = world;
-			Log("OBNS Direct3D 11 world layer on: " + device.Description + " (step 2: its images laid over OpenGL's frame; the world is not drawn yet)");
+			Log("OBNS Direct3D 11 world layer on: " + device.Description + " (step 3: its images laid over OpenGL's frame, meshes and textures copied; the world is not drawn yet)");
 		}
 
 		public IWorldScene Scene => scene;
@@ -86,13 +97,9 @@ namespace OpenBve.Graphics.Direct3D11
 		{
 		}
 
-		public void LoadAllTextures()
-		{
-		}
+		public void LoadAllTextures() => Textures.LoadAll();
 
-		public void PreloadTrain(TrainBase train)
-		{
-		}
+		public void PreloadTrain(TrainBase train) => Textures.PreloadTrain(train);
 
 		/// <summary>The images at the viewport's size, made again when it changes.</summary>
 		private void EnsureTarget(int newWidth, int newHeight)
@@ -149,6 +156,11 @@ namespace OpenBve.Graphics.Direct3D11
 			try
 			{
 				EnsureTarget(viewportWidth, viewportHeight);
+				frameNumber++;
+				Textures.FrameStarted(frameNumber);
+				Meshes.FrameStarted(frameNumber);
+				Textures.StartBudget();
+				Textures.Send();
 				if (locked)
 				{
 					device.Unlock(handles);
@@ -249,13 +261,15 @@ namespace OpenBve.Graphics.Direct3D11
 		internal static string RendererName => "Direct3D 11 world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
 
 		/// <summary>The layer's state for the frame statistics.</summary>
-		internal static string Summary => Enabled ? "on (Direct3D 11, step 2: images only)" : "off";
+		internal static string Summary => Enabled ? "on (Direct3D 11, step 3: images, " + instance.Textures.Describe() + "; " + instance.Meshes.Describe() + ")" : "off";
 
 		public void Dispose()
 		{
 			ReleaseTarget();
 			composite?.Dispose();
 			composite = null;
+			Meshes?.Dispose();
+			Textures?.Dispose();
 			device.Dispose();
 		}
 	}

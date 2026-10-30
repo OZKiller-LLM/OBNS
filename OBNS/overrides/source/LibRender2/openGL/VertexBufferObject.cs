@@ -21,6 +21,11 @@ namespace LibRender2
 		public object Owner;
 		/// <summary>The OpenGL buffer whose storage it is (buffers only).</summary>
 		public int GLBuffer;
+		/// <summary>
+		/// Not shared: OpenGL keeps its own storage, and the world layer a copy, written through WriteVertices as well
+		/// (the Direct3D 11 world layer, OBNS/DIRECT3D.md).
+		/// </summary>
+		public bool Mirror;
 	}
 
 	/// <summary>
@@ -126,6 +131,14 @@ namespace LibRender2
 			if (bytes > 0 && ObnsShared == null && ObnsSharing.AllocateBuffer != null)
 			{
 				ObnsShared = ObnsSharing.AllocateBuffer(bytes);
+				if (ObnsShared != null && ObnsShared.Mirror)
+				{
+					ObnsShared.GLBuffer = handle;
+					GL.BufferData(BufferTarget.ArrayBuffer, new IntPtr(vertexData.Length * vertexSize), vertexData, drawType);
+					ObnsSharing.WriteVertices?.Invoke(ObnsShared, vertexData, 0);
+					return;
+				}
+
 				if (ObnsShared != null)
 				{
 					ObnsShared.GLBuffer = handle;
@@ -143,10 +156,15 @@ namespace LibRender2
 		/// <summary>Updates the VertexData contained within the VBO</summary>
 		internal void BufferSubData(LibRenderVertex[] VertexData, int Offset = 0)
 		{
-			if (ObnsShared != null)
+			if (ObnsShared != null && !ObnsShared.Mirror)
 			{
 				ObnsWrite(VertexData, Offset);
 				return;
+			}
+
+			if (ObnsShared != null)
+			{
+				ObnsSharing.WriteVertices?.Invoke(ObnsShared, VertexData, (long)Offset * vertexSize);
 			}
 
 			GL.BufferSubData(BufferTarget.ArrayBuffer, new IntPtr(Offset * vertexSize), new IntPtr(VertexData.Length * vertexSize), VertexData);

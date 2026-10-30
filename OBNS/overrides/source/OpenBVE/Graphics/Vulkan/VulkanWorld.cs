@@ -117,69 +117,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Has upstream's VAOs and textures copied as they are made, updated and let go of (OBNS's LibRender2 copies).</summary>
 		private void Hook()
 		{
-			ObnsSharing.Error = message => Log("OBNS Vulkan world layer: OpenGL error on shared storage: " + message);
-			// One copy of each vertex buffer, in storage both APIs use.
-			ObnsSharing.AllocateBuffer = bytes => Guard(() => Scene.Meshes.AllocateVertices(bytes), 4);
-			ObnsSharing.FreeBuffer = shared => Guard(() => { Scene.Meshes.FreeVertices(shared); return null; }, 5);
-			ObnsSharing.BufferWritten = buffer => Scene.Meshes.Written(buffer);
-			ObnsSharing.WriteVertices = (shared, data, offset) => Guard(() => Scene.Meshes.WriteVertices(shared, data, offset) ? shared : null, 6) != null;
-			// Textures are not shared (OpenGL draws far more slowly with textures over shared memory): Vulkan keeps its
-			// own copy of the world's (VulkanTextures), and of animated ones' frames as OpenGL uploads them.
-			ObnsSharing.AnimatedFrame = (handle, decoded, bytes, opaque) => Guard(() => { Scene.Textures.AnimatedFrame(handle, decoded, bytes, opaque); return null; }, 2);
-			ObnsSharing.TextureUnloading = handle => Guard(() => { Scene.Textures.Unloading(handle); return null; }, 3);
-
-			// The meshes' faces, indexed for Vulkan's triangle lists.
-			VAOExtensions.ObnsMeshUploaded = mesh => Guard(() => { Scene.Meshes.Uploaded(mesh); return null; }, 0);
-			VAOExtensions.ObnsVaoDisposed = vao => Guard(() => { Scene.Meshes.Disposed(vao); return null; }, 1);
-		}
-
-		private static bool hookFailed;
-
-		// The hooks' calls and time, logged every 5 seconds while they are busy (OBNS_VULKAN_DEBUG=1).
-		private static readonly bool logHooks = Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1";
-		private static readonly long[] hookCalls = new long[7], hookTicks = new long[7];
-		private static readonly System.Diagnostics.Stopwatch hookClock = System.Diagnostics.Stopwatch.StartNew();
-		private static long lastHookLog;
-		private static readonly string[] hookNames = { "meshes indexed", "VAOs disposed", "animated texture frames", "textures unloaded", "vertex buffers made", "vertex buffers freed", "vertex writes" };
-
-		/// <summary>
-		/// Runs a hook, so a failure is logged (once) and does not break upstream's drawing: storage not given is left to
-		/// OpenGL (null).
-		/// </summary>
-		private static ObnsSharedMemory Guard(Func<ObnsSharedMemory> action, int hook)
-		{
-			long start = hookClock.ElapsedTicks;
-			ObnsSharedMemory result = null;
-			try
-			{
-				result = action();
-			}
-			catch (Exception ex)
-			{
-				if (!hookFailed)
-				{
-					hookFailed = true;
-					Log("OBNS Vulkan world layer: a copy failed: " + ex);
-				}
-			}
-
-			long now = hookClock.ElapsedTicks;
-			hookCalls[hook]++;
-			hookTicks[hook] += now - start;
-			if (logHooks && now - lastHookLog > 5 * System.Diagnostics.Stopwatch.Frequency)
-			{
-				lastHookLog = now;
-				System.Text.StringBuilder line = new System.Text.StringBuilder("OBNS Vulkan copies:");
-				for (int i = 0; i < hookCalls.Length; i++)
-				{
-					line.Append(' ').Append(hookCalls[i]).Append(' ').Append(hookNames[i]).Append(" (").Append((hookTicks[i] * 1000 / System.Diagnostics.Stopwatch.Frequency)).Append(" ms)").Append(i < hookCalls.Length - 1 ? "," : "");
-				}
-
-				line.Append("; upload waits ").Append(Uploader.WaitMilliseconds).Append(" ms; ").Append(instance?.Scene?.Meshes.Describe()).Append("; ").Append(instance?.Scene?.Textures.Describe());
-				Log(line.ToString());
-			}
-
-			return result;
+			WorldHooks.Install("Vulkan", "OBNS_VULKAN", Scene.Meshes, Scene.Textures, () => "upload waits " + Uploader.WaitMilliseconds + " ms");
 		}
 
 		// Time gathering the faces and drawing (recording, submitting, compositing), since the statistics were last taken.

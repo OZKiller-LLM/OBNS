@@ -128,7 +128,7 @@ namespace OpenBve.Graphics.Vulkan
 			public int Pass, AlphaFunction;
 			public float AlphaReference;
 			// Resolved by Prepare (main thread): the mesh, the face's indices, its textures' places (-1: none).
-			public VulkanMesh Mesh;
+			public WorldMesh Mesh;
 			public uint FirstIndex, IndexCount;
 			public int DayTexture, NightTexture;
 		}
@@ -800,21 +800,21 @@ namespace OpenBve.Graphics.Vulkan
 					last = state;
 				}
 
-				if (!((mesh.VAO as VertexArrayObject)?.ObnsVulkanMesh is VulkanMesh vulkanMesh) || !vulkanMesh.Find(item.Face.IboStartIndex, out int slot, out item.FirstIndex, out item.IndexCount))
+				if (!((mesh.VAO as VertexArrayObject)?.ObnsWorldMesh is WorldMesh worldMesh) || !worldMesh.Find(item.Face.IboStartIndex, out int slot, out item.FirstIndex, out item.IndexCount))
 				{
 					continue;
 				}
 
 				ref MeshMaterial material = ref mesh.Materials[item.Face.Material];
 				OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
-				item.DayTexture = TextureIndex(material.DaytimeTexture, wrap, vulkanMesh.DaySlots, slot);
+				item.DayTexture = TextureIndex(material.DaytimeTexture, wrap, worldMesh.DaySlots, slot);
 				item.NightTexture = -1;
 				if (material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && BlendFactor(state) != 0)
 				{
-					item.NightTexture = TextureIndex(material.NighttimeTexture, wrap, vulkanMesh.NightSlots, slot);
+					item.NightTexture = TextureIndex(material.NighttimeTexture, wrap, worldMesh.NightSlots, slot);
 				}
 
-				item.Mesh = vulkanMesh;
+				item.Mesh = worldMesh;
 			}
 		}
 
@@ -873,8 +873,8 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>A face's records, as upstream's RenderFace would draw it in its pass.</summary>
 		private void BuildFace(Chunk chunk, ref Item item, ref ObjectState lastState, ref Matrix4D lastModelMatrix, ref int lastObject)
 		{
-			VulkanMesh vulkanMesh = item.Mesh;
-			if (vulkanMesh == null)
+			WorldMesh worldMesh = item.Mesh;
+			if (worldMesh == null)
 			{
 				if (item.State.Prototype.Mesh.Vertices.Length > 0)
 				{
@@ -964,7 +964,7 @@ namespace OpenBve.Graphics.Vulkan
 				shadow = backFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0 ? 1 : 2;
 			}
 
-			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, vulkanMesh, false, shadow);
+			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, worldMesh, false, shadow);
 
 			// Nighttime texture, blended over the daytime one.
 			if (blendFactor != 0 && item.NightTexture >= 0)
@@ -973,7 +973,7 @@ namespace OpenBve.Graphics.Vulkan
 				draw.AlphaFunction = AlphaGreater;
 				draw.AlphaReference = 0.0f;
 				draw.Opacity = Inv255 * material.Color.A * distanceFactor * blendFactor;
-				AddDraw(chunk, draw, pass, item.Pass, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, vulkanMesh, true, 0);
+				AddDraw(chunk, draw, pass, item.Pass, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, worldMesh, true, 0);
 			}
 		}
 
@@ -1060,7 +1060,7 @@ namespace OpenBve.Graphics.Vulkan
 			return chunk.ObjectCount++;
 		}
 
-		private void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, VulkanMesh mesh, bool night, int shadow)
+		private void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, WorldMesh mesh, bool night, int shadow)
 		{
 			if (chunk.DrawCount == chunk.Draws.Length)
 			{

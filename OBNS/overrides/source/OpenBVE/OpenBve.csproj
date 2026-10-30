@@ -211,6 +211,10 @@
     <!-- OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md). -->
     <Compile Include="Graphics\WorldLayer.cs" />
     <Compile Include="Graphics\WorldComposite.cs" />
+    <Compile Include="Graphics\WorldMemory.cs" />
+    <Compile Include="Graphics\WorldMeshes.cs" />
+    <Compile Include="Graphics\WorldTextures.cs" />
+    <Compile Include="Graphics\WorldHooks.cs" />
     <Compile Include="Graphics\Vulkan\Vk.cs" />
     <Compile Include="Graphics\Vulkan\VulkanDevice.cs" />
     <Compile Include="Graphics\Vulkan\SharedTarget.cs" />
@@ -227,6 +231,8 @@
     <Compile Include="Graphics\Direct3D11\Dx.cs" />
     <Compile Include="Graphics\Direct3D11\D3D11Device.cs" />
     <Compile Include="Graphics\Direct3D11\D3D11World.cs" />
+    <Compile Include="Graphics\Direct3D11\D3D11Meshes.cs" />
+    <Compile Include="Graphics\Direct3D11\D3D11Textures.cs" />
     <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.vert.spv">
       <LogicalName>OBNS.Vulkan.world.vert.spv</LogicalName>
     </EmbeddedResource>

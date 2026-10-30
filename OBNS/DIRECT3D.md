@@ -44,7 +44,10 @@ about 3,000 lines:
 2. `WorldLayer`, and the composite shared by both layers; the Direct3D 11 frame's images, laid over
    OpenGL's frame (a tinted clear first). **Done** (a4d1ba7, 522f28e, and the layer by `OBNS_D3D11=1`):
    OpenGL's background with Direct3D's cleared images over it, 94 fps on the Tuen Ma Line.
-3. Meshes and textures split into shared logic and per-API storage; Direct3D 11's.
+3. Meshes and textures split into shared logic and per-API storage; Direct3D 11's. **Done**: `WorldMeshes`,
+   `WorldTextures`, `WorldHooks` and `WorldMemory` shared; Vulkan unchanged (snapshots on the Tuen Ma Line);
+   Direct3D 11 copies the vertex buffers (`ObnsSharedMemory.Mirror`: OpenGL keeps its own) and makes its textures
+   (levels by `GenerateMips`): on the Tuen Ma Line about 14,800 meshes, 448 MB of vertices, the cab's 238 textures.
 4. The scene's records shared; Direct3D 11's recording and HLSL shaders; the cab layer.
 5. Shadows; the options' renderer list (OpenGL, Vulkan, Direct3D 11); measured on the Tuen Ma Line.
 
@@ -57,4 +60,6 @@ Then Direct3D 12 (closest to Vulkan: the records, and memory shared with OpenGL 
 | --- | --- |
 | `OBNS_D3D11=1` | the world layer drawn by Direct3D 11 (while it is being built; in place of Vulkan) |
 | `OBNS_D3D11_TINT=0` | its images cleared to nothing (at step 2 they are cleared to a faint green, to show they arrive) |
+| `OBNS_D3D11_DEBUG=1` | each texture made, and the copies' counts every 5 seconds, logged |
+| `OBNS_D3D11_WHITE=1`, `OBNS_D3D11_NOMIPS=1` | no textures (all white); textures without mipmaps (as Vulkan's) |
 | `OBNS_D3D11_TEST=1` | at start, the Direct3D 11 device and its images' path to OpenGL checked and logged |

@@ -187,6 +187,31 @@ namespace OpenBve.Graphics.Direct3D11
 			((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, float, byte, void>)Table(context)[53])(context, view, 1, depth, 0);
 		}
 
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct Box
+		{
+			public uint Left, Top, Front, Right, Bottom, Back;
+		}
+
+		/// <summary>ID3D11DeviceContext::UpdateSubresource (48): a buffer's bytes [offset, offset + bytes).</summary>
+		internal static void UpdateBuffer(IntPtr context, IntPtr buffer, ulong offset, void* data, ulong bytes)
+		{
+			Box box = new Box { Left = (uint)offset, Right = (uint)(offset + bytes), Bottom = 1, Back = 1 };
+			((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, Box*, void*, uint, uint, void>)Table(context)[48])(context, buffer, 0, &box, data, 0, 0);
+		}
+
+		/// <summary>ID3D11DeviceContext::UpdateSubresource (48): a whole subresource (a texture's level) from rows of so many bytes.</summary>
+		internal static void UpdateSubresource(IntPtr context, IntPtr resource, uint subresource, void* data, uint rowPitch)
+		{
+			((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, Box*, void*, uint, uint, void>)Table(context)[48])(context, resource, subresource, null, data, rowPitch, 0);
+		}
+
+		/// <summary>ID3D11DeviceContext::GenerateMips (54): every level below the first, from it.</summary>
+		internal static void GenerateMips(IntPtr context, IntPtr view)
+		{
+			((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, void>)Table(context)[54])(context, view);
+		}
+
 		/// <summary>ID3D11DeviceContext::Flush (111).</summary>
 		internal static void Flush(IntPtr context)
 		{

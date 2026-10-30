@@ -20,10 +20,10 @@ namespace LibRender2
 	{
 		internal readonly int handle;
 
-		/// <summary>OBNS: the Vulkan world layer's record of the mesh (OBNS/VULKAN.md), if it has one.</summary>
-		public object ObnsVulkanMesh;
+		/// <summary>OBNS: the world layer's record of the mesh (OBNS/VULKAN.md, OBNS/DIRECT3D.md), if it has one.</summary>
+		public object ObnsWorldMesh;
 
-		/// <summary>OBNS: the vertex buffer (its storage may be shared with the Vulkan world layer).</summary>
+		/// <summary>OBNS: the vertex buffer (its storage may be the world layer's).</summary>
 		public VertexBufferObject ObnsVbo => vbo;
 		private VertexBufferObject vbo;
 		private IndexBufferObject ibo;
