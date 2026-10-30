@@ -454,7 +454,7 @@ namespace OpenBve.Graphics.Metal
 					for (int i = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade]; i < end; i++)
 					{
 						DrawCommand command = shadowCommands[i];
-						int cull = (int)(command.Key >> 48) == 1 ? 1 : 0;
+						int cull = ShadowCull(command.Key) ? 1 : 0;
 						if (cull != boundCull)
 						{
 							Mtl.Void(encoder, selSetCullMode, cull == 1 ? Mtl.CullFront : Mtl.CullNone);

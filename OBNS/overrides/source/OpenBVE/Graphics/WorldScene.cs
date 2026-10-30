@@ -96,8 +96,10 @@ namespace OpenBve.Graphics
 			public long Key;
 			public uint FirstIndex, IndexCount;
 			public int VertexBase, Draw, Pass;
-			/// <summary>Whether the face casts a shadow: 0 no, 1 culled as upstream's shadow pass culls it, 2 both sides.</summary>
+			/// <summary>Whether the face casts a shadow: 0 no, 1 culled as upstream's shadow pass culls it, 2 both sides; 3 and 4 the same with nothing see-through (depth only).</summary>
 			public int Shadow;
+			/// <summary>A shadow caster's bounding sphere, relative to the camera (a negative radius: it moves within itself, so always drawn).</summary>
+			public float SphereX, SphereY, SphereZ, SphereRadius;
 			/// <summary>A shadow caster's object's squared distance from the camera (the cascades' culling).</summary>
 			public float Distance;
 		}
@@ -297,6 +299,20 @@ namespace OpenBve.Graphics
 			{
 				double limit = filter && i < caster.CascadeCount ? caster.SplitDistances[i] + 150.0 : double.MaxValue;
 				cascadeLimits[i] = limit < double.MaxValue ? (float)(limit * limit) : float.MaxValue;
+				if (i < caster.CascadeCount)
+				{
+					Matrix4D m = caster.LightSpaceMatrices[i];
+					cascadeBoxes[i, 0] = m.Row0.X;
+					cascadeBoxes[i, 1] = m.Row1.X;
+					cascadeBoxes[i, 2] = m.Row2.X;
+					cascadeBoxes[i, 3] = m.Row3.X;
+					cascadeBoxes[i, 4] = m.Row0.Y;
+					cascadeBoxes[i, 5] = m.Row1.Y;
+					cascadeBoxes[i, 6] = m.Row2.Y;
+					cascadeBoxes[i, 7] = m.Row3.Y;
+					cascadeBoxes[i, 8] = Math.Sqrt(m.Row0.X * m.Row0.X + m.Row1.X * m.Row1.X + m.Row2.X * m.Row2.X);
+					cascadeBoxes[i, 9] = Math.Sqrt(m.Row0.Y * m.Row0.Y + m.Row1.Y * m.Row1.Y + m.Row2.Y * m.Row2.Y);
+				}
 			}
 
 			data.ShadowEnabled = 1;
@@ -324,6 +340,19 @@ namespace OpenBve.Graphics
 
 			frameData[WorldLayerIndex] = data;
 		}
+
+		/// <summary>Whether a shadow draw's order key (DrawCommand.Shadow in its top bits) is culled as upstream's shadow pass culls.</summary>
+		protected static bool ShadowCull(long key)
+		{
+			int kind = (int)(key >> 48);
+			return kind == 1 || kind == 3;
+		}
+
+		/// <summary>Whether a shadow draw has nothing see-through, so it can do without a fragment shader.</summary>
+		protected static bool ShadowDepthOnly(long key) => (int)(key >> 48) >= 3;
+
+		/// <summary>Each cascade's light space, x and y as rows of the matrix, and how far a unit radius reaches in each.</summary>
+		private readonly double[,] cascadeBoxes = new double[4, 10];
 
 		/// <summary>How many cascades the shadow pass draws this frame (0: none).</summary>
 		protected int shadowCascades;
@@ -469,6 +498,7 @@ namespace OpenBve.Graphics
 			Matrix4D lastModelMatrix = Matrix4D.Identity;
 			int lastObject = 0, lastLayer = -1;
 			float lastDistance = 0.0f;
+			CasterSphere lastSphere = default;
 			for (int i = start; i < end; i++)
 			{
 				int layer = passes[items[i].Pass].Layer;
@@ -479,7 +509,7 @@ namespace OpenBve.Graphics
 					lastLayer = layer;
 				}
 
-				BuildFace(chunk, ref items[i], ref lastState, ref lastModelMatrix, ref lastObject, ref lastDistance);
+				BuildFace(chunk, ref items[i], ref lastState, ref lastModelMatrix, ref lastObject, ref lastDistance, ref lastSphere);
 			}
 		}
 
@@ -488,7 +518,7 @@ namespace OpenBve.Graphics
 		/// placed by its camera-relative model matrix (upstream measures from ObjectState.WorldPosition, which only static
 		/// objects have, so not the static groups or animated objects here).
 		/// </summary>
-		private static float SquaredDistance(WorldMesh worldMesh, Mesh mesh, Matrix4D model)
+		private static float SquaredDistance(WorldMesh worldMesh, Mesh mesh, Matrix4D model, out CasterSphere sphere)
 		{
 			if (Volatile.Read(ref worldMesh.BoundsRadius) < 0.0)
 			{
@@ -517,18 +547,25 @@ namespace OpenBve.Graphics
 			}
 
 			// Upstream's matrices take row vectors: the translation is the last row.
-			double bx = worldMesh.BoundsX, by = worldMesh.BoundsY, bz = worldMesh.BoundsZ;
+			// The shaders negate Z before these matrices.
+			double bx = worldMesh.BoundsX, by = worldMesh.BoundsY, bz = -worldMesh.BoundsZ;
 			double cx = bx * model.Row0.X + by * model.Row1.X + bz * model.Row2.X + model.Row3.X;
 			double cy = bx * model.Row0.Y + by * model.Row1.Y + bz * model.Row2.Y + model.Row3.Y;
 			double cz = bx * model.Row0.Z + by * model.Row1.Z + bz * model.Row2.Z + model.Row3.Z;
 			double scale = Math.Sqrt(Math.Max(model.Row0.X * model.Row0.X + model.Row0.Y * model.Row0.Y + model.Row0.Z * model.Row0.Z,
 				Math.Max(model.Row1.X * model.Row1.X + model.Row1.Y * model.Row1.Y + model.Row1.Z * model.Row1.Z, model.Row2.X * model.Row2.X + model.Row2.Y * model.Row2.Y + model.Row2.Z * model.Row2.Z)));
 			double distance = Math.Max(0.0, Math.Sqrt(cx * cx + cy * cy + cz * cz) - worldMesh.BoundsRadius * scale);
+			sphere = new CasterSphere { X = (float)cx, Y = (float)cy, Z = (float)cz, Radius = (float)(worldMesh.BoundsRadius * scale) };
 			return (float)(distance * distance);
 		}
 
+		private struct CasterSphere
+		{
+			public float X, Y, Z, Radius;
+		}
+
 		/// <summary>A face's records, as upstream's RenderFace would draw it in its pass.</summary>
-		private void BuildFace(Chunk chunk, ref Item item, ref ObjectState lastState, ref Matrix4D lastModelMatrix, ref int lastObject, ref float lastDistance)
+		private void BuildFace(Chunk chunk, ref Item item, ref ObjectState lastState, ref Matrix4D lastModelMatrix, ref int lastObject, ref float lastDistance, ref CasterSphere lastSphere)
 		{
 			WorldMesh worldMesh = item.Mesh;
 			if (worldMesh == null)
@@ -553,7 +590,20 @@ namespace OpenBve.Graphics
 				lastModelMatrix = state.ModelMatrix * cameraTranslation;
 				lastObject = AddObject(chunk, state, lastModelMatrix * (pass.Layer == CabLayer ? cabViewMatrix : viewMatrix));
 				lastState = state;
-				lastDistance = state.Prototype.Dynamic ? 0.0f : SquaredDistance(worldMesh, mesh, lastModelMatrix);
+				if (state.Prototype.Dynamic)
+				{
+					lastDistance = 0.0f;
+					lastSphere = new CasterSphere { Radius = -1.0f };
+				}
+				else
+				{
+					lastDistance = SquaredDistance(worldMesh, mesh, lastModelMatrix, out lastSphere);
+					if (state.Matricies != null && state.Matricies.Length > 0)
+					{
+						lastSphere.Radius = -1.0f;
+					}
+				}
+
 				chunk.ObjectTicks += System.Diagnostics.Stopwatch.GetTimestamp() - objectStart;
 			}
 
@@ -617,12 +667,17 @@ namespace OpenBve.Graphics
 			draw.Opacity = Inv255 * material.Color.A * alphaFactor;
 			// A shadow caster as upstream's shadow pass has it: a world face, not additive, its material and object casting.
 			int shadow = 0;
-			if (pass.Layer == WorldLayerIndex && !additive && (material.Flags & MaterialFlags.NoShadow) == 0 && !state.DisableShadowCasting)
+			// (A material at half opacity or less leaves no depth in upstream's shader, whatever its texture.)
+			if (pass.Layer == WorldLayerIndex && !additive && (material.Flags & MaterialFlags.NoShadow) == 0 && !state.DisableShadowCasting && material.Color.A > 127)
 			{
 				shadow = backFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0 ? 1 : 2;
+				if (material.DaytimeTexture == null || (item.DayTexture >= 0 && material.DaytimeTexture.Transparency == TextureTransparencyType.Opaque))
+				{
+					shadow += 2;
+				}
 			}
 
-			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, worldMesh, false, shadow, lastDistance);
+			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, worldMesh, false, shadow, lastDistance, lastSphere);
 
 			// Nighttime texture, blended over the daytime one.
 			if (blendFactor != 0 && item.NightTexture >= 0)
@@ -631,7 +686,7 @@ namespace OpenBve.Graphics
 				draw.AlphaFunction = AlphaGreater;
 				draw.AlphaReference = 0.0f;
 				draw.Opacity = Inv255 * material.Color.A * distanceFactor * blendFactor;
-				AddDraw(chunk, draw, pass, item.Pass, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, worldMesh, true, 0, lastDistance);
+				AddDraw(chunk, draw, pass, item.Pass, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, worldMesh, true, 0, lastDistance, lastSphere);
 			}
 		}
 
@@ -718,7 +773,7 @@ namespace OpenBve.Graphics
 			return chunk.ObjectCount++;
 		}
 
-		private void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, WorldMesh mesh, bool night, int shadow, float distance)
+		private void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, WorldMesh mesh, bool night, int shadow, float distance, CasterSphere sphere)
 		{
 			if (chunk.DrawCount == chunk.Draws.Length)
 			{
@@ -739,7 +794,7 @@ namespace OpenBve.Graphics
 			long page = TexturePage == 0 ? 0 : draw.Texture / TexturePage;
 			long key = ((night ? 1L : 0L) << 62) | ((long)pipelineKey << 48) | ((page & 0xFFFF) << 32) | ((long)(mesh.VertexBlock & 0xFFFF) << 16) | (long)(mesh.IndexBlock & 0xFFFF);
 			chunk.Draws[chunk.DrawCount] = draw;
-			chunk.Commands[chunk.CommandCount++] = new DrawCommand { Key = key, FirstIndex = firstIndex, IndexCount = indexCount, VertexBase = mesh.VertexBase, Draw = chunk.DrawCount, Pass = passIndex, Shadow = shadow, Distance = distance };
+			chunk.Commands[chunk.CommandCount++] = new DrawCommand { Key = key, FirstIndex = firstIndex, IndexCount = indexCount, VertexBase = mesh.VertexBase, Draw = chunk.DrawCount, Pass = passIndex, Shadow = shadow, Distance = distance, SphereX = sphere.X, SphereY = sphere.Y, SphereZ = sphere.Z, SphereRadius = sphere.Radius };
 			chunk.DrawCount++;
 		}
 
@@ -837,7 +892,7 @@ namespace OpenBve.Graphics
 			}
 
 			// The shadow casters' draws, grouped by culling and buffer blocks: each cascade's run of them (those near enough
-			// for it, as upstream culls them), one after another.
+			// for it, as upstream culls them, and that reach its box), one after another.
 			shadowCount = 0;
 			int casters = 0;
 			if (shadowCascades > 0)
@@ -848,7 +903,9 @@ namespace OpenBve.Graphics
 					if (commands[i].Shadow != 0)
 					{
 						DrawCommand command = commands[i];
-						command.Key = ((long)command.Shadow << 48) | (command.Key & 0xFFFFFFFFFFFFL);
+						// Depth only reads no texture: no page to keep apart.
+						long blocks = command.Key & (command.Shadow >= 3 ? 0xFFFFFFFFL : 0xFFFFFFFFFFFFL);
+						command.Key = ((long)command.Shadow << 48) | blocks;
 						casterCommands[casters++] = command;
 					}
 				}
@@ -869,9 +926,10 @@ namespace OpenBve.Graphics
 				float limit = cascadeLimits[cascade];
 				for (int i = 0; i < casters; i++)
 				{
-					if (casterCommands[i].Distance <= limit)
+					ref DrawCommand caster = ref casterCommands[i];
+					if (caster.Distance <= limit && (caster.SphereRadius < 0.0f || InCascadeBox(cascade, ref caster)))
 					{
-						shadowCommands[shadowCount++] = casterCommands[i];
+						shadowCommands[shadowCount++] = caster;
 					}
 				}
 
@@ -880,6 +938,17 @@ namespace OpenBve.Graphics
 
 			LastDraws = commandCount;
 			LastCabDraws = commandCount - cabCommandStart;
+		}
+
+		/// <summary>
+		/// Whether a caster's sphere reaches a cascade's box across the light (only x and y: along it, whether depth is clipped
+		/// or clamped differs between the APIs). What is outside can leave nothing in that map.
+		/// </summary>
+		private bool InCascadeBox(int cascade, ref DrawCommand caster)
+		{
+			double x = caster.SphereX * cascadeBoxes[cascade, 0] + caster.SphereY * cascadeBoxes[cascade, 1] + caster.SphereZ * cascadeBoxes[cascade, 2] + cascadeBoxes[cascade, 3];
+			double y = caster.SphereX * cascadeBoxes[cascade, 4] + caster.SphereY * cascadeBoxes[cascade, 5] + caster.SphereZ * cascadeBoxes[cascade, 6] + cascadeBoxes[cascade, 7];
+			return Math.Abs(x) <= 1.0 + caster.SphereRadius * cascadeBoxes[cascade, 8] && Math.Abs(y) <= 1.0 + caster.SphereRadius * cascadeBoxes[cascade, 9];
 		}
 
 		/// <summary>The shadow casters' draws, each cascade's run (shadowFirst, shadowLength) in turn; shadowCount in all.</summary>

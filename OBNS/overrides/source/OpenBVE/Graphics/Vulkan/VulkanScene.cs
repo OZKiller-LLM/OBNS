@@ -52,7 +52,7 @@ namespace OpenBve.Graphics.Vulkan
 		protected override WorldTextures SceneTextures => Textures;
 		private ulong setLayout, pipelineLayout, descriptorPool, vertexModule, fragmentModule, shadowVertexModule, shadowFragmentModule;
 		internal readonly VulkanShadows Shadows;
-		private readonly ulong[] shadowPipelines = new ulong[2];
+		private readonly ulong[] shadowPipelines = new ulong[4];
 		internal readonly ulong[] DescriptorSets = new ulong[FramesInFlight];
 
 		/// <summary>
@@ -284,10 +284,11 @@ namespace OpenBve.Graphics.Vulkan
 			WriteShadowMaps();
 		}
 
-		/// <summary>The shadow pass's pipeline: depth only, culled as upstream's shadow pass culls (or not).</summary>
-		private ulong ShadowPipeline(bool cull)
+		/// <summary>The shadow pass's pipeline: culled as upstream's shadow pass culls (or not); with no fragment shader for what has nothing see-through.</summary>
+		private ulong ShadowPipeline(bool cull, bool noFragmentShader)
 		{
-			ulong pipeline = shadowPipelines[cull ? 1 : 0];
+			int which = (cull ? 1 : 0) | (noFragmentShader ? 2 : 0);
+			ulong pipeline = shadowPipelines[which];
 			if (pipeline != 0)
 			{
 				return pipeline;
@@ -350,7 +351,7 @@ namespace OpenBve.Graphics.Vulkan
 					SType = Vk.StructureTypeGraphicsPipelineCreateInfo,
 					// The 1.0 tier: the shadow render pass in place of dynamic rendering's formats.
 					PNext = device.Core10 ? null : &rendering,
-					StageCount = 2,
+					StageCount = noFragmentShader ? 1u : 2u,
 					PStages = stages,
 					PVertexInputState = &vertexInput,
 					PInputAssemblyState = &inputAssembly,
@@ -371,7 +372,7 @@ namespace OpenBve.Graphics.Vulkan
 				Marshal.FreeHGlobal(main);
 			}
 
-			shadowPipelines[cull ? 1 : 0] = pipeline;
+			shadowPipelines[which] = pipeline;
 			return pipeline;
 		}
 
@@ -717,15 +718,19 @@ namespace OpenBve.Graphics.Vulkan
 							next++;
 						}
 
-						int cull = (int)(key >> 48) == 1 ? 1 : 0;
+						int kind = (int)(key >> 48);
+						bool depthOnly = ShadowDepthOnly(key);
 						int vertexBlock = (int)((key >> 16) & 0xFFFF), indexBlock = (int)(key & 0xFFFF);
-						if (cull != boundCull)
+						if (kind != boundCull)
 						{
-							Vk.vkCmdBindPipeline(commandBuffer, Vk.PipelineBindPointGraphics, ShadowPipeline(cull == 1));
-							boundCull = cull;
+							Vk.vkCmdBindPipeline(commandBuffer, Vk.PipelineBindPointGraphics, ShadowPipeline(ShadowCull(key), depthOnly));
+							boundCull = kind;
 						}
 
-						BindPage(commandBuffer, slot, (int)((key >> 32) & 0xFFFF), ref boundPage);
+						if (!depthOnly)
+						{
+							BindPage(commandBuffer, slot, (int)((key >> 32) & 0xFFFF), ref boundPage);
+						}
 
 						if (vertexBlock != boundVertexBlock)
 						{

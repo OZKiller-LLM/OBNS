@@ -574,7 +574,7 @@ namespace OpenBve.Graphics.Direct3D12
 					for (int i = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade]; i < end; i++)
 					{
 						DrawCommand command = shadowCommands[i];
-						int cull = (int)(command.Key >> 48) == 1 ? 1 : 0;
+						int cull = ShadowCull(command.Key) ? 1 : 0;
 						int texture = draws[command.Draw].Texture, sampler = draws[command.Draw].Sampler & 3;
 						int vertexBlock = (int)((command.Key >> 16) & 0xFFFF), indexBlock = (int)(command.Key & 0xFFFF);
 						if (cull != boundCull)

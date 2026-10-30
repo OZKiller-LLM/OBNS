@@ -382,7 +382,7 @@ namespace OpenBve.Graphics.Direct3D9
 				for (int i = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade]; i < end; i++)
 				{
 					DrawCommand command = shadowCommands[i];
-					int cull = (int)(command.Key >> 48) == 1 ? 1 : 0;
+					int cull = ShadowCull(command.Key) ? 1 : 0;
 					if (cull != boundCull)
 					{
 						D9.SetRenderState(d, D9.StateCullMode, cull == 1 ? D9.CullClockwise : D9.CullNone);
