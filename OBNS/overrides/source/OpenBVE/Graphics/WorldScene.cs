@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 using LibRender2;
 using LibRender2.Objects;
 using LibRender2.ShadowMapping;
@@ -73,6 +74,8 @@ namespace OpenBve.Graphics
 			public int VertexBase, Draw, Pass;
 			/// <summary>Whether the face casts a shadow: 0 no, 1 culled as upstream's shadow pass culls it, 2 both sides.</summary>
 			public int Shadow;
+			/// <summary>A shadow caster's object's squared distance from the camera (the cascades' culling).</summary>
+			public float Distance;
 		}
 
 		/// <summary>OpenGL's alpha functions as upstream's shader numbers them; Never means none.</summary>
@@ -263,6 +266,15 @@ namespace OpenBve.Graphics
 			}
 
 			shadowCascades = caster.CascadeCount;
+			// Upstream's per-cascade culling (Shadows.RenderPass, with the "filter cascades" option): an object casts into a
+			// cascade only within its split distance and 150 m more of the camera (here: the nearest of its bounds).
+			bool filter = Interface.CurrentOptions.ShadowFilterCascades;
+			for (int i = 0; i < 4; i++)
+			{
+				double limit = filter && i < caster.CascadeCount ? caster.SplitDistances[i] + 150.0 : double.MaxValue;
+				cascadeLimits[i] = limit < double.MaxValue ? (float)(limit * limit) : float.MaxValue;
+			}
+
 			data.ShadowEnabled = 1;
 			data.ShadowCascades = caster.CascadeCount;
 			data.ShadowSmooth = smooth ? 1 : 0;
@@ -291,6 +303,9 @@ namespace OpenBve.Graphics
 
 		/// <summary>How many cascades the shadow pass draws this frame (0: none).</summary>
 		protected int shadowCascades;
+
+		/// <summary>Each cascade's squared distance from the camera beyond which an object casts no shadow into it.</summary>
+		private readonly float[] cascadeLimits = { float.MaxValue, float.MaxValue, float.MaxValue, float.MaxValue };
 
 		private static void StoreColor(Color24 color, float* to, int at)
 		{
@@ -429,6 +444,7 @@ namespace OpenBve.Graphics
 			ObjectState lastState = null;
 			Matrix4D lastModelMatrix = Matrix4D.Identity;
 			int lastObject = 0, lastLayer = -1;
+			float lastDistance = 0.0f;
 			for (int i = start; i < end; i++)
 			{
 				int layer = passes[items[i].Pass].Layer;
@@ -439,12 +455,56 @@ namespace OpenBve.Graphics
 					lastLayer = layer;
 				}
 
-				BuildFace(chunk, ref items[i], ref lastState, ref lastModelMatrix, ref lastObject);
+				BuildFace(chunk, ref items[i], ref lastState, ref lastModelMatrix, ref lastObject, ref lastDistance);
 			}
 		}
 
+		/// <summary>
+		/// An object's squared distance from the camera for the cascades' culling: to the nearest of its mesh's bounding sphere,
+		/// placed by its camera-relative model matrix (upstream measures from ObjectState.WorldPosition, which only static
+		/// objects have, so not the static groups or animated objects here).
+		/// </summary>
+		private static float SquaredDistance(WorldMesh worldMesh, Mesh mesh, Matrix4D model)
+		{
+			if (Volatile.Read(ref worldMesh.BoundsRadius) < 0.0)
+			{
+				// Worked out once, on whichever worker first needs it (the same result on any).
+				VertexTemplate[] vertices = mesh.Vertices;
+				double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
+				foreach (VertexTemplate vertex in vertices)
+				{
+					Vector3 c = vertex.Coordinates;
+					minX = Math.Min(minX, c.X); maxX = Math.Max(maxX, c.X);
+					minY = Math.Min(minY, c.Y); maxY = Math.Max(maxY, c.Y);
+					minZ = Math.Min(minZ, c.Z); maxZ = Math.Max(maxZ, c.Z);
+				}
+
+				double x = 0.5 * (minX + maxX), y = 0.5 * (minY + maxY), z = 0.5 * (minZ + maxZ), radius2 = 0.0;
+				foreach (VertexTemplate vertex in vertices)
+				{
+					Vector3 c = vertex.Coordinates;
+					radius2 = Math.Max(radius2, (c.X - x) * (c.X - x) + (c.Y - y) * (c.Y - y) + (c.Z - z) * (c.Z - z));
+				}
+
+				worldMesh.BoundsX = x;
+				worldMesh.BoundsY = y;
+				worldMesh.BoundsZ = z;
+				Volatile.Write(ref worldMesh.BoundsRadius, Math.Sqrt(radius2));
+			}
+
+			// Upstream's matrices take row vectors: the translation is the last row.
+			double bx = worldMesh.BoundsX, by = worldMesh.BoundsY, bz = worldMesh.BoundsZ;
+			double cx = bx * model.Row0.X + by * model.Row1.X + bz * model.Row2.X + model.Row3.X;
+			double cy = bx * model.Row0.Y + by * model.Row1.Y + bz * model.Row2.Y + model.Row3.Y;
+			double cz = bx * model.Row0.Z + by * model.Row1.Z + bz * model.Row2.Z + model.Row3.Z;
+			double scale = Math.Sqrt(Math.Max(model.Row0.X * model.Row0.X + model.Row0.Y * model.Row0.Y + model.Row0.Z * model.Row0.Z,
+				Math.Max(model.Row1.X * model.Row1.X + model.Row1.Y * model.Row1.Y + model.Row1.Z * model.Row1.Z, model.Row2.X * model.Row2.X + model.Row2.Y * model.Row2.Y + model.Row2.Z * model.Row2.Z)));
+			double distance = Math.Max(0.0, Math.Sqrt(cx * cx + cy * cy + cz * cz) - worldMesh.BoundsRadius * scale);
+			return (float)(distance * distance);
+		}
+
 		/// <summary>A face's records, as upstream's RenderFace would draw it in its pass.</summary>
-		private void BuildFace(Chunk chunk, ref Item item, ref ObjectState lastState, ref Matrix4D lastModelMatrix, ref int lastObject)
+		private void BuildFace(Chunk chunk, ref Item item, ref ObjectState lastState, ref Matrix4D lastModelMatrix, ref int lastObject, ref float lastDistance)
 		{
 			WorldMesh worldMesh = item.Mesh;
 			if (worldMesh == null)
@@ -469,6 +529,7 @@ namespace OpenBve.Graphics
 				lastModelMatrix = state.ModelMatrix * cameraTranslation;
 				lastObject = AddObject(chunk, state, lastModelMatrix * (pass.Layer == CabLayer ? cabViewMatrix : viewMatrix));
 				lastState = state;
+				lastDistance = state.Prototype.Dynamic ? 0.0f : SquaredDistance(worldMesh, mesh, lastModelMatrix);
 				chunk.ObjectTicks += System.Diagnostics.Stopwatch.GetTimestamp() - objectStart;
 			}
 
@@ -537,7 +598,7 @@ namespace OpenBve.Graphics
 				shadow = backFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0 ? 1 : 2;
 			}
 
-			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, worldMesh, false, shadow);
+			AddDraw(chunk, draw, pass, item.Pass, blend, cull, firstIndex, indexCount, worldMesh, false, shadow, lastDistance);
 
 			// Nighttime texture, blended over the daytime one.
 			if (blendFactor != 0 && item.NightTexture >= 0)
@@ -546,7 +607,7 @@ namespace OpenBve.Graphics
 				draw.AlphaFunction = AlphaGreater;
 				draw.AlphaReference = 0.0f;
 				draw.Opacity = Inv255 * material.Color.A * distanceFactor * blendFactor;
-				AddDraw(chunk, draw, pass, item.Pass, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, worldMesh, true, 0);
+				AddDraw(chunk, draw, pass, item.Pass, additive ? Blend.Additive : Blend.Normal, cull, firstIndex, indexCount, worldMesh, true, 0, lastDistance);
 			}
 		}
 
@@ -633,7 +694,7 @@ namespace OpenBve.Graphics
 			return chunk.ObjectCount++;
 		}
 
-		private void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, WorldMesh mesh, bool night, int shadow)
+		private void AddDraw(Chunk chunk, DrawData draw, PassInfo pass, int passIndex, Blend blend, bool cull, uint firstIndex, uint indexCount, WorldMesh mesh, bool night, int shadow, float distance)
 		{
 			if (chunk.DrawCount == chunk.Draws.Length)
 			{
@@ -654,7 +715,7 @@ namespace OpenBve.Graphics
 			long page = TexturePage == 0 ? 0 : draw.Texture / TexturePage;
 			long key = ((night ? 1L : 0L) << 62) | ((long)pipelineKey << 48) | ((page & 0xFFFF) << 32) | ((long)(mesh.VertexBlock & 0xFFFF) << 16) | (long)(mesh.IndexBlock & 0xFFFF);
 			chunk.Draws[chunk.DrawCount] = draw;
-			chunk.Commands[chunk.CommandCount++] = new DrawCommand { Key = key, FirstIndex = firstIndex, IndexCount = indexCount, VertexBase = mesh.VertexBase, Draw = chunk.DrawCount, Pass = passIndex, Shadow = shadow };
+			chunk.Commands[chunk.CommandCount++] = new DrawCommand { Key = key, FirstIndex = firstIndex, IndexCount = indexCount, VertexBase = mesh.VertexBase, Draw = chunk.DrawCount, Pass = passIndex, Shadow = shadow, Distance = distance };
 			chunk.DrawCount++;
 		}
 
@@ -751,33 +812,80 @@ namespace OpenBve.Graphics
 				}
 			}
 
-			// The shadow casters' draws, grouped by culling and buffer blocks, after the layers' commands.
+			// The shadow casters' draws, grouped by culling and buffer blocks: each cascade's run of them (those near enough
+			// for it, as upstream culls them), one after another.
 			shadowCount = 0;
+			int casters = 0;
 			if (shadowCascades > 0)
 			{
-				Grow(ref shadowCommands, cabCommandStart);
+				Grow(ref casterCommands, cabCommandStart);
 				for (int i = 0; i < cabCommandStart; i++)
 				{
 					if (commands[i].Shadow != 0)
 					{
 						DrawCommand command = commands[i];
 						command.Key = ((long)command.Shadow << 48) | (command.Key & 0xFFFFFFFFFFFFL);
-						shadowCommands[shadowCount++] = command;
+						casterCommands[casters++] = command;
 					}
 				}
 
-				Array.Sort(shadowCommands, 0, shadowCount, KeyComparer.Instance);
+				Array.Sort(casterCommands, 0, casters, KeyComparer.Instance);
+			}
+
+			for (int cascade = 0; cascade < 4; cascade++)
+			{
+				shadowFirst[cascade] = shadowCount;
+				shadowLength[cascade] = 0;
+				if (cascade >= shadowCascades)
+				{
+					continue;
+				}
+
+				Grow(ref shadowCommands, shadowCount + casters);
+				float limit = cascadeLimits[cascade];
+				for (int i = 0; i < casters; i++)
+				{
+					if (casterCommands[i].Distance <= limit)
+					{
+						shadowCommands[shadowCount++] = casterCommands[i];
+					}
+				}
+
+				shadowLength[cascade] = shadowCount - shadowFirst[cascade];
 			}
 
 			LastDraws = commandCount;
 			LastCabDraws = commandCount - cabCommandStart;
 		}
 
+		/// <summary>The shadow casters' draws, each cascade's run (shadowFirst, shadowLength) in turn; shadowCount in all.</summary>
 		protected DrawCommand[] shadowCommands = new DrawCommand[1024];
 		protected int shadowCount;
+		protected readonly int[] shadowFirst = new int[4], shadowLength = new int[4];
+		private DrawCommand[] casterCommands = new DrawCommand[1024];
 
-		/// <summary>Shadow casters drawn in the last frame (per cascade), for the log.</summary>
+		/// <summary>Shadow casters drawn in the last frame (in all cascades), for the log.</summary>
 		internal int LastShadowDraws => shadowCount;
+
+		/// <summary>Shadow casters drawn in each cascade in the last frame, for the log ("0" with shadows off).</summary>
+		internal string LastShadowCasters
+		{
+			get
+			{
+				if (shadowCascades == 0)
+				{
+					return "0";
+				}
+
+				string text = shadowLength[0].ToString();
+				for (int i = 1; i < shadowCascades; i++)
+				{
+					text += "/" + shadowLength[i];
+				}
+
+				return text;
+			}
+		}
 
 		protected sealed class KeyComparer : IComparer<DrawCommand>
 		{

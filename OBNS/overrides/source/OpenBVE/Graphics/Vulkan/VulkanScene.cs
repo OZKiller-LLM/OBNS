@@ -671,7 +671,7 @@ namespace OpenBve.Graphics.Vulkan
 					Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
 				}
 
-				if (cascade < shadowCascades && shadowCount > 0)
+				if (cascade < shadowCascades && shadowLength[cascade] > 0)
 				{
 					Vk.Viewport viewport = new Vk.Viewport { Width = size, Height = size, MaxDepth = 1.0f };
 					Vk.Rect2D scissor = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = size, Height = size } };
@@ -683,12 +683,12 @@ namespace OpenBve.Graphics.Vulkan
 					push[1] = cascade;
 					Vk.vkCmdPushConstants(commandBuffer, pipelineLayout, Vk.ShaderStageVertex | Vk.ShaderStageFragment, 0, 8, push);
 					int boundCull = -1, boundPage = -1, boundVertexBlock = -1, boundIndexBlock = -1;
-					int run = 0;
-					while (run < shadowCount)
+					int run = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade];
+					while (run < end)
 					{
 						long key = shadowCommands[run].Key;
 						int next = run + 1;
-						while (next < shadowCount && shadowCommands[next].Key == key)
+						while (next < end && shadowCommands[next].Key == key)
 						{
 							next++;
 						}

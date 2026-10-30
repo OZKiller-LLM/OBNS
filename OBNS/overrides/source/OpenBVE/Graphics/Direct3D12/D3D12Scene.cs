@@ -547,7 +547,7 @@ namespace OpenBve.Graphics.Direct3D12
 					D12.OMSetRenderTargets(list, 0, null, &view);
 					SetLayer(list, WorldLayerIndex, cascade);
 					int boundCull = -1, boundTexture = -1, boundSampler = -1, boundVertexBlock = -1, boundIndexBlock = -1;
-					for (int i = 0; i < shadowCount; i++)
+					for (int i = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade]; i < end; i++)
 					{
 						DrawCommand command = shadowCommands[i];
 						int cull = (int)(command.Key >> 48) == 1 ? 1 : 0;
@@ -643,7 +643,6 @@ namespace OpenBve.Graphics.Direct3D12
 		}
 
 		/// <summary>Shadow casters drawn in the last frame (per cascade), for the log.</summary>
-		internal int LastShadowCasters => shadowCascades > 0 ? shadowCount : 0;
 
 		public override void Dispose()
 		{

@@ -262,7 +262,7 @@ namespace OpenBve.Graphics.Direct3D11
 				Dx.VSSetConstantBuffer(context, 0, cascadeBuffers[cascade]);
 				Dx.PSSetConstantBuffer(context, 0, cascadeBuffers[cascade]);
 				int boundCull = -1, boundTexture = -1, boundSampler = -1, boundVertexBlock = -1, boundIndexBlock = -1;
-				for (int i = 0; i < shadowCount; i++)
+				for (int i = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade]; i < end; i++)
 				{
 					DrawCommand command = shadowCommands[i];
 					int cull = (int)(command.Key >> 48) == 1 ? 1 : 0;
@@ -307,7 +307,6 @@ namespace OpenBve.Graphics.Direct3D11
 		}
 
 		/// <summary>Shadow casters drawn in the last frame (per cascade), for the log.</summary>
-		internal int LastShadowCasters => shadowCascades > 0 ? shadowCount : 0;
 
 		/// <summary>Writes the frame's records into the buffers (made larger when the frame needs more).</summary>
 		internal void Upload()

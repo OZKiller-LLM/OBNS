@@ -355,7 +355,7 @@ namespace OpenBve.Graphics.Direct3D9
 				D9.SetViewport(d, (uint)(cascade & 1) * size, (uint)(cascade >> 1) * size, size, size);
 				Bind(WorldLayerIndex, cascade, size, size);
 				int boundCull = -1, boundTexture = -1, boundSampler = -1, boundVertexBlock = -1, boundIndexBlock = -1;
-				for (int i = 0; i < shadowCount; i++)
+				for (int i = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade]; i < end; i++)
 				{
 					DrawCommand command = shadowCommands[i];
 					int cull = (int)(command.Key >> 48) == 1 ? 1 : 0;
@@ -512,7 +512,6 @@ namespace OpenBve.Graphics.Direct3D9
 		}
 
 		/// <summary>Shadow casters drawn in the last frame (per cascade), for the log.</summary>
-		internal int LastShadowCasters => shadowCascades > 0 ? shadowCount : 0;
 
 		/// <summary>The device's states the layer never changes, set off (the fixed-function ones).</summary>
 		internal void SetFixedStates()

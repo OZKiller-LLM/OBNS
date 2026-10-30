@@ -26,6 +26,9 @@ namespace OpenBve.Graphics
 		/// <summary>Each face's textures' places in the layer's textures as last looked up (daytime, nighttime).</summary>
 		internal TextureSlot[] DaySlots, NightSlots;
 
+		/// <summary>The mesh's bounding sphere in its own space (its vertices' box's centre, the farthest vertex); a radius below 0 until worked out.</summary>
+		internal double BoundsX, BoundsY, BoundsZ, BoundsRadius = -1.0;
+
 		/// <summary>The face starting at a vertex (its slot here) and its triangle indices: false if the mesh has no such face.</summary>
 		internal bool Find(int iboStart, out int slot, out uint firstIndex, out uint indexCount)
 		{

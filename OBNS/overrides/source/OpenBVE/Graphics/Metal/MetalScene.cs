@@ -421,13 +421,13 @@ namespace OpenBve.Graphics.Metal
 				Mtl.Void(depth, selSetStoreAction, Mtl.StoreStore);
 				Mtl.Void(depth, selSetClearDepth, 1.0);
 				IntPtr encoder = Mtl.Id(commandBuffer, selRenderEncoder, pass);
-				if (cascade < shadowCascades && shadowCount > 0)
+				if (cascade < shadowCascades && shadowLength[cascade] > 0)
 				{
 					Bind(encoder, WorldLayerIndex, cascade, (uint)shadowResolution, (uint)shadowResolution);
 					Mtl.Void(encoder, selSetPipeline, shadowPipeline);
 					Mtl.Void(encoder, selSetDepthStencilState, shadowDepthState);
 					int boundCull = -1, boundTexture = -1, boundSampler = -1, boundVertexBlock = -1;
-					for (int i = 0; i < shadowCount; i++)
+					for (int i = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade]; i < end; i++)
 					{
 						DrawCommand command = shadowCommands[i];
 						int cull = (int)(command.Key >> 48) == 1 ? 1 : 0;
@@ -523,7 +523,6 @@ namespace OpenBve.Graphics.Metal
 		}
 
 		/// <summary>Shadow casters drawn in the last frame (per cascade), for the log.</summary>
-		internal int LastShadowCasters => shadowCascades > 0 ? shadowCount : 0;
 
 		public override void Dispose()
 		{
