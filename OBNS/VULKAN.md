@@ -113,6 +113,9 @@ Switches, for testing and measuring (environment variables):
 | `OBNS_GPUSTATS=1` | with it, GPU timestamps (OpenGL's parts, Vulkan's frame) and a finer CPU split |
 | `OBNS_SNAPSHOT_EVERY=<s>` | the frame saved (back buffer, before the swap) as `snapshot-N.png` beside the log |
 | `OBNS_VULKAN_TINT=1` | Vulkan's image cleared to a faint green (shows where the background is) |
+| `OBNS_VULKAN_PAGED=1` / `=N` | textures in pages (as without descriptor indexing) where bindless works too; `=N`: pages of at most N |
+| `OBNS_VULKAN_WHITE=1` | no textures made, all drawn white (for finding what a driver fails on) |
+| `OBNS_VULKAN_NOMIPS=1` | textures made without mipmaps, no blits (the same) |
 | `OBNS_VULKAN_DEBUG=1` | the shared images read back for the first frames, each texture made, the copies' counts, and a watchdog logging where each thread is when frames stop for 3 s |
 
 ## Code

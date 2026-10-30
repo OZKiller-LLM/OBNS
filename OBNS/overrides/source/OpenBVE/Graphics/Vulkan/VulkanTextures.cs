@@ -54,6 +54,11 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Each texture made, logged (OBNS_VULKAN_DEBUG=1).</summary>
 		private static readonly bool logTextures = Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1";
 
+		// For finding what a driver fails on (a GPU hang on Broadwell's hasvk): OBNS_VULKAN_WHITE=1 makes no textures (all
+		// drawn white); OBNS_VULKAN_NOMIPS=1 makes textures without mipmaps (no blits).
+		private static readonly bool allWhite = Environment.GetEnvironmentVariable("OBNS_VULKAN_WHITE") == "1";
+		private static readonly bool noMipmaps = Environment.GetEnvironmentVariable("OBNS_VULKAN_NOMIPS") == "1";
+
 		private readonly ulong[] descriptorSets;
 		private readonly uint textureBinding;
 
@@ -167,7 +172,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal int Prepare(Texture texture, OpenGlTextureWrapMode wrap, out bool animated)
 		{
 			animated = false;
-			if (texture == null)
+			if (texture == null || allWhite)
 			{
 				return -1;
 			}
@@ -587,7 +592,7 @@ namespace OpenBve.Graphics.Vulkan
 				entry.Width = width;
 				entry.Height = height;
 				entry.Levels = 1;
-				for (uint size = Math.Max(width, height); size > 1; size >>= 1)
+				for (uint size = Math.Max(width, height); size > 1 && !noMipmaps; size >>= 1)
 				{
 					entry.Levels++;
 				}
