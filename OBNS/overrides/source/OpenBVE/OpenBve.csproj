@@ -51,7 +51,7 @@
     <DefineConstants>TRACE;DEBUG</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <LangVersion>7.3</LangVersion>
+    <LangVersion>12.0</LangVersion>
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
@@ -66,7 +66,7 @@
     <DebugSymbols>true</DebugSymbols>
     <DocumentationFile>..\..\bin_release\OpenBve.XML</DocumentationFile>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <LangVersion>7.3</LangVersion>
+    <LangVersion>12.0</LangVersion>
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
@@ -102,7 +102,7 @@
     <NoWarn>,IDE1006</NoWarn>
     <DebugType>Full</DebugType>
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <LangVersion>7.3</LangVersion>
+    <LangVersion>12.0</LangVersion>
     <ErrorReport>prompt</ErrorReport>
     <StartAction>Project</StartAction>
     <StartArguments>/glmenu=true</StartArguments>
@@ -221,6 +221,9 @@
     <Compile Include="Graphics\Vulkan\VulkanScene.cs" />
     <Compile Include="Graphics\Vulkan\VulkanShadows.cs" />
     <Compile Include="Graphics\Vulkan\Vk.Drawing.cs" />
+    <!-- OBNS: the world layer drawn by Direct3D 11 (OBNS/DIRECT3D.md). -->
+    <Compile Include="Graphics\Direct3D11\Dx.cs" />
+    <Compile Include="Graphics\Direct3D11\D3D11Device.cs" />
     <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.vert.spv">
       <LogicalName>OBNS.Vulkan.world.vert.spv</LogicalName>
     </EmbeddedResource>

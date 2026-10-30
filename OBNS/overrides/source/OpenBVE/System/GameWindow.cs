@@ -471,6 +471,14 @@ namespace OpenBve
 			GLStateFilter.Install();
 			// OBNS: the world layer drawn by Vulkan where it can share images with OpenGL (OBNS/VULKAN.md).
 			OpenBve.Graphics.Vulkan.VulkanWorld.Initialize();
+			// OBNS: OBNS_D3D11_TEST=1 checks the Direct3D 11 world layer's device and its images' path to OpenGL (OBNS/DIRECT3D.md).
+			if (Environment.GetEnvironmentVariable("OBNS_D3D11_TEST") == "1")
+			{
+				OpenBve.Graphics.Direct3D11.D3D11Device device = OpenBve.Graphics.Direct3D11.D3D11Device.Create(out string reason);
+				string test = device?.SelfTest();
+				Program.FileSystem.AppendToLogFile(device == null ? "OBNS Direct3D 11: not usable: " + reason : "OBNS Direct3D 11: " + device.Description + "; images to OpenGL: " + (test ?? "right"));
+				device?.Dispose();
+			}
 			if (Program.CurrentHost.Platform == HostPlatform.MicrosoftWindows && WindowState != WindowState.Fullscreen)
 			{
 				int w = DisplayDevice.Default.Width;
