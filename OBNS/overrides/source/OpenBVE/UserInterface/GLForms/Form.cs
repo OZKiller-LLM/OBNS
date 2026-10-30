@@ -323,6 +323,13 @@ namespace OpenBve.GLForms
 				return;
 			}
 
+			if (Host.NativeActive)
+			{
+				IsOpen = true;
+				Host.ShowNative(this);
+				return;
+			}
+
 			if (Host.Window == null)
 			{
 				ShowDialog();
@@ -518,6 +525,11 @@ namespace OpenBve.GLForms
 				return (DialogResult)Host.Invoke(() => Show(owner, text, caption, buttons, icon));
 			}
 
+			if (Host.NativeActive)
+			{
+				return Host.NativeMessage(text ?? string.Empty, caption ?? string.Empty, buttons, icon);
+			}
+
 			using (MessageBoxForm form = new MessageBoxForm(text ?? string.Empty, caption ?? string.Empty, buttons, icon))
 			{
 				return form.ShowDialog(owner);
@@ -677,6 +689,21 @@ namespace OpenBve.GLForms
 				return (DialogResult)Host.Invoke(() => ShowDialog(owner));
 			}
 
+			if (Host.NativeActive)
+			{
+				string[] chosen = Saving ? (Host.NativeSave(this) is string path ? new[] { path } : null) : Host.NativeOpen(this);
+				if (chosen == null)
+				{
+					return DialogResult.Cancel;
+				}
+
+				FileName = chosen.Length > 0 ? chosen[0] : string.Empty;
+				FileNames = chosen;
+				CancelEventArgs e = new CancelEventArgs();
+				FileOk?.Invoke(this, e);
+				return e.Cancel ? DialogResult.Cancel : DialogResult.OK;
+			}
+
 			using (FileBrowserForm form = new FileBrowserForm(this, false))
 			{
 				DialogResult result = form.ShowDialog(owner);
@@ -763,6 +790,18 @@ namespace OpenBve.GLForms
 			if (Host.InvokeRequired)
 			{
 				return (DialogResult)Host.Invoke(() => ShowDialog(owner));
+			}
+
+			if (Host.NativeActive)
+			{
+				string folder = Host.NativeFolder(this);
+				if (folder == null)
+				{
+					return DialogResult.Cancel;
+				}
+
+				SelectedPath = folder;
+				return DialogResult.OK;
 			}
 
 			using (FileBrowserForm form = new FileBrowserForm(this))
@@ -1388,6 +1427,12 @@ namespace OpenBve.GLForms
 			Opening?.Invoke(this, e);
 			if (e.Cancel || Items.Count == 0)
 			{
+				return;
+			}
+
+			if (Host.NativeActive)
+			{
+				Host.NativeMenu(this, control, position);
 				return;
 			}
 

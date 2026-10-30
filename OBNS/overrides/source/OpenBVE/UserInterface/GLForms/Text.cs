@@ -860,6 +860,9 @@ namespace OpenBve.GLForms
 
 		public bool DetectUrls { get; set; } = true;
 
+		/// <summary>The native host's way in: the user clicked a link.</summary>
+		internal void NativeLink(string link) => LinkClicked?.Invoke(this, new LinkClickedEventArgs(link));
+
 		public RichTextBoxScrollBars ScrollBars { get; set; } = RichTextBoxScrollBars.Both;
 
 		public float ZoomFactor { get; set; } = 1.0f;

@@ -33,7 +33,7 @@ drawn with OpenGL in a window of its own, before the game's window opens, exactl
 - macOS, 64-bit: by default (`OBNS_GLFORMS=0`, or `/glmenu=true` on the command line, gives upstream's in-window menu).
 - Anywhere else: with `OBNS_GLFORMS=1` (for testing on Windows, where formMain itself is shown otherwise).
 
-Switches for testing: `OBNS_MENU_SCALE` (form units per pixel, 0.5 to 4), `OBNS_MENU_DEBUG=1` (key events, frame counts,
+Switches for testing: `OBNS_MENU_NATIVE=0` (the OpenGL host on macOS, see Native below), `OBNS_MENU_SCALE` (form units per pixel, 0.5 to 4), `OBNS_MENU_DEBUG=1` (key events, frame counts,
 OpenGL errors, and where the menu's thread is if its loop stops for 4 s), `OBNS_MENU_SNAPSHOT=<folder>` (the frame
 saved as menu.png twice a second: a capture of an OpenGL window from outside can catch it between frames).
 
@@ -54,4 +54,23 @@ saved as menu.png twice a second: a capture of an OpenGL window from outside can
   not exercised.
 - An input device plugin's settings window is a Windows Forms window of the plugin's own: shown on Windows; on macOS the
   menu says it cannot be shown.
-- Later (V2): a native macOS version written in Swift, with the same items in the same layout.
+
+## Native (V2): the Mac's own controls
+
+The user's rule (2026-10-30): the Swift version's layout and flow must be identical to the Windows menu's, with Apple's
+design for looks only. So it keeps everything above that decides layout and flow, and changes only what a control is:
+
+- **`OBNS/mac/MenuKit/MenuKit.swift`** is a small library of AppKit windows and controls behind a C interface (a label is
+  an `NSTextField`, a button an `NSButton`, a combo box an `NSPopUpButton` or `NSComboBox`, a list an `NSTableView`, ...,
+  in flipped views, so positions are the form's). `build.sh` builds `libOBNSMenuKit.dylib` on a Mac (arm64 and x86-64);
+  it sits beside `OpenBve.exe`.
+- **`UserInterface/GLForms/Host.Native.cs`** is a second host for the same control classes: when something changed (the
+  same request that makes the OpenGL host draw), it walks the control tree and sends each control's place, text, state,
+  items and rows to its AppKit counterpart, only what differs. AppKit's events come back as a user's would: a click
+  through `PerformClick`, a choice through the same selection events. Upstream's formMain, its designer layout, anchors,
+  docking, tab pages and logic are untouched.
+- A control a form paints itself, or one with no counterpart, is an image view of its bitmap, so nothing is lost.
+- Message boxes are `NSAlert`, file and folder choosers `NSOpenPanel` and `NSSavePanel`, dialogs sheets on the main window,
+  context menus `NSMenu`.
+
+Used on macOS when the library is beside the program; else, or with `OBNS_MENU_NATIVE=0`, the OpenGL host as above.

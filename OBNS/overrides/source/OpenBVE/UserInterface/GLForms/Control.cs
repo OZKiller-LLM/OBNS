@@ -691,6 +691,9 @@ namespace OpenBve.GLForms
 			Paint?.Invoke(this, e);
 		}
 
+		/// <summary>Whether a form paints on this control itself (the native host shows such a control as a picture).</summary>
+		internal bool HasPaintHandler => Paint != null;
+
 		/// <summary>Whether the control draws anything itself (a bare container need not have a bitmap).</summary>
 		internal virtual bool DrawsItself => !OwnBackColor.IsEmpty || Paint != null || BackgroundImage != null;
 

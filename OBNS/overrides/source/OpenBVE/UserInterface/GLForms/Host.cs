@@ -45,7 +45,7 @@ namespace OpenBve.GLForms
 		}
 	}
 
-	internal static class Host
+	internal static partial class Host
 	{
 		/// <summary>The menu's window; null when no form is showing.</summary>
 		internal static GameWindow Window;
@@ -523,6 +523,13 @@ void main()
 		/// <summary>Shows a form and runs the menu until it closes: the main form opens the window, a dialog is drawn over it.</summary>
 		internal static void RunModal(Form form)
 		{
+			// The Mac's own controls where their library is there (Host.Native.cs).
+			if (NativeActive || (Window == null && UseNative()))
+			{
+				RunModalNative(form);
+				return;
+			}
+
 			bool main = Window == null;
 			if (main)
 			{
@@ -585,6 +592,12 @@ void main()
 		/// <summary>One turn of the loop: the window's events, posted calls, timers, and a frame if anything changed.</summary>
 		internal static void PumpOnce(bool wait)
 		{
+			if (NativeActive)
+			{
+				PumpNative(wait);
+				return;
+			}
+
 			if (Window == null)
 			{
 				return;
@@ -1342,6 +1355,8 @@ void main()
 			{
 				return;
 			}
+
+			FocusNative(control);
 
 			Control old = FocusedControl;
 			FocusedControl = control;

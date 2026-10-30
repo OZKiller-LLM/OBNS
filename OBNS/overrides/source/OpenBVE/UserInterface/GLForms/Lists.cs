@@ -150,6 +150,13 @@ namespace OpenBve.GLForms
 
 		protected virtual void OnSelectionChangeCommitted(EventArgs e) => SelectionChangeCommitted?.Invoke(this, e);
 
+		/// <summary>The native host's way in: the user chose an item.</summary>
+		internal void NativeSelect(int index)
+		{
+			SelectedIndex = index;
+			OnSelectionChangeCommitted(EventArgs.Empty);
+		}
+
 		protected virtual void OnDrawItem(DrawItemEventArgs e) => DrawItem?.Invoke(this, e);
 
 		public int SelectedIndex
@@ -1881,6 +1888,32 @@ namespace OpenBve.GLForms
 			}
 		}
 
+		/// <summary>The native host's way in: the user selected these rows, raising one change for all of it.</summary>
+		internal void NativeSelect(HashSet<int> rows)
+		{
+			bool changed = false;
+			foreach (ListViewItem item in Items)
+			{
+				bool want = rows.Contains(item.Index);
+				if (item.Selected != want)
+				{
+					item.SetSelectedSilently(want);
+					changed = true;
+					ItemSelectionChanged?.Invoke(this, new ListViewItemSelectionChangedEventArgs(item, item.Index, want));
+				}
+			}
+
+			if (changed)
+			{
+				OnSelectedIndexChanged(EventArgs.Empty);
+			}
+
+			Invalidate();
+		}
+
+		/// <summary>The native host's way in: the user clicked a column's header.</summary>
+		internal void NativeColumnClick(int column) => ColumnClick?.Invoke(this, new ColumnClickEventArgs(column));
+
 		/// <summary>Selects one item (or none), raising one change for all of it.</summary>
 		private void SelectOnly(ListViewItem only)
 		{
@@ -2801,6 +2834,55 @@ namespace OpenBve.GLForms
 		{
 			ClampScroll();
 			Invalidate();
+		}
+
+		/// <summary>The native host's way in: the user selected these rows (counted among the visible ones).</summary>
+		internal void NativeSelect(HashSet<int> rows)
+		{
+			bool changed = false;
+			int visible = 0;
+			foreach (DataGridViewRow row in Rows)
+			{
+				if (!row.Visible)
+				{
+					continue;
+				}
+
+				bool want = rows.Contains(visible++);
+				if (row.Selected != want)
+				{
+					row.SetSelectedSilently(want);
+					changed = true;
+				}
+			}
+
+			Invalidate();
+			if (changed)
+			{
+				OnSelectionChanged(EventArgs.Empty);
+				foreach (DataGridViewRow row in Rows)
+				{
+					if (row.Visible && row.Selected)
+					{
+						CellClick?.Invoke(this, new DataGridViewCellEventArgs(0, row.Index));
+						break;
+					}
+				}
+			}
+		}
+
+		/// <summary>The native host's way in: the user double-clicked a row (counted among the visible ones).</summary>
+		internal void NativeActivate(int visibleRow)
+		{
+			int visible = 0;
+			foreach (DataGridViewRow row in Rows)
+			{
+				if (row.Visible && visible++ == visibleRow)
+				{
+					CellDoubleClick?.Invoke(this, new DataGridViewCellEventArgs(0, row.Index));
+					return;
+				}
+			}
 		}
 
 		private void SelectOnly(DataGridViewRow only)

@@ -947,6 +947,7 @@ namespace OpenBve.GLForms
 			set
 			{
 				image = value;
+				ImageVersion++;
 				if (sizeMode == PictureBoxSizeMode.AutoSize && value != null)
 				{
 					Size = value.Size;
@@ -955,6 +956,9 @@ namespace OpenBve.GLForms
 				Invalidate();
 			}
 		}
+
+		/// <summary>Changes whenever the image is set (the native host sends it again: a preview may reuse a bitmap).</summary>
+		internal int ImageVersion { get; private set; }
 
 		public Image ErrorImage { get; set; }
 
@@ -1094,6 +1098,13 @@ namespace OpenBve.GLForms
 				Invalidate();
 				ValueChanged?.Invoke(this, EventArgs.Empty);
 			}
+		}
+
+		/// <summary>The native host's way in: the user moved the slider.</summary>
+		internal void NativeValue(int newValue)
+		{
+			Value = newValue;
+			Scroll?.Invoke(this, EventArgs.Empty);
 		}
 
 		public int TickFrequency { get; set; } = 1;
