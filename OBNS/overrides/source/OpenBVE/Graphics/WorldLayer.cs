@@ -73,7 +73,7 @@ namespace OpenBve.Graphics
 		/// <summary>OpenGL's alpha functions, as the faces' alpha tests take them.</summary>
 		internal const int AlphaNever = 512, AlphaLess = 513, AlphaEqual = 514, AlphaGreater = 516;
 
-		internal static IWorldLayer Instance => Vulkan.VulkanWorld.Enabled ? Vulkan.VulkanWorld.Instance : Direct3D11.D3D11World.Enabled ? (IWorldLayer)Direct3D11.D3D11World.Instance : Direct3D12.D3D12World.Enabled ? (IWorldLayer)Direct3D12.D3D12World.Instance : Direct3D9.D3D9World.Enabled ? Direct3D9.D3D9World.Instance : null;
+		internal static IWorldLayer Instance => Vulkan.VulkanWorld.Enabled ? Vulkan.VulkanWorld.Instance : Direct3D11.D3D11World.Enabled ? (IWorldLayer)Direct3D11.D3D11World.Instance : Direct3D12.D3D12World.Enabled ? (IWorldLayer)Direct3D12.D3D12World.Instance : Direct3D9.D3D9World.Enabled ? (IWorldLayer)Direct3D9.D3D9World.Instance : Metal.MetalWorld.Enabled ? Metal.MetalWorld.Instance : null;
 
 		internal static bool Enabled => Instance != null;
 
@@ -89,16 +89,18 @@ namespace OpenBve.Graphics
 			}
 
 			Direct3D9.D3D9World.Initialize();
-			if (!Direct3D12.D3D12World.Enabled && !Direct3D11.D3D11World.Enabled && !Direct3D9.D3D9World.Enabled)
+			// Metal on macOS when the options choose it (OBNS/METAL.md).
+			Metal.MetalWorld.Initialize();
+			if (!Direct3D12.D3D12World.Enabled && !Direct3D11.D3D11World.Enabled && !Direct3D9.D3D9World.Enabled && !Metal.MetalWorld.Enabled)
 			{
 				Vulkan.VulkanWorld.Initialize();
 			}
 		}
 
 		/// <summary>Which renderer draws the world, for the debug overlay.</summary>
-		internal static string RendererName => Direct3D9.D3D9World.Enabled ? Direct3D9.D3D9World.RendererName : Direct3D12.D3D12World.Enabled ? Direct3D12.D3D12World.RendererName : Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.RendererName : Vulkan.VulkanWorld.RendererName;
+		internal static string RendererName => Metal.MetalWorld.Enabled ? Metal.MetalWorld.RendererName : Direct3D9.D3D9World.Enabled ? Direct3D9.D3D9World.RendererName : Direct3D12.D3D12World.Enabled ? Direct3D12.D3D12World.RendererName : Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.RendererName : Vulkan.VulkanWorld.RendererName;
 
 		/// <summary>The layer's line in the frame statistics.</summary>
-		internal static string Summary => Direct3D9.D3D9World.Enabled ? Direct3D9.D3D9World.Summary : Direct3D12.D3D12World.Enabled ? Direct3D12.D3D12World.Summary : Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.Summary : Vulkan.VulkanWorld.Summary;
+		internal static string Summary => Metal.MetalWorld.Enabled ? Metal.MetalWorld.Summary : Direct3D9.D3D9World.Enabled ? Direct3D9.D3D9World.Summary : Direct3D12.D3D12World.Enabled ? Direct3D12.D3D12World.Summary : Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.Summary : Vulkan.VulkanWorld.Summary;
 	}
 }

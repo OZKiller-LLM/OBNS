@@ -252,6 +252,15 @@
     <EmbeddedResource Include="Graphics\Direct3D9\Shaders\world9.hlsl">
       <LogicalName>OBNS.Direct3D9.world9.hlsl</LogicalName>
     </EmbeddedResource>
+    <Compile Include="Graphics\Metal\Mtl.cs" />
+    <Compile Include="Graphics\Metal\MetalDevice.cs" />
+    <Compile Include="Graphics\Metal\MetalMeshes.cs" />
+    <Compile Include="Graphics\Metal\MetalTextures.cs" />
+    <Compile Include="Graphics\Metal\MetalScene.cs" />
+    <Compile Include="Graphics\Metal\MetalWorld.cs" />
+    <EmbeddedResource Include="Graphics\Metal\Shaders\world.metal">
+      <LogicalName>OBNS.Metal.world.metal</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="Graphics\Direct3D11\Shaders\world.hlsl">
       <LogicalName>OBNS.Direct3D11.world.hlsl</LogicalName>
     </EmbeddedResource>

@@ -66,6 +66,13 @@ namespace OpenBve
 
 				tip.SetToolTip(comboboxObnsRenderer, "Vulkan or Direct3D draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
 			}
+			else if (Program.CurrentHost.Platform == OpenBveApi.Hosts.HostPlatform.AppleOSX)
+			{
+				// Metal on macOS (OBNS/METAL.md).
+				ObnsAddRenderer("Metal", ObnsOptions.RendererKind.Metal);
+				comboboxObnsRenderer.SelectedIndex = ObnsOptions.Renderer == ObnsOptions.RendererKind.Metal ? 1 : 0;
+				tip.SetToolTip(comboboxObnsRenderer, "Metal draws the world (scenery and trains), sharing it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
+			}
 			else
 			{
 				// Vulkan draws only on Windows so far (OBNS/VULKAN.md): OpenGL is shown, and the saved choice is kept as it is.

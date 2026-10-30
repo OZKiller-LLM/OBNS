@@ -495,6 +495,14 @@ namespace OpenBve
 				Program.FileSystem.AppendToLogFile(device == null ? "OBNS Direct3D 9: not usable: " + reason : "OBNS Direct3D 9: " + device.Description + "; images to OpenGL: " + (test ?? "right"));
 				device?.Dispose();
 			}
+			// OBNS: OBNS_METAL_TEST=1 checks the Metal world layer's device and its images' path to OpenGL on macOS (OBNS/METAL.md).
+			if (Environment.GetEnvironmentVariable("OBNS_METAL_TEST") == "1" && Program.CurrentHost.Platform == HostPlatform.AppleOSX)
+			{
+				OpenBve.Graphics.Metal.MetalDevice device = OpenBve.Graphics.Metal.MetalDevice.Create(out string reason);
+				string test = device?.SelfTest();
+				Program.FileSystem.AppendToLogFile(device == null ? "OBNS Metal: not usable: " + reason : "OBNS Metal: " + device.Description + "; images to OpenGL: " + (test ?? "right"));
+				device?.Dispose();
+			}
 			if (Program.CurrentHost.Platform == HostPlatform.MicrosoftWindows && WindowState != WindowState.Fullscreen)
 			{
 				int w = DisplayDevice.Default.Width;

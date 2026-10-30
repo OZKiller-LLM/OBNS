@@ -19,7 +19,7 @@ void main()
 	gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }";
 
-		// The depth is read from .r: a depth image (Vulkan) or a single-channel colour image holding it (Direct3D 11).
+		// The depth is read from .r: a depth image (Vulkan) or a single-channel colour image holding it (Direct3D, Metal).
 		private const string FragmentSource = @"#version 330 core
 uniform sampler2D uColor;
 uniform sampler2D uDepth;
@@ -32,12 +32,27 @@ void main()
 	gl_FragDepth = texture(uDepth, uv).r;
 }";
 
-		private int program, vao;
+		// The same for images bound as rectangles (IOSurfaces, Metal's), read by their texels.
+		private const string RectangleFragmentSource = @"#version 330 core
+uniform sampler2DRect uColor;
+uniform sampler2DRect uDepth;
+in vec2 uv;
+out vec4 fragColor;
+void main()
+{
+	fragColor = texture(uColor, uv * vec2(textureSize(uColor)));
+	gl_FragDepth = texture(uDepth, uv * vec2(textureSize(uDepth))).r;
+}";
 
-		internal WorldComposite()
+		private int program, vao;
+		private readonly TextureTarget target;
+
+		/// <summary>The composite of 2D images, or (rectangle) of rectangle textures.</summary>
+		internal WorldComposite(bool rectangle = false)
 		{
+			target = rectangle ? TextureTarget.TextureRectangle : TextureTarget.Texture2D;
 			int vertex = CompileShader(ShaderType.VertexShader, VertexSource);
-			int fragment = CompileShader(ShaderType.FragmentShader, FragmentSource);
+			int fragment = CompileShader(ShaderType.FragmentShader, rectangle ? RectangleFragmentSource : FragmentSource);
 			program = GL.CreateProgram();
 			GL.AttachShader(program, vertex);
 			GL.AttachShader(program, fragment);
@@ -99,17 +114,20 @@ void main()
 			GL.UseProgram(program);
 			GL.BindVertexArray(vao);
 			GL.ActiveTexture(TextureUnit.Texture1);
-			GL.BindTexture(TextureTarget.Texture2D, depthTexture);
+			GL.BindTexture(target, depthTexture);
 			GL.ActiveTexture(TextureUnit.Texture0);
-			GL.BindTexture(TextureTarget.Texture2D, colorTexture);
+			GL.BindTexture(target, colorTexture);
 			GL.Enable(EnableCap.Blend);
 			GL.BlendFunc(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
 			GL.Disable(EnableCap.CullFace);
 		}
 
-		private static void Unbind()
+		private void Unbind()
 		{
-			GL.BindTexture(TextureTarget.Texture2D, 0);
+			GL.ActiveTexture(TextureUnit.Texture1);
+			GL.BindTexture(target, 0);
+			GL.ActiveTexture(TextureUnit.Texture0);
+			GL.BindTexture(target, 0);
 			GL.BindVertexArray(0);
 			GL.UseProgram(0);
 		}
