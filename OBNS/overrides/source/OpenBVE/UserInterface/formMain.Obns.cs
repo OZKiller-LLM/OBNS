@@ -11,6 +11,9 @@ namespace OpenBve
 		private Label labelObnsRenderer;
 		private ComboBox comboboxObnsRenderer;
 
+		/// <summary>The renderer each of the list's items chooses.</summary>
+		private readonly System.Collections.Generic.List<ObnsOptions.RendererKind> obnsRendererKinds = new System.Collections.Generic.List<ObnsOptions.RendererKind>();
+
 		/// <summary>Adds the renderer choice to the display group, showing the saved one.</summary>
 		private void ObnsAddOptions()
 		{
@@ -44,33 +47,22 @@ namespace OpenBve
 				Location = new Point(comboboxVSync.Left, top),
 				Size = comboboxVSync.Size
 			};
-			comboboxObnsRenderer.Items.Add("OpenGL");
+			ObnsAddRenderer("OpenGL", ObnsOptions.RendererKind.OpenGL);
 			ToolTip tip = new ToolTip();
 			if (System.Environment.OSVersion.Platform == System.PlatformID.Win32NT)
 			{
-				comboboxObnsRenderer.Items.Add("Vulkan");
-				// Direct3D 11 and 12 in 64-bit Windows programs (x86-64 and ARM64; OBNS/DIRECT3D.md).
-				if (System.Environment.OSVersion.Platform == System.PlatformID.Win32NT && System.Environment.Is64BitProcess)
+				ObnsAddRenderer("Vulkan", ObnsOptions.RendererKind.Vulkan);
+				// Direct3D 9.0c, 11 and 12 in 64-bit Windows programs (x86-64 and ARM64; OBNS/DIRECT3D.md).
+				if (System.Environment.Is64BitProcess)
 				{
-					comboboxObnsRenderer.Items.Add("Direct3D 11");
-					comboboxObnsRenderer.Items.Add("Direct3D 12");
+					ObnsAddRenderer("Direct3D 9.0c", ObnsOptions.RendererKind.Direct3D9);
+					ObnsAddRenderer("Direct3D 11", ObnsOptions.RendererKind.Direct3D11);
+					ObnsAddRenderer("Direct3D 12", ObnsOptions.RendererKind.Direct3D12);
 				}
 
-				switch (ObnsOptions.Renderer)
-				{
-					case ObnsOptions.RendererKind.Vulkan:
-						comboboxObnsRenderer.SelectedIndex = 1;
-						break;
-					case ObnsOptions.RendererKind.Direct3D11:
-						comboboxObnsRenderer.SelectedIndex = comboboxObnsRenderer.Items.Count > 2 ? 2 : 1;
-						break;
-					case ObnsOptions.RendererKind.Direct3D12:
-						comboboxObnsRenderer.SelectedIndex = comboboxObnsRenderer.Items.Count > 3 ? 3 : 1;
-						break;
-					default:
-						comboboxObnsRenderer.SelectedIndex = 0;
-						break;
-				}
+				// A renderer not listed here (Direct3D in a 32-bit program) is drawn as Vulkan.
+				int chosen = obnsRendererKinds.IndexOf(ObnsOptions.Renderer);
+				comboboxObnsRenderer.SelectedIndex = chosen >= 0 ? chosen : 1;
 
 				tip.SetToolTip(comboboxObnsRenderer, "Vulkan or Direct3D draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
 			}
@@ -97,12 +89,18 @@ namespace OpenBve
 			groupboxDisplayMode.Controls.Add(comboboxObnsRenderer);
 		}
 
+		private void ObnsAddRenderer(string name, ObnsOptions.RendererKind kind)
+		{
+			comboboxObnsRenderer.Items.Add(name);
+			obnsRendererKinds.Add(kind);
+		}
+
 		/// <summary>Saves OBNS's options, with upstream's.</summary>
 		private void ObnsSaveOptions()
 		{
 			if (comboboxObnsRenderer != null && comboboxObnsRenderer.Enabled)
 			{
-				ObnsOptions.Renderer = comboboxObnsRenderer.SelectedIndex == 0 ? ObnsOptions.RendererKind.OpenGL : comboboxObnsRenderer.SelectedIndex == 2 ? ObnsOptions.RendererKind.Direct3D11 : comboboxObnsRenderer.SelectedIndex == 3 ? ObnsOptions.RendererKind.Direct3D12 : ObnsOptions.RendererKind.Vulkan;
+				ObnsOptions.Renderer = obnsRendererKinds[comboboxObnsRenderer.SelectedIndex];
 				ObnsOptions.Save();
 			}
 		}

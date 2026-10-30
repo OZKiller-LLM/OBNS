@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
 using LibRender2.Textures;
 using OpenBveApi.Colors;
@@ -565,6 +566,157 @@ namespace OpenBve.Graphics
 		// The pixels written per piece of work: a large texture (one of 4096 x 4096 took 57 ms on one core)
 		// is shared out over every core too.
 		protected const int FillPiece = 1 << 20;
+
+		// --- mipmap levels made on the CPU (APIs that make none themselves: Direct3D 12 and 9) ---
+
+		/// <summary>A level's width or height.</summary>
+		protected static uint LevelSize(uint size, int level) => Math.Max(1u, size >> level);
+
+		/// <summary>The bytes of every level of an image, packed one after another (a chain).</summary>
+		protected static long ChainBytes(uint width, uint height, uint levels)
+		{
+			long bytes = 0;
+			for (int level = 0; level < levels; level++)
+			{
+				bytes += (long)LevelSize(width, level) * LevelSize(height, level) * 4;
+			}
+
+			return bytes;
+		}
+
+		/// <summary>Where a level starts in a chain.</summary>
+		protected static long LevelOffset(uint width, uint height, int level)
+		{
+			long offset = 0;
+			for (int k = 0; k < level; k++)
+			{
+				offset += (long)LevelSize(width, k) * LevelSize(height, k) * 4;
+			}
+
+			return offset;
+		}
+
+		/// <summary>
+		/// Rows [first, end) of a level made from the level above it in a chain: each texel the mean of the 2x2 above, as
+		/// Direct3D 11's GenerateMips (and OpenGL's) box filter.
+		/// </summary>
+		private static void MakeLevelRows(byte* chain, uint width, uint height, int level, uint first, uint end)
+		{
+			uint sourceWidth = LevelSize(width, level - 1), sourceHeight = LevelSize(height, level - 1);
+			uint targetWidth = LevelSize(width, level);
+			byte* source = chain + LevelOffset(width, height, level - 1);
+			byte* target = chain + LevelOffset(width, height, level);
+			for (uint y = first; y < end; y++)
+			{
+				byte* row0 = source + (long)Math.Min(2 * y, sourceHeight - 1) * sourceWidth * 4;
+				byte* row1 = source + (long)Math.Min(2 * y + 1, sourceHeight - 1) * sourceWidth * 4;
+				byte* to = target + (long)y * targetWidth * 4;
+				for (uint x = 0; x < targetWidth; x++)
+				{
+					uint x0 = Math.Min(2 * x, sourceWidth - 1) * 4, x1 = Math.Min(2 * x + 1, sourceWidth - 1) * 4;
+					for (int c = 0; c < 4; c++)
+					{
+						to[x * 4 + c] = (byte)((row0[x0 + c] + row0[x1 + c] + row1[x0 + c] + row1[x1 + c] + 2) >> 2);
+					}
+				}
+			}
+		}
+
+		/// <summary>Swaps red and blue: RGBA to BGRA (Direct3D 9's A8R8G8B8).</summary>
+		private static void SwapRedBlue(byte* pixels, long first, long count)
+		{
+			uint* p = (uint*)pixels + first;
+			for (long i = 0; i < count; i++)
+			{
+				uint v = p[i];
+				p[i] = (v & 0xFF00FF00u) | ((v & 0xFFu) << 16) | ((v >> 16) & 0xFFu);
+			}
+		}
+
+		/// <summary>A chain to write: the texture (its size and levels), its pixels, and where.</summary>
+		protected struct Chain
+		{
+			internal Entry Entry;
+			internal Pixels Pixels;
+			internal byte* Data;
+		}
+
+		/// <summary>Writes a texture's pixels and makes its levels, on this thread (RGBA, or BGRA).</summary>
+		protected static void FillChain(Entry entry, Pixels pixels, byte* chain, bool bgra)
+		{
+			long count = (long)pixels.Width * pixels.Height;
+			pixels.Fill(chain, 0, (int)count);
+			if (bgra)
+			{
+				SwapRedBlue(chain, 0, count);
+			}
+
+			for (int level = 1; level < entry.Levels; level++)
+			{
+				MakeLevelRows(chain, entry.Width, entry.Height, level, 0, LevelSize(entry.Height, level));
+			}
+		}
+
+		/// <summary>Writes textures' pixels on every core, then their levels on every core (a level at a time; RGBA, or BGRA).</summary>
+		protected static void FillChains(Chain[] chains, bool bgra)
+		{
+			List<KeyValuePair<int, int>> pieces = new List<KeyValuePair<int, int>>();
+			for (int c = 0; c < chains.Length; c++)
+			{
+				int count = (int)(chains[c].Pixels.Width * chains[c].Pixels.Height);
+				for (int first = 0; first < count; first += FillPiece)
+				{
+					pieces.Add(new KeyValuePair<int, int>(c, first));
+				}
+			}
+
+			Parallel.For(0, pieces.Count, i =>
+			{
+				Chain chain = chains[pieces[i].Key];
+				int first = pieces[i].Value;
+				int count = Math.Min(FillPiece, (int)(chain.Pixels.Width * chain.Pixels.Height) - first);
+				chain.Pixels.Fill(chain.Data, first, count);
+				if (bgra)
+				{
+					SwapRedBlue(chain.Data, first, count);
+				}
+			});
+
+			// Each level from the one above: the rows shared out in pieces of about FillPiece texels.
+			uint most = 0;
+			foreach (Chain chain in chains)
+			{
+				most = Math.Max(most, chain.Entry.Levels);
+			}
+
+			for (int level = 1; level < most; level++)
+			{
+				pieces.Clear();
+				for (int c = 0; c < chains.Length; c++)
+				{
+					Entry entry = chains[c].Entry;
+					if (entry.Levels <= level)
+					{
+						continue;
+					}
+
+					uint rows = LevelSize(entry.Height, level), rowsPerPiece = (uint)Math.Max(1, FillPiece / (int)LevelSize(entry.Width, level));
+					for (uint first = 0; first < rows; first += rowsPerPiece)
+					{
+						pieces.Add(new KeyValuePair<int, int>(c, (int)first));
+					}
+				}
+
+				int current = level;
+				Parallel.For(0, pieces.Count, i =>
+				{
+					Chain chain = chains[pieces[i].Key];
+					Entry entry = chain.Entry;
+					uint first = (uint)pieces[i].Value, rows = LevelSize(entry.Height, current), rowsPerPiece = (uint)Math.Max(1, FillPiece / (int)LevelSize(entry.Width, current));
+					MakeLevelRows(chain.Data, entry.Width, entry.Height, current, first, Math.Min(rows, first + rowsPerPiece));
+				});
+			}
+		}
 
 		/// <summary>Uploads the pixels, making the image the first time.</summary>
 		private void Upload(Entry entry, Pixels pixels, bool later)

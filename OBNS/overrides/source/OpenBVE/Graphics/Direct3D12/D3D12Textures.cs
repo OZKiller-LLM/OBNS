@@ -1,11 +1,10 @@
 // OBNS: not an upstream file. The Direct3D 12 world layer's textures (OBNS/DIRECT3D.md): the images of WorldTextures'
 // copies, each a Direct3D texture whose view is in the shader-visible heap at the texture's index (bound one per draw).
-// Direct3D 12 makes no mipmap levels itself: they are made here, on every core, as the pixels are written.
+// Direct3D 12 makes no mipmap levels itself: they are made on every core as the pixels are written (WorldTextures).
 
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using Dx = OpenBve.Graphics.Direct3D11.Dx;
 
 namespace OpenBve.Graphics.Direct3D12
@@ -99,31 +98,6 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 		}
 
-		private static uint LevelSize(uint size, int level) => Math.Max(1u, size >> level);
-
-		/// <summary>The bytes of every level, packed one after another.</summary>
-		private static long ChainBytes(uint width, uint height, uint levels)
-		{
-			long bytes = 0;
-			for (int level = 0; level < levels; level++)
-			{
-				bytes += (long)LevelSize(width, level) * LevelSize(height, level) * 4;
-			}
-
-			return bytes;
-		}
-
-		private static long LevelOffset(uint width, uint height, int level)
-		{
-			long offset = 0;
-			for (int k = 0; k < level; k++)
-			{
-				offset += (long)LevelSize(width, k) * LevelSize(height, k) * 4;
-			}
-
-			return offset;
-		}
-
 		protected override void Write(Entry record, Pixels pixels, bool later)
 		{
 			D3D12Entry entry = (D3D12Entry)record;
@@ -134,12 +108,7 @@ namespace OpenBve.Graphics.Direct3D12
 				IntPtr own = Marshal.AllocHGlobal(new IntPtr(bytes));
 				try
 				{
-					pixels.Fill((byte*)own, 0, (int)(pixels.Width * pixels.Height));
-					for (int level = 1; level < entry.Levels; level++)
-					{
-						MakeLevelRows((byte*)own, entry.Width, entry.Height, level, 0, LevelSize(entry.Height, level));
-					}
-
+					FillChain(entry, pixels, (byte*)own, false);
 					Send(entry, (byte*)own);
 				}
 				finally
@@ -167,32 +136,6 @@ namespace OpenBve.Graphics.Direct3D12
 
 			pending.Add(new Pending { Entry = entry, Pixels = pixels, Offset = stagingUsed });
 			stagingUsed += (bytes + 15) / 16 * 16;
-		}
-
-		/// <summary>
-		/// Rows [first, end) of a level made from the level above it (packed in the chain): each texel the mean of the 2x2
-		/// above, as Direct3D 11's GenerateMips (and OpenGL's) box filter.
-		/// </summary>
-		private static void MakeLevelRows(byte* chain, uint width, uint height, int level, uint first, uint end)
-		{
-			uint sourceWidth = LevelSize(width, level - 1), sourceHeight = LevelSize(height, level - 1);
-			uint targetWidth = LevelSize(width, level);
-			byte* source = chain + LevelOffset(width, height, level - 1);
-			byte* target = chain + LevelOffset(width, height, level);
-			for (uint y = first; y < end; y++)
-			{
-				byte* row0 = source + (long)Math.Min(2 * y, sourceHeight - 1) * sourceWidth * 4;
-				byte* row1 = source + (long)Math.Min(2 * y + 1, sourceHeight - 1) * sourceWidth * 4;
-				byte* to = target + (long)y * targetWidth * 4;
-				for (uint x = 0; x < targetWidth; x++)
-				{
-					uint x0 = Math.Min(2 * x, sourceWidth - 1) * 4, x1 = Math.Min(2 * x + 1, sourceWidth - 1) * 4;
-					for (int c = 0; c < 4; c++)
-					{
-						to[x * 4 + c] = (byte)((row0[x0 + c] + row0[x1 + c] + row1[x0 + c] + row1[x1 + c] + 2) >> 2);
-					}
-				}
-			}
 		}
 
 		/// <summary>Copies every level of a packed chain into the texture (through upload memory, rows aligned as Direct3D needs).</summary>
@@ -256,7 +199,7 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 		}
 
-		/// <summary>The pixels written later: written on every core, their levels made on every core (a level at a time), then sent.</summary>
+		/// <summary>The pixels written later: written on every core with their levels, then sent.</summary>
 		protected override void Flush()
 		{
 			if (pending.Count == 0)
@@ -265,57 +208,13 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 
 			byte* block = (byte*)staging;
-			List<KeyValuePair<Pending, int>> pieces = new List<KeyValuePair<Pending, int>>();
-			foreach (Pending item in pending)
+			Chain[] chains = new Chain[pending.Count];
+			for (int i = 0; i < chains.Length; i++)
 			{
-				int count = (int)(item.Pixels.Width * item.Pixels.Height);
-				for (int first = 0; first < count; first += FillPiece)
-				{
-					pieces.Add(new KeyValuePair<Pending, int>(item, first));
-				}
+				chains[i] = new Chain { Entry = pending[i].Entry, Pixels = pending[i].Pixels, Data = block + pending[i].Offset };
 			}
 
-			Parallel.For(0, pieces.Count, i =>
-			{
-				Pending item = pieces[i].Key;
-				int first = pieces[i].Value;
-				int count = (int)(item.Pixels.Width * item.Pixels.Height);
-				item.Pixels.Fill(block + item.Offset, first, Math.Min(FillPiece, count - first));
-			});
-
-			// Each level from the one above: the rows shared out in pieces of about FillPiece texels.
-			uint most = 0;
-			foreach (Pending item in pending)
-			{
-				most = Math.Max(most, item.Entry.Levels);
-			}
-
-			for (int level = 1; level < most; level++)
-			{
-				pieces.Clear();
-				foreach (Pending item in pending)
-				{
-					if (item.Entry.Levels <= level)
-					{
-						continue;
-					}
-
-					uint rows = LevelSize(item.Entry.Height, level), rowsPerPiece = (uint)Math.Max(1, FillPiece / (int)LevelSize(item.Entry.Width, level));
-					for (uint first = 0; first < rows; first += rowsPerPiece)
-					{
-						pieces.Add(new KeyValuePair<Pending, int>(item, (int)first));
-					}
-				}
-
-				int current = level;
-				Parallel.For(0, pieces.Count, i =>
-				{
-					D3D12Entry entry = pieces[i].Key.Entry;
-					uint first = (uint)pieces[i].Value, rows = LevelSize(entry.Height, current), rowsPerPiece = (uint)Math.Max(1, FillPiece / (int)LevelSize(entry.Width, current));
-					MakeLevelRows(block + pieces[i].Key.Offset, entry.Width, entry.Height, current, first, Math.Min(rows, first + rowsPerPiece));
-				});
-			}
-
+			FillChains(chains, false);
 			foreach (Pending item in pending)
 			{
 				if (item.Entry.Texture != IntPtr.Zero)

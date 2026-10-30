@@ -73,14 +73,14 @@ namespace OpenBve.Graphics
 		/// <summary>OpenGL's alpha functions, as the faces' alpha tests take them.</summary>
 		internal const int AlphaNever = 512, AlphaLess = 513, AlphaEqual = 514, AlphaGreater = 516;
 
-		internal static IWorldLayer Instance => Vulkan.VulkanWorld.Enabled ? Vulkan.VulkanWorld.Instance : Direct3D11.D3D11World.Enabled ? (IWorldLayer)Direct3D11.D3D11World.Instance : Direct3D12.D3D12World.Enabled ? Direct3D12.D3D12World.Instance : null;
+		internal static IWorldLayer Instance => Vulkan.VulkanWorld.Enabled ? Vulkan.VulkanWorld.Instance : Direct3D11.D3D11World.Enabled ? (IWorldLayer)Direct3D11.D3D11World.Instance : Direct3D12.D3D12World.Enabled ? (IWorldLayer)Direct3D12.D3D12World.Instance : Direct3D9.D3D9World.Enabled ? Direct3D9.D3D9World.Instance : null;
 
 		internal static bool Enabled => Instance != null;
 
 		/// <summary>Makes the layer the options (or the switches) ask for, where it can share images with OpenGL; logs which, and why.</summary>
 		internal static void Initialize()
 		{
-			// Direct3D 12 or 11 when the options choose it (OBNS/DIRECT3D.md), Direct3D 11 where 12 cannot be used; Vulkan
+			// Direct3D 12, 11 or 9.0c when the options choose it (OBNS/DIRECT3D.md), Direct3D 11 where 12 cannot be used; Vulkan
 			// when the options choose it, or where Direct3D cannot be used.
 			Direct3D12.D3D12World.Initialize();
 			if (!Direct3D12.D3D12World.Enabled)
@@ -88,16 +88,17 @@ namespace OpenBve.Graphics
 				Direct3D11.D3D11World.Initialize();
 			}
 
-			if (!Direct3D12.D3D12World.Enabled && !Direct3D11.D3D11World.Enabled)
+			Direct3D9.D3D9World.Initialize();
+			if (!Direct3D12.D3D12World.Enabled && !Direct3D11.D3D11World.Enabled && !Direct3D9.D3D9World.Enabled)
 			{
 				Vulkan.VulkanWorld.Initialize();
 			}
 		}
 
 		/// <summary>Which renderer draws the world, for the debug overlay.</summary>
-		internal static string RendererName => Direct3D12.D3D12World.Enabled ? Direct3D12.D3D12World.RendererName : Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.RendererName : Vulkan.VulkanWorld.RendererName;
+		internal static string RendererName => Direct3D9.D3D9World.Enabled ? Direct3D9.D3D9World.RendererName : Direct3D12.D3D12World.Enabled ? Direct3D12.D3D12World.RendererName : Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.RendererName : Vulkan.VulkanWorld.RendererName;
 
 		/// <summary>The layer's line in the frame statistics.</summary>
-		internal static string Summary => Direct3D12.D3D12World.Enabled ? Direct3D12.D3D12World.Summary : Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.Summary : Vulkan.VulkanWorld.Summary;
+		internal static string Summary => Direct3D9.D3D9World.Enabled ? Direct3D9.D3D9World.Summary : Direct3D12.D3D12World.Enabled ? Direct3D12.D3D12World.Summary : Direct3D11.D3D11World.Enabled ? Direct3D11.D3D11World.Summary : Vulkan.VulkanWorld.Summary;
 	}
 }

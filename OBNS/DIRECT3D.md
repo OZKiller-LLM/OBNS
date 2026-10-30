@@ -1,6 +1,6 @@
 # Desktop Direct3D (OBNS 1.2)
 
-Direct3D 11 (then 12 and 9.0c) as a renderer option on Windows x86-64 and ARM64, beside OpenGL and Vulkan;
+Direct3D 11, 12 and 9.0c as renderer options on Windows x86-64 and ARM64, beside OpenGL and Vulkan;
 Metal takes the same place on macOS. Decided with the user (2026-10-30): each first as a **world layer**, as
 Vulkan is (`VULKAN.md`): the API draws the world layer and the cab layer, OpenGL draws the rest and lays
 them over its frame. Full renderers without OpenGL (upstream's 2D drawing, menus and HUD moved over too)
@@ -66,8 +66,14 @@ about 3,000 lines:
    average. Seven minutes of the AI driving from Tuen Mun: 8.0 ms a frame, the worst frame of each 10 s 21 ms
    (median); its 50 pipeline objects made at the start in 11 ms (RTX 2060 SUPER).
 
-Then Direct3D 9.0c (D3D9Ex, `WGL_NV_DX_interop`; no instancing of records, the slowest), and Metal (IOSurface
-to OpenGL). Later, for Direct3D 12: its records made and its commands recorded on a thread of their own while
+7. Direct3D 9.0c (below). **Done**: in the options as "Direct3D 9.0c" (64-bit Windows; where it cannot be
+   used, Vulkan is tried, then OpenGL). From the exterior view (a camera that does not depend on timing) at Tuen Mun,
+   its picture differs from Vulkan's by 0.71 levels on average (Direct3D 12's by 0.31, Vulkan's own runs by 0.04):
+   texture sampling's rounding, nothing missing or misplaced. Seven minutes of the AI driving from Tuen Mun:
+   14.7 ms a frame, the worst frame of each 10 s 26 ms (median), the slowest as expected: 11.5 ms of it the CPU
+   issuing about 4,650 draws and 4,450 shadow casters a cascade, each its own call with its record's index set.
+
+Then Metal (IOSurface to OpenGL). Later, for Direct3D 12: its records made and its commands recorded on a thread of their own while
 OpenGL draws the background (as Vulkan's are; it is the main thread's now, as Direct3D 11's), and the vertex
 buffers shared with OpenGL rather than copied.
 
@@ -89,6 +95,27 @@ The device is made on OpenGL's adapter (by LUID), at feature level 11.0 or later
 `GL_EXT_memory_object_win32` and `GL_EXT_semaphore_win32`, as Vulkan's layer does; without them (or if the
 self-test fails) Direct3D 11 is tried. The structures' sizes are checked against `d3d12.h`'s at the start.
 
+## Direct3D 9.0c: what changes from Direct3D 11
+
+Shader model 3.0 has no structured buffers, integers, texture arrays, instance stream or `SV_Position.z` in the
+pixel shader, so `Direct3D9/Shaders/world9.hlsl` is `world.hlsl` rewritten for it:
+
+| | Direct3D 11 | Direct3D 9.0c |
+| --- | --- | --- |
+| Device | Direct3D 11 | Direct3D 9Ex, with a hidden window of its own (it presents nothing) |
+| Images OpenGL sees | `WGL_NV_DX_interop2` | `WGL_NV_DX_interop`, the textures made with share handles (`wglDXSetResourceShareHandleNV`) |
+| Records | structured buffers | float4 texels of one A32B32G32R32F texture (written whole each frame), read in both stages by the draw's index (vertex texture fetch); the frame's record in constant registers; integers as floats |
+| The draw's record | instance stream | a vertex shader constant set per draw (passed on to the pixel shader) |
+| Matrix chains | `int3` | the three integers read as four bytes each (`UBYTE4`) and taken apart as upstream does |
+| States | state objects | render states, set where the pipeline key changes |
+| Depth as a colour | a second target, its writes masked | a second target bound only for draws that write depth |
+| Shadow maps | a texture array, comparison sampler | the quarters of one R32F atlas, the 2x2 filtering of a comparison sampler done in the shader |
+| Pixel centres | at .5 | at whole coordinates: positions moved half a pixel |
+| Depth buffers | 32-bit float | the most precise that can be made (24-bit on the RTX 2060 SUPER) |
+| Textures | `GenerateMips` | A8R8G8B8 (written as BGRA), levels made on every core, copied from system memory (`UpdateTexture`) |
+
+It needs vertex texture fetch of A32B32G32R32F and R32F render targets (any Direct3D 10-class GPU).
+
 ## Switches
 
 | Variable | Effect |
@@ -103,3 +130,6 @@ self-test fails) Direct3D 11 is tried. The structures' sizes are checked against
 | `OBNS_D3D12_DEBUG=1` | each texture made logged; a frame whose start takes 10 ms or more logged with its steps' times |
 | `OBNS_D3D12_WHITE=1`, `OBNS_D3D12_NOMIPS=1` | no textures (all white); textures without mipmaps |
 | `OBNS_D3D12_TEST=1` | at start, the Direct3D 12 device and its images' path to OpenGL checked and logged |
+| `OBNS_D3D9=1`, `=0` | the world layer drawn by Direct3D 9.0c, or not, whatever the options say |
+| `OBNS_D3D9_TINT=1`, `OBNS_D3D9_DEBUG=1`, `OBNS_D3D9_WHITE=1`, `OBNS_D3D9_NOMIPS=1` | as Direct3D 11's |
+| `OBNS_D3D9_TEST=1` | at start, the Direct3D 9 device and its images' path to OpenGL (a colour and an R32F texture) checked and logged |
