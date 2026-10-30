@@ -209,7 +209,7 @@ namespace OpenBve.Graphics.Vulkan
 			IntPtr* devices = stackalloc IntPtr[(int)Math.Max(count, 1)];
 			Vk.Check(Vk.vkEnumeratePhysicalDevices(Instance, ref count, devices), "vkEnumeratePhysicalDevices");
 			List<string> seen = new List<string>();
-			uint sampledImagesPerStage = 0, sampledImagesPerSet = 0;
+			uint sampledImagesPerStage = 0, sampledImagesPerSet = 0, resourcesPerStage = 0;
 			for (int i = 0; i < count; i++)
 			{
 				Vk.PhysicalDeviceIDProperties id = new Vk.PhysicalDeviceIDProperties { SType = Vk.StructureTypePhysicalDeviceIdProperties };
@@ -234,6 +234,8 @@ namespace OpenBve.Graphics.Vulkan
 					// maxPerStageDescriptorSampledImages and maxDescriptorSetSampledImages (80 and 116 into the limits).
 					sampledImagesPerStage = *(uint*)(properties.Properties.LimitsAndSparseProperties + 84);
 					sampledImagesPerSet = *(uint*)(properties.Properties.LimitsAndSparseProperties + 120);
+					// maxPerStageResources (92 into the limits).
+					resourcesPerStage = *(uint*)(properties.Properties.LimitsAndSparseProperties + 96);
 					if (properties.Properties.ApiVersion < Vk.MakeVersion(1, 3, 0))
 					{
 						return deviceName + " has Vulkan " + VersionText(properties.Properties.ApiVersion) + "; 1.3 is needed";
@@ -294,21 +296,26 @@ namespace OpenBve.Graphics.Vulkan
 			else
 			{
 				// shaderSampledImageArrayDynamicIndexing (VkPhysicalDeviceFeatures 34); a page as large as the device lets a
-				// stage and a pipeline layout have, less the shadow map.
+				// stage and a pipeline layout have, less the shadow map, and within the resources a stage may have in all
+				// (maxPerStageResources: the fragment shader's 4 storage buffers, the shadow map and the 2 colour
+				// attachments count too): on Intel's Broadwell (hasvk) pages of 127 hung the GPU, most likely by overrunning
+				// the stage's binding table.
 				const int sampledImageArrayDynamicIndexing = 34;
 				if (features.Features[sampledImageArrayDynamicIndexing] == 0)
 				{
 					return "the device has neither descriptor indexing nor shaderSampledImageArrayDynamicIndexing";
 				}
 
+				const uint otherResources = 4 + 1 + 2;
 				uint perStage = sampledImagesPerStage, perSet = sampledImagesPerSet;
-				TexturePageSize = (int)Math.Min(Math.Min(perStage, perSet) - 1, pageAsked > 1 ? (uint)pageAsked : 1024);
+				uint fitting = Math.Min(Math.Min(perStage, perSet) - 1, resourcesPerStage > otherResources ? resourcesPerStage - otherResources : 0);
+				TexturePageSize = (int)Math.Min(fitting, pageAsked > 1 ? (uint)pageAsked : 1024);
 				if (TexturePageSize < 16)
 				{
 					return "the device allows too few sampled images (" + perStage + " a stage) for pages of textures";
 				}
 
-				Description += ", textures in pages of " + TexturePageSize;
+				Description += ", textures in pages of " + TexturePageSize + " (the device: " + perStage + " sampled images and " + resourcesPerStage + " resources a stage)";
 			}
 
 			if (features13.Features[Vk.PhysicalDeviceVulkan13Features.DynamicRendering] == 0 || features13.Features[Vk.PhysicalDeviceVulkan13Features.Synchronization2] == 0 ||
