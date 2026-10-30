@@ -249,14 +249,47 @@ namespace OpenBve.Android
 			/*
 			 * Upstream's shadows (cascaded shadow maps, off unless chosen in Options): the visible
 			 * faces drawn into each cascade's depth map from the sun, as NewRenderer does, before
-			 * the scene. They need off-screen depth targets, which OpenGL ES (and Vulkan through
-			 * ANGLE) has; the native Vulkan renderer has not, and GameView leaves them off there.
+			 * the scene (on native Vulkan, VulkanGL.Shadows carries it out, from the same lists as
+			 * the scene: see NativeShadowPass).
 			 */
+			List<FaceState> opaqueFaces;
+			List<FaceState> alphaFaces;
+			List<FaceState> unsortedAlphaFaces;
+			List<FaceState> overlayOpaqueFaces;
+			List<FaceState> overlayAlphaFaces;
+			lock (VisibleObjects.LockObject)
+			{
+				opaqueFaces = VisibleObjects.OpaqueFaces.ToList();
+				// In the order objects were shown: each object's faces together, in index order.
+				unsortedAlphaFaces = VisibleObjects.AlphaFaces.ToList();
+				alphaFaces = VisibleObjects.GetSortedPolygons();
+				overlayOpaqueFaces = VisibleObjects.OverlayOpaqueFaces.ToList();
+				overlayAlphaFaces = VisibleObjects.GetSortedPolygons(true);
+			}
+
+			Profile.Mark("face lists");
+
+			// Faces the static batches draw come out of the lists (see StaticBatcher).
+			batcher ??= new StaticBatcher(this);
+			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
+			VertexCopyReleaser.Step(this);
+
+			Profile.Mark("batch filter");
+
 			bool shadows = ShadowsEnabled;
 			if (shadows)
 			{
-				PerformCSMShadowPass();
+				if (NativeFaces && GL.Device is OpenBve.Vulkan.VulkanGL shadowTarget)
+				{
+					NativeShadowPass(shadowTarget, opaqueFaces, unsortedAlphaFaces);
+				}
+				else
+				{
+					PerformCSMShadowPass();
+				}
+
 				GlCheck("shadow pass");
+				Profile.Mark("shadows");
 			}
 
 			if (Lighting.ShouldInitialize)
@@ -311,30 +344,6 @@ namespace OpenBve.Android
 			DefaultShader.SetCurrentProjectionMatrix(CurrentProjectionMatrix);
 
 			ResetOpenGlState();
-
-			List<FaceState> opaqueFaces;
-			List<FaceState> alphaFaces;
-			List<FaceState> unsortedAlphaFaces;
-			List<FaceState> overlayOpaqueFaces;
-			List<FaceState> overlayAlphaFaces;
-			lock (VisibleObjects.LockObject)
-			{
-				opaqueFaces = VisibleObjects.OpaqueFaces.ToList();
-				// In the order objects were shown: each object's faces together, in index order.
-				unsortedAlphaFaces = VisibleObjects.AlphaFaces.ToList();
-				alphaFaces = VisibleObjects.GetSortedPolygons();
-				overlayOpaqueFaces = VisibleObjects.OverlayOpaqueFaces.ToList();
-				overlayAlphaFaces = VisibleObjects.GetSortedPolygons(true);
-			}
-
-			Profile.Mark("face lists");
-
-			// Faces the static batches draw come out of the lists (see StaticBatcher).
-			batcher ??= new StaticBatcher(this);
-			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
-			VertexCopyReleaser.Step(this);
-
-			Profile.Mark("batch filter");
 
 			if (DescribeFacesNextFrame)
 			{

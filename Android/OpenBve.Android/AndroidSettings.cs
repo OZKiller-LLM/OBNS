@@ -275,6 +275,22 @@ namespace OpenBve.Android
 				SetInterfaceStyle(context, style);
 			}
 
+			// --ei shadow_resolution 0|512|1024|2048, --ei shadow_distance (metres), --ei shadow_cascades 2|3|4, as the Options settings.
+			if (intent?.HasExtra(ShadowResolutionKey) == true)
+			{
+				SetShadowResolution(context, (OpenBveApi.Interface.ShadowMapResolution)intent.GetIntExtra(ShadowResolutionKey, 0));
+			}
+
+			if (intent?.HasExtra(ShadowDistanceKey) == true)
+			{
+				SetShadowDistance(context, (OpenBveApi.Interface.ShadowDistance)intent.GetIntExtra(ShadowDistanceKey, 300));
+			}
+
+			if (intent?.HasExtra(ShadowCascadesKey) == true)
+			{
+				SetShadowCascades(context, (OpenBveApi.Interface.ShadowCascadeCount)intent.GetIntExtra(ShadowCascadesKey, 3));
+			}
+
 			// --ei touch_button_size 0|1|2, --ei touch_button_opacity 0|1|2, --ez touch_buttons_hidden true|false
 			if (intent?.HasExtra(ButtonSizeKey) == true)
 			{

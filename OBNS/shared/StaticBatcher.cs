@@ -621,6 +621,25 @@ namespace OpenBve
 			faces.RemoveRange(kept, faces.Count - kept);
 		}
 
+		/// <summary>Gives each face of the batches in view, with its index count (for a shadow map, which has no order to keep). Call after Filter.</summary>
+		public void VisitFaces(Action<ObjectState, MeshFace, int> visit)
+		{
+			foreach (Group group in visible)
+			{
+				Batch batch = group.Batch;
+				MeshFace[] faces = batch.State.Prototype.Mesh.Faces;
+				foreach (int index in batch.OpaqueFaces)
+				{
+					visit(batch.State, faces[index], batch.FaceLengths[index]);
+				}
+
+				foreach (int index in batch.AlphaFaces)
+				{
+					visit(batch.State, faces[index], batch.FaceLengths[index]);
+				}
+			}
+		}
+
 		/// <summary>Draws the batches' opaque faces in view. Call in the opaque pass.</summary>
 		public int DrawOpaque()
 		{

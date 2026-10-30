@@ -52,6 +52,9 @@ namespace OpenBve.Vulkan
 		private const int MaxChunks = 8;
 		private const int RecordsPerChunk = 400;
 
+		/// <summary>The frame's own chunks, then each shadow cascade's.</summary>
+		private const int TotalChunks = MaxChunks + MaxShadowPasses * ShadowChunksPerPass;
+
 		/// <summary>Whether frames are recorded and submitted on their own thread while the next is prepared (`--ez vulkan_pipelined false`: at the swap, on the render thread).</summary>
 		public static bool Pipelined = true;
 
@@ -87,6 +90,7 @@ namespace OpenBve.Vulkan
 			internal DescriptorSet UniformSet;
 			internal uint Offset0, Offset1;
 			internal DescriptorSet TextureSet;
+			internal DescriptorSet ShadowSet;
 			internal Rect2D Viewport;
 			internal fixed ulong Buffers[DefaultLocations];
 			internal fixed ulong Offsets[DefaultLocations];
@@ -110,9 +114,9 @@ namespace OpenBve.Vulkan
 		private Vector4 passClear;
 
 		// Secondary command buffers: per frame slot, per chunk, each from its own pool (pools are not shared between threads).
-		private readonly CommandPool[,] chunkPools = new CommandPool[VulkanContext.Slots, MaxChunks];
-		private readonly CommandBuffer[,] chunkBuffers = new CommandBuffer[VulkanContext.Slots, MaxChunks];
-		private readonly bool[,] chunkPoolUsed = new bool[VulkanContext.Slots, MaxChunks];
+		private readonly CommandPool[,] chunkPools = new CommandPool[VulkanContext.Slots, TotalChunks];
+		private readonly CommandBuffer[,] chunkBuffers = new CommandBuffer[VulkanContext.Slots, TotalChunks];
+		private readonly bool[,] chunkPoolUsed = new bool[VulkanContext.Slots, TotalChunks];
 
 		/// <summary>Chunks the last frame was recorded in, for the log.</summary>
 		public int LastFrameChunks { get; private set; }
@@ -180,6 +184,17 @@ namespace OpenBve.Vulkan
 
 		private ref DrawRecord NextRecord()
 		{
+			GLFramebuffer pass = currentPass;
+			if (pass != null)
+			{
+				if (pass.RecordCount == pass.Records.Length)
+				{
+					Array.Resize(ref pass.Records, pass.Records.Length * 2);
+				}
+
+				return ref pass.Records[pass.RecordCount++];
+			}
+
 			if (recordCount == records.Length)
 			{
 				Array.Resize(ref records, records.Length * 2);
@@ -232,6 +247,7 @@ namespace OpenBve.Vulkan
 				EnsureChunkBuffer(slot, chunk);
 			}
 
+			ShadowRun[] shadowRuns = TakeShadowRuns(slot);
 			LastFrameSubmitWaitMilliseconds = submitWaitTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 			submitWaitTicks = 0;
 			Action job = () =>
@@ -244,7 +260,7 @@ namespace OpenBve.Vulkan
 						return;
 					}
 
-					Action<int> record = chunk => RecordChunk(slot, chunk, chunk * perChunk, Math.Min(count, (chunk + 1) * perChunk), clip, handoff.Framebuffer);
+					Action<int> record = chunk => RecordChunk(slot, chunk, records, chunk * perChunk, Math.Min(count, (chunk + 1) * perChunk), clip, handoff.Framebuffer, false, default);
 					if (chunks == 1 || workers == null)
 					{
 						for (int chunk = 0; chunk < chunks; chunk++)
@@ -264,7 +280,7 @@ namespace OpenBve.Vulkan
 					}
 
 					vk.CmdExecuteCommands(commands, (uint)chunks, buffers);
-				});
+				}, shadowRuns == null ? null : commands => RunShadowPasses(commands, slot, shadowRuns, clip));
 				LastFrameChunks = chunks;
 				LastFrameReplayMilliseconds = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 			};
@@ -498,7 +514,7 @@ namespace OpenBve.Vulkan
 		/// <summary>A frame slot is being reused (its last submission is done): its chunks' pools start over.</summary>
 		private void ResetChunkPools(int slot)
 		{
-			for (int chunk = 0; chunk < MaxChunks; chunk++)
+			for (int chunk = 0; chunk < TotalChunks; chunk++)
 			{
 				if (chunkPoolUsed[slot, chunk])
 				{
@@ -508,8 +524,8 @@ namespace OpenBve.Vulkan
 			}
 		}
 
-		/// <summary>Records records [start, end) into a chunk's secondary command buffer (on a worker thread).</summary>
-		private void RecordChunk(int slot, int chunk, int start, int end, Vector4 clip, Framebuffer framebuffer)
+		/// <summary>Records records [start, end) into a chunk's secondary command buffer (on a worker thread): of the frame's render pass, or of a shadow cascade's.</summary>
+		private void RecordChunk(int slot, int chunk, DrawRecord[] source, int start, int end, Vector4 clip, Framebuffer framebuffer, bool shadowPass, Extent2D shadowExtent)
 		{
 			CommandBuffer commands = chunkBuffers[slot, chunk];
 			Format colorFormat = context.ColorFormat;
@@ -524,8 +540,8 @@ namespace OpenBve.Vulkan
 			CommandBufferInheritanceInfo inheritance = new CommandBufferInheritanceInfo
 			{
 				SType = StructureType.CommandBufferInheritanceInfo,
-				PNext = context.Vulkan13 ? &rendering : null,
-				RenderPass = context.Vulkan13 ? default : context.RenderPass,
+				PNext = context.Vulkan13 && !shadowPass ? &rendering : null,
+				RenderPass = shadowPass ? shadowRenderPass : context.Vulkan13 ? default : context.RenderPass,
 				Subpass = 0,
 				Framebuffer = framebuffer
 			};
@@ -539,12 +555,12 @@ namespace OpenBve.Vulkan
 
 			// A secondary command buffer inherits no state: everything is set again.
 			cmdPushConstants(commands, pipelineLayout, ShaderStageFlags.VertexBit, 0, 16, &clip);
-			Rect2D scissor = new Rect2D(new Offset2D(0, 0), context.ImageExtent);
+			Rect2D scissor = new Rect2D(new Offset2D(0, 0), shadowPass ? shadowExtent : context.ImageExtent);
 			cmdSetScissor(commands, 0, 1, &scissor);
 			ClearRect clearRect = new ClearRect(scissor, 0, 1);
 
 			Pipeline boundPipeline = default;
-			DescriptorSet boundUniform = default, boundTexture = default;
+			DescriptorSet boundUniform = default, boundTexture = default, boundShadow = default;
 			uint bound0 = uint.MaxValue, bound1 = uint.MaxValue;
 			Rect2D boundViewport = default;
 			bool viewportSet = false;
@@ -565,7 +581,7 @@ namespace OpenBve.Vulkan
 
 			for (int i = start; i < end; i++)
 			{
-				ref DrawRecord record = ref records[i];
+				ref DrawRecord record = ref source[i];
 				if (record.Kind == RecordKind.Clear)
 				{
 					uint count = 0;
@@ -642,11 +658,18 @@ namespace OpenBve.Vulkan
 					bound1 = record.Offset1;
 				}
 
-				if (record.TextureSet.Handle != boundTexture.Handle)
+				if (record.TextureSet.Handle != 0 && record.TextureSet.Handle != boundTexture.Handle)
 				{
 					DescriptorSet set = record.TextureSet;
 					cmdBindDescriptorSets(commands, PipelineBindPoint.Graphics, pipelineLayout, 1, 1, &set, 0, null);
 					boundTexture = set;
+				}
+
+				if (record.ShadowSet.Handle != 0 && record.ShadowSet.Handle != boundShadow.Handle)
+				{
+					DescriptorSet set = record.ShadowSet;
+					cmdBindDescriptorSets(commands, PipelineBindPoint.Graphics, pipelineLayout, 2, 1, &set, 0, null);
+					boundShadow = set;
 				}
 
 				if (record.VertexBufferCount != 0)
@@ -717,7 +740,7 @@ namespace OpenBve.Vulkan
 			StopSubmitter();
 			for (int slot = 0; slot < VulkanContext.Slots; slot++)
 			{
-				for (int chunk = 0; chunk < MaxChunks; chunk++)
+				for (int chunk = 0; chunk < TotalChunks; chunk++)
 				{
 					if (chunkPools[slot, chunk].Handle != 0)
 					{

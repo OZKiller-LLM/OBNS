@@ -88,5 +88,5 @@ controls_move_axis_half = 请将扳机、摇杆或手柄移到底。
 axis_reversed = 反向
 
 # Shadows (the Options page).
-shadows_note = 阴影需要从太阳方向再绘制一次场景，会降低帧率。阴影在 OpenGL ES 和 Vulkan（ANGLE）下绘制，原生 Vulkan 暂不支持。更改将从下一局游戏开始生效。
+shadows_note = 阴影需要从太阳方向再绘制一次场景，会降低帧率。更改将从下一局游戏开始生效。
 motion_blur_note = 在 OpenGL ES 和 Vulkan（ANGLE）下绘制，原生 Vulkan 暂不支持。

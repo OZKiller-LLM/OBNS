@@ -33,8 +33,8 @@ namespace OpenBve.Vulkan
 	/*
 	 * Drawing. Every program shares one pipeline layout: set 0 holds the program's uniform block
 	 * (binding 0) and the animation matrices (binding 1), both dynamic offsets into the frame's
-	 * uniform ring; set 1 the texture; a push constant the clip-space transform (Y flip and
-	 * pre-rotation). The GL state that Vulkan bakes into a pipeline - the program, the primitive,
+	 * uniform ring; set 1 the texture; set 2, for faces reading shadow maps, one frame's cascades
+	 * (VulkanGL.Shadows); a push constant the clip-space transform (Y flip and pre-rotation). The GL state that Vulkan bakes into a pipeline - the program, the primitive,
 	 * the vertex layout, culling, depth and blending - makes a key, and each key's pipeline is
 	 * made once, the first time it is drawn with. Each vertex attribute has its own binding, so
 	 * a layout is only formats and strides, and the buffers and offsets come at draw time; a
@@ -174,12 +174,13 @@ namespace OpenBve.Vulkan
 			DescriptorSetLayoutCreateInfo textureInfo = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 1, PBindings = &textureBinding };
 			Check(vk.CreateDescriptorSetLayout(device, in textureInfo, null, out textureLayout), "vkCreateDescriptorSetLayout");
 
-			DescriptorSetLayout* layouts = stackalloc DescriptorSetLayout[2] { uniformLayout, textureLayout };
+			CreateShadowLayout();
+			DescriptorSetLayout* layouts = stackalloc DescriptorSetLayout[3] { uniformLayout, textureLayout, shadowLayout };
 			PushConstantRange push = new PushConstantRange(ShaderStageFlags.VertexBit, 0, 16);
 			PipelineLayoutCreateInfo layoutInfo = new PipelineLayoutCreateInfo
 			{
 				SType = StructureType.PipelineLayoutCreateInfo,
-				SetLayoutCount = 2,
+				SetLayoutCount = 3,
 				PSetLayouts = layouts,
 				PushConstantRangeCount = 1,
 				PPushConstantRanges = &push
@@ -202,6 +203,7 @@ namespace OpenBve.Vulkan
 			rectangleVertex = LoadShader("rectangle.vert");
 			textVertex = LoadShader("text.vert");
 			rectangleFragment = LoadShader("rectangle.frag");
+			CreateShadowShaders();
 		}
 
 		private ShaderModule LoadShader(string name)
@@ -248,6 +250,7 @@ namespace OpenBve.Vulkan
 			StartSegment();
 			ResetChunkPools(context.FrameSlot);
 			recordCount = 0;
+			ShadowsFrameBegun();
 			passClear = new Vector4(clearRed, clearGreen, clearBlue, clearAlpha);
 			viewportDirty = true;
 		}
@@ -480,7 +483,8 @@ namespace OpenBve.Vulkan
 			CompareOp compare = (CompareOp)(key >> 10 & 7);
 			bool blending = (key >> 13 & 1) != 0;
 			BlendFactor source = VulkanBlendFactors[key >> 14 & 15], destination = VulkanBlendFactors[key >> 18 & 15];
-			int layoutId = (int)(key >> 22);
+			int layoutId = (int)(key >> 22 & 0xFFFFFFF);
+			bool depthPass = (key & DepthPassFlag) != 0, shadowed = (key & ShadowedFlag) != 0, depthOnly = (key & DepthOnlyFlag) != 0;
 
 			IntPtr main = Silk.NET.Core.Native.SilkMarshal.StringToPtr("main");
 			try
@@ -490,14 +494,14 @@ namespace OpenBve.Vulkan
 				{
 					SType = StructureType.PipelineShaderStageCreateInfo,
 					Stage = ShaderStageFlags.VertexBit,
-					Module = kind == ProgramKind.Default ? defaultVertex : kind == ProgramKind.Text ? textVertex : rectangleVertex,
+					Module = depthPass ? shadowDepthVertex : shadowed ? defaultShadowVertex : kind == ProgramKind.Default ? defaultVertex : kind == ProgramKind.Text ? textVertex : rectangleVertex,
 					PName = (byte*)main
 				};
 				stages[1] = new PipelineShaderStageCreateInfo
 				{
 					SType = StructureType.PipelineShaderStageCreateInfo,
 					Stage = ShaderStageFlags.FragmentBit,
-					Module = kind == ProgramKind.Default ? defaultFragment : rectangleFragment,
+					Module = depthPass ? shadowDepthFragment : shadowed ? defaultShadowFragment : kind == ProgramKind.Default ? defaultFragment : rectangleFragment,
 					PName = (byte*)main
 				};
 
@@ -541,7 +545,8 @@ namespace OpenBve.Vulkan
 					PolygonMode = PolygonMode.Fill,
 					CullMode = cull == 0 ? CullModeFlags.None : cull == 1 ? CullModeFlags.FrontBit : cull == 2 ? CullModeFlags.BackBit : CullModeFlags.FrontAndBack,
 					// GL's counter-clockwise front faces: the clip transform flips Y and turns, so on screen they keep their winding.
-					FrontFace = FrontFace.CounterClockwise,
+					// A shadow map is not flipped (shadow_depth.vert), so there the same faces wind the other way.
+					FrontFace = depthPass ? FrontFace.Clockwise : FrontFace.CounterClockwise,
 					LineWidth = 1.0f
 				};
 				PipelineMultisampleStateCreateInfo multisample = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count1Bit };
@@ -563,7 +568,7 @@ namespace OpenBve.Vulkan
 					AlphaBlendOp = BlendOp.Add,
 					ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit
 				};
-				PipelineColorBlendStateCreateInfo colorBlend = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &attachment };
+				PipelineColorBlendStateCreateInfo colorBlend = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = depthPass ? 0u : 1u, PAttachments = &attachment };
 				Silk.NET.Vulkan.DynamicState* dynamics = stackalloc Silk.NET.Vulkan.DynamicState[9];
 				uint dynamicCount = 0;
 				dynamics[dynamicCount++] = Silk.NET.Vulkan.DynamicState.Viewport;
@@ -594,8 +599,8 @@ namespace OpenBve.Vulkan
 				GraphicsPipelineCreateInfo info = new GraphicsPipelineCreateInfo
 				{
 					SType = StructureType.GraphicsPipelineCreateInfo,
-					PNext = context.Vulkan13 ? &rendering : null,
-					StageCount = 2,
+					PNext = context.Vulkan13 && !depthPass ? &rendering : null,
+					StageCount = depthOnly ? 1u : 2u,
 					PStages = stages,
 					PVertexInputState = &vertexInput,
 					PInputAssemblyState = &inputAssembly,
@@ -606,7 +611,7 @@ namespace OpenBve.Vulkan
 					PColorBlendState = &colorBlend,
 					PDynamicState = &dynamic,
 					Layout = pipelineLayout,
-					RenderPass = context.Vulkan13 ? default : context.RenderPass,
+					RenderPass = depthPass ? ShadowRenderPass() : context.Vulkan13 ? default : context.RenderPass,
 					Subpass = 0
 				};
 				Check(vk.CreateGraphicsPipelines(device, pipelineCache, 1, in info, null, out pipeline), "vkCreateGraphicsPipelines");
@@ -779,7 +784,7 @@ namespace OpenBve.Vulkan
 		private bool PrepareDraw(int mode, GLVertexArray array = null, GLTexture texture = null, byte[] faceBlock = null)
 		{
 			GLProgram program = currentProgram;
-			if (offscreenBound || program == null || program.Kind == ProgramKind.Unsupported)
+			if (program == null || program.Kind == ProgramKind.Unsupported)
 			{
 				return false;
 			}
@@ -791,7 +796,8 @@ namespace OpenBve.Vulkan
 			}
 
 			array ??= CurrentVertexArray;
-			if (program.Kind == ProgramKind.Default)
+			bool usesVertices = program.Kind == ProgramKind.Default || program.Kind == ProgramKind.ShadowDepth;
+			if (usesVertices)
 			{
 				// Every enabled attribute needs its data.
 				for (int i = 0; i < DefaultLocations; i++)
@@ -809,16 +815,37 @@ namespace OpenBve.Vulkan
 				return false;
 			}
 
+			// Into a cascade: its own records (NextRecord). Not a framebuffer this renderer can draw into: nothing.
+			if (boundFramebuffer != null && ShadowPass() == null)
+			{
+				return false;
+			}
+
 			ulong serial = context.RecordingSerial;
 			pending = default;
 
 			// The texture first: realizing it records uploads, outside the frame's drawing.
 			long mark = ProfileStages ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-			pending.TextureSet = TextureSet(faceBlock != null ? texture : units[0]);
+			if (!shadowDepthOnly)
+			{
+				pending.TextureSet = TextureSet(faceBlock != null ? texture : units[0]);
+			}
+
 			Section(0, ref mark);
 
 			int topology = Topology(mode);
-			pending.Pipeline = GetPipeline(PipelineKey(program.Kind, topology, program.Kind == ProgramKind.Default ? VertexLayoutId(array) : 0));
+			ulong pipelineKey = PipelineKey(usesVertices ? ProgramKind.Default : program.Kind, topology, usesVertices ? VertexLayoutId(array) : 0);
+			if (program.Kind == ProgramKind.ShadowDepth)
+			{
+				pipelineKey = pipelineKey & ~BlendBits | DepthPassFlag | (shadowDepthOnly ? DepthOnlyFlag : 0UL);
+			}
+			else if (program.Kind == ProgramKind.Default && ShadowsActive())
+			{
+				pipelineKey |= ShadowedFlag;
+				pending.ShadowSet = ShadowSet();
+			}
+
+			pending.Pipeline = GetPipeline(pipelineKey);
 			if (Dynamic13)
 			{
 				pending.Cull = !cullFace ? (int)CullModeFlags.None : cullMode == GL_FRONT ? (int)CullModeFlags.FrontBit : cullMode == GL_BACK ? (int)CullModeFlags.BackBit : (int)CullModeFlags.FrontAndBack;
@@ -834,7 +861,7 @@ namespace OpenBve.Vulkan
 			ReserveRing(AnimationBlockSize + DrawBlockRange);
 			BufferHeap.Block block = RingBlock;
 			uint animationOffset = ring.ZeroOffset;
-			if (program.Kind == ProgramKind.Default)
+			if (usesVertices)
 			{
 				GLBuffer matrices = uniformBindings[Math.Max(0, Math.Min(uniformBindings.Length - 1, program.BlockBinding))];
 				if (matrices != null && matrices.Uniform && matrices.Shadow != null && matrices.Shadow.Length > 0)
@@ -852,17 +879,29 @@ namespace OpenBve.Vulkan
 					animationOffset = matrices.RingOffset;
 				}
 
-				if (program.NormalDirty && faceBlock == null)
+				if (program.NormalDirty && faceBlock == null && program.Kind == ProgramKind.Default)
 				{
 					UpdateNormalMatrix(program);
 				}
 			}
 
 			uint drawOffset;
-			if (faceBlock != null)
+			if (faceBlock == shadowFaceBlock && !shadowFaceBlockDirty && shadowFaceBlockSerial == serial && shadowFaceBlockRing == block)
+			{
+				// The faces of one object into one cascade share their block.
+				drawOffset = shadowFaceBlockOffset;
+			}
+			else if (faceBlock != null)
 			{
 				drawOffset = RingWrite(faceBlock, faceBlock.Length);
 				ring.Position = Math.Max(ring.Position, drawOffset - ring.Segments[ring.Segment].Offset + DrawBlockRange);
+				if (faceBlock == shadowFaceBlock)
+				{
+					shadowFaceBlockDirty = false;
+					shadowFaceBlockSerial = serial;
+					shadowFaceBlockRing = block;
+					shadowFaceBlockOffset = drawOffset;
+				}
 			}
 			else
 			{
@@ -884,13 +923,16 @@ namespace OpenBve.Vulkan
 			pending.Offset1 = animationOffset;
 			if (viewportDirty)
 			{
-				currentViewport = context.ToImageRect(viewportX, viewportY, Math.Max(1, viewportWidth), Math.Max(1, viewportHeight));
+				// A shadow map isn't the swapchain's: neither flipped nor turned.
+				currentViewport = boundFramebuffer != null
+					? new Rect2D(new Offset2D(viewportX, viewportY), new Extent2D((uint)Math.Max(1, viewportWidth), (uint)Math.Max(1, viewportHeight)))
+					: context.ToImageRect(viewportX, viewportY, Math.Max(1, viewportWidth), Math.Max(1, viewportHeight));
 				viewportDirty = false;
 			}
 
 			pending.Viewport = currentViewport;
 			Section(3, ref mark);
-			if (program.Kind == ProgramKind.Default)
+			if (usesVertices)
 			{
 				pending.VertexBufferCount = DefaultLocations;
 				for (int i = 0; i < DefaultLocations; i++)
@@ -919,6 +961,7 @@ namespace OpenBve.Vulkan
 		private void DisposeDraw()
 		{
 			DisposeRecords();
+			DisposeShadows();
 			foreach (Pipeline pipeline in pipelines.Values)
 			{
 				vk.DestroyPipeline(device, pipeline, null);

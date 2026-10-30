@@ -918,10 +918,12 @@ namespace OpenBve.Vulkan
 		/// another thread than the render thread, one frame at a time, while the render thread does not
 		/// use the device's queue or swapchain (VulkanGL waits for it before beginning the next frame).
 		/// </summary>
-		public void SubmitFrame(FrameHandoff handoff, System.Numerics.Vector4 clearColor, Action<CommandBuffer> drawPass)
+		public void SubmitFrame(FrameHandoff handoff, System.Numerics.Vector4 clearColor, Action<CommandBuffer> drawPass, Action<CommandBuffer> beforePass = null)
 		{
 			int slot = handoff.Slot;
 			CommandBuffer commands = commandBuffers[slot];
+			// Render passes of its own that the frame's reads from (shadow maps).
+			beforePass?.Invoke(commands);
 			if (Vulkan13)
 			{
 				BeginRendering(commands, handoff.Image, clearColor);

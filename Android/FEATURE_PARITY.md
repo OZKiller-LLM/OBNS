@@ -31,7 +31,7 @@ the menus.
 | Event markers | SHOW_EVENTS (Events.cs, cubes) | upstream's Events.cs compiled in, drawn by AndroidRenderer |
 | Particle effects (MSTS exhaust, steam) | TrainBase.UpdateParticleSources | AndroidRenderer, after the alpha faces |
 | Switch change map | SWITCH_MENU (SwitchChangeDialog) | SwitchMapPanel: the touch interface's own map of every track near the train, the way ahead highlighted, switches to tap and change (SW button, or Ctrl+F9) |
-| Shadows | cascaded shadow maps (Shadows.RenderPass) | upstream's own, drawn by AndroidRenderer on OpenGL ES and Vulkan (ANGLE); Options: resolution up to 2048, distance, cascades, strength |
+| Shadows | cascaded shadow maps (Shadows.RenderPass) | upstream's own, drawn by AndroidRenderer on OpenGL ES, Vulkan (ANGLE) and native Vulkan (`VulkanGL.Shadows`); Options: resolution up to 2048, distance, cascades, strength |
 | Motion blur | MotionBlur.RenderFullscreen | AndroidMotionBlur: upstream's fade, its fixed-function quad redrawn in a shader (OpenGL ES, Vulkan through ANGLE) |
 | Controller axes | POWER_HALFAXIS, BRAKE_HALFAXIS, SINGLE_FULLAXIS, REVERSER_FULLAXIS (and the full-axis power and brake) | bound on the Controls page by moving the axis; upstream's handle logic, applied when the axis moves |
 
@@ -39,7 +39,7 @@ the menus.
 
 | Feature | Upstream | Notes |
 |---|---|---|
-| Shadows and motion blur on native Vulkan | CascadedShadowMap, MotionBlur | the native Vulkan renderer has no off-screen targets or screen copy yet (its own SPIR-V shaders would need shadow sampling too); with OpenGL ES and Vulkan through ANGLE both work. Planned with the desktop Vulkan backport, which needs the same |
+| Motion blur on native Vulkan | MotionBlur | the native Vulkan renderer has no screen copy yet; with OpenGL ES and Vulkan through ANGLE it works |
 
 ## Not applicable on Android
 

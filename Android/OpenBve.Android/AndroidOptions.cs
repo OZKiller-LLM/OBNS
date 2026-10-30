@@ -80,6 +80,8 @@ namespace OpenBve.Android
 		public AndroidOptions()
 		{
 			Font = "sans-serif";
+			// BVE5 and BVE6 routes' other trains (Train statements), on as in upstream's desktop options.
+			EnableBve5ScriptedTrain = true;
 			Interpolation = InterpolationMode.BilinearMipmapped;
 			AnisotropicFilteringLevel = 0;
 			AnisotropicFilteringMaximum = 0;

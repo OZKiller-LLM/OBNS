@@ -58,7 +58,7 @@ namespace OpenBve.Vulkan
 		private bool faceNoFog, faceAlphaAboveZero;
 
 		/// <summary>Native faces can be drawn now: the default program is current (the world and cab passes).</summary>
-		public bool CanDrawFaces => currentProgram != null && currentProgram.Kind == ProgramKind.Default && !offscreenBound;
+		public bool CanDrawFaces => currentProgram != null && currentProgram.Kind == ProgramKind.Default && boundFramebuffer == null;
 
 		/// <summary>
 		/// The face's model view and texture matrices, as upstream sends them: 16 floats each,

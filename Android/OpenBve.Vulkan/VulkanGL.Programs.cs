@@ -35,8 +35,8 @@ namespace OpenBve.Vulkan
 	 * the matching SPIR-V from Shaders/. Their uniforms are one std140 block per program; a GL
 	 * uniform location is the uniform's byte offset in that block, divided by four, so setting
 	 * one is a write into the program's copy of the block, which goes into the frame's uniform
-	 * ring when the program next draws. Uniforms upstream's shaders declare but this renderer does
-	 * not use (the shadow cascades) answer -1, as an unused uniform does in GL.
+	 * ring when the program next draws. The shadows' uniforms are not in that block: they change
+	 * once a frame, not once a draw, and have a block of their own (VulkanGL.Shadows).
 	 */
 	public sealed unsafe partial class VulkanGL
 	{
@@ -51,7 +51,8 @@ namespace OpenBve.Vulkan
 			Unsupported,
 			Default,
 			Rectangle,
-			Text
+			Text,
+			ShadowDepth
 		}
 
 		private sealed class GLShader
@@ -213,6 +214,10 @@ namespace OpenBve.Vulkan
 				target.Kind = ProgramKind.Unsupported;
 				ReportOnce("the picking shader is not supported by the Vulkan renderer");
 			}
+			else if (fragment.Contains("uAlphaCutoff"))
+			{
+				target.Kind = ProgramKind.ShadowDepth;
+			}
 			else if (vertex.Contains("uAnimationMatricies") && fragment.Contains("uTexture"))
 			{
 				target.Kind = ProgramKind.Default;
@@ -231,7 +236,7 @@ namespace OpenBve.Vulkan
 				ReportOnce("a shader program the Vulkan renderer does not know is not drawn");
 			}
 
-			target.Data = new byte[target.Kind == ProgramKind.Default ? DefaultBlockSize : Block2DSize];
+			target.Data = new byte[target.Kind == ProgramKind.Default ? DefaultBlockSize : target.Kind == ProgramKind.ShadowDepth ? DepthBlockSize : Block2DSize];
 			target.Dirty = true;
 			target.NormalDirty = true;
 		}
@@ -250,7 +255,7 @@ namespace OpenBve.Vulkan
 
 		public int glGetAttribLocation(int program, string name)
 		{
-			if (glPrograms.TryGetValue(program, out GLProgram target) && target.Kind == ProgramKind.Default)
+			if (glPrograms.TryGetValue(program, out GLProgram target) && (target.Kind == ProgramKind.Default || target.Kind == ProgramKind.ShadowDepth))
 			{
 				return Array.IndexOf(DefaultAttributes, name);
 			}
@@ -270,13 +275,31 @@ namespace OpenBve.Vulkan
 				return SamplerLocation;
 			}
 
-			Dictionary<string, int> table = target.Kind == ProgramKind.Default ? DefaultUniforms : Uniforms2D;
+			if (target.Kind == ProgramKind.Default)
+			{
+				if (name.StartsWith("uShadowMap", StringComparison.Ordinal))
+				{
+					return SamplerLocation;
+				}
+
+				if (ShadowUniforms.TryGetValue(name, out int shadowOffset))
+				{
+					return ShadowLocationBase + shadowOffset / 4;
+				}
+			}
+
+			Dictionary<string, int> table = target.Kind == ProgramKind.Default ? DefaultUniforms : target.Kind == ProgramKind.ShadowDepth ? DepthUniforms : Uniforms2D;
 			return table.TryGetValue(name, out int offset) ? offset / 4 : -1;
 		}
 
 		public int glGetUniformBlockIndex(int program, string name)
 		{
-			return glPrograms.TryGetValue(program, out GLProgram target) && target.Kind == ProgramKind.Default && name == "uAnimationMatricies" ? 0 : -1;
+			if (!glPrograms.TryGetValue(program, out GLProgram target))
+			{
+				return -1;
+			}
+
+			return target.Kind == ProgramKind.Default && name == "uAnimationMatricies" || target.Kind == ProgramKind.ShadowDepth && name == "matrices" ? 0 : -1;
 		}
 
 		public void glUniformBlockBinding(int program, int blockIndex, int binding)
@@ -287,7 +310,10 @@ namespace OpenBve.Vulkan
 			}
 		}
 
-		/// <summary>Where a uniform write goes in the current program's block, or -1 if nowhere.</summary>
+		/// <summary>Where the last uniform write that has a target goes.</summary>
+		private byte[] uniformData;
+
+		/// <summary>Where a uniform write goes in the current program's block (or the shadows' block), or -1 if nowhere.</summary>
 		private int UniformTarget(int location, int bytes)
 		{
 			uniformCalls++;
@@ -297,12 +323,26 @@ namespace OpenBve.Vulkan
 				return -1;
 			}
 
+			if (location >= ShadowLocationBase)
+			{
+				int shadowOffset = (location - ShadowLocationBase) * 4;
+				if (shadowOffset + bytes > shadowData.Length)
+				{
+					return -1;
+				}
+
+				uniformData = shadowData;
+				shadowDataDirty = true;
+				return shadowOffset;
+			}
+
 			int offset = location * 4;
 			if (offset + bytes > program.Data.Length)
 			{
 				return -1;
 			}
 
+			uniformData = program.Data;
 			program.Dirty = true;
 			if (program.Kind == ProgramKind.Default && offset < ModelViewOffset + 64 && offset + bytes > ModelViewOffset)
 			{
@@ -314,7 +354,7 @@ namespace OpenBve.Vulkan
 
 		private void WriteUniform<T>(int offset, int index, T value) where T : unmanaged
 		{
-			Unsafe.WriteUnaligned(ref currentProgram.Data[offset + index * 4], value);
+			Unsafe.WriteUnaligned(ref uniformData[offset + index * 4], value);
 		}
 
 		public void glUniform1i(int location, int v0)

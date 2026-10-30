@@ -70,6 +70,10 @@ namespace OpenBve.Vulkan
 			internal DescriptorSet Set;
 			internal DescriptorPool SetPool;
 			internal int SetKey = -1;
+
+			// A shadow map (VulkanGL.Shadows): no image until a framebuffer draws into it, then one per frame slot.
+			internal bool IsDepth;
+			internal DepthImage[] DepthImages;
 		}
 
 		private readonly Dictionary<int, GLTexture> textures = new Dictionary<int, GLTexture>();
@@ -160,6 +164,7 @@ namespace OpenBve.Vulkan
 				texture.Pending = false;
 			}
 
+			ReleaseDepth(texture);
 			ReleaseImage(texture);
 		}
 
@@ -371,6 +376,15 @@ namespace OpenBve.Vulkan
 
 			if (width <= 0 || height <= 0)
 			{
+				return;
+			}
+
+			if (format == GL_DEPTH_COMPONENT)
+			{
+				ReleaseTexture(texture);
+				texture.IsDepth = true;
+				texture.Width = width;
+				texture.Height = height;
 				return;
 			}
 
@@ -749,7 +763,7 @@ namespace OpenBve.Vulkan
 		/// <summary>The descriptor set to draw a texture with: realized and up to date with its sampler state.</summary>
 		private DescriptorSet TextureSet(GLTexture texture)
 		{
-			if (texture == null || (!texture.Pending && texture.Image.Handle == 0))
+			if (texture == null || texture.IsDepth || (!texture.Pending && texture.Image.Handle == 0))
 			{
 				texture = blackTexture;
 			}

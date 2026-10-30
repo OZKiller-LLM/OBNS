@@ -1301,6 +1301,8 @@ namespace LibRender2
 			}
 
 			MeshMaterial material = state.Prototype.Mesh.Materials[face.Material];
+			// ANDROID PORT: a material may have no wrap mode yet (a BVE5 panel's), which upstream's cast below throws on; as the native path takes it.
+			OpenGlTextureWrapMode wrapMode = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
 			VertexArrayObject VAO = (VertexArrayObject)state.Prototype.Mesh.VAO;
 
 			if (lastVAO != VAO.handle)
@@ -1412,13 +1414,13 @@ namespace LibRender2
 			{
 				// texture
 				// ReSharper disable once PossibleInvalidOperationException
-				if (material.DaytimeTexture != null && currentHost.LoadTexture(ref material.DaytimeTexture, (OpenGlTextureWrapMode)material.WrapMode))
+				if (material.DaytimeTexture != null && currentHost.LoadTexture(ref material.DaytimeTexture, wrapMode))
 				{
-					if (LastBoundTexture != material.DaytimeTexture.OpenGlTextures[(int)material.WrapMode])
+					if (LastBoundTexture != material.DaytimeTexture.OpenGlTextures[(int)wrapMode])
 					{
 						GL.BindTexture(TextureTarget.Texture2D,
-							material.DaytimeTexture.OpenGlTextures[(int)material.WrapMode].Name);
-						LastBoundTexture = material.DaytimeTexture.OpenGlTextures[(int)material.WrapMode];
+							material.DaytimeTexture.OpenGlTextures[(int)wrapMode].Name);
+						LastBoundTexture = material.DaytimeTexture.OpenGlTextures[(int)wrapMode];
 					}
 				}
 				else
@@ -1460,13 +1462,13 @@ namespace LibRender2
 			}
 
 			// nighttime polygon
-			if (blendFactor != 0 && material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && currentHost.LoadTexture(ref material.NighttimeTexture, (OpenGlTextureWrapMode)material.WrapMode))
+			if (blendFactor != 0 && material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && currentHost.LoadTexture(ref material.NighttimeTexture, wrapMode))
 			{
 				// texture
-				if (LastBoundTexture != material.NighttimeTexture.OpenGlTextures[(int)material.WrapMode])
+				if (LastBoundTexture != material.NighttimeTexture.OpenGlTextures[(int)wrapMode])
 				{
-					GL.BindTexture(TextureTarget.Texture2D, material.NighttimeTexture.OpenGlTextures[(int)material.WrapMode].Name);
-					LastBoundTexture = material.NighttimeTexture.OpenGlTextures[(int)material.WrapMode];
+					GL.BindTexture(TextureTarget.Texture2D, material.NighttimeTexture.OpenGlTextures[(int)wrapMode].Name);
+					LastBoundTexture = material.NighttimeTexture.OpenGlTextures[(int)wrapMode];
 				}
 
 

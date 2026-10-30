@@ -88,7 +88,6 @@ namespace OpenBve.Vulkan
 		private int unpackAlignment = 4;
 
 		/// <summary>A framebuffer object is bound: OpenBVE's shadows and picking, not drawn by this renderer.</summary>
-		private bool offscreenBound;
 
 		private readonly Dictionary<int, IntPtr> strings = new Dictionary<int, IntPtr>();
 		private readonly HashSet<string> reported = new HashSet<string>();
@@ -278,7 +277,18 @@ namespace OpenBve.Vulkan
 
 		public void glClear(int mask)
 		{
-			if (offscreenBound || (mask & (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)) == 0)
+			// A cascade's render pass clears it.
+			if (boundFramebuffer != null)
+			{
+				if (boundFramebuffer.Depth != null && (mask & GL_DEPTH_BUFFER_BIT) != 0 && EnsureFrame())
+				{
+					ShadowPass();
+				}
+
+				return;
+			}
+
+			if ((mask & (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)) == 0)
 			{
 				return;
 			}
@@ -413,60 +423,6 @@ namespace OpenBve.Vulkan
 			// Diagnostics only (a full stall even on GL); not read back here.
 			ReportOnce("glReadPixels is not supported by the Vulkan renderer: the pixels read as zero");
 			Array.Clear(pixels, 0, pixels.Length);
-		}
-
-		// --- framebuffer objects: OpenBVE's shadows, picking and motion blur, none drawn by this renderer ---
-
-		public void glGenFramebuffers(int n, int[] framebuffers) => GenNames(n, framebuffers);
-
-		public void glDeleteFramebuffers(int n, int[] framebuffers)
-		{
-		}
-
-		public void glBindFramebuffer(int target, int framebuffer)
-		{
-			offscreenBound = framebuffer != 0;
-			if (offscreenBound)
-			{
-				ReportOnce("framebuffer objects are not supported by the Vulkan renderer: drawing into one is skipped");
-			}
-		}
-
-		public void glFramebufferTexture2D(int target, int attachment, int textarget, int texture, int level)
-		{
-		}
-
-		public void glFramebufferRenderbuffer(int target, int attachment, int renderbuffertarget, int renderbuffer)
-		{
-		}
-
-		public int glCheckFramebufferStatus(int target) => GL_FRAMEBUFFER_COMPLETE;
-
-		public void glGenRenderbuffers(int n, int[] renderbuffers) => GenNames(n, renderbuffers);
-
-		public void glDeleteRenderbuffers(int n, int[] renderbuffers)
-		{
-		}
-
-		public void glBindRenderbuffer(int target, int renderbuffer)
-		{
-		}
-
-		public void glRenderbufferStorage(int target, int internalFormat, int width, int height)
-		{
-		}
-
-		public void glDrawBuffers(int n, int[] buffers)
-		{
-		}
-
-		public void glReadBuffer(int mode)
-		{
-		}
-
-		public void glCopyTexImage2D(int target, int level, int internalFormat, int x, int y, int width, int height, int border)
-		{
-			ReportOnce("glCopyTexImage2D (motion blur) is not supported by the Vulkan renderer");
 		}
 
 		private void GenNames(int n, int[] names)

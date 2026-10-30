@@ -378,13 +378,6 @@ namespace OpenBve.Android
 
 				// Plugins before Initialize: it loads the menu textures, which go through the texture plugins.
 				string plugins = AndroidPlugins.Register(host, fileSystem, options, trainManager, renderer);
-				if (GL.Device is OpenBve.Vulkan.VulkanGL && options.ShadowResolution != OpenBveApi.Interface.ShadowMapResolution.Off)
-				{
-					// Upstream's shadows draw into off-screen depth maps, which the native Vulkan renderer does not have yet.
-					Log.Info(Tag, "shadows: off with native Vulkan (no off-screen targets)");
-					options.ShadowResolution = OpenBveApi.Interface.ShadowMapResolution.Off;
-				}
-
 				renderer.Initialize();
 				Program.FileSystem = fileSystem;
 				// The in-game HUD layout (Data/In-game/<UserInterfaceFolder>/interface.cfg), as upstream's GameWindow.

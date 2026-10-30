@@ -16,6 +16,8 @@
     <Compile Include="AndroidInternals.cs" />
     <Compile Include="$(UpstreamSource)TrainManager\**\*.cs" LinkBase="TrainManager" />
     <!-- ANDROID PORT copies of upstream files (OpenBVE 1.14.1.2), compiled in their place; see Android/UpstreamPatches. -->
+    <Compile Remove="$(UpstreamSource)TrainManager\SafetySystems\Plugin\Plugin.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\TrainManager\SafetySystems\Plugin\Plugin.cs" Link="OBNS\Plugin.cs" />
     <Compile Remove="$(UpstreamSource)TrainManager\SafetySystems\Plugin\Plugin.Functions.cs" />
     <Compile Include="Plugin.Functions.Android.cs" />
     <Compile Remove="$(UpstreamSource)TrainManager\Properties\AssemblyInfo.cs" />
