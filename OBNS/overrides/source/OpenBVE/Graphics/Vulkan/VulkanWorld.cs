@@ -376,8 +376,16 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			Step.Main = "OpenGL's signal";
-			GL.Ext.SignalSemaphore(glDoneSemaphore, signalBuffers.Count, signalBuffers.ToArray(), signalTextures.Count, signalTextures.ToArray(), signalLayouts.ToArray());
-			GL.Flush();
+			if (cpuSync)
+			{
+				// OBNS_VULKAN_CPUSYNC=1: OpenGL's work finished on the CPU's side instead.
+				GL.Finish();
+			}
+			else
+			{
+				GL.Ext.SignalSemaphore(glDoneSemaphore, signalBuffers.Count, signalBuffers.ToArray(), signalTextures.Count, signalTextures.ToArray(), signalLayouts.ToArray());
+				GL.Flush();
+			}
 
 			startedSlot = frame;
 			frame = (frame + 1) % FramesInFlight;
@@ -446,7 +454,16 @@ namespace OpenBve.Graphics.Vulkan
 
 			int[] textures = { glColorTexture, glDepthTexture, glCabColorTexture };
 			Step.Main = "OpenGL's wait";
-			GL.Ext.WaitSemaphore(glVulkanDoneSemaphore, 0, (int[])null, 3, textures, glLayouts);
+			if (cpuSync)
+			{
+				// OBNS_VULKAN_CPUSYNC=1: Vulkan's frame waited for on the CPU's side instead.
+				ulong fence = fences[startedSlot];
+				Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
+			}
+			else
+			{
+				GL.Ext.WaitSemaphore(glVulkanDoneSemaphore, 0, (int[])null, 3, textures, glLayouts);
+			}
 			if (debugFrames < 3 && Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
 			{
 				// What OpenGL reads of the images: for checking the exchange.
@@ -662,6 +679,12 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.Check(Vk.vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 		}
 
+		/// <summary>
+		/// For finding what a driver fails on (Broadwell's GPU hangs): OBNS_VULKAN_CPUSYNC=1 orders the APIs by the CPU
+		/// waiting for each (glFinish, the frame's fence) rather than by the semaphores they share.
+		/// </summary>
+		private static readonly bool cpuSync = Environment.GetEnvironmentVariable("OBNS_VULKAN_CPUSYNC") == "1";
+
 		private void Submit(IntPtr commandBuffer, ulong fence)
 		{
 			ulong wait = target.GLDone, signal = target.VulkanDone;
@@ -669,12 +692,12 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.SubmitInfo submit = new Vk.SubmitInfo
 			{
 				SType = Vk.StructureTypeSubmitInfo,
-				WaitSemaphoreCount = 1,
+				WaitSemaphoreCount = cpuSync ? 0u : 1u,
 				PWaitSemaphores = &wait,
 				PWaitDstStageMask = &waitStage,
 				CommandBufferCount = 1,
 				PCommandBuffers = &commandBuffer,
-				SignalSemaphoreCount = 1,
+				SignalSemaphoreCount = cpuSync ? 0u : 1u,
 				PSignalSemaphores = &signal
 			};
 			lock (device.QueueLock)

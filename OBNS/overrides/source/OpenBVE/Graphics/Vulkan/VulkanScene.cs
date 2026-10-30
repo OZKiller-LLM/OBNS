@@ -45,6 +45,28 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly HostBuffer[] matrixBuffers = new HostBuffer[FramesInFlight];
 		private readonly HostBuffer[] indirectBuffers = new HostBuffer[FramesInFlight];
 
+		/// <summary>
+		/// For finding what a driver fails on (Broadwell's GPU hangs): OBNS_VULKAN_DIRECT=1 records each draw as its own
+		/// vkCmdDrawIndexed rather than runs of them as indirect draws.
+		/// </summary>
+		private static readonly bool directDraws = Environment.GetEnvironmentVariable("OBNS_VULKAN_DIRECT") == "1";
+
+		/// <summary>A run of draws [run, next) of a list whose indirect commands start at first: one indirect draw, or each its own.</summary>
+		private void DrawRun(IntPtr commandBuffer, int slot, DrawCommand[] list, int first, int run, int next)
+		{
+			if (directDraws)
+			{
+				for (int i = run; i < next; i++)
+				{
+					Vk.vkCmdDrawIndexed(commandBuffer, list[i].IndexCount, 1, list[i].FirstIndex, list[i].VertexBase, (uint)list[i].Draw);
+				}
+
+				return;
+			}
+
+			Vk.vkCmdDrawIndexedIndirect(commandBuffer, indirectBuffers[slot].Buffer, (ulong)(first + run) * (ulong)sizeof(Vk.DrawIndexedIndirectCommand), (uint)(next - run), (uint)sizeof(Vk.DrawIndexedIndirectCommand));
+		}
+
 		/// <summary>Indirect draws in the last frame, for the log.</summary>
 		internal int LastIndirectCalls { get; private set; }
 
@@ -567,7 +589,7 @@ namespace OpenBve.Graphics.Vulkan
 					boundIndexBlock = indexBlock;
 				}
 
-				Vk.vkCmdDrawIndexedIndirect(commandBuffer, indirectBuffers[slot].Buffer, (ulong)run * (ulong)sizeof(Vk.DrawIndexedIndirectCommand), (uint)(next - run), (uint)sizeof(Vk.DrawIndexedIndirectCommand));
+				DrawRun(commandBuffer, slot, commands, 0, run, next);
 				calls++;
 				run = next;
 			}
@@ -666,7 +688,7 @@ namespace OpenBve.Graphics.Vulkan
 							boundIndexBlock = indexBlock;
 						}
 
-						Vk.vkCmdDrawIndexedIndirect(commandBuffer, indirectBuffers[slot].Buffer, (ulong)(commandCount + run) * (ulong)sizeof(Vk.DrawIndexedIndirectCommand), (uint)(next - run), (uint)sizeof(Vk.DrawIndexedIndirectCommand));
+						DrawRun(commandBuffer, slot, shadowCommands, commandCount, run, next);
 						run = next;
 					}
 				}

@@ -608,5 +608,6 @@ namespace OpenBve.Graphics.Vulkan
 		[DllImport(Library)] internal static extern void vkCmdWriteTimestamp(IntPtr commandBuffer, uint pipelineStage, ulong pool, uint query);
 		[DllImport(Library)] internal static extern int vkGetQueryPoolResults(IntPtr device, ulong pool, uint firstQuery, uint queryCount, UIntPtr dataSize, void* data, ulong stride, uint flags);
 		[DllImport(Library)] internal static extern void vkCmdDrawIndexedIndirect(IntPtr commandBuffer, ulong buffer, ulong offset, uint drawCount, uint stride);
+		[DllImport(Library)] internal static extern void vkCmdDrawIndexed(IntPtr commandBuffer, uint indexCount, uint instanceCount, uint firstIndex, int vertexOffset, uint firstInstance);
 	}
 }
