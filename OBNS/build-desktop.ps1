@@ -146,6 +146,9 @@ if ($Package) {
     robocopy $output $staging /E /XF *.pdb /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "Staging the package failed (robocopy $LASTEXITCODE)" }
     if (Test-Path $zip) { Remove-Item -Force $zip }
+    # BSD-2's second condition, and the libraries' own: a binary release carries the notices.
+    Copy-Item (Join-Path $root 'LICENSE') (Join-Path $staging 'LICENSE.txt') -Force
+    Copy-Item (Join-Path $root 'OpenBVE\licenses') (Join-Path $staging 'licenses') -Recurse -Force
     Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip
     Remove-Item -Recurse -Force $staging
     Write-Host ("Packaged: $zip ({0:N0} MB)" -f ((Get-Item $zip).Length / 1MB))

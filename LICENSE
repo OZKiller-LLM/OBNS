@@ -1,7 +1,7 @@
 OpenBVE for Android
 
-The Android port (everything under Android/, and PORTING.md and HANDOFF.md) is licensed under
-the Simplified BSD License below. The upstream OpenBVE sources under OpenBVE/ keep their
+The Android port and OBNS (everything under Android/ and OBNS/, and PORTING.md and HANDOFF.md,
+apart from files that state other terms) are licensed under the Simplified BSD License below. The upstream OpenBVE sources under OpenBVE/ keep their
 own licensing: the original OpenBVE code is in the public domain, and later contributions are
 under the Simplified BSD License, as stated in each file and in OpenBVE/Contributing.md.
 Third-party libraries included in the app are listed, with their licences, in
