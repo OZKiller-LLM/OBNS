@@ -51,7 +51,7 @@ namespace OpenBve.Graphics.Vulkan
 
 		// OpenGL's side.
 		private int glColorMemory, glDepthMemory, glColorTexture, glDepthTexture, glDoneSemaphore, glVulkanDoneSemaphore;
-		private int compositeProgram, compositeVao;
+		private WorldComposite composite;
 
 		/// <summary>A tint for testing the exchange (OBNS_VULKAN_TINT=1): the cleared image is a faint green, not clear.</summary>
 		private readonly bool tint = Environment.GetEnvironmentVariable("OBNS_VULKAN_TINT") == "1";
@@ -94,7 +94,7 @@ namespace OpenBve.Graphics.Vulkan
 			try
 			{
 				world.CreateFrames();
-				world.CreateComposite();
+				world.composite = new WorldComposite();
 				world.uploader = new Uploader(device);
 				world.Scene = new VulkanScene(device, world.uploader, Program.Renderer);
 				world.Hook();
@@ -745,114 +745,19 @@ namespace OpenBve.Graphics.Vulkan
 			}
 		}
 
-		// --- OpenGL's composite ---
+		// --- OpenGL's composite (WorldComposite, shared with the other APIs' layers) ---
 
-		private const string CompositeVertex = @"#version 330 core
-out vec2 uv;
-void main()
-{
-	// One triangle covering the viewport.
-	vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-	uv = p;
-	gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}";
-
-		private const string CompositeFragment = @"#version 330 core
-uniform sampler2D uColor;
-uniform sampler2D uDepth;
-in vec2 uv;
-out vec4 fragColor;
-void main()
-{
-	// Premultiplied colour, its alpha the world's coverage; the depth as Vulkan wrote it.
-	fragColor = texture(uColor, uv);
-	gl_FragDepth = texture(uDepth, uv).r;
-}";
-
-		private void CreateComposite()
-		{
-			int vertex = CompileShader(ShaderType.VertexShader, CompositeVertex);
-			int fragment = CompileShader(ShaderType.FragmentShader, CompositeFragment);
-			compositeProgram = GL.CreateProgram();
-			GL.AttachShader(compositeProgram, vertex);
-			GL.AttachShader(compositeProgram, fragment);
-			GL.LinkProgram(compositeProgram);
-			GL.DeleteShader(vertex);
-			GL.DeleteShader(fragment);
-			GL.GetProgram(compositeProgram, GetProgramParameterName.LinkStatus, out int linked);
-			if (linked == 0)
-			{
-				throw new InvalidOperationException("the composite program did not link: " + GL.GetProgramInfoLog(compositeProgram));
-			}
-
-			GL.ProgramUniform1(compositeProgram, GL.GetUniformLocation(compositeProgram, "uColor"), 0);
-			GL.ProgramUniform1(compositeProgram, GL.GetUniformLocation(compositeProgram, "uDepth"), 1);
-			compositeVao = GL.GenVertexArray();
-		}
-
-		private static int CompileShader(ShaderType type, string source)
-		{
-			int shader = GL.CreateShader(type);
-			GL.ShaderSource(shader, source);
-			GL.CompileShader(shader);
-			GL.GetShader(shader, ShaderParameter.CompileStatus, out int compiled);
-			if (compiled == 0)
-			{
-				throw new InvalidOperationException("a composite shader did not compile: " + GL.GetShaderInfoLog(shader));
-			}
-
-			return shader;
-		}
-
-		/// <summary>
-		/// Lays the frame's cab layer over the framebuffer, where upstream draws it (after the particles): colour only,
-		/// as nothing after it reads the depth. Leaves upstream's renderer to set its own state again.
-		/// </summary>
+		/// <summary>Lays the frame's cab layer over the framebuffer, where upstream draws it (after the particles).</summary>
 		public void CompositeCab()
 		{
-			if (!cabStarted)
+			if (cabStarted)
 			{
-				return;
+				composite.Cab(glCabColorTexture, glDepthTexture);
 			}
-
-			GL.UseProgram(compositeProgram);
-			GL.BindVertexArray(compositeVao);
-			GL.ActiveTexture(TextureUnit.Texture1);
-			GL.BindTexture(TextureTarget.Texture2D, glDepthTexture);
-			GL.ActiveTexture(TextureUnit.Texture0);
-			GL.BindTexture(TextureTarget.Texture2D, glCabColorTexture);
-			GL.Enable(EnableCap.Blend);
-			GL.BlendFunc(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
-			GL.Disable(EnableCap.DepthTest);
-			GL.DepthMask(false);
-			GL.Disable(EnableCap.CullFace);
-			GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
-			GL.BindTexture(TextureTarget.Texture2D, 0);
-			GL.BindVertexArray(0);
-			GL.UseProgram(0);
 		}
 
-		/// <summary>Lays the world image over the framebuffer and writes its depth. Leaves upstream's renderer to set its own state again.</summary>
-		private void Composite()
-		{
-			GL.UseProgram(compositeProgram);
-			GL.BindVertexArray(compositeVao);
-			GL.ActiveTexture(TextureUnit.Texture1);
-			GL.BindTexture(TextureTarget.Texture2D, glDepthTexture);
-			GL.ActiveTexture(TextureUnit.Texture0);
-			GL.BindTexture(TextureTarget.Texture2D, glColorTexture);
-			GL.Enable(EnableCap.Blend);
-			GL.BlendFunc(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
-			GL.Enable(EnableCap.DepthTest);
-			GL.DepthFunc(DepthFunction.Always);
-			GL.DepthMask(true);
-			GL.Disable(EnableCap.CullFace);
-			GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
-			GL.DepthFunc(DepthFunction.Lequal);
-			GL.BindTexture(TextureTarget.Texture2D, 0);
-			GL.BindVertexArray(0);
-			GL.UseProgram(0);
-		}
+		/// <summary>Lays the world image over the framebuffer and writes its depth.</summary>
+		private void Composite() => composite.World(glColorTexture, glDepthTexture);
 
 		private void ReleaseTarget()
 		{
@@ -898,12 +803,8 @@ void main()
 			ReleaseTarget();
 			Scene?.Dispose();
 			uploader?.Dispose();
-			if (compositeProgram != 0)
-			{
-				GL.DeleteProgram(compositeProgram);
-				GL.DeleteVertexArray(compositeVao);
-				compositeProgram = 0;
-			}
+			composite?.Dispose();
+			composite = null;
 
 			for (int i = 0; i < FramesInFlight; i++)
 			{
