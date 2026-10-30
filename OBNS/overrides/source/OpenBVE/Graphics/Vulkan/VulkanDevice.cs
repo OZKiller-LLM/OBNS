@@ -153,6 +153,12 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Each draw recorded as its own vkCmdDrawIndexed (the device lacks multiDrawIndirect or drawIndirectFirstInstance).</summary>
 		internal bool DirectDraws { get; private set; }
 
+		/// <summary>
+		/// OpenGL and Vulkan are ordered by the CPU waiting for each (glFinish, the frame's fence), not by the semaphores they
+		/// share: see <see cref="OrderedByCpu"/>.
+		/// </summary>
+		internal bool CpuSync { get; private set; }
+
 		private VulkanDevice()
 		{
 		}
@@ -184,6 +190,36 @@ namespace OpenBve.Graphics.Vulkan
 
 			device.Description += " (core Vulkan 1.0 tier: " + (modernReason ?? "OBNS_VULKAN_TIER=1.0") + ")";
 			return device;
+		}
+
+		/// <summary>
+		/// Mesa's Intel GPUs from Broadwell back (hasvk, named "... (BDW GT3e)" and so on): semaphores shared with OpenGL hang
+		/// Broadwell's GPU within a minute, ten seconds at a time; without them it ran clean, at about 14 fps against 19.
+		/// OBNS_VULKAN_CPUSYNC=1 or 0 chooses, for any GPU.
+		/// </summary>
+		private static bool OrderedByCpu(uint vendor, string deviceName)
+		{
+			string asked = Environment.GetEnvironmentVariable("OBNS_VULKAN_CPUSYNC");
+			if (asked == "0" || asked == "1")
+			{
+				return asked == "1";
+			}
+
+			const uint intel = 0x8086;
+			if (!PosixHandles || vendor != intel)
+			{
+				return false;
+			}
+
+			foreach (string family in new[] { "BDW", "CHV", "HSW", "BYT", "IVB" })
+			{
+				if (deviceName.Contains("(" + family))
+				{
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		private static VulkanDevice TryCreate(byte[] glDeviceUuid, bool core10, out string reason)
@@ -327,6 +363,12 @@ namespace OpenBve.Graphics.Vulkan
 				{
 					PhysicalDevice = devices[i];
 					Description = deviceName + ", Vulkan " + VersionText(properties.Properties.ApiVersion);
+					CpuSync = OrderedByCpu(properties.Properties.VendorID, deviceName);
+					if (CpuSync)
+					{
+						Description += " (the CPU orders OpenGL and Vulkan)";
+					}
+
 					// timestampPeriod: 428 bytes into the limits as they are kept here (720 into VkPhysicalDeviceProperties).
 					TimestampPeriod = *(float*)(properties.Properties.LimitsAndSparseProperties + 428);
 					// maxPerStageDescriptorSampledImages and maxDescriptorSetSampledImages (80 and 116 into the limits).

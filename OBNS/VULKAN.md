@@ -126,7 +126,7 @@ Switches, for testing and measuring (environment variables):
 | `OBNS_SNAPSHOT_EVERY=<s>` | the frame saved (back buffer, before the swap) as `snapshot-N.png` beside the log |
 | `OBNS_VULKAN_TINT=1` | Vulkan's image cleared to a faint green (shows where the background is) |
 | `OBNS_VULKAN_TIER=1.0` / `=1.3` | the core Vulkan 1.0 tier, or the 1.2/1.3 path (with `OBNS_VULKAN_PAGED`, textures in pages there), whatever the device has |
-| `OBNS_VULKAN_CPUSYNC=1` | OpenGL and Vulkan ordered by the CPU waiting for each, not by shared semaphores (for finding what a driver fails on) |
+| `OBNS_VULKAN_CPUSYNC=1` or `0` | OpenGL and Vulkan ordered by the CPU waiting for each (1), or by shared semaphores (0). Unset: the CPU on Mesa's Intel GPUs from Broadwell back, where the semaphores hang the GPU (Broadwell: hung in 33 s with them, none in 5 minutes without, about 14 fps against 19); semaphores elsewhere |
 | `OBNS_VULKAN_NOCAB=1` | OpenGL draws the cab layer, as upstream's does (the same) |
 | `OBNS_VULKAN_DIRECT=1` | each draw its own `vkCmdDrawIndexed`, not runs of indirect draws (the same) |
 | `OBNS_START_DELAY=<s>` | waits so long before the first frame (for testing on a machine loading leaves hot) |

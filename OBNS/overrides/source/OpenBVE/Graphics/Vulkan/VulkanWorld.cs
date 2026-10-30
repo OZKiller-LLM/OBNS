@@ -384,7 +384,7 @@ namespace OpenBve.Graphics.Vulkan
 			Step.Main = "OpenGL's signal";
 			if (cpuSync)
 			{
-				// OBNS_VULKAN_CPUSYNC=1: OpenGL's work finished on the CPU's side instead.
+				// OpenGL's work finished on the CPU's side instead.
 				GL.Finish();
 			}
 			else
@@ -462,7 +462,7 @@ namespace OpenBve.Graphics.Vulkan
 			Step.Main = "OpenGL's wait";
 			if (cpuSync)
 			{
-				// OBNS_VULKAN_CPUSYNC=1: Vulkan's frame waited for on the CPU's side instead.
+				// Vulkan's frame waited for on the CPU's side instead.
 				ulong fence = fences[startedSlot];
 				Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
 			}
@@ -685,11 +685,8 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.Check(Vk.vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 		}
 
-		/// <summary>
-		/// For finding what a driver fails on (Broadwell's GPU hangs): OBNS_VULKAN_CPUSYNC=1 orders the APIs by the CPU
-		/// waiting for each (glFinish, the frame's fence) rather than by the semaphores they share.
-		/// </summary>
-		private static readonly bool cpuSync = Environment.GetEnvironmentVariable("OBNS_VULKAN_CPUSYNC") == "1";
+		/// <summary>The APIs ordered by the CPU waiting for each (glFinish, the frame's fence) rather than by the semaphores they share.</summary>
+		private bool cpuSync => device.CpuSync;
 
 		/// <summary>Begins a layer's drawing: its render pass on the core Vulkan 1.0 tier, dynamic rendering on the 1.2/1.3 path.</summary>
 		private void BeginLayer(IntPtr commandBuffer, Vk.RenderingInfo* renderingInfo, ulong renderPass, ulong framebuffer, Vk.ClearValue clear)
