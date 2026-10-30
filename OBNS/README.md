@@ -225,7 +225,24 @@ decoded again from its file when uploaded. On the Tuen Ma Line: 1.1 GB live mana
 loaded (5.5 GB driving), loading as fast as before. `OBNS_MEMSTATS=1` logs a census of what a loaded route holds
 (`2`: after a full collection).
 
-### 7. Direct3D and Metal
+### 7. Shadows
+
+Upstream's cascaded shadows on every renderer, with the same picture and the Android port's three economies: a caster is
+drawn only into the cascades its bounding sphere reaches across the light, what has nothing see-through has no fragment
+shader (not on Direct3D 9, whose maps are colour), and the static batches are drawn rather than the faces they cover. The
+OpenGL renderer has them from OBNS's copy of `LibRender2/Shadows/Shadows.cs`.
+
+| Tuen Ma Line's exterior, 2048, 3 cascades, RTX 2060 SUPER | Before | After |
+|---|---|---|
+| Vulkan: frame | 15.9 ms | 14.6 ms |
+| Vulkan: its frame on the GPU | 3.53 ms | 1.87 ms |
+| OpenGL renderer: frame | 46.5 ms | 29-37 ms (two runs) |
+| OpenGL renderer: GPU | 36.7 ms | 16-22 ms |
+
+On Android, native Vulkan draws them too (`Android/OpenBve.Vulkan/VulkanGL.Shadows.cs`): the pass went from 17-22 ms of an A36's
+frame to about 2 ms.
+
+### 8. Direct3D and Metal
 
 Options beside OpenGL and Vulkan, each drawing the world and cab layers and leaving the rest to OpenGL, as Vulkan
 does: Direct3D 9.0c, 11 and 12 on 64-bit Windows (`DIRECT3D.md`), Metal on macOS (`METAL.md`). Renderers without

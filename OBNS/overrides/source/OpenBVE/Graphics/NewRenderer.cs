@@ -147,9 +147,24 @@ namespace OpenBve.Graphics
 			// OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md), unless the debug views are on (not drawn by it):
 			// its shadows are drawn by Vulkan too, so upstream's OpenGL shadow pass is not needed then.
 			bool vulkanWorld = WorldLayer.Enabled && !OptionWireFrame && !OptionNormals;
+			// OBNS: the faces first, as the shadow pass draws what the scene draws: the static batches rather than the faces they cover.
+			List<FaceState> opaqueFaces = null, alphaFaces = null, unsortedAlphaFaces = null, overlayOpaqueFaces = null, overlayAlphaFaces = null;
 			if (!vulkanWorld)
 			{
-				PerformCSMShadowPass();
+				lock (VisibleObjects.LockObject)
+				{
+					opaqueFaces = VisibleObjects.OpaqueFaces.ToList();
+					alphaFaces = VisibleObjects.GetSortedPolygons();
+					overlayOpaqueFaces = VisibleObjects.OverlayOpaqueFaces.ToList();
+					overlayAlphaFaces = VisibleObjects.GetSortedPolygons(true);
+					// OBNS: the alpha faces in the order their objects were shown, for the static batcher.
+					unsortedAlphaFaces = VisibleObjects.AlphaFaces.ToList();
+				}
+
+				// OBNS: faces the static batches draw come out of the lists (OBNS/shared/StaticBatcher.cs).
+				batcher = batcher ?? new StaticBatcher(this);
+				batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
+				Shadows.RenderPass(opaqueFaces, unsortedAlphaFaces, batcher.VisitFaces);
 			}
 
             if (Lighting.ShouldInitialize)
@@ -250,7 +265,6 @@ namespace OpenBve.Graphics
             ResetOpenGlState();
 			long worldStart = System.Diagnostics.Stopwatch.GetTimestamp();
 			SceneLaps.Lap(2);
-			List<FaceState> overlayOpaqueFaces, overlayAlphaFaces;
 			if (vulkanWorld)
 			{
 				// OBNS: the world layer Vulkan has drawn, laid over the background.
@@ -260,21 +274,6 @@ namespace OpenBve.Graphics
 			}
 			else
 			{
-			List<FaceState> opaqueFaces, alphaFaces, unsortedAlphaFaces;
-			lock (VisibleObjects.LockObject)
-			{
-				opaqueFaces = VisibleObjects.OpaqueFaces.ToList();
-				alphaFaces = VisibleObjects.GetSortedPolygons();
-				overlayOpaqueFaces = VisibleObjects.OverlayOpaqueFaces.ToList();
-				overlayAlphaFaces = VisibleObjects.GetSortedPolygons(true);
-				// OBNS: the alpha faces in the order their objects were shown, for the static batcher.
-				unsortedAlphaFaces = VisibleObjects.AlphaFaces.ToList();
-			}
-
-			// OBNS: faces the static batches draw come out of the lists (OBNS/shared/StaticBatcher.cs).
-			batcher = batcher ?? new StaticBatcher(this);
-			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
-
 			foreach (FaceState face in opaqueFaces)
 			{
 				face.Draw();

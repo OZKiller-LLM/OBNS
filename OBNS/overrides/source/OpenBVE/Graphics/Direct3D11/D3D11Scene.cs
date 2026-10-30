@@ -286,10 +286,19 @@ namespace OpenBve.Graphics.Direct3D11
 				Dx.VSSetConstantBuffer(context, 0, cascadeBuffers[cascade]);
 				Dx.PSSetConstantBuffer(context, 0, cascadeBuffers[cascade]);
 				int boundCull = -1, boundTexture = -1, boundSampler = -1, boundVertexBlock = -1, boundIndexBlock = -1;
+				int boundDepthOnly = -1;
 				for (int i = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade]; i < end; i++)
 				{
 					DrawCommand command = shadowCommands[i];
 					int cull = ShadowCull(command.Key) ? 1 : 0;
+					// What has nothing see-through: no pixel shader, and no texture.
+					int depthOnly = ShadowDepthOnly(command.Key) ? 1 : 0;
+					if (depthOnly != boundDepthOnly)
+					{
+						Dx.PSSetShader(context, depthOnly == 1 ? IntPtr.Zero : shadowPixelShader);
+						boundDepthOnly = depthOnly;
+					}
+
 					int texture = draws[command.Draw].Texture, sampler = draws[command.Draw].Sampler;
 					int vertexBlock = (int)((command.Key >> 16) & 0xFFFF), indexBlock = (int)(command.Key & 0xFFFF);
 					if (cull != boundCull)
@@ -298,13 +307,13 @@ namespace OpenBve.Graphics.Direct3D11
 						boundCull = cull;
 					}
 
-					if (texture != boundTexture)
+					if (depthOnly == 0 && texture != boundTexture)
 					{
 						Dx.PSSetShaderResource(context, 4, textures.View(texture));
 						boundTexture = texture;
 					}
 
-					if (sampler != boundSampler)
+					if (depthOnly == 0 && sampler != boundSampler)
 					{
 						Dx.PSSetSampler(context, 0, samplers[sampler & 3]);
 						boundSampler = sampler;

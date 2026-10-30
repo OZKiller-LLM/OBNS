@@ -56,7 +56,7 @@ namespace OpenBve.Graphics.Direct3D12
 		private byte[] vertexCode, blendedCode, opaqueCode, shadowVertexCode, shadowPixelCode;
 		/// <summary>The pipeline objects by key: the draw's pipeline key, and the layer (the cab's has one target).</summary>
 		private readonly Dictionary<int, IntPtr> pipelines = new Dictionary<int, IntPtr>();
-		private readonly IntPtr[] shadowPipelines = new IntPtr[2];
+		private readonly IntPtr[] shadowPipelines = new IntPtr[4];
 
 		/// <summary>The samplers by OpenGL wrap mode (ClampClamp, ClampRepeat, RepeatClamp, RepeatRepeat), in their shader-visible heap.</summary>
 		internal readonly IntPtr SamplerHeap;
@@ -119,8 +119,10 @@ namespace OpenBve.Graphics.Direct3D12
 				}
 			}
 
-			ShadowPipeline(false);
-			ShadowPipeline(true);
+			ShadowPipeline(false, false);
+			ShadowPipeline(true, false);
+			ShadowPipeline(false, true);
+			ShadowPipeline(true, true);
 			MadeIn = (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 		}
 
@@ -353,9 +355,9 @@ namespace OpenBve.Graphics.Direct3D12
 		}
 
 		/// <summary>The shadow pass's pipeline: depth only (less), culled as upstream's shadow pass culls the face, or not.</summary>
-		private IntPtr ShadowPipeline(bool cull)
+		private IntPtr ShadowPipeline(bool cull, bool noPixelShader)
 		{
-			int index = cull ? 1 : 0;
+			int index = (cull ? 1 : 0) | (noPixelShader ? 2 : 0);
 			if (shadowPipelines[index] != IntPtr.Zero)
 			{
 				return shadowPipelines[index];
@@ -371,7 +373,11 @@ namespace OpenBve.Graphics.Direct3D12
 			fixed (byte* vs = shadowVertexCode, ps = shadowPixelCode)
 			{
 				desc.VS = Code(shadowVertexCode, vs);
-				desc.PS = Code(shadowPixelCode, ps);
+				if (!noPixelShader)
+				{
+					desc.PS = Code(shadowPixelCode, ps);
+				}
+
 				shadowPipelines[index] = MakePipeline(desc);
 			}
 
@@ -574,12 +580,12 @@ namespace OpenBve.Graphics.Direct3D12
 					for (int i = shadowFirst[cascade], end = shadowFirst[cascade] + shadowLength[cascade]; i < end; i++)
 					{
 						DrawCommand command = shadowCommands[i];
-						int cull = ShadowCull(command.Key) ? 1 : 0;
+						int cull = (int)(command.Key >> 48);
 						int texture = draws[command.Draw].Texture, sampler = draws[command.Draw].Sampler & 3;
 						int vertexBlock = (int)((command.Key >> 16) & 0xFFFF), indexBlock = (int)(command.Key & 0xFFFF);
 						if (cull != boundCull)
 						{
-							D12.SetPipelineState(list, ShadowPipeline(cull == 1));
+							D12.SetPipelineState(list, ShadowPipeline(ShadowCull(command.Key), ShadowDepthOnly(command.Key)));
 							boundCull = cull;
 						}
 

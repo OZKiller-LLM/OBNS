@@ -181,7 +181,8 @@ namespace OpenBve.Android
 
 			int texture = 0;
 			OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
-			if (material.DaytimeTexture != null && currentHost.LoadTexture(ref material.DaytimeTexture, wrap) && material.DaytimeTexture.Transparency != TextureTransparencyType.Opaque)
+			// Only what is loaded: the scene draws these faces and asks for their textures. Until then a face casts as solid.
+			if (material.DaytimeTexture != null && material.DaytimeTexture.OpenGlTextures[(int)wrap].Valid && material.DaytimeTexture.Transparency != TextureTransparencyType.Opaque)
 			{
 				texture = material.DaytimeTexture.OpenGlTextures[(int)wrap].Name;
 			}

@@ -80,7 +80,7 @@ namespace OpenBve.Graphics.Metal
 		private IntPtr library, vertexDescriptor;
 		/// <summary>The pipelines by key: the draw's pipeline key, and the layer (the cab's has its colour target only).</summary>
 		private readonly Dictionary<int, IntPtr> pipelines = new Dictionary<int, IntPtr>();
-		private IntPtr shadowPipeline, shadowDepthState;
+		private IntPtr shadowPipeline, shadowDepthOnlyPipeline, shadowDepthState;
 		private readonly Dictionary<int, IntPtr> depthStates = new Dictionary<int, IntPtr>();
 		private readonly IntPtr[] samplers = new IntPtr[4];
 
@@ -246,6 +246,9 @@ namespace OpenBve.Graphics.Metal
 				Mtl.Void(shadowDesc, selSetVertexDescriptor, vertexDescriptor);
 				Mtl.Void(shadowDesc, selSetDepthAttachmentPixelFormat, Mtl.PixelDepth32Float);
 				shadowPipeline = MakePipeline(shadowDesc);
+				// What has nothing see-through: no fragment function.
+				Mtl.Void(shadowDesc, selSetFragmentFunction, IntPtr.Zero);
+				shadowDepthOnlyPipeline = MakePipeline(shadowDesc);
 				Mtl.Release(shadowDesc);
 				Mtl.Release(shadowVertex);
 				Mtl.Release(shadowFragment);
@@ -448,6 +451,7 @@ namespace OpenBve.Graphics.Metal
 				if (cascade < shadowCascades && shadowLength[cascade] > 0)
 				{
 					Bind(encoder, WorldLayerIndex, cascade, (uint)shadowResolution, (uint)shadowResolution);
+					bool boundDepthOnly = false;
 					Mtl.Void(encoder, selSetPipeline, shadowPipeline);
 					Mtl.Void(encoder, selSetDepthStencilState, shadowDepthState);
 					int boundCull = -1, boundTexture = -1, boundSampler = -1, boundVertexBlock = -1;
@@ -459,6 +463,13 @@ namespace OpenBve.Graphics.Metal
 						{
 							Mtl.Void(encoder, selSetCullMode, cull == 1 ? Mtl.CullFront : Mtl.CullNone);
 							boundCull = cull;
+						}
+
+						bool depthOnly = ShadowDepthOnly(command.Key);
+						if (depthOnly != boundDepthOnly)
+						{
+							Mtl.Void(encoder, selSetPipeline, depthOnly ? shadowDepthOnlyPipeline : shadowPipeline);
+							boundDepthOnly = depthOnly;
 						}
 
 						BindFace(encoder, command, ref boundTexture, ref boundSampler, ref boundVertexBlock);
@@ -572,7 +583,7 @@ namespace OpenBve.Graphics.Metal
 				Mtl.Release(obj);
 			}
 
-			foreach (IntPtr obj in new[] { shadowPipeline, shadowDepthState, shadowMap, vertexDescriptor, library })
+			foreach (IntPtr obj in new[] { shadowPipeline, shadowDepthOnlyPipeline, shadowDepthState, shadowMap, vertexDescriptor, library })
 			{
 				Mtl.Release(obj);
 			}
