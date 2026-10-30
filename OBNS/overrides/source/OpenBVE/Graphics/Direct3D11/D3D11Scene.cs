@@ -32,6 +32,13 @@ namespace OpenBve.Graphics.Direct3D11
 		private readonly IntPtr[] recordBuffers = new IntPtr[4], recordViews = new IntPtr[4];
 		private readonly long[] recordSizes = new long[4];
 
+		// The shadow pass: its shaders, the maps (one array, a layer per cascade; written as depth, read through a
+		// comparison sampler), the cascades' constant buffers (frame record 0, the cascade), and its depth state.
+		private IntPtr shadowVertexShader, shadowPixelShader, shadowMap, shadowView, shadowSampler, shadowDepthState;
+		private IntPtr[] shadowTargets = new IntPtr[0];
+		private readonly IntPtr[] cascadeBuffers = new IntPtr[4];
+		private int shadowResolution, shadowLayers;
+
 		/// <summary>The instance stream: 0, 1, 2, ... (a draw's StartInstanceLocation picks its record).</summary>
 		private IntPtr instanceBuffer;
 		private int instanceCount;
@@ -55,6 +62,21 @@ namespace OpenBve.Graphics.Direct3D11
 				data[1] = data[2] = data[3] = 0;
 				layerBuffers[layer] = Dx.CreateBuffer(device.Device, new Dx.BufferDesc { ByteWidth = 16, Usage = Dx.UsageDefault, BindFlags = Dx.BindConstantBuffer }, data);
 			}
+
+			for (int cascade = 0; cascade < 4; cascade++)
+			{
+				int* data = stackalloc int[4];
+				data[0] = WorldLayerIndex;
+				data[1] = cascade;
+				data[2] = data[3] = 0;
+				cascadeBuffers[cascade] = Dx.CreateBuffer(device.Device, new Dx.BufferDesc { ByteWidth = 16, Usage = Dx.UsageDefault, BindFlags = Dx.BindConstantBuffer }, data);
+			}
+
+			// Comparison with linear filtering: a sample is the 2x2 hardware PCF that upstream's sampler2DShadow gives.
+			shadowSampler = Dx.CreateSamplerState(device.Device, new Dx.SamplerDesc { Filter = Dx.FilterComparisonLinear, AddressU = Dx.AddressClamp, AddressV = Dx.AddressClamp, AddressW = Dx.AddressClamp, MaxAnisotropy = 1, ComparisonFunc = Dx.ComparisonLessEqual, MaxLod = float.MaxValue });
+			Dx.StencilOpDesc keep = new Dx.StencilOpDesc { StencilFailOp = Dx.StencilOpKeep, StencilDepthFailOp = Dx.StencilOpKeep, StencilPassOp = Dx.StencilOpKeep, StencilFunc = Dx.ComparisonAlways };
+			shadowDepthState = Dx.CreateDepthStencilState(device.Device, new Dx.DepthStencilDesc { DepthEnable = 1, DepthWriteMask = 1, DepthFunc = Dx.ComparisonLess, StencilReadMask = 0xFF, StencilWriteMask = 0xFF, FrontFace = keep, BackFace = keep });
+			EnsureShadowMaps(1, 1);
 		}
 
 		private void CreateShaders()
@@ -77,6 +99,8 @@ namespace OpenBve.Graphics.Direct3D11
 			vertexShader = Dx.CreateVertexShader(device.Device, vertexCode);
 			blendedShader = Dx.CreatePixelShader(device.Device, Dx.Compile(source, "world.hlsl", "PS", "ps_5_0", "OPAQUE_COVERAGE", "0"));
 			opaqueShader = Dx.CreatePixelShader(device.Device, Dx.Compile(source, "world.hlsl", "PS", "ps_5_0", "OPAQUE_COVERAGE", "1"));
+			shadowVertexShader = Dx.CreateVertexShader(device.Device, Dx.Compile(source, "world.hlsl", "ShadowVS", "vs_5_0", "OPAQUE_COVERAGE", "0"));
+			shadowPixelShader = Dx.CreatePixelShader(device.Device, Dx.Compile(source, "world.hlsl", "ShadowPS", "ps_5_0", "OPAQUE_COVERAGE", "0"));
 
 			// LibRender2's vertex, as upstream's VAOs have it, and the instance stream's index.
 			string[] names = { "POSITION", "NORMAL", "TEXCOORD", "COLOR", "BLENDINDICES", "DRAW" };
@@ -152,10 +176,138 @@ namespace OpenBve.Graphics.Direct3D11
 			}
 		}
 
-		/// <summary>Shadows are drawn from step 5: none yet.</summary>
+		/// <summary>The maps at a resolution and cascade count (a 1x1 single layer when shadows are off), made again when they change.</summary>
 		public override void EnsureShadowMaps(int resolution, int cascades)
 		{
+			resolution = Math.Max(1, resolution);
+			cascades = Math.Max(1, Math.Min(4, cascades));
+			if (shadowMap != IntPtr.Zero && resolution == shadowResolution && cascades == shadowLayers)
+			{
+				return;
+			}
+
+			ReleaseShadowMaps();
+			shadowMap = Dx.CreateTexture2D(device.Device, new Dx.Texture2DDesc
+			{
+				Width = (uint)resolution,
+				Height = (uint)resolution,
+				MipLevels = 1,
+				ArraySize = (uint)cascades,
+				Format = Dx.FormatR32Typeless,
+				SampleCount = 1,
+				Usage = Dx.UsageDefault,
+				BindFlags = Dx.BindDepthStencil | Dx.BindShaderResource
+			});
+			shadowTargets = new IntPtr[cascades];
+			for (int i = 0; i < cascades; i++)
+			{
+				shadowTargets[i] = Dx.CreateDepthStencilView(device.Device, shadowMap, new Dx.DepthStencilViewDesc { Format = Dx.FormatD32Float, ViewDimension = Dx.DsvDimensionTexture2DArray, FirstArraySlice = (uint)i, ArraySize = 1 });
+			}
+
+			shadowView = Dx.CreateShaderResourceView(device.Device, shadowMap, new Dx.ShaderResourceViewDesc { Format = Dx.FormatR32Float, ViewDimension = Dx.SrvDimensionTexture2DArray, MipLevels = 1, ArraySize = (uint)cascades });
+			shadowResolution = resolution;
+			shadowLayers = cascades;
 		}
+
+		private void ReleaseShadowMaps()
+		{
+			Dx.Release(shadowView);
+			foreach (IntPtr target in shadowTargets)
+			{
+				Dx.Release(target);
+			}
+
+			Dx.Release(shadowMap);
+			shadowView = shadowMap = IntPtr.Zero;
+			shadowTargets = new IntPtr[0];
+		}
+
+		/// <summary>
+		/// The shadow pass (after Upload, before the world layer): each cascade's layer cleared and the casters drawn into
+		/// it in the cascade's light space, as upstream's Shadows.RenderPass; with shadows off, the maps are only cleared.
+		/// </summary>
+		internal void DrawShadows()
+		{
+			IntPtr context = device.Context;
+			// The maps are read by the world's pixel shader: not while they are written.
+			Dx.PSSetShaderResource(context, 5, IntPtr.Zero);
+			for (int cascade = 0; cascade < shadowTargets.Length; cascade++)
+			{
+				Dx.ClearDepth(context, shadowTargets[cascade], 1.0f);
+			}
+
+			if (shadowCascades == 0 || shadowCount == 0)
+			{
+				return;
+			}
+
+			Dx.RSSetViewport(context, new Dx.Viewport { Width = shadowResolution, Height = shadowResolution, MaxDepth = 1.0f });
+			Dx.IASetPrimitiveTopology(context, Dx.TopologyTriangleList);
+			Dx.IASetInputLayout(context, inputLayout);
+			Dx.IASetVertexBuffer(context, 1, instanceBuffer, 4, 0);
+			Dx.VSSetShader(context, shadowVertexShader);
+			Dx.PSSetShader(context, shadowPixelShader);
+			for (uint i = 0; i < 4; i++)
+			{
+				Dx.VSSetShaderResource(context, i, recordViews[i]);
+			}
+
+			Dx.PSSetShaderResource(context, 2, recordViews[2]);
+			Dx.OMSetBlendState(context, BlendState(Blend.None, false));
+			Dx.OMSetDepthStencilState(context, shadowDepthState);
+			for (int cascade = 0; cascade < Math.Min(shadowCascades, shadowTargets.Length); cascade++)
+			{
+				IntPtr none = IntPtr.Zero;
+				Dx.OMSetRenderTargets(context, 0, &none, shadowTargets[cascade]);
+				Dx.VSSetConstantBuffer(context, 0, cascadeBuffers[cascade]);
+				Dx.PSSetConstantBuffer(context, 0, cascadeBuffers[cascade]);
+				int boundCull = -1, boundTexture = -1, boundSampler = -1, boundVertexBlock = -1, boundIndexBlock = -1;
+				for (int i = 0; i < shadowCount; i++)
+				{
+					DrawCommand command = shadowCommands[i];
+					int cull = (int)(command.Key >> 48) == 1 ? 1 : 0;
+					int texture = draws[command.Draw].Texture, sampler = draws[command.Draw].Sampler;
+					int vertexBlock = (int)((command.Key >> 16) & 0xFFFF), indexBlock = (int)(command.Key & 0xFFFF);
+					if (cull != boundCull)
+					{
+						Dx.RSSetState(context, RasterState(cull == 1));
+						boundCull = cull;
+					}
+
+					if (texture != boundTexture)
+					{
+						Dx.PSSetShaderResource(context, 4, textures.View(texture));
+						boundTexture = texture;
+					}
+
+					if (sampler != boundSampler)
+					{
+						Dx.PSSetSampler(context, 0, samplers[sampler & 3]);
+						boundSampler = sampler;
+					}
+
+					if (vertexBlock != boundVertexBlock)
+					{
+						Dx.IASetVertexBuffer(context, 0, meshes.Vertices.Buffers[vertexBlock], (uint)WorldMeshes.VertexSize, 0);
+						boundVertexBlock = vertexBlock;
+					}
+
+					if (indexBlock != boundIndexBlock)
+					{
+						Dx.IASetIndexBuffer(context, meshes.Indices.Buffers[indexBlock], Dx.FormatR32Uint, 0);
+						boundIndexBlock = indexBlock;
+					}
+
+					Dx.DrawIndexedInstanced(context, command.IndexCount, 1, command.FirstIndex, command.VertexBase, (uint)command.Draw);
+				}
+			}
+
+			IntPtr unbound = IntPtr.Zero;
+			Dx.OMSetRenderTargets(context, 0, &unbound, IntPtr.Zero);
+		}
+
+		/// <summary>Shadow casters drawn in the last frame (per cascade), for the log.</summary>
+		internal int LastShadowCasters => shadowCascades > 0 ? shadowCount : 0;
 
 		/// <summary>Writes the frame's records into the buffers (made larger when the frame needs more).</summary>
 		internal void Upload()
@@ -261,6 +413,8 @@ namespace OpenBve.Graphics.Direct3D11
 
 			Dx.PSSetShaderResource(context, 0, recordViews[0]);
 			Dx.PSSetShaderResource(context, 2, recordViews[2]);
+			Dx.PSSetShaderResource(context, 5, shadowView);
+			Dx.PSSetSampler(context, 1, shadowSampler);
 
 			int boundPipeline = -1, boundTexture = -1, boundSampler = -1, boundVertexBlock = -1, boundIndexBlock = -1, changes = 0;
 			for (int i = start; i < end; i++)
@@ -388,12 +542,13 @@ namespace OpenBve.Graphics.Direct3D11
 
 		public override void Dispose()
 		{
-			foreach (IntPtr com in new[] { vertexShader, inputLayout, blendedShader, opaqueShader, instanceBuffer })
+			ReleaseShadowMaps();
+			foreach (IntPtr com in new[] { vertexShader, inputLayout, blendedShader, opaqueShader, instanceBuffer, shadowVertexShader, shadowPixelShader, shadowSampler, shadowDepthState })
 			{
 				Dx.Release(com);
 			}
 
-			foreach (IntPtr[] list in new[] { layerBuffers, samplers, recordViews, recordBuffers })
+			foreach (IntPtr[] list in new[] { layerBuffers, cascadeBuffers, samplers, recordViews, recordBuffers })
 			{
 				foreach (IntPtr com in list)
 				{

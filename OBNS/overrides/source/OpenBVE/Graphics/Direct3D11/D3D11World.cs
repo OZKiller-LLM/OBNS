@@ -1,6 +1,6 @@
 // OBNS: not an upstream file. The world layer drawn by Direct3D 11 (OBNS/DIRECT3D.md): Direct3D draws the world and cab
 // layers into images OpenGL has registered (WGL_NV_DX_interop2), OpenGL lays them over its frame (WorldComposite).
-// Step 4: the world and cab layers drawn (no shadows yet; the layer is chosen by OBNS_D3D11=1 only).
+// The world and cab layers with shadows; chosen in the options (OBNS_D3D11=1 or 0 overrides them).
 
 using System;
 using LibRender2;
@@ -51,11 +51,21 @@ namespace OpenBve.Graphics.Direct3D11
 
 		private static void Log(string text) => Program.FileSystem.AppendToLogFile(text);
 
-		/// <summary>Makes the layer with OBNS_D3D11=1 where Direct3D 11 can share images with OpenGL; logs which, and why.</summary>
+		/// <summary>
+		/// Makes the layer when the options choose Direct3D 11 (or OBNS_D3D11=1; 0 never), in a 64-bit Windows program,
+		/// where Direct3D 11 can share images with OpenGL; logs which, and why. Where it cannot, Vulkan is tried.
+		/// </summary>
 		internal static void Initialize()
 		{
-			if (instance != null || Environment.GetEnvironmentVariable("OBNS_D3D11") != "1")
+			string forced = Environment.GetEnvironmentVariable("OBNS_D3D11");
+			if (instance != null || forced == "0" || forced != "1" && ObnsOptions.Renderer != ObnsOptions.RendererKind.Direct3D11)
 			{
+				return;
+			}
+
+			if (Environment.OSVersion.Platform != PlatformID.Win32NT || !Environment.Is64BitProcess)
+			{
+				Log("OBNS Direct3D 11 world layer not used: it needs a 64-bit Windows program");
 				return;
 			}
 
@@ -85,7 +95,7 @@ namespace OpenBve.Graphics.Direct3D11
 			}
 
 			instance = world;
-			Log("OBNS Direct3D 11 world layer on: " + device.Description + " (step 4: the world and cab layers; no shadows yet)");
+			Log("OBNS Direct3D 11 world layer on: " + device.Description + " (the world and cab layers, with shadows)");
 		}
 
 		public IWorldScene Scene => scene;
@@ -171,6 +181,7 @@ namespace OpenBve.Graphics.Direct3D11
 				cabStarted = scene.HasCab;
 				scene.BuildRecords();
 				scene.Upload();
+				scene.DrawShadows();
 				if (locked)
 				{
 					device.Unlock(handles);
@@ -294,7 +305,7 @@ namespace OpenBve.Graphics.Direct3D11
 				}
 
 				D3D11Scene scene = instance.scene;
-				return "on (Direct3D 11: " + scene.LastDraws + " draws (" + scene.LastCabDraws + " of them the cab's), " + scene.LastStateChanges + " pipeline and texture changes; " + instance.Textures.Describe() + "; " + instance.Meshes.Describe() +
+				return "on (Direct3D 11: " + scene.LastDraws + " draws (" + scene.LastCabDraws + " of them the cab's), " + scene.LastStateChanges + " pipeline and texture changes, " + scene.LastShadowCasters + " shadow casters a cascade; " + instance.Textures.Describe() + "; " + instance.Meshes.Describe() +
 				       (scene.SkippedFaces > 0 ? "; " + scene.SkippedFaces + " faces without a copy" : "") + ")";
 			}
 		}

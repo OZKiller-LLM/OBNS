@@ -49,8 +49,26 @@ namespace OpenBve
 			if (System.Environment.OSVersion.Platform == System.PlatformID.Win32NT)
 			{
 				comboboxObnsRenderer.Items.Add("Vulkan");
-				comboboxObnsRenderer.SelectedIndex = ObnsOptions.Renderer == ObnsOptions.RendererKind.Vulkan ? 1 : 0;
-				tip.SetToolTip(comboboxObnsRenderer, "Vulkan draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
+				// Direct3D 11 in 64-bit Windows programs (x86-64 and ARM64; OBNS/DIRECT3D.md).
+				if (System.Environment.Is64BitProcess)
+				{
+					comboboxObnsRenderer.Items.Add("Direct3D 11");
+				}
+
+				switch (ObnsOptions.Renderer)
+				{
+					case ObnsOptions.RendererKind.Vulkan:
+						comboboxObnsRenderer.SelectedIndex = 1;
+						break;
+					case ObnsOptions.RendererKind.Direct3D11:
+						comboboxObnsRenderer.SelectedIndex = comboboxObnsRenderer.Items.Count > 2 ? 2 : 1;
+						break;
+					default:
+						comboboxObnsRenderer.SelectedIndex = 0;
+						break;
+				}
+
+				tip.SetToolTip(comboboxObnsRenderer, "Vulkan or Direct3D 11 draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
 			}
 			else
 			{
@@ -80,7 +98,7 @@ namespace OpenBve
 		{
 			if (comboboxObnsRenderer != null && comboboxObnsRenderer.Enabled)
 			{
-				ObnsOptions.Renderer = comboboxObnsRenderer.SelectedIndex == 0 ? ObnsOptions.RendererKind.OpenGL : ObnsOptions.RendererKind.Vulkan;
+				ObnsOptions.Renderer = comboboxObnsRenderer.SelectedIndex == 0 ? ObnsOptions.RendererKind.OpenGL : comboboxObnsRenderer.SelectedIndex == 2 ? ObnsOptions.RendererKind.Direct3D11 : ObnsOptions.RendererKind.Vulkan;
 				ObnsOptions.Save();
 			}
 		}

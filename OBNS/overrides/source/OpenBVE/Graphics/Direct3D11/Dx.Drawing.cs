@@ -12,7 +12,7 @@ namespace OpenBve.Graphics.Direct3D11
 	{
 		// D3D11_BLEND, D3D11_BLEND_OP, D3D11_COMPARISON_FUNC, D3D11_STENCIL_OP, D3D11_CULL_MODE, D3D11_FILL_MODE
 		internal const uint BlendZero = 1, BlendOne = 2, BlendSrcAlpha = 5, BlendInvSrcAlpha = 6, BlendOpAdd = 1;
-		internal const uint ComparisonLessEqual = 4, ComparisonAlways = 8, StencilOpKeep = 1;
+		internal const uint ComparisonLess = 2, ComparisonLessEqual = 4, ComparisonAlways = 8, StencilOpKeep = 1;
 		internal const uint CullNone = 1, CullFront = 2, FillSolid = 3;
 
 		// D3D11_FILTER, D3D11_TEXTURE_ADDRESS_MODE
@@ -167,6 +167,41 @@ namespace OpenBve.Graphics.Direct3D11
 		private static ulong BlobSize(IntPtr blob) => (ulong)((delegate* unmanaged[Stdcall]<IntPtr, UIntPtr>)Table(blob)[4])(blob);
 
 		// --- the device ---
+
+		// DXGI_FORMAT and D3D11_FILTER for the shadow maps: the depth stored typeless, written as depth, read as a colour
+		internal const uint FormatR32Typeless = 39, FilterComparisonLinear = 0x94;
+
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct DepthStencilViewDesc
+		{
+			public uint Format, ViewDimension, Flags;
+			public uint MipSlice, FirstArraySlice, ArraySize;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct ShaderResourceViewDesc
+		{
+			public uint Format, ViewDimension;
+			public uint MostDetailedMip, MipLevels, FirstArraySlice, ArraySize;
+		}
+
+		internal const uint DsvDimensionTexture2DArray = 4, SrvDimensionTexture2DArray = 5;
+
+		/// <summary>ID3D11Device::CreateShaderResourceView (7), described.</summary>
+		internal static IntPtr CreateShaderResourceView(IntPtr device, IntPtr resource, ShaderResourceViewDesc desc)
+		{
+			IntPtr view;
+			Check(((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, ShaderResourceViewDesc*, IntPtr*, int>)Table(device)[7])(device, resource, &desc, &view), "ID3D11Device::CreateShaderResourceView");
+			return view;
+		}
+
+		/// <summary>ID3D11Device::CreateDepthStencilView (10), described.</summary>
+		internal static IntPtr CreateDepthStencilView(IntPtr device, IntPtr resource, DepthStencilViewDesc desc)
+		{
+			IntPtr view;
+			Check(((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, DepthStencilViewDesc*, IntPtr*, int>)Table(device)[10])(device, resource, &desc, &view), "ID3D11Device::CreateDepthStencilView");
+			return view;
+		}
 
 		/// <summary>ID3D11Device::CreateInputLayout (11).</summary>
 		internal static IntPtr CreateInputLayout(IntPtr device, InputElementDesc* elements, uint count, byte[] vertexShader)

@@ -1,5 +1,5 @@
 // OBNS: not an upstream file. The world layer drawn by an API of its own (OBNS/VULKAN.md, OBNS/DIRECT3D.md): what the
-// renderer calls, whichever API draws it (Vulkan; Direct3D 11 being built).
+// renderer calls, whichever API draws it (Vulkan or Direct3D 11).
 
 using LibRender2;
 using LibRender2.ShadowMapping;
@@ -80,7 +80,7 @@ namespace OpenBve.Graphics
 		/// <summary>Makes the layer the options (or the switches) ask for, where it can share images with OpenGL; logs which, and why.</summary>
 		internal static void Initialize()
 		{
-			// Direct3D 11 while it is being built (OBNS/DIRECT3D.md): by OBNS_D3D11=1 only, in place of Vulkan.
+			// Direct3D 11 when the options choose it (OBNS/DIRECT3D.md); Vulkan when they do, or Direct3D 11 cannot.
 			Direct3D11.D3D11World.Initialize();
 			if (!Direct3D11.D3D11World.Enabled)
 			{

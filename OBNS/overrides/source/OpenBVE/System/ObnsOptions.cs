@@ -16,7 +16,9 @@ namespace OpenBve
 			/// <summary>OpenGL, as upstream.</summary>
 			OpenGL,
 			/// <summary>Vulkan where the computer can (OpenGL draws the rest of the frame, and the world layer where Vulkan cannot).</summary>
-			Vulkan
+			Vulkan,
+			/// <summary>Direct3D 11 where the computer can (64-bit Windows; else as Vulkan).</summary>
+			Direct3D11
 		}
 
 		private static bool loaded;
@@ -65,7 +67,7 @@ namespace OpenBve
 					string key = line.Substring(0, equals).Trim().ToLowerInvariant(), value = line.Substring(equals + 1).Trim().ToLowerInvariant();
 					if (key == "renderer")
 					{
-						renderer = value == "opengl" ? RendererKind.OpenGL : RendererKind.Vulkan;
+						renderer = value == "opengl" ? RendererKind.OpenGL : value == "direct3d11" ? RendererKind.Direct3D11 : RendererKind.Vulkan;
 					}
 				}
 			}
@@ -81,7 +83,7 @@ namespace OpenBve
 			{
 				StringBuilder builder = new StringBuilder();
 				builder.AppendLine("; OBNS options (OpenBVE's are in options.cfg)");
-				builder.AppendLine("renderer = " + (Renderer == RendererKind.OpenGL ? "opengl" : "vulkan"));
+				builder.AppendLine("renderer = " + (Renderer == RendererKind.OpenGL ? "opengl" : Renderer == RendererKind.Direct3D11 ? "direct3d11" : "vulkan"));
 				Directory.CreateDirectory(Path.GetDirectoryName(FileName));
 				File.WriteAllText(FileName, builder.ToString(), new UTF8Encoding(false));
 			}

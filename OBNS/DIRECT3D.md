@@ -53,7 +53,12 @@ about 3,000 lines:
    draw only where the pipeline, texture, sampler or buffer block changes (the draws are sorted by them);
    `Shaders/world.hlsl` is the Vulkan shaders' port. On the Tuen Ma Line at Tuen Mun: the same picture as Vulkan's
    but for the shadows, 7.8 ms a frame (Vulkan 6.8 ms), about 4,100 draws with about 1,300 changes.
-5. Shadows; the options' renderer list (OpenGL, Vulkan, Direct3D 11); measured on the Tuen Ma Line.
+5. Shadows; the options' renderer list (OpenGL, Vulkan, Direct3D 11); measured on the Tuen Ma Line. **Done**:
+   the shadow maps one array of depth (a layer per cascade) read through a comparison sampler, the pass and the
+   cascades' sampling the Vulkan shaders' port; Direct3D 11 in the options (64-bit Windows; where it cannot be
+   used, Vulkan is tried, then OpenGL). Snapshots at Tuen Mun differ from Vulkan's by 1.4 levels on average
+   (Vulkan's own runs by 0.8). Seven minutes of the AI driving from Tuen Mun: 8.7 ms a frame, the worst frame of
+   each 10 s 18 ms (median); Vulkan 7.0 and 19 ms (RTX 2060 SUPER).
 
 Then Direct3D 12 (closest to Vulkan: the records, and memory shared with OpenGL as Vulkan's is), Direct3D
 9.0c (D3D9Ex, `WGL_NV_DX_interop`; no instancing of records, the slowest), and Metal (IOSurface to OpenGL).
@@ -62,7 +67,7 @@ Then Direct3D 12 (closest to Vulkan: the records, and memory shared with OpenGL 
 
 | Variable | Effect |
 | --- | --- |
-| `OBNS_D3D11=1` | the world layer drawn by Direct3D 11 (while it is being built; in place of Vulkan) |
+| `OBNS_D3D11=1`, `=0` | the world layer drawn by Direct3D 11, or not, whatever the options say |
 | `OBNS_D3D11_TINT=1` | its world image cleared to a faint green, not to nothing (to show it arrives) |
 | `OBNS_D3D11_DEBUG=1` | each texture made, and the copies' counts every 5 seconds, logged |
 | `OBNS_D3D11_WHITE=1`, `OBNS_D3D11_NOMIPS=1` | no textures (all white); textures without mipmaps (as Vulkan's) |
