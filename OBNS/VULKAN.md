@@ -93,13 +93,25 @@ layer to Vulkan, for macOS, is a later step that the 3D renderer is built not to
   marked as casting no shadow), and sampled by the world shader with depth comparison and upstream's filter,
   biases and cascade blend. Upstream's OpenGL shadow pass is skipped while Vulkan draws the world.
 
+## Broadwell (2026-10-31)
+
+Iris Graphics 6100, Mesa's hasvk, Tuen Ma Line. With the semaphores shared with OpenGL the GPU hung, ten seconds or
+more at a time, within a minute in the cab view, on either tier and with the cab drawn by either API. With the CPU
+ordering the two (now the default on Mesa's Intel GPUs from Broadwell back) a 15 min 54 s drive had no hang, on two
+update threads. It is much slower than OpenGL there, mostly in GPU time, for a reason not yet known:
+
+| Stationary, cab view | OpenGL | Vulkan, the CPU ordering |
+|---|---|---|
+| Default position | 47 fps | 14 fps |
+| Camera moved forward | 38 fps | 8.6 fps |
+
 ## Fallback and switches
 
 The renderer is chosen in the options (Options, display group: Renderer, OpenGL or Vulkan; Vulkan by default),
 kept in `Settings/1.5.0/obns.cfg` beside upstream's `options.cfg`, and takes effect when a game starts. The
-debug overlay's renderer line says which is drawing. Vulkan is used when the driver has Vulkan 1.3 with
-descriptor indexing and external memory, and OpenGL has the memory object and semaphore extensions on the
-same GPU (matched by device UUID); otherwise the world layer is drawn by OpenGL as before. The log says which, and why. While the wireframe or normals
+debug overlay's renderer line says which is drawing. Vulkan is used when the driver can share memory and
+semaphores with OpenGL on the same GPU (matched by device UUID), on one of the two tiers below; otherwise the
+world layer is drawn by OpenGL as before. The log says which, and why. While the wireframe or normals
 debug views are on, OpenGL draws the world layer (frame by frame); a Vulkan frame that fails stops Vulkan for
 the session, logged, and OpenGL draws the world from then on.
 

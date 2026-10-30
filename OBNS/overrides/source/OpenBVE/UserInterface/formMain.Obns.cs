@@ -75,10 +75,11 @@ namespace OpenBve
 			}
 			else
 			{
-				// Vulkan draws only on Windows so far (OBNS/VULKAN.md): OpenGL is shown, and the saved choice is kept as it is.
-				comboboxObnsRenderer.SelectedIndex = 0;
-				comboboxObnsRenderer.Enabled = false;
-				tip.SetToolTip(comboboxObnsRenderer, "OpenGL draws everything here: the Vulkan renderer is available on Windows only so far.");
+				// Linux and the like: Vulkan where the driver can share images with OpenGL (OBNS/VULKAN.md).
+				ObnsAddRenderer("Vulkan", ObnsOptions.RendererKind.Vulkan);
+				int chosen = obnsRendererKinds.IndexOf(ObnsOptions.Renderer);
+				comboboxObnsRenderer.SelectedIndex = chosen >= 0 ? chosen : 1;
+				tip.SetToolTip(comboboxObnsRenderer, "Vulkan draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
 			}
 
 			// Room for the row: the group grows, and what is below it in the panel moves down.

@@ -129,10 +129,13 @@ laying Vulkan's world image over the background and its cab image over the parti
 background. The vertex buffers are shared between the two; textures are Vulkan's own, with upstream's
 preloads sent to it, so there is one copy of each on the GPU.
 
-The renderer is chosen in the options (display: Renderer, OpenGL or Vulkan; Vulkan by default) and
+The renderer is chosen in the options (display: Renderer; Vulkan by default on Windows and Linux) and
 the debug overlay names it. OpenGL draws the world when the GPU or driver cannot share images with
 Vulkan, while the wireframe and normals views are on, and for the rest of the session if a
-Vulkan frame fails; `OBNS_VULKAN=0` or `1` overrides the option.
+Vulkan frame fails; `OBNS_VULKAN=0` or `1` overrides the option. Devices with Vulkan 1.3 use the path
+described here; anything older that can share images with OpenGL gets a core Vulkan 1.0 tier, and Mesa's
+Intel GPUs from Broadwell back have the CPU order OpenGL and Vulkan, because the semaphores they share hang
+those GPUs. Broadwell is drivable that way but slow: see `VULKAN.md`.
 
 | Tuen Ma Line, steady state (each view's first 10 s left out), a loaded machine, runs interleaved | OpenGL | Vulkan |
 |---|---|---|
@@ -202,7 +205,12 @@ formMain itself there - every page, control and layout of the Windows menu - wit
 window of its own (`OBNS_GLFORMS=1` shows it on Windows, for testing). See [GLFORMS.md](GLFORMS.md).
 Checked on an M1 Mac (2026-10-29, Mono 6.14, SDL2 backend): it opens; the route browser, a BVE5 scenario's
 details, the options and the language list work. The language list is sorted by code, as Windows lists the
-folder; the renderer choice shows OpenGL only away from Windows (Vulkan draws only there so far).
+folder.
+
+Where the Swift library `libOBNSMenuKit.dylib` is beside the program, the same forms show as the Mac's own
+controls (`OBNS/mac/MenuKit`; `OBNS_MENU_NATIVE=0` keeps the OpenGL drawing). The layout and flow are the Windows
+menu's, with Apple's design for looks only. Compared page by page with the OpenGL menu on the M1 (2026-10-31,
+Swift 6.4), keyboard order included; the Review page wasn't, as it needs a finished game.
 
 ### 6. Texture memory
 
@@ -215,3 +223,16 @@ the pixels for good (`Texture.ObnsDropPixels`, in OBNS's copies of OpenBveApi's 
 decoded again from its file when uploaded. On the Tuen Ma Line: 1.1 GB live managed heap, 3.9 GB private when
 loaded (5.5 GB driving), loading as fast as before. `OBNS_MEMSTATS=1` logs a census of what a loaded route holds
 (`2`: after a full collection).
+
+### 7. Direct3D and Metal
+
+Options beside OpenGL and Vulkan, each drawing the world and cab layers and leaving the rest to OpenGL, as Vulkan
+does: Direct3D 9.0c, 11 and 12 on 64-bit Windows (`DIRECT3D.md`), Metal on macOS (`METAL.md`). Renderers without
+OpenGL at all are a later project.
+
+| Tuen Ma Line, 7-minute drive, RTX 2060 SUPER | Vulkan | Direct3D 12 | Direct3D 11 | Direct3D 9.0c |
+|---|---|---|---|---|
+| Median frame | 7.0 ms | 8.0 ms | 8.7 ms | 14.7 ms |
+| Median of the worst frames | 19 ms | 21 ms | 18 ms | 26 ms |
+
+On an M1 Mac, Metal ran at 34.4 fps against OpenGL's 20.5 without shadows, and 16.4 against about 9 with them.

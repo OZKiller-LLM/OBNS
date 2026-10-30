@@ -4,7 +4,11 @@ A working summary for whoever continues this port (human or AI). `PORTING.md` is
 design record (brought up to date 2026-09-26); this file is the short "where things stand and how
 to carry on".
 
-Last updated 2026-10-15 (1.1 released).
+Last updated 2026-10-15 (1.1 released); the note on 1.2 below 2026-10-31.
+
+1.2 is in progress on the `1.2` branch, not released. The repository now has three parts (`OpenBVE/` untouched,
+`Android/`, `OBNS/`); `OBNS/README.md` is the place to start for the plan and the desktop build, with `OBNS/VULKAN.md`,
+`OBNS/DIRECT3D.md`, `OBNS/METAL.md`, `OBNS/GLFORMS.md` and `OBNS/BVE5.md` for each part. What follows describes 1.1.
 
 ## Goal
 
