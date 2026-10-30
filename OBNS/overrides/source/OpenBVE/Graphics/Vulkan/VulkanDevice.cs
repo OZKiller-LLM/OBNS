@@ -222,6 +222,50 @@ namespace OpenBve.Graphics.Vulkan
 			return false;
 		}
 
+		/// <summary>
+		/// Whether the computer's GPUs are Broadwell's integrated one and no discrete GPU, as Vulkan lists them. OpenGL is the
+		/// default on such a computer on Linux (ObnsOptions): it is 3-4 times as fast there as Vulkan can be made to run.
+		/// </summary>
+		internal static bool BroadwellWithoutDiscreteGpu()
+		{
+			IntPtr instance = IntPtr.Zero;
+			try
+			{
+				Vk.ApplicationInfo application = new Vk.ApplicationInfo { SType = Vk.StructureTypeApplicationInfo, ApiVersion = Vk.MakeVersion(1, 0, 0) };
+				Vk.InstanceCreateInfo instanceInfo = new Vk.InstanceCreateInfo { SType = Vk.StructureTypeInstanceCreateInfo, PApplicationInfo = &application };
+				if (Vk.vkCreateInstance(&instanceInfo, null, out instance) != Vk.Success)
+				{
+					return false;
+				}
+
+				uint count = 0;
+				Vk.Check(Vk.vkEnumeratePhysicalDevices(instance, ref count, null), "vkEnumeratePhysicalDevices");
+				IntPtr* devices = stackalloc IntPtr[(int)count];
+				Vk.Check(Vk.vkEnumeratePhysicalDevices(instance, ref count, devices), "vkEnumeratePhysicalDevices");
+				bool broadwell = false, discrete = false;
+				for (uint i = 0; i < count; i++)
+				{
+					Vk.PhysicalDeviceProperties properties;
+					Vk.vkGetPhysicalDeviceProperties(devices[i], &properties);
+					discrete |= properties.DeviceType == Vk.PhysicalDeviceTypeDiscreteGpu;
+					broadwell |= Marshal.PtrToStringAnsi((IntPtr)properties.DeviceName).Contains("(BDW");
+				}
+
+				return broadwell && !discrete;
+			}
+			catch (Exception ex) when (ex is DllNotFoundException || ex is EntryPointNotFoundException || ex is InvalidOperationException)
+			{
+				return false;
+			}
+			finally
+			{
+				if (instance != IntPtr.Zero)
+				{
+					Vk.vkDestroyInstance(instance, null);
+				}
+			}
+		}
+
 		private static VulkanDevice TryCreate(byte[] glDeviceUuid, bool core10, out string reason)
 		{
 			VulkanDevice device = new VulkanDevice { Core10 = core10 };

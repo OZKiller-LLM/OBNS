@@ -29,19 +29,47 @@ namespace OpenBve
 
 		private static bool loaded;
 		private static RendererKind renderer = RendererKind.Vulkan;
+		/// <summary>Whether Vulkan was picked in the options, rather than being the default (the file says "renderer = vulkan" for both).</summary>
+		private static bool vulkanChosen;
+		private static bool? broadwellAlone;
 
-		/// <summary>The renderer chosen in the options (taking effect when a game starts).</summary>
+		/// <summary>The renderer in force (taking effect when a game starts): the one chosen in the options, else the default.</summary>
 		internal static RendererKind Renderer
 		{
 			get
 			{
 				Load();
-				return renderer;
+				return OpenGLByDefault ? RendererKind.OpenGL : renderer;
 			}
 			set
 			{
 				Load();
-				renderer = value;
+				// The menu gives back what it was shown when nothing was changed: that is no choice.
+				if (value != Renderer)
+				{
+					renderer = value;
+					vulkanChosen = value == RendererKind.Vulkan;
+				}
+			}
+		}
+
+		/// <summary>OpenGL by default on Linux on Broadwell's integrated GPU with no discrete GPU; Vulkan by default everywhere else.</summary>
+		internal static bool OpenGLByDefault
+		{
+			get
+			{
+				Load();
+				if (renderer != RendererKind.Vulkan || vulkanChosen || Program.CurrentHost.Platform != OpenBveApi.Hosts.HostPlatform.GNULinux)
+				{
+					return false;
+				}
+
+				if (broadwellAlone == null)
+				{
+					broadwellAlone = Graphics.Vulkan.VulkanDevice.BroadwellWithoutDiscreteGpu();
+				}
+
+				return broadwellAlone.Value;
 			}
 		}
 
@@ -75,6 +103,10 @@ namespace OpenBve
 					{
 						renderer = value == "opengl" ? RendererKind.OpenGL : value == "direct3d11" ? RendererKind.Direct3D11 : value == "direct3d12" ? RendererKind.Direct3D12 : value == "direct3d9" ? RendererKind.Direct3D9 : value == "metal" ? RendererKind.Metal : RendererKind.Vulkan;
 					}
+					else if (key == "vulkanchosen")
+					{
+						vulkanChosen = value == "true";
+					}
 				}
 			}
 			catch (Exception ex)
@@ -89,7 +121,13 @@ namespace OpenBve
 			{
 				StringBuilder builder = new StringBuilder();
 				builder.AppendLine("; OBNS options (OpenBVE's are in options.cfg)");
-				builder.AppendLine("renderer = " + (Renderer == RendererKind.OpenGL ? "opengl" : Renderer == RendererKind.Direct3D11 ? "direct3d11" : Renderer == RendererKind.Direct3D12 ? "direct3d12" : Renderer == RendererKind.Direct3D9 ? "direct3d9" : Renderer == RendererKind.Metal ? "metal" : "vulkan"));
+				Load();
+				builder.AppendLine("renderer = " + (renderer == RendererKind.OpenGL ? "opengl" : renderer == RendererKind.Direct3D11 ? "direct3d11" : renderer == RendererKind.Direct3D12 ? "direct3d12" : renderer == RendererKind.Direct3D9 ? "direct3d9" : renderer == RendererKind.Metal ? "metal" : "vulkan"));
+				if (renderer == RendererKind.Vulkan && vulkanChosen)
+				{
+					builder.AppendLine("vulkanchosen = true");
+				}
+
 				Directory.CreateDirectory(Path.GetDirectoryName(FileName));
 				File.WriteAllText(FileName, builder.ToString(), new UTF8Encoding(false));
 			}

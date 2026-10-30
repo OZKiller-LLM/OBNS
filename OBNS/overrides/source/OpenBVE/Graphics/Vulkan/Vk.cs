@@ -515,6 +515,7 @@ namespace OpenBve.Graphics.Vulkan
 		[DllImport(Library)] internal static extern void vkDestroyInstance(IntPtr instance, void* allocator);
 		[DllImport(Library)] internal static extern int vkEnumerateInstanceVersion(out uint apiVersion);
 		[DllImport(Library)] internal static extern int vkEnumeratePhysicalDevices(IntPtr instance, ref uint count, IntPtr* devices);
+		[DllImport(Library)] internal static extern void vkGetPhysicalDeviceProperties(IntPtr device, PhysicalDeviceProperties* properties);
 		[DllImport(Library)] internal static extern void vkGetPhysicalDeviceProperties2(IntPtr physicalDevice, PhysicalDeviceProperties2* properties);
 		[DllImport(Library)] internal static extern void vkGetPhysicalDeviceFeatures2(IntPtr physicalDevice, PhysicalDeviceFeatures2* features);
 		[DllImport(Library)] internal static extern void vkGetPhysicalDeviceQueueFamilyProperties(IntPtr physicalDevice, ref uint count, QueueFamilyProperties* properties);
