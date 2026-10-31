@@ -253,11 +253,31 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		/// <summary>
-		/// Whether the computer's GPUs are an Intel integrated one from Broadwell back and no discrete GPU, as Vulkan lists them.
-		/// OpenGL is the default on such a computer on Linux (ObnsOptions): on Broadwell it is 3-4 times as fast as Vulkan can be
-		/// made to run, and older ones aren't supported.
+		/// Whether a GPU, by Vulkan's or OpenGL's name for it on Mesa, is integrated and of Broadwell's age or older: Intel's from
+		/// Broadwell back, or AMD's APUs of that time. OpenGL is the default on them on Linux (ObnsOptions): on Broadwell it is 3-4
+		/// times as fast as Vulkan can be made to run, and Intel's older ones aren't supported.
 		/// </summary>
-		internal static bool OldIntelWithoutDiscreteGpu()
+		internal static bool OldIntegratedGpu(string name)
+		{
+			if (string.IsNullOrEmpty(name))
+			{
+				return false;
+			}
+
+			string upper = name.ToUpperInvariant();
+			foreach (string family in new[] { "(BDW", "(CHV", "(HSW", "(BYT", "(IVB", "KAVERI", "KABINI", "MULLINS", "CARRIZO" })
+			{
+				if (upper.Contains(family))
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		/// <summary>Whether Vulkan lists a GPU of that kind and no discrete GPU: what can be told without an OpenGL context, as in the options.</summary>
+		internal static bool OldIntegratedGpuAlone()
 		{
 			IntPtr instance = IntPtr.Zero;
 			try
@@ -273,17 +293,16 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.Check(Vk.vkEnumeratePhysicalDevices(instance, ref count, null), "vkEnumeratePhysicalDevices");
 				IntPtr* devices = stackalloc IntPtr[(int)count];
 				Vk.Check(Vk.vkEnumeratePhysicalDevices(instance, ref count, devices), "vkEnumeratePhysicalDevices");
-				bool oldIntel = false, discrete = false;
+				bool old = false, discrete = false;
 				for (uint i = 0; i < count; i++)
 				{
 					Vk.PhysicalDeviceProperties properties;
 					Vk.vkGetPhysicalDeviceProperties(devices[i], &properties);
 					discrete |= properties.DeviceType == Vk.PhysicalDeviceTypeDiscreteGpu;
-					string deviceName = Marshal.PtrToStringAnsi((IntPtr)properties.DeviceName);
-					oldIntel |= deviceName.Contains("(BDW") || deviceName.Contains("(CHV") || OlderThanBroadwell(deviceName);
+					old |= OldIntegratedGpu(Marshal.PtrToStringAnsi((IntPtr)properties.DeviceName));
 				}
 
-				return oldIntel && !discrete;
+				return old && !discrete;
 			}
 			catch (Exception ex) when (ex is DllNotFoundException || ex is EntryPointNotFoundException || ex is InvalidOperationException)
 			{

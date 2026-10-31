@@ -105,19 +105,21 @@ update threads. It is much slower than OpenGL there, mostly in GPU time, for a r
 | Default position | 47 fps | 14 fps |
 | Camera moved forward | 38 fps | 8.6 fps |
 
-So OpenGL is the default on Linux on such a computer (Vulkan lists a "(BDW" or Cherry View's "(CHV" device and no
-discrete one); choosing Vulkan in the options, or `OBNS_VULKAN=1`, still gives it, with the CPU ordering.
+So OpenGL is the default on Linux on such a GPU: when Vulkan lists one and no discrete GPU (all the options can tell), and
+when OpenGL's own renderer names one at the start of a game, as on a hybrid laptop not started on its discrete GPU. The
+same goes for AMD's APUs of that age (Kaveri, Kabini, Mullins, Carrizo). Choosing Vulkan in the options, or
+`OBNS_VULKAN=1`, still gives it, with the CPU ordering on Intel's. `GPU_SUPPORT.md` has the defaults of every GPU family.
 
 Vulkan isn't supported on Intel's GPUs older than Broadwell (the user, 2026-10-31; Mesa's names "(HSW", "(BYT", "(IVB"):
 OpenGL is the default there, and draws even if Vulkan is chosen in the options, logged; `OBNS_VULKAN=1` still tries it.
 
 ## Fallback and switches
 
-The renderer is chosen in the options (Options, display group: Renderer, OpenGL or Vulkan; Vulkan by default, except
-OpenGL on Linux on Intel's integrated GPUs from Broadwell back with no discrete GPU beside them, the user's decision of
-2026-10-31),
-kept in `Settings/1.5.0/obns.cfg` beside upstream's `options.cfg`, and takes effect when a game starts. The
-debug overlay's renderer line says which is drawing. Vulkan is used when the driver can share memory and
+The renderer is chosen in the options (Options, display group: Renderer; the default by GPU is in `GPU_SUPPORT.md`, the
+user's decisions of 2026-10-31),
+kept in `Settings/1.5.0/obns.cfg` beside upstream's `options.cfg`, and takes effect when a game starts. Below the
+choice the options say what drew the last game, and why if it isn't what was asked for; with nothing chosen, the choice
+itself shows what drew it. The debug overlay's renderer line says which is drawing. Vulkan is used when the driver can share memory and
 semaphores with OpenGL on the same GPU (matched by device UUID), on one of the two tiers below; otherwise the
 world layer is drawn by OpenGL as before. The log says which, and why. While the wireframe or normals
 debug views are on, OpenGL draws the world layer (frame by frame); a Vulkan frame that fails stops Vulkan for

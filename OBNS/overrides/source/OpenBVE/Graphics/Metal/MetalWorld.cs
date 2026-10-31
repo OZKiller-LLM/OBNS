@@ -104,7 +104,7 @@ namespace OpenBve.Graphics.Metal
 			this.device = device;
 		}
 
-		private static void Log(string text) => Program.FileSystem.AppendToLogFile(text);
+		private static void Log(string text) => WorldLayer.Log(text);
 
 		/// <summary>
 		/// Makes the layer on macOS when the options choose Metal (or OBNS_METAL=1; 0 never), where Metal can share images

@@ -25,6 +25,7 @@
 // OBNS: not an upstream file. The world layer drawn by an API of its own (OBNS/VULKAN.md, OBNS/DIRECT3D.md): what the
 // renderer calls, whichever API draws it (Vulkan or Direct3D 11).
 
+using System;
 using LibRender2;
 using LibRender2.ShadowMapping;
 using OpenBveApi.Math;
@@ -118,6 +119,37 @@ namespace OpenBve.Graphics
 			if (!Direct3D12.D3D12World.Enabled && !Direct3D11.D3D11World.Enabled && !Direct3D9.D3D9World.Enabled && !Metal.MetalWorld.Enabled)
 			{
 				Vulkan.VulkanWorld.Initialize();
+			}
+
+			// The options show what drew the game, and why if it isn't what was asked for.
+			ObnsOptions.RendererKind drawn = Metal.MetalWorld.Enabled ? ObnsOptions.RendererKind.Metal : Direct3D9.D3D9World.Enabled ? ObnsOptions.RendererKind.Direct3D9 : Direct3D12.D3D12World.Enabled ? ObnsOptions.RendererKind.Direct3D12 : Direct3D11.D3D11World.Enabled ? ObnsOptions.RendererKind.Direct3D11 : Vulkan.VulkanWorld.Enabled ? ObnsOptions.RendererKind.Vulkan : ObnsOptions.RendererKind.OpenGL;
+			ObnsOptions.SetLastDrawn(drawn, drawn != ObnsOptions.Renderer ? firstReason : null);
+		}
+
+		/// <summary>The first reason given this game for a layer not being used: the one asked for comes first, and what is tried after has less to say.</summary>
+		private static string firstReason;
+
+		/// <summary>Logs a line of a layer's, keeping what it says of a layer that doesn't draw for the options.</summary>
+		internal static void Log(string text)
+		{
+			Program.FileSystem.AppendToLogFile(text);
+			int layer = text.IndexOf(" world layer ", StringComparison.Ordinal);
+			if (layer < 0 || text.IndexOf(" world layer on", StringComparison.Ordinal) == layer)
+			{
+				return;
+			}
+
+			// The first line, in fewer words: a failed frame's line goes on with the exception.
+			int end = text.IndexOfAny(new[] { '\r', '\n' });
+			string line = (end < 0 ? text : text.Substring(0, end)).Replace("OBNS ", "").Replace(" world layer", "").Replace("; OpenGL draws it", "");
+			line = line.Length > 300 ? line.Substring(0, 300) : line;
+			if (text.IndexOf(" world layer stopped", StringComparison.Ordinal) == layer)
+			{
+				ObnsOptions.SetLastDrawn(ObnsOptions.RendererKind.OpenGL, line);
+			}
+			else if (firstReason == null)
+			{
+				firstReason = line;
 			}
 		}
 

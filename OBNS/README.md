@@ -129,9 +129,8 @@ laying Vulkan's world image over the background and its cab image over the parti
 background. The vertex buffers are shared between the two; textures are Vulkan's own, with upstream's
 preloads sent to it, so there is one copy of each on the GPU.
 
-The renderer is chosen in the options (display: Renderer; Vulkan by default on Windows and Linux, except OpenGL on
-Linux on Intel's integrated GPUs from Broadwell back with no discrete GPU) and
-the debug overlay names it. OpenGL draws the world when the GPU or driver cannot share images with
+The renderer is chosen in the options (display: Renderer; the default by GPU and OS is in `GPU_SUPPORT.md`). The
+options say what drew the last game, and why if it isn't what was asked for, and the debug overlay names it. OpenGL draws the world when the GPU or driver cannot share images with
 Vulkan, while the wireframe and normals views are on, and for the rest of the session if a
 Vulkan frame fails; `OBNS_VULKAN=0` or `1` overrides the option. Devices with Vulkan 1.3 use the path
 described here; anything older that can share images with OpenGL gets a core Vulkan 1.0 tier, and Mesa's

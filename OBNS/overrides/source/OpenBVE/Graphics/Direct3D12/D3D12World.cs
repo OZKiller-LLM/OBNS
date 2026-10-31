@@ -104,7 +104,7 @@ namespace OpenBve.Graphics.Direct3D12
 			this.device = device;
 		}
 
-		private static void Log(string text) => Program.FileSystem.AppendToLogFile(text);
+		private static void Log(string text) => WorldLayer.Log(text);
 
 		/// <summary>
 		/// Makes the layer when the options choose Direct3D 12 (or OBNS_D3D12=1; 0 never), in a 64-bit Windows program,

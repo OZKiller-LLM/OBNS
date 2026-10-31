@@ -83,6 +83,8 @@ namespace OpenBve.Graphics.Metal
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern IntPtr Id(IntPtr receiver, IntPtr selector, byte* utf8);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern IntPtr Id(IntPtr receiver, IntPtr selector, int value);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern ulong Number(IntPtr receiver, IntPtr selector);
+		[DllImport(Objc, EntryPoint = "objc_msgSend")] [return: MarshalAs(UnmanagedType.U1)] internal static extern bool Flag(IntPtr receiver, IntPtr selector, IntPtr a);
+		[DllImport(Objc, EntryPoint = "objc_msgSend")] [return: MarshalAs(UnmanagedType.U1)] internal static extern bool Flag(IntPtr receiver, IntPtr selector, ulong a);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, IntPtr a);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, IntPtr a, IntPtr b);

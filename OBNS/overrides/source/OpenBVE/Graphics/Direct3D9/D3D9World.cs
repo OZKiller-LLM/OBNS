@@ -69,7 +69,7 @@ namespace OpenBve.Graphics.Direct3D9
 			this.device = device;
 		}
 
-		private static void Log(string text) => Program.FileSystem.AppendToLogFile(text);
+		private static void Log(string text) => WorldLayer.Log(text);
 
 		/// <summary>
 		/// Makes the layer when the options choose Direct3D 9 (or OBNS_D3D9=1; 0 never), in a 64-bit Windows program, where

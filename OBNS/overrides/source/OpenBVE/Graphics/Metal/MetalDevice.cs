@@ -51,6 +51,31 @@ namespace OpenBve.Graphics.Metal
 		{
 		}
 
+		/// <summary>Whether a device is an Apple GPU (MTLGPUFamilyApple7, the M1's): the layer is made for their unified memory, and only they have been tested.</summary>
+		private static bool IsAppleGpu(IntPtr device)
+		{
+			IntPtr selSupportsFamily = Mtl.Sel("supportsFamily:");
+			const ulong familyApple7 = 1007;
+			return Mtl.Flag(device, Mtl.Sel("respondsToSelector:"), selSupportsFamily) && Mtl.Flag(device, selSupportsFamily, familyApple7);
+		}
+
+		/// <summary>Whether Metal's default device is an Apple GPU; asked without an OpenGL context (for the options and the default).</summary>
+		internal static bool AppleSilicon()
+		{
+			try
+			{
+				Mtl.LoadFrameworks();
+				IntPtr device = Mtl.MTLCreateSystemDefaultDevice();
+				bool apple = device != IntPtr.Zero && IsAppleGpu(device);
+				Mtl.Release(device);
+				return apple;
+			}
+			catch (Exception ex) when (ex is DllNotFoundException || ex is EntryPointNotFoundException || ex is InvalidOperationException || ex is TypeInitializationException)
+			{
+				return false;
+			}
+		}
+
 		/// <summary>The device, or null with the reason.</summary>
 		internal static MetalDevice Create(out string reason)
 		{
@@ -101,6 +126,12 @@ namespace OpenBve.Graphics.Metal
 			}
 
 			Description = Mtl.Text(Mtl.Id(Device, selName));
+			// OBNS_METAL=1 still tries it, for testing.
+			if (!IsAppleGpu(Device) && Environment.GetEnvironmentVariable("OBNS_METAL") != "1")
+			{
+				return Description + ": Metal is not supported yet on Intel's and AMD's GPUs";
+			}
+
 			Queue = Mtl.Id(Device, selNewCommandQueue);
 			return null;
 		}

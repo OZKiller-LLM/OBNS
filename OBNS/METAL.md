@@ -2,8 +2,13 @@
 
 Metal as a renderer option on macOS, in the place Direct3D has on Windows (`DIRECT3D.md`): a **world layer**, as
 Vulkan's and Direct3D's are. Metal draws the world layer and the cab layer; OpenGL (macOS's OpenGL 4.1, itself on
-Metal on Apple silicon) draws the rest and lays them over its frame. Chosen in the options as "Metal" (macOS only), saved
-as `renderer = metal` in `obns.cfg`; where Metal cannot be used, OpenGL draws the world, as upstream.
+Metal on Apple silicon) draws the rest and lays them over its frame. It is the default on Apple's GPUs, and can be chosen
+in the options as "Metal", saved as `renderer = metal` in `obns.cfg`; where Metal cannot be used, OpenGL draws the world,
+as upstream.
+
+Only Apple's GPUs are supported (`GPU_SUPPORT.md`). The layer is written for their unified memory (shared textures) and
+hasn't been tested on Intel's or AMD's, so on an Intel Mac or a Hackintosh the option isn't offered, a saved choice isn't
+used, and OpenGL draws the world. `OBNS_METAL=1` still tries it, for testing.
 
 ## What changes from Direct3D 11
 

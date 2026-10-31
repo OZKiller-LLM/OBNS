@@ -95,9 +95,9 @@ namespace OpenBve.Graphics.Vulkan
 
 			// The renderer chosen in the options; OBNS_VULKAN=0 or 1 overrides it (for testing).
 			string forced = Environment.GetEnvironmentVariable("OBNS_VULKAN");
-			if (forced == "0" || forced != "1" && ObnsOptions.Renderer == ObnsOptions.RendererKind.OpenGL)
+			if (forced == "0" || forced != "1" && (ObnsOptions.Renderer == ObnsOptions.RendererKind.OpenGL || ObnsOptions.OpenGLByDefaultOn(GL.GetString(StringName.Renderer))))
 			{
-				Log("OBNS Vulkan world layer off (" + (forced == "0" ? "OBNS_VULKAN=0" : ObnsOptions.OpenGLByDefault ? "OpenGL is the default on Intel's GPUs from Broadwell back without a discrete GPU" : "the OpenGL renderer is chosen in the options") + "); OpenGL draws it");
+				Log("OBNS Vulkan world layer off (" + (forced == "0" ? "OBNS_VULKAN=0" : ObnsOptions.Chosen ? "the OpenGL renderer is chosen in the options" : "OpenGL is the default on this GPU") + "); OpenGL draws it");
 				return;
 			}
 
@@ -193,7 +193,7 @@ namespace OpenBve.Graphics.Vulkan
 
 		private static void Log(string message)
 		{
-			Program.FileSystem.AppendToLogFile(message);
+			WorldLayer.Log(message);
 		}
 
 		/// <summary>Whether OpenGL has what sharing needs; null if it has, with the GPU's UUID, else the reason.</summary>

@@ -34,6 +34,8 @@ namespace OpenBve
 	{
 		private Label labelObnsRenderer;
 		private ComboBox comboboxObnsRenderer;
+		private Label labelObnsRendererDrawn;
+		private ObnsOptions.RendererKind obnsRendererShown;
 
 		/// <summary>The renderer each of the list's items chooses.</summary>
 		private readonly System.Collections.Generic.List<ObnsOptions.RendererKind> obnsRendererKinds = new System.Collections.Generic.List<ObnsOptions.RendererKind>();
@@ -53,7 +55,7 @@ namespace OpenBve
 				bottom = System.Math.Max(bottom, control.Bottom);
 			}
 
-			const int rowHeight = 26;
+			const int rowHeight = 26, statusHeight = 32;
 			int top = bottom + 6;
 			labelObnsRenderer = new Label
 			{
@@ -85,40 +87,65 @@ namespace OpenBve
 				}
 
 				// A renderer not listed here (Direct3D in a 32-bit program) is drawn as Vulkan.
-				int chosen = obnsRendererKinds.IndexOf(ObnsOptions.Renderer);
+				int chosen = obnsRendererKinds.IndexOf(ObnsOptions.Shown);
 				comboboxObnsRenderer.SelectedIndex = chosen >= 0 ? chosen : 1;
 
 				tip.SetToolTip(comboboxObnsRenderer, "Vulkan or Direct3D draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
 			}
 			else if (Program.CurrentHost.Platform == OpenBveApi.Hosts.HostPlatform.AppleOSX)
 			{
-				// Metal on macOS (OBNS/METAL.md).
-				ObnsAddRenderer("Metal", ObnsOptions.RendererKind.Metal);
-				comboboxObnsRenderer.SelectedIndex = ObnsOptions.Renderer == ObnsOptions.RendererKind.Metal ? 1 : 0;
-				tip.SetToolTip(comboboxObnsRenderer, "Metal draws the world (scenery and trains), sharing it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
+				// Metal on macOS, on Apple's GPUs (OBNS/METAL.md).
+				if (Graphics.Metal.MetalDevice.AppleSilicon())
+				{
+					ObnsAddRenderer("Metal", ObnsOptions.RendererKind.Metal);
+					tip.SetToolTip(comboboxObnsRenderer, "Metal draws the world (scenery and trains), sharing it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
+				}
+				else
+				{
+					tip.SetToolTip(comboboxObnsRenderer, "OpenGL draws everything: Metal is not supported yet on Intel's and AMD's GPUs.");
+				}
+
+				comboboxObnsRenderer.SelectedIndex = System.Math.Max(obnsRendererKinds.IndexOf(ObnsOptions.Shown), 0);
 			}
 			else
 			{
 				// Linux and the like: Vulkan where the driver can share images with OpenGL (OBNS/VULKAN.md).
 				ObnsAddRenderer("Vulkan", ObnsOptions.RendererKind.Vulkan);
-				int chosen = obnsRendererKinds.IndexOf(ObnsOptions.Renderer);
+				int chosen = obnsRendererKinds.IndexOf(ObnsOptions.Shown);
 				comboboxObnsRenderer.SelectedIndex = chosen >= 0 ? chosen : 1;
 				tip.SetToolTip(comboboxObnsRenderer, "Vulkan draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
 			}
 
-			// Room for the row: the group grows, and what is below it in the panel moves down.
+			// What was shown: only a change of it is a choice.
+			obnsRendererShown = obnsRendererKinds[comboboxObnsRenderer.SelectedIndex];
+
+			// What drew the last game, and why if it isn't what was asked for, on a row below.
+			string drawn = ObnsOptions.LastDrawnText;
+			labelObnsRendererDrawn = new Label
+			{
+				Anchor = comboboxVSync.Anchor,
+				AutoEllipsis = true,
+				Location = new Point(labelVSync.Left, top + rowHeight),
+				Size = new Size(comboboxVSync.Right - labelVSync.Left, statusHeight),
+				Text = drawn ?? "Last game: none yet",
+				TextAlign = ContentAlignment.TopLeft
+			};
+			tip.SetToolTip(labelObnsRendererDrawn, drawn ?? "What draws the game is decided when it starts.");
+
+			// Room for the rows: the group grows, and what is below it in the panel moves down.
 			int groupBottom = groupboxDisplayMode.Bottom;
-			groupboxDisplayMode.Height += rowHeight + 6;
+			groupboxDisplayMode.Height += rowHeight + statusHeight + 6;
 			foreach (Control control in groupboxDisplayMode.Parent.Controls)
 			{
 				if (control != groupboxDisplayMode && control.Top >= groupBottom)
 				{
-					control.Top += rowHeight + 6;
+					control.Top += rowHeight + statusHeight + 6;
 				}
 			}
 
 			groupboxDisplayMode.Controls.Add(labelObnsRenderer);
 			groupboxDisplayMode.Controls.Add(comboboxObnsRenderer);
+			groupboxDisplayMode.Controls.Add(labelObnsRendererDrawn);
 		}
 
 		private void ObnsAddRenderer(string name, ObnsOptions.RendererKind kind)
@@ -132,7 +159,12 @@ namespace OpenBve
 		{
 			if (comboboxObnsRenderer != null && comboboxObnsRenderer.Enabled)
 			{
-				ObnsOptions.Renderer = obnsRendererKinds[comboboxObnsRenderer.SelectedIndex];
+				ObnsOptions.RendererKind selected = obnsRendererKinds[comboboxObnsRenderer.SelectedIndex];
+				if (selected != obnsRendererShown)
+				{
+					ObnsOptions.Renderer = selected;
+				}
+
 				ObnsOptions.Save();
 			}
 		}

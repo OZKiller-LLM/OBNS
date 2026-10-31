@@ -73,7 +73,7 @@ namespace OpenBve.Graphics.Direct3D11
 			this.device = device;
 		}
 
-		private static void Log(string text) => Program.FileSystem.AppendToLogFile(text);
+		private static void Log(string text) => WorldLayer.Log(text);
 
 		/// <summary>
 		/// Makes the layer when the options choose Direct3D 11 or 12 (12 where it could not be used; or OBNS_D3D11=1; 0 never), in a 64-bit Windows program,

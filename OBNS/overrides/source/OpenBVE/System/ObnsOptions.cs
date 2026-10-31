@@ -53,9 +53,11 @@ namespace OpenBve
 
 		private static bool loaded;
 		private static RendererKind renderer = RendererKind.Vulkan;
-		/// <summary>Whether Vulkan was picked in the options, rather than being the default (the file says "renderer = vulkan" for both).</summary>
-		private static bool vulkanChosen;
-		private static bool? oldIntelAlone;
+		/// <summary>Whether the renderer was picked in the options, rather than being the computer's default.</summary>
+		private static bool chosen;
+		private static RendererKind? defaultRenderer;
+		private static RendererKind? lastDrawn;
+		private static string lastNote;
 
 		/// <summary>The renderer in force (taking effect when a game starts): the one chosen in the options, else the default.</summary>
 		internal static RendererKind Renderer
@@ -63,38 +65,114 @@ namespace OpenBve
 			get
 			{
 				Load();
-				return OpenGLByDefault ? RendererKind.OpenGL : renderer;
+				return chosen ? renderer : DefaultRenderer;
 			}
 			set
 			{
 				Load();
-				// The menu gives back what it was shown when nothing was changed: that is no choice.
-				if (value != Renderer)
-				{
-					renderer = value;
-					vulkanChosen = value == RendererKind.Vulkan;
-				}
+				renderer = value;
+				chosen = true;
 			}
 		}
 
-		/// <summary>OpenGL by default on Linux on Intel's integrated GPUs from Broadwell back with no discrete GPU; Vulkan by default everywhere else.</summary>
-		internal static bool OpenGLByDefault
+		/// <summary>Whether the renderer was picked in the options.</summary>
+		internal static bool Chosen
 		{
 			get
 			{
 				Load();
-				if (renderer != RendererKind.Vulkan || vulkanChosen || Program.CurrentHost.Platform != OpenBveApi.Hosts.HostPlatform.GNULinux)
-				{
-					return false;
-				}
-
-				if (oldIntelAlone == null)
-				{
-					oldIntelAlone = Graphics.Vulkan.VulkanDevice.OldIntelWithoutDiscreteGpu();
-				}
-
-				return oldIntelAlone.Value;
+				return chosen;
 			}
+		}
+
+		/// <summary>
+		/// The default (OBNS/GPU_SUPPORT.md): Metal on Apple silicon, else OpenGL on macOS; on Linux OpenGL on GPUs of Broadwell's
+		/// age or older with no discrete GPU, else Vulkan; Vulkan on Windows.
+		/// </summary>
+		private static RendererKind DefaultRenderer
+		{
+			get
+			{
+				if (defaultRenderer == null)
+				{
+					switch (Program.CurrentHost.Platform)
+					{
+						case OpenBveApi.Hosts.HostPlatform.AppleOSX:
+							defaultRenderer = Graphics.Metal.MetalDevice.AppleSilicon() ? RendererKind.Metal : RendererKind.OpenGL;
+							break;
+						case OpenBveApi.Hosts.HostPlatform.GNULinux:
+							defaultRenderer = Graphics.Vulkan.VulkanDevice.OldIntegratedGpuAlone() ? RendererKind.OpenGL : RendererKind.Vulkan;
+							break;
+						default:
+							defaultRenderer = RendererKind.Vulkan;
+							break;
+					}
+				}
+
+				return defaultRenderer.Value;
+			}
+		}
+
+		/// <summary>
+		/// Whether OpenGL is the default given the GPU OpenGL is on, which only a game's context can tell: on Linux a GPU of
+		/// Broadwell's age or older, even with a discrete GPU beside it (a hybrid laptop not started on that GPU).
+		/// </summary>
+		internal static bool OpenGLByDefaultOn(string glRenderer)
+		{
+			Load();
+			return !chosen && Program.CurrentHost.Platform == OpenBveApi.Hosts.HostPlatform.GNULinux && Graphics.Vulkan.VulkanDevice.OldIntegratedGpu(glRenderer);
+		}
+
+		/// <summary>What the options show: the choice, else what drew the last game, else the default.</summary>
+		internal static RendererKind Shown
+		{
+			get
+			{
+				Load();
+				return chosen ? renderer : lastDrawn ?? DefaultRenderer;
+			}
+		}
+
+		/// <summary>The line for the options on what drew the last game and why, if it isn't what was asked for; null before the first game.</summary>
+		internal static string LastDrawnText
+		{
+			get
+			{
+				Load();
+				return lastDrawn == null ? null : "Last game: " + Name(lastDrawn.Value) + (string.IsNullOrEmpty(lastNote) ? "" : ". " + lastNote);
+			}
+		}
+
+		/// <summary>Keeps what is drawing the world now, and why if it isn't what was asked for, for the options.</summary>
+		internal static void SetLastDrawn(RendererKind drawn, string note)
+		{
+			Load();
+			lastDrawn = drawn;
+			lastNote = note;
+			Save();
+		}
+
+		private static string Name(RendererKind kind)
+		{
+			switch (kind)
+			{
+				case RendererKind.Vulkan: return "Vulkan";
+				case RendererKind.Direct3D9: return "Direct3D 9.0c";
+				case RendererKind.Direct3D11: return "Direct3D 11";
+				case RendererKind.Direct3D12: return "Direct3D 12";
+				case RendererKind.Metal: return "Metal";
+				default: return "OpenGL";
+			}
+		}
+
+		private static RendererKind Parse(string value)
+		{
+			return value == "opengl" ? RendererKind.OpenGL : value == "direct3d11" ? RendererKind.Direct3D11 : value == "direct3d12" ? RendererKind.Direct3D12 : value == "direct3d9" ? RendererKind.Direct3D9 : value == "metal" ? RendererKind.Metal : RendererKind.Vulkan;
+		}
+
+		private static string Key(RendererKind kind)
+		{
+			return kind == RendererKind.OpenGL ? "opengl" : kind == RendererKind.Direct3D11 ? "direct3d11" : kind == RendererKind.Direct3D12 ? "direct3d12" : kind == RendererKind.Direct3D9 ? "direct3d9" : kind == RendererKind.Metal ? "metal" : "vulkan";
 		}
 
 		private static string FileName => OpenBveApi.Path.CombineFile(Program.FileSystem.SettingsFolder, "1.5.0/obns.cfg");
@@ -122,15 +200,29 @@ namespace OpenBve
 						continue;
 					}
 
-					string key = line.Substring(0, equals).Trim().ToLowerInvariant(), value = line.Substring(equals + 1).Trim().ToLowerInvariant();
+					string key = line.Substring(0, equals).Trim().ToLowerInvariant(), raw = line.Substring(equals + 1).Trim(), value = raw.ToLowerInvariant();
 					if (key == "renderer")
 					{
-						renderer = value == "opengl" ? RendererKind.OpenGL : value == "direct3d11" ? RendererKind.Direct3D11 : value == "direct3d12" ? RendererKind.Direct3D12 : value == "direct3d9" ? RendererKind.Direct3D9 : value == "metal" ? RendererKind.Metal : RendererKind.Vulkan;
+						renderer = Parse(value);
 					}
-					else if (key == "vulkanchosen")
+					else if (key == "chosen" || key == "vulkanchosen")
 					{
-						vulkanChosen = value == "true";
+						chosen = value == "true";
 					}
+					else if (key == "lastdrawn")
+					{
+						lastDrawn = Parse(value);
+					}
+					else if (key == "lastnote")
+					{
+						lastNote = raw;
+					}
+				}
+
+				// Files from before "chosen": only Vulkan was the default, but for macOS's menu, which saved OpenGL unasked.
+				if (renderer != RendererKind.Vulkan && !(renderer == RendererKind.OpenGL && Program.CurrentHost.Platform == OpenBveApi.Hosts.HostPlatform.AppleOSX))
+				{
+					chosen = true;
 				}
 			}
 			catch (Exception ex)
@@ -146,10 +238,19 @@ namespace OpenBve
 				StringBuilder builder = new StringBuilder();
 				builder.AppendLine("; OBNS options (OpenBVE's are in options.cfg)");
 				Load();
-				builder.AppendLine("renderer = " + (renderer == RendererKind.OpenGL ? "opengl" : renderer == RendererKind.Direct3D11 ? "direct3d11" : renderer == RendererKind.Direct3D12 ? "direct3d12" : renderer == RendererKind.Direct3D9 ? "direct3d9" : renderer == RendererKind.Metal ? "metal" : "vulkan"));
-				if (renderer == RendererKind.Vulkan && vulkanChosen)
+				builder.AppendLine("renderer = " + Key(renderer));
+				if (chosen)
 				{
-					builder.AppendLine("vulkanchosen = true");
+					builder.AppendLine("chosen = true");
+				}
+
+				if (lastDrawn != null)
+				{
+					builder.AppendLine("lastdrawn = " + Key(lastDrawn.Value));
+					if (!string.IsNullOrEmpty(lastNote))
+					{
+						builder.AppendLine("lastnote = " + lastNote);
+					}
 				}
 
 				Directory.CreateDirectory(Path.GetDirectoryName(FileName));
