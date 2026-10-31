@@ -27,6 +27,9 @@
     <!-- OBNS's copy: an AI train's car sounds that do not exist are left out, not a failed route load. -->
     <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\Components\ScriptedTrain.cs" />
     <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\Components\ScriptedTrain.cs" Link="OBNS\ScriptedTrain.cs" />
+    <!-- OBNS's copy: BVE5's rand(x) for a fractional x, which the parser rounds. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\MapParser.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\MapParser.cs" Link="OBNS\MapParser.cs" />
 
   </ItemGroup>
 
