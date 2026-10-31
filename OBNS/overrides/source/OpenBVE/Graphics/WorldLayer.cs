@@ -105,6 +105,14 @@ namespace OpenBve.Graphics
 		/// <summary>Makes the layer the options (or the switches) ask for, where it can share images with OpenGL; logs which, and why.</summary>
 		internal static void Initialize()
 		{
+			// The renderer asked for, turned off by its switch: said here, as the layer itself says nothing and what is tried after has another reason.
+			ObnsOptions.RendererKind asked = ObnsOptions.Renderer;
+			string askedName = asked == ObnsOptions.RendererKind.Metal ? "METAL" : asked == ObnsOptions.RendererKind.Direct3D9 ? "D3D9" : asked == ObnsOptions.RendererKind.Direct3D11 ? "D3D11" : asked == ObnsOptions.RendererKind.Direct3D12 ? "D3D12" : null;
+			if (askedName != null && Environment.GetEnvironmentVariable("OBNS_" + askedName) == "0")
+			{
+				Log("OBNS " + asked + " world layer off (OBNS_" + askedName + "=0)");
+			}
+
 			// Direct3D 12, 11 or 9.0c when the options choose it (OBNS/DIRECT3D.md), Direct3D 11 where 12 cannot be used; Vulkan
 			// when the options choose it, or where Direct3D cannot be used.
 			Direct3D12.D3D12World.Initialize();
