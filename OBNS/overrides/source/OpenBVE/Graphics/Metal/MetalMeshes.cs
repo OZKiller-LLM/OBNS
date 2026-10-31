@@ -24,8 +24,8 @@
 
 // OBNS: not an upstream file. The Metal world layer's meshes (OBNS/METAL.md): a copy of upstream's vertex buffers (OpenGL
 // keeps its own) and the faces' triangle lists (WorldMeshes), in Metal buffers suballocated as the other layers' are. The
-// buffers are in memory the CPU shares (Apple silicon's unified memory), written directly: only while Metal draws nothing
-// (each frame is waited for before upstream goes on to change anything).
+// buffers are in memory the CPU shares (Apple silicon's unified memory) or managed memory (other GPUs, told of each write),
+// written directly: only while Metal draws nothing (each frame is waited for before upstream goes on to change anything).
 
 using System;
 using System.Collections.Generic;
@@ -67,7 +67,7 @@ namespace OpenBve.Graphics.Metal
 			}
 
 			ulong blockBytes = Math.Max(blockSize, (size + alignment + 65535) / 65536 * 65536);
-			IntPtr buffer = Mtl.Id(device.Device, selNewBuffer, blockBytes, Mtl.ResourceShared);
+			IntPtr buffer = Mtl.Id(device.Device, selNewBuffer, blockBytes, device.BufferOptions);
 			if (buffer == IntPtr.Zero)
 			{
 				throw new InvalidOperationException("Metal could not make a buffer of " + (blockBytes >> 20) + " MB");
@@ -93,6 +93,7 @@ namespace OpenBve.Graphics.Metal
 		internal void Write(int block, ulong offset, void* data, ulong bytes)
 		{
 			Buffer.MemoryCopy(data, (byte*)contents[block] + offset, bytes, bytes);
+			device.Modified(Buffers[block], offset, bytes);
 		}
 
 		internal string Describe()

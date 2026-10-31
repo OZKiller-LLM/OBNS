@@ -150,7 +150,7 @@ namespace OpenBve.Graphics.Metal
 			}
 
 			instance = world;
-			Log("OBNS Metal world layer on: " + device.Description + " (the world and cab layers, with shadows; shaders and pipelines made in " + world.scene.MadeIn.ToString("0") + " ms)");
+			Log("OBNS Metal world layer on: " + device.Description + (device.Managed ? ", managed memory" : "") + " (the world and cab layers, with shadows; shaders and pipelines made in " + world.scene.MadeIn.ToString("0") + " ms)");
 		}
 
 		public IWorldScene Scene => scene;

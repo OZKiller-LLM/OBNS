@@ -102,7 +102,7 @@ namespace OpenBve
 				}
 				else
 				{
-					tip.SetToolTip(comboboxObnsRenderer, "OpenGL draws everything: Metal is not supported yet on Intel's and AMD's GPUs.");
+					tip.SetToolTip(comboboxObnsRenderer, "OpenGL draws everything: Metal is not supported yet on Intel's, AMD's and NVIDIA's GPUs.");
 				}
 
 				comboboxObnsRenderer.SelectedIndex = System.Math.Max(obnsRendererKinds.IndexOf(ObnsOptions.Shown), 0);

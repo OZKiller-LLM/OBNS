@@ -114,12 +114,10 @@ pages list Sequoia as the newest, so Tahoe isn't confirmed for them.
 
 All of these defaults are assumed: OBNS has only been run on an M1, so no Intel or AMD GPU on macOS has been tested.
 
-**Why OpenGL on all Intel Macs for now:** our Metal layer was written for Apple silicon's unified memory.
-`MetalTextures.cs` and `MetalDevice.cs` ask for shared-storage textures, but Apple's documentation says shared
-resources exist only on integrated GPUs, that Intel Macs default to managed textures, and that choosing a mode by hand
-may not run on some hardware. Metal buffers on a discrete GPU would also sit in system memory, which is slower. So
-Metal is blocked on these GPUs (decided 2026-10-31); `OBNS_METAL=1` still tries it, for testing. Once a managed-memory
-path exists and has been measured, Metal is the likely default for the Metal 2 and newer rows.
+**Why OpenGL on all Intel Macs for now:** Metal has a path for these GPUs (managed memory, on the GPU OpenGL is on;
+`METAL.md`), but it hasn't been run on any of them. So Metal stays blocked on them until it has been (decided
+2026-10-31); `OBNS_METAL=1` tries it. Once measured, Metal is the likely default for the Metal 2 and newer rows, and
+Metal 1 GPUs and NVIDIA's are to be judged on their own numbers.
 
 On Macs with two GPUs, Metal's default device may not be the GPU OpenGL is on, which would mean copies between them.
 

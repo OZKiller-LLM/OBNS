@@ -23,8 +23,8 @@
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // OBNS: not an upstream file. The Metal world layer's textures (OBNS/METAL.md): the images of WorldTextures' copies, each
-// a Metal texture in shared memory (RGBA8; its levels made on every core), written directly (replaceRegion) while Metal
-// draws nothing, and bound one per draw.
+// a Metal texture in shared or managed memory (RGBA8; its levels made on every core), written directly (replaceRegion) while
+// Metal draws nothing, and bound one per draw.
 
 using System;
 using System.Collections.Generic;
@@ -86,7 +86,7 @@ namespace OpenBve.Graphics.Metal
 				IntPtr desc = Mtl.Id(Mtl.Class("MTLTextureDescriptor"), selTexture2D, Mtl.PixelRGBA8Unorm, entry.Width, entry.Height, (byte)0);
 				Mtl.Void(desc, selSetMipmapLevelCount, (ulong)entry.Levels);
 				Mtl.Void(desc, selSetUsage, Mtl.UsageShaderRead);
-				Mtl.Void(desc, selSetStorageMode, Mtl.StorageShared);
+				Mtl.Void(desc, selSetStorageMode, device.TextureStorage);
 				entry.Texture = Mtl.Id(device.Device, selNewTexture, desc);
 			}
 			finally

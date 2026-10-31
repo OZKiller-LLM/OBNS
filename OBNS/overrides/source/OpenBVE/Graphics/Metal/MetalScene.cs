@@ -84,7 +84,7 @@ namespace OpenBve.Graphics.Metal
 		private readonly Dictionary<int, IntPtr> depthStates = new Dictionary<int, IntPtr>();
 		private readonly IntPtr[] samplers = new IntPtr[4];
 
-		/// <summary>The records' buffers (frames, objects, draws, matrices): shared memory, written while Metal draws nothing.</summary>
+		/// <summary>The records' buffers (frames, objects, draws, matrices): shared or managed memory, written while Metal draws nothing.</summary>
 		private readonly IntPtr[] recordBuffers = new IntPtr[4];
 		private readonly IntPtr[] recordContents = new IntPtr[4];
 		private readonly long[] recordSizes = new long[4];
@@ -402,7 +402,7 @@ namespace OpenBve.Graphics.Metal
 			{
 				Mtl.Release(recordBuffers[which]);
 				long size = Math.Max(bytes + bytes / 2, 64L << 10);
-				recordBuffers[which] = Mtl.Id(device.Device, selNewBuffer, (ulong)size, Mtl.ResourceShared);
+				recordBuffers[which] = Mtl.Id(device.Device, selNewBuffer, (ulong)size, device.BufferOptions);
 				recordContents[which] = Mtl.Id(recordBuffers[which], selContents);
 				recordSizes[which] = size;
 			}
@@ -410,6 +410,7 @@ namespace OpenBve.Graphics.Metal
 			if (count > 0)
 			{
 				Buffer.MemoryCopy(data, (void*)recordContents[which], recordSizes[which], (long)count * stride);
+				device.Modified(recordBuffers[which], 0, (ulong)count * (ulong)stride);
 			}
 		}
 

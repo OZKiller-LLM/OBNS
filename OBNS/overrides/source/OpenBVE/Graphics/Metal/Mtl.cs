@@ -89,6 +89,7 @@ namespace OpenBve.Graphics.Metal
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, IntPtr a);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, IntPtr a, IntPtr b);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, ulong a);
+		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, ulong a, ulong b);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, byte a);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, float a);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, double a);
@@ -169,7 +170,9 @@ namespace OpenBve.Graphics.Metal
 		// --- Metal, IOSurface, CGL ---
 
 		[DllImport(MetalFramework)] internal static extern IntPtr MTLCreateSystemDefaultDevice();
+		[DllImport(MetalFramework)] internal static extern IntPtr MTLCopyAllDevices();
 		[DllImport(IOSurfaceFramework)] internal static extern IntPtr IOSurfaceCreate(IntPtr properties);
+		[DllImport(IOSurfaceFramework)] internal static extern ulong IOSurfaceAlignProperty(IntPtr property, ulong value);
 		[DllImport(CoreFoundation)] internal static extern void CFRelease(IntPtr obj);
 		[DllImport(OpenGLFramework)] internal static extern IntPtr CGLGetCurrentContext();
 		[DllImport(OpenGLFramework)] internal static extern int CGLTexImageIOSurface2D(IntPtr context, uint target, uint internalFormat, int width, int height, uint format, uint type, IntPtr surface, uint plane);
@@ -178,8 +181,8 @@ namespace OpenBve.Graphics.Metal
 		internal const ulong PixelRGBA8Unorm = 70, PixelBGRA8Unorm = 80, PixelR32Float = 55, PixelDepth32Float = 252;
 		// MTLTextureUsage, MTLStorageMode, MTLResourceOptions (storage mode << 4), MTLTextureType
 		internal const ulong UsageShaderRead = 1, UsageRenderTarget = 4;
-		internal const ulong StorageShared = 0, StoragePrivate = 2;
-		internal const ulong ResourceShared = 0, ResourcePrivate = 2 << 4;
+		internal const ulong StorageShared = 0, StorageManaged = 1, StoragePrivate = 2;
+		internal const ulong ResourceShared = 0, ResourceManaged = 1 << 4, ResourcePrivate = 2 << 4;
 		internal const ulong TextureType2DArray = 3;
 		// MTLLoadAction, MTLStoreAction, MTLPrimitiveType, MTLIndexType, MTLCullMode
 		internal const ulong LoadDontCare = 0, LoadClear = 2, StoreDontCare = 0, StoreStore = 1;

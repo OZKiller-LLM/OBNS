@@ -6,9 +6,30 @@ Metal on Apple silicon) draws the rest and lays them over its frame. It is the d
 in the options as "Metal", saved as `renderer = metal` in `obns.cfg`; where Metal cannot be used, OpenGL draws the world,
 as upstream.
 
-Only Apple's GPUs are supported (`GPU_SUPPORT.md`). The layer is written for their unified memory (shared textures) and
-hasn't been tested on Intel's or AMD's, so on an Intel Mac or a Hackintosh the option isn't offered, a saved choice isn't
-used, and OpenGL draws the world. `OBNS_METAL=1` still tries it, for testing.
+Only Apple's GPUs are supported so far (`GPU_SUPPORT.md`). There is a path for Intel's, AMD's and NVIDIA's GPUs (below), but
+it hasn't been run on any of them, so on an Intel Mac or a Hackintosh the option isn't offered, a saved choice isn't used,
+and OpenGL draws the world. `OBNS_METAL=1` tries it.
+
+## Intel Macs and Hackintoshes
+
+| | Apple's GPUs | Intel's, AMD's and NVIDIA's GPUs |
+| --- | --- | --- |
+| Device | the default one | the one OpenGL is on, by name (`MTLCopyAllDevices`; a Mac may have two GPUs, and images shared between them would be copied) |
+| Buffers (vertices, indices, records) | shared, written directly | managed, written directly with `didModifyRange:` after each write |
+| Textures | shared, by `replaceRegion` | managed, by `replaceRegion` (which tells the GPU itself) |
+| Images OpenGL sees | IOSurfaces, shared | IOSurfaces, in the mode Metal chooses for them |
+
+Rows of an IOSurface are aligned with `IOSurfaceAlignProperty` on every GPU. The start's self-test (Metal clears, OpenGL reads
+back) checks the path on the GPU it runs on; where it fails, OpenGL draws the world.
+
+With managed memory a discrete GPU keeps a second copy of textures and buffers in system memory. What the CPU writes each
+frame goes over the bus as a range, so the speed on these GPUs is to be measured; it may be lower than OpenGL's on some.
+
+`OBNS_METAL_MANAGED=1` uses managed buffers and textures on Apple's GPUs, where the calls are checked (with Metal's
+`MTL_DEBUG_LAYER=1`) but copy nothing: it can show the path is called correctly, not that it works on a discrete GPU.
+
+Before this can be offered, on one of each kind that can be had: an Intel GPU, an AMD GPU, an NVIDIA Kepler GPU (macOS 11 at
+most), with the self-test, a drive, shadows on High, and frame times against OpenGL's.
 
 ## What changes from Direct3D 11
 
@@ -40,3 +61,4 @@ used, and OpenGL draws the world. `OBNS_METAL=1` still tries it, for testing.
 | `OBNS_METAL_TINT=1` | its world image cleared to a faint green, not to nothing |
 | `OBNS_METAL_DEBUG=1`, `OBNS_METAL_WHITE=1`, `OBNS_METAL_NOMIPS=1` | as Direct3D 11's |
 | `OBNS_METAL_TEST=1` | at start, the Metal device and its images' path to OpenGL (a BGRA and an R32F image) checked and logged |
+| `OBNS_METAL_MANAGED=1` | managed buffers and textures on Apple's GPUs, for testing that path |

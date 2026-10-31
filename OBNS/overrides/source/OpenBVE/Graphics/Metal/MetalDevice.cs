@@ -37,7 +37,31 @@ namespace OpenBve.Graphics.Metal
 		internal IntPtr Queue { get; private set; }
 		internal string Description { get; private set; }
 
-		private static readonly IntPtr selName = Mtl.Sel("name"), selNewCommandQueue = Mtl.Sel("newCommandQueue"),
+		/// <summary>
+		/// Whether the CPU's writes go through managed memory, with the GPU told of each (Intel's, AMD's and NVIDIA's GPUs in
+		/// Macs, whose memory may be their own), rather than shared memory (Apple's). OBNS_METAL_MANAGED=1 chooses it on Apple's, for testing.
+		/// </summary>
+		internal bool Managed { get; private set; }
+
+		/// <summary>The options of a buffer the CPU writes.</summary>
+		internal ulong BufferOptions => Managed ? Mtl.ResourceManaged : Mtl.ResourceShared;
+
+		/// <summary>The storage of a texture the CPU writes (replaceRegion tells the GPU of the writes itself).</summary>
+		internal ulong TextureStorage => Managed ? Mtl.StorageManaged : Mtl.StorageShared;
+
+		/// <summary>Tells the GPU the CPU has written a range of a buffer; before a command buffer using it is committed.</summary>
+		internal void Modified(IntPtr buffer, ulong offset, ulong length)
+		{
+			if (Managed)
+			{
+				Mtl.Void(buffer, selDidModifyRange, offset, length);
+			}
+		}
+
+		private bool appleGpu;
+
+		private static readonly IntPtr selName = Mtl.Sel("name"), selNewCommandQueue = Mtl.Sel("newCommandQueue"), selDidModifyRange = Mtl.Sel("didModifyRange:"),
+			selCount = Mtl.Sel("count"),
 			selTexture2D = Mtl.Sel("texture2DDescriptorWithPixelFormat:width:height:mipmapped:"), selSetUsage = Mtl.Sel("setUsage:"),
 			selSetStorageMode = Mtl.Sel("setStorageMode:"), selNewTextureIOSurface = Mtl.Sel("newTextureWithDescriptor:iosurface:plane:"),
 			selCommandBuffer = Mtl.Sel("commandBuffer"), selRenderPassDescriptor = Mtl.Sel("renderPassDescriptor"),
@@ -126,14 +150,64 @@ namespace OpenBve.Graphics.Metal
 			}
 
 			Description = Mtl.Text(Mtl.Id(Device, selName));
+			appleGpu = IsAppleGpu(Device);
 			// OBNS_METAL=1 still tries it, for testing.
-			if (!IsAppleGpu(Device) && Environment.GetEnvironmentVariable("OBNS_METAL") != "1")
+			if (!appleGpu && Environment.GetEnvironmentVariable("OBNS_METAL") != "1")
 			{
-				return Description + ": Metal is not supported yet on Intel's and AMD's GPUs";
+				return Description + ": Metal is not supported yet on Intel's, AMD's and NVIDIA's GPUs";
+			}
+
+			Managed = !appleGpu || Environment.GetEnvironmentVariable("OBNS_METAL_MANAGED") == "1";
+			if (!appleGpu)
+			{
+				UseOpenGLsGpu();
 			}
 
 			Queue = Mtl.Id(Device, selNewCommandQueue);
 			return null;
+		}
+
+		/// <summary>A Mac's GPU as its OpenGL and Metal names have it: without the marks and OpenGL's "OpenGL Engine".</summary>
+		private static string PlainName(string name)
+		{
+			return (name ?? "").Replace("(R)", "").Replace("(TM)", "").Replace("OpenGL Engine", "").Replace("  ", " ").Trim().ToUpperInvariant();
+		}
+
+		/// <summary>
+		/// The device OpenGL is on, if it isn't the default one: a Mac may have two GPUs, and images shared between them would
+		/// be copied. The self-test still checks the path if no name matches (there, the default device stays).
+		/// </summary>
+		private void UseOpenGLsGpu()
+		{
+			string openGL = PlainName(GL.GetString(StringName.Renderer));
+			if (openGL.Length == 0)
+			{
+				return;
+			}
+
+			IntPtr all = Mtl.MTLCopyAllDevices();
+			try
+			{
+				ulong count = all == IntPtr.Zero ? 0 : Mtl.Number(all, selCount);
+				for (ulong i = 0; i < count; i++)
+				{
+					IntPtr candidate = Mtl.Id(all, selObjectAtIndex, i);
+					string name = PlainName(Mtl.Text(Mtl.Id(candidate, selName)));
+					if (name.Length > 0 && (openGL == name || openGL.Contains(name) || name.Contains(openGL)))
+					{
+						Mtl.Release(Device);
+						Device = Mtl.Retain(candidate);
+						Description = Mtl.Text(Mtl.Id(Device, selName));
+						return;
+					}
+				}
+
+				Description += " (OpenGL's GPU, " + openGL + ", not found by name)";
+			}
+			finally
+			{
+				Mtl.Release(all);
+			}
 		}
 
 		/// <summary>An image both APIs see: its IOSurface, Metal texture (a render target, read too) and OpenGL rectangle texture.</summary>
@@ -167,8 +241,12 @@ namespace OpenBve.Graphics.Metal
 			IntPtr pool = Mtl.objc_autoreleasePoolPush();
 			try
 			{
-				IntPtr properties = Mtl.Dictionary(new[] { "IOSurfaceWidth", "IOSurfaceHeight", "IOSurfaceBytesPerElement", "IOSurfacePixelFormat" },
-					new[] { (int)width, (int)height, 4, floatDepth ? Mtl.SurfaceR32Float : Mtl.SurfaceBGRA });
+				// Rows as the GPU needs them aligned (Intel's and AMD's are stricter than Apple's).
+				IntPtr bytesPerRowKey = Mtl.String("IOSurfaceBytesPerRow");
+				ulong bytesPerRow = Mtl.IOSurfaceAlignProperty(bytesPerRowKey, (ulong)width * 4);
+				Mtl.Release(bytesPerRowKey);
+				IntPtr properties = Mtl.Dictionary(new[] { "IOSurfaceWidth", "IOSurfaceHeight", "IOSurfaceBytesPerElement", "IOSurfaceBytesPerRow", "IOSurfacePixelFormat" },
+					new[] { (int)width, (int)height, 4, bytesPerRow != 0 ? (int)bytesPerRow : (int)((width * 4 + 255) / 256 * 256), floatDepth ? Mtl.SurfaceR32Float : Mtl.SurfaceBGRA });
 				image.Surface = Mtl.IOSurfaceCreate(properties);
 				if (image.Surface == IntPtr.Zero)
 				{
@@ -177,7 +255,12 @@ namespace OpenBve.Graphics.Metal
 
 				IntPtr desc = Mtl.Id(Mtl.Class("MTLTextureDescriptor"), selTexture2D, floatDepth ? Mtl.PixelR32Float : Mtl.PixelBGRA8Unorm, width, height, (byte)0);
 				Mtl.Void(desc, selSetUsage, Mtl.UsageRenderTarget | Mtl.UsageShaderRead);
-				Mtl.Void(desc, selSetStorageMode, Mtl.StorageShared);
+				// Elsewhere, the mode Metal chooses for an IOSurface's texture.
+				if (appleGpu)
+				{
+					Mtl.Void(desc, selSetStorageMode, Mtl.StorageShared);
+				}
+
 				image.Texture = Mtl.Id(Device, selNewTextureIOSurface, desc, image.Surface, 0UL);
 				if (image.Texture == IntPtr.Zero)
 				{
