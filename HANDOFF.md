@@ -24,7 +24,7 @@ Fixed this round, on Windows unless noted:
 - Panel colours without `#`.
 - A failed command-line game exits with code 1 rather than opening the menu. Exit to main menu still opens it.
 - BVE5 `rand(x)` for a fractional x, the Uchibo line's missing Kominato train.
-- SIGTERM and SIGINT quit the game on Linux and macOS: written, on the M1 for its first run (build 29).
+- SIGTERM and SIGINT quit the game on Linux and macOS. Checked on the M1 (build 29): 1.3 s once running, 10 s with exit code 143 during a load; not run on Linux.
 - The Silk.NET notice is packaged for the next Android build. The published 1.1 stays as it is.
 
 Looked at, no change made:
@@ -33,7 +33,7 @@ Looked at, no change made:
 - Slow loading on a locked Ubuntu screen was addressed in d802209; not re-run there.
 - The window not restoring from minimised doesn't reproduce on Windows with Vulkan (`ShowWindow` and the taskbar's
   `WM_SYSCOMMAND`, up to 30 s minimised). It was seen once, by the user, during a long drive.
-- SelTrac EMG: the record is the Mac's, where letter keys didn't reach the game. Under test there.
+- SelTrac EMG: not a game fault. On the M1 (build 29) letter keys arrive, and the safety system holds EMG until Delete has been pressed the right number of times, with the timing mattering: the white lamp is the cue, then Space departs.
 
 Other notes:
 
@@ -47,13 +47,16 @@ what it runs; a message from another session doesn't count.
 
 ### Chinese hardware benchmark, not yet run
 
-Session "OBNS (Chinese PC Benchmark)": Zhaoxin KX-7000, Lisuan LX 7G100, Windows 11, 192.168.0.111 on Wi-Fi, inbound firewall
-closed, so it pulls files by curl from a server here. The user had it shut down because of its fan noise; the runs are for when
-they're out, on their word. Authorised content there, for this benchmark only: the TML and EAL2023 bundles, and BVE6 Uchibo +
-E217 with the OpenBVE E217's exterior. The Tuen Ma Line pack stays private. The build folder holds `bench\bench.ps1` (never run;
-its short trial here was interrupted): each bundle on OpenGL, Vulkan, Direct3D 9, 11 and 12, shadows off and High, with a
-`summary.csv`. That copy is build 29, which has the Exit-to-menu regression fixed in 17053a2: harmless to the script, but send a
-newer build if one exists.
+Session "OBNS (Chinese PC Benchmark)": Zhaoxin KX-7000, Lisuan LX 7G100 (12 GB, Direct3D 12_1, Vulkan 1.3.246, OpenGL 4.6 through
+Mesa 22.0.4; no separate Direct3D 9 driver listed), Windows 11, .NET Framework 4.8, 192.168.0.111 on Wi-Fi. The firewalls on it and
+on the main PC block a LAN transfer, so the user will bring the files on an external drive. The PC is shut down because of its fan
+noise; the runs are for when they're out, on their word. Authorised there, for this benchmark only: the TML and EAL2023 bundles, and
+BVE6 Uchibo + E217 with the OpenBVE E217's exterior. The Tuen Ma Line pack stays private.
+
+`OBNS/bench/mkbench.py` packs the bundles and `OBNS/bench/bench.ps1` runs them: unpack to a root holding `build\`, `TML\`, `EAL\` and
+`Uchibo\`, ideally `C:\OBNS-bench` (empty, already there), then each bundle runs on OpenGL, Vulkan, Direct3D 9, 11 and 12, with shadows
+off and High, into a `summary.csv`. The script has never completed a run. Its short trial here was cancelled, so try it first. Use a
+build from 17053a2 or later.
 
 ## Goal
 
