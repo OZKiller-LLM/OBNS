@@ -65,7 +65,42 @@ namespace OpenBve {
 		internal static TrainManager TrainManager;
 
 		// --- functions ---
-		
+
+		/// <summary>
+		/// OBNS: SIGTERM and SIGINT quit the game on Linux and macOS, as the menu's quit does, or after 10 s if it is loading.
+		/// SDL2 turns them into a quit event that nothing reads, so the game went on running; it leaves them alone when a
+		/// handler is already there, so this is to be called before SDL2 starts. Mono.Posix is Mono's own, so it is looked up.
+		/// </summary>
+		private static void QuitOnSignals()
+		{
+			if (!CurrentHost.MonoRuntime || CurrentHost.Platform == HostPlatform.MicrosoftWindows)
+			{
+				return;
+			}
+
+			try
+			{
+				const string posix = ", Mono.Posix, Version=4.0.0.0, Culture=neutral, PublicKeyToken=0738eb9f132ed756";
+				Type signalType = Type.GetType("Mono.Unix.UnixSignal" + posix, true);
+				Type signumType = Type.GetType("Mono.Unix.Native.Signum" + posix, true);
+				Array signals = Array.CreateInstance(signalType, 2);
+				signals.SetValue(Activator.CreateInstance(signalType, Enum.Parse(signumType, "SIGTERM")), 0);
+				signals.SetValue(Activator.CreateInstance(signalType, Enum.Parse(signumType, "SIGINT")), 1);
+				System.Reflection.MethodInfo waitAny = signalType.GetMethod("WaitAny", new[] { signals.GetType() });
+				new System.Threading.Thread(() =>
+				{
+					waitAny.Invoke(null, new object[] { signals });
+					MainLoop.Quit = QuitMode.QuitProgram;
+					System.Threading.Thread.Sleep(10000);
+					Environment.Exit(143);
+				}) { IsBackground = true, Name = "OBNS signals" }.Start();
+			}
+			catch (Exception ex)
+			{
+				Console.Error.WriteLine("OBNS: SIGTERM and SIGINT won't quit the game: " + ex.Message);
+			}
+		}
+
 		/// <summary>Is executed when the program starts.</summary>
 		/// <param name="args">The command-line arguments.</param>
 		[STAThread]
@@ -82,6 +117,7 @@ namespace OpenBve {
 			{
 				// ignored
 			}
+			QuitOnSignals();
 			//Switch between SDL2 and native backends; use native backend by default
 			var options = new ToolkitOptions();
 			
