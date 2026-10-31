@@ -49,14 +49,15 @@ what it runs; a message from another session doesn't count.
 
 Session "OBNS (Chinese PC Benchmark)": Zhaoxin KX-7000, Lisuan LX 7G100 (12 GB, Direct3D 12_1, Vulkan 1.3.246, OpenGL 4.6 through
 Mesa 22.0.4; no separate Direct3D 9 driver listed), Windows 11, .NET Framework 4.8, 192.168.0.111 on Wi-Fi. The firewalls on it and
-on the main PC block a LAN transfer, so the user will bring the files on an external drive. The PC is shut down because of its fan
+on the main PC block a LAN transfer, so the files went onto the user's USB disk, `E:\OBNS-bench` on this PC (`READ ME.txt` and
+`SHA256.txt` there; delete the private `bench-tml.zip` from the disk once it is copied). The PC is shut down because of its fan
 noise; the runs are for when they're out, on their word. Authorised there, for this benchmark only: the TML and EAL2023 bundles, and
 BVE6 Uchibo + E217 with the OpenBVE E217's exterior. The Tuen Ma Line pack stays private.
 
 `OBNS/bench/mkbench.py` packs the bundles and `OBNS/bench/bench.ps1` runs them: unpack to a root holding `build\`, `TML\`, `EAL\` and
 `Uchibo\`, ideally `C:\OBNS-bench` (empty, already there), then each bundle runs on OpenGL, Vulkan, Direct3D 9, 11 and 12, with shadows
 off and High, into a `summary.csv`. The script has never completed a run. Its short trial here was cancelled, so try it first. Use a
-build from 17053a2 or later.
+build from 17053a2 or later; the one on the disk is.
 
 ## Goal
 
