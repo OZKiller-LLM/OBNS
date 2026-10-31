@@ -54,6 +54,9 @@ namespace OpenBve {
 		/// <summary>OBNS: whether the command line named the route and train, so that no menu came first.</summary>
 		private static bool startedFromCommandLine;
 
+		/// <summary>OBNS: whether the game ended on an exception (RestartArguments is then "", as the in-game menu's way back sets it; a failed load or window sets " ").</summary>
+		private static bool gameFailed;
+
 		internal static JoystickManager Joysticks;
 
 		internal static NewRenderer Renderer;
@@ -370,6 +373,7 @@ namespace OpenBve {
 					try {
 						MainLoop.StartLoopEx(result);
 					} catch (Exception ex) {
+						gameFailed = true;
 						bool found = false;
 						for (int i = 0; i < TrainManager.Trains.Count; i++) {
 							if (TrainManager.Trains[i] != null && TrainManager.Trains[i].Plugin != null) {
@@ -418,7 +422,7 @@ namespace OpenBve {
 			}
 			// OBNS: a game the command line asked for ends when it fails, with an exit code: upstream opened the main menu,
 			// which nothing had asked for. The in-game menu's way back to the main menu still goes there.
-			if (startedFromCommandLine && MainLoop.Quit != QuitMode.ExitToMenu && string.IsNullOrWhiteSpace(RestartArguments) && RestartArguments != null)
+			if (startedFromCommandLine && (gameFailed || RestartArguments == " "))
 			{
 				RestartArguments = null;
 				Environment.ExitCode = 1;
