@@ -51,6 +51,9 @@ namespace OpenBve {
 		/// <summary>If the program is to be restarted, this contains the command-line arguments that should be passed to the process, or a null reference otherwise.</summary>
 		internal static string RestartArguments;
 
+		/// <summary>OBNS: whether the command line named the route and train, so that no menu came first.</summary>
+		private static bool startedFromCommandLine;
+
 		internal static JoystickManager Joysticks;
 
 		internal static NewRenderer Renderer;
@@ -306,6 +309,7 @@ namespace OpenBve {
 				}
 			} else {
 				result.Start = true;
+				startedFromCommandLine = true;
 				//Apply translations
 				Translations.SetInGameLanguage(Translations.CurrentLanguageCode);
 			}
@@ -375,6 +379,14 @@ namespace OpenBve {
 					}
 				}
 				Deinitialize();
+			}
+			// OBNS: a game the command line asked for ends when it fails, with an exit code: upstream opened the main menu,
+			// which nothing had asked for. The in-game menu's way back to the main menu still goes there.
+			if (startedFromCommandLine && MainLoop.Quit != QuitMode.ExitToMenu && string.IsNullOrWhiteSpace(RestartArguments) && RestartArguments != null)
+			{
+				RestartArguments = null;
+				Environment.ExitCode = 1;
+				Console.Error.WriteLine("The game could not continue: see the crash log in " + FileSystem.SettingsFolder);
 			}
 			// --- restart the program if necessary ---
 			if (RestartArguments != null) {

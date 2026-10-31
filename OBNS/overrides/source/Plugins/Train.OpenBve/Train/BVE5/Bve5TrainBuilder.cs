@@ -164,7 +164,7 @@ namespace Train.OpenBve
 						break;
 				}
 
-				car.TractionModel = motor[i] ? (TractionModel)new BVEMotorCar(car, curves) : new BVETrailerCar(car);
+				car.TractionModel = motor[i] ? (TractionModel)new Bve5MotorCar(car, curves, power, brake) : new BVETrailerCar(car);
 				car.CarBrake.MainReservoir = new MainReservoir(p.CompressorLowerPressure, p.CompressorUpperPressure, 0.01, (p.BrakeSystem == Bve5BrakeSystem.Cl ? 0.25 : 0.075) / cars);
 				car.CarBrake.MainReservoir.Volume = 0.5;
 				car.CarBrake.EqualizingReservoir = new EqualizingReservoir(50000.0, 250000.0, 200000.0);

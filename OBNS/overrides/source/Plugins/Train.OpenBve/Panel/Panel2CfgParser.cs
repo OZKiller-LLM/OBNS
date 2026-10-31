@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using Formats.OpenBve;
 using LibRender2.Trains;
 using OpenBveApi.Colors;
@@ -103,6 +104,11 @@ namespace Train.OpenBve
 		private static string[] Bve5Lines(string fileName)
 		{
 			Bve5Text text = Bve5Text.Read(fileName);
+			for (int i = 0; i < text.Lines.Length; i++)
+			{
+				text.Lines[i] = Bve5Color.Replace(text.Lines[i], "$1#$2");
+			}
+
 			if (text.Kind == null)
 			{
 				return text.Lines;
@@ -113,6 +119,26 @@ namespace Train.OpenBve
 			lines[0] = string.Empty;
 			Array.Copy(text.Lines, 0, lines, 1, text.Lines.Length);
 			return lines;
+		}
+
+		/// <summary>OBNS: a colour written without its '#' (TransparentColor = 0000ff), which BVE5 takes and upstream rejects.</summary>
+		private static readonly Regex Bve5Color = new Regex(@"^(\s*\w*color\s*=\s*)([0-9a-f]{6}\s*)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+		/// <summary>OBNS: the index of a train's first motor car; the driver's car if it has none.</summary>
+		private static int FirstMotorCar(AbstractTrain train)
+		{
+			if (train is TrainBase trainBase)
+			{
+				for (int i = 0; i < trainBase.Cars.Length; i++)
+				{
+					if (trainBase.Cars[i].TractionModel.ProvidesPower)
+					{
+						return i;
+					}
+				}
+			}
+
+			return train.DriverCar;
 		}
 
 		/// <summary>OBNS: a value within limits; their midpoint where they are closer together than nothing.</summary>
@@ -951,6 +977,10 @@ namespace Train.OpenBve
 					break;
 				case Panel2Subject.ATC:
 					Code = "271 pluginstate";
+					break;
+				case Panel2Subject.Am:
+					// OBNS: BVE5's ammeter, the current of one motor car (Bve5MotorCar).
+					Code = FirstMotorCar(Train) + " ampsindex";
 					break;
 				case Panel2Subject.Klaxon:
 				case Panel2Subject.Horn:

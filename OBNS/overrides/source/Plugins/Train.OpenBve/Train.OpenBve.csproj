@@ -75,6 +75,7 @@
     <Compile Include="Train\BVE5\Bve5Vehicle.cs" />
     <Compile Include="Train\BVE5\Bve5Parameters.cs" />
     <Compile Include="Train\BVE5\Bve5Load.cs" />
+    <Compile Include="Train\BVE5\Bve5MotorCar.cs" />
     <Compile Include="Train\BVE5\Bve5Performance.cs" />
     <Compile Include="Train\BVE5\Bve5TrainBuilder.cs" />
     <Compile Include="Train\BVE5\Bve5MotorNoise.cs" />

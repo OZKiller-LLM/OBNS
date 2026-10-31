@@ -15,6 +15,9 @@
   <ItemGroup>
     <Compile Include="$(UpstreamSource)Plugins\Formats.OpenBve\**\*.cs" LinkBase="Formats.OpenBve" />
     <Compile Remove="$(UpstreamSource)Plugins\Formats.OpenBve\Properties\AssemblyInfo.cs" />
+    <!-- OBNS's copy, shared with the desktop build: BVE5's ammeter as a panel subject (OBNS/BVE5.md). -->
+    <Compile Remove="$(UpstreamSource)Plugins\Formats.OpenBve\Enums\Panel2\Panel2Subject.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Formats.OpenBve\Enums\Panel2\Panel2Subject.cs" Link="OBNS\Panel2Subject.cs" />
 
   </ItemGroup>
 
