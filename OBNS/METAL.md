@@ -27,6 +27,14 @@ frame goes over the bus as a range, so the speed on these GPUs is to be measured
 
 `OBNS_METAL_MANAGED=1` uses managed buffers and textures on Apple's GPUs, where the calls are checked (with Metal's
 `MTL_DEBUG_LAYER=1`) but copy nothing: it can show the path is called correctly, not that it works on a discrete GPU.
+Done on an M1 (build 28, Tuen Mun's exterior view, shadows on High): 24.4 fps normally (25.1 before the rows were aligned, within
+a run's noise, the same picture), 23.9 fps managed, the same picture, and no assertion under the validation layer in about
+5 minutes (standing still: the train didn't depart, so nothing was written while driving).
+
+The match by name could be made firmer where it matters, on a Mac with two GPUs: `CGLGetParameter` with
+`kCGLCPCurrentRendererID` (309) gives OpenGL's renderer, `CGLQueryRendererInfo` and `CGLDescribeRenderer` with `kCGLRPRendererID`
+(70) find it, and `kCGLRPRegistryIDLow` and `High` (140, 141; macOS 10.13) compare with `MTLDevice.registryID`. Left until
+there is such a Mac to run it on.
 
 Before this can be offered, on one of each kind that can be had: an Intel GPU, an AMD GPU, an NVIDIA Kepler GPU (macOS 11 at
 most), with the self-test, a drive, shadows on High, and frame times against OpenGL's. `mac/intel-mac-test.sh` runs the
