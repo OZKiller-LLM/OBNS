@@ -4,11 +4,56 @@ A working summary for whoever continues this port (human or AI). `PORTING.md` is
 design record (brought up to date 2026-09-26); this file is the short "where things stand and how
 to carry on".
 
-Last updated 2026-10-15 (1.1 released); the note on 1.2 below 2026-10-31.
+Last updated 2026-10-15 (1.1 released); the notes on 1.2 below 2026-11-01.
 
 1.2 is in progress on the `1.2` branch, not released. The repository now has three parts (`OpenBVE/` untouched,
 `Android/`, `OBNS/`); `OBNS/README.md` is the place to start for the plan and the desktop build, with `OBNS/VULKAN.md`,
-`OBNS/DIRECT3D.md`, `OBNS/METAL.md`, `OBNS/GLFORMS.md` and `OBNS/BVE5.md` for each part. What follows describes 1.1.
+`OBNS/DIRECT3D.md`, `OBNS/METAL.md`, `OBNS/GLFORMS.md`, `OBNS/BVE5.md` and `OBNS/GPU_SUPPORT.md` for each part. What follows
+the 1.2 section describes 1.1.
+
+## 1.2: where things stand (2026-11-01)
+
+Nothing on the `1.2` branch is pushed and no beta is built; both wait for the user's word. `RELEASE_NOTES.md` isn't started.
+Git shows 122 `Android/` files as modified: only their line endings differ, so stage named files, and for an `Android/` file
+stage the committed text plus the change rather than the working copy.
+
+Fixed this round, on Windows unless noted:
+
+- BVE5 `Subject = am` reads a motor car's current from the performance tables (`Bve5MotorCar`). Checked by logged values on the
+  205 series, not by eye: that train's table holds values under 1 A against a ±400 A gauge.
+- Panel colours without `#`.
+- A failed command-line game exits with code 1 rather than opening the menu. Exit to main menu still opens it.
+- BVE5 `rand(x)` for a fractional x, the Uchibo line's missing Kominato train.
+- SIGTERM and SIGINT quit the game on Linux and macOS: written, on the M1 for its first run (build 29).
+- The Silk.NET notice is packaged for the next Android build. The published 1.1 stays as it is.
+
+Looked at, no change made:
+
+- Android's "invalid stoi" messages are normal: the TIMS skips its IC card's comment lines by catching that exception.
+- Slow loading on a locked Ubuntu screen was addressed in d802209; not re-run there.
+- The window not restoring from minimised doesn't reproduce on Windows with Vulkan (`ShowWindow` and the taskbar's
+  `WM_SYSCOMMAND`, up to 30 s minimised). It was seen once, by the user, during a long drive.
+- SelTrac EMG: the record is the Mac's, where letter keys didn't reach the game. Under test there.
+
+Other notes:
+
+- A restart after Exit to main menu drops `/filesystem=`, so it opens the user's own settings, not the test folder (upstream's
+  behaviour; left).
+- Package creation in the OpenGL menu was checked as far as Windows' folder dialog, which automation can't fill.
+
+Test machines: the M1 Mac (session "OBNS (macOS Session / M1 Mac Mini)"), the Broadwell MacBook on Ubuntu (no heavy runs until
+the user has sorted its fan), the A36 (`RFCY31L7RNZ`), and a new one below. Each remote session needs its own user's approval for
+what it runs; a message from another session doesn't count.
+
+### Chinese hardware benchmark, not yet run
+
+Session "OBNS (Chinese PC Benchmark)": Zhaoxin KX-7000, Lisuan LX 7G100, Windows 11, 192.168.0.111 on Wi-Fi, inbound firewall
+closed, so it pulls files by curl from a server here. The user had it shut down because of its fan noise; the runs are for when
+they're out, on their word. Authorised content there, for this benchmark only: the TML and EAL2023 bundles, and BVE6 Uchibo +
+E217 with the OpenBVE E217's exterior. The Tuen Ma Line pack stays private. The build folder holds `bench\bench.ps1` (never run;
+its short trial here was interrupted): each bundle on OpenGL, Vulkan, Direct3D 9, 11 and 12, shadows off and High, with a
+`summary.csv`. That copy is build 29, which has the Exit-to-menu regression fixed in 17053a2: harmless to the script, but send a
+newer build if one exists.
 
 ## Goal
 

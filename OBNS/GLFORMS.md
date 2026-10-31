@@ -50,7 +50,8 @@ saved as menu.png twice a second: a capture of an OpenGL window from outside can
 
 - On a Mac: the window, fonts (Microsoft Sans Serif is replaced by the system's), Retina scaling and the Command key
   (taken as Control) are untested. To be checked on the Mac that runs the "TackSim Rinkin" session.
-- The Review page (needs a game played first), installing and creating packages, and the RailDriver calibration were
+- The Review page is checked (after a game, by Exit to main menu), and Create Package as far as Windows' folder dialog, which
+  automation can't fill. Finishing and installing a package, and the RailDriver calibration (it needs the hardware), were
   not exercised.
 - An input device plugin's settings window is a Windows Forms window of the plugin's own: shown on Windows; on macOS the
   menu says it cannot be shown.

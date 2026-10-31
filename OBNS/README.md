@@ -195,7 +195,7 @@ Checked (2026-10-29), on Windows with `OBNS_X86_PLUGINS=1`: the Tuen Ma Line's S
 DetailManager.dll with both modules (OS_Ats1, kcrwr_seltrac) in the layer; the TBL display and panel
 work, keys reach it, and a frame costs the same as with the proxy (9.2 against 9.3 ms). The plugin
 survey (`OpenBve.X86.Tests survey`, every 32-bit plugin in a library for a simulated minute) gives the
-same results before and after the layer was made to build for .NET Framework. Not yet run on Linux or
+same results before and after the layer was made to build for .NET Framework. Run on Linux since (Mono 6.8, below); not yet on
 macOS themselves.
 
 ### 5. The main menu on macOS: formMain drawn with OpenGL
