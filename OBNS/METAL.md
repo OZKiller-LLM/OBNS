@@ -29,7 +29,9 @@ frame goes over the bus as a range, so the speed on these GPUs is to be measured
 `MTL_DEBUG_LAYER=1`) but copy nothing: it can show the path is called correctly, not that it works on a discrete GPU.
 
 Before this can be offered, on one of each kind that can be had: an Intel GPU, an AMD GPU, an NVIDIA Kepler GPU (macOS 11 at
-most), with the self-test, a drive, shadows on High, and frame times against OpenGL's.
+most), with the self-test, a drive, shadows on High, and frame times against OpenGL's. `mac/intel-mac-test.sh` runs the
+comparison on such a Mac with nothing else installed but Mono and SDL2, for Macs too old for Claude's apps (macOS 12 and
+earlier), and leaves a report to send back. It doesn't drive; the AI driver needs a key, so a drive is still by hand.
 
 ## What changes from Direct3D 11
 
