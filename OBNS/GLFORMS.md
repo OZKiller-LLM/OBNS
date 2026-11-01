@@ -28,6 +28,14 @@ drawn with OpenGL in a window of its own, before the game's window opens, exactl
 - **Threads:** the menu's thread has a synchronization context, so formMain's background workers (the route preview)
   report back on it, and `Invoke`/`BeginInvoke` reach it from other threads.
 
+## Input device plugins
+
+Upstream's plugins (`DefaultDisplayPlugin`, `DenshaDeGoInput`, `KatoInput`, `SanYingInput`, `ZuikiInput`) have Windows Forms
+settings windows, which most of them build when they load. So `OBNS/glplugins.ps1`, run by `build-desktop.ps1`, also compiles
+each from its sources with `System.Windows.Forms` replaced by `OpenBve.GLForms`, into `Data\InputDevicePlugins.GL`, under the
+same file name and otherwise unchanged. Wherever the OpenGL or native menu is used, `InputDevicePlugin.VariantFolder` makes the
+game take those copies. `TableLayoutPanel` and `FlowLayoutPanel` (`GLForms/Layout.cs`) are there for ZUIKI's page.
+
 ## When
 
 - macOS, 64-bit: by default (`OBNS_GLFORMS=0`, or `/glmenu=true` on the command line, gives upstream's in-window menu).
@@ -53,8 +61,8 @@ saved as menu.png twice a second: a capture of an OpenGL window from outside can
 - The Review page is checked (after a game, by Exit to main menu), and Create Package as far as Windows' folder dialog, which
   automation can't fill. Finishing and installing a package, and the RailDriver calibration (it needs the hardware), were
   not exercised.
-- An input device plugin's settings window is a Windows Forms window of the plugin's own: shown on Windows; on macOS the
-  menu says it cannot be shown. To be fixed in 1.2.1 (see `HANDOFF.md`).
+- A third party's input device plugin has a Windows Forms settings window: shown on Windows; on macOS the menu says it
+  can't be shown.
 
 ## Native (V2): the Mac's own controls
 

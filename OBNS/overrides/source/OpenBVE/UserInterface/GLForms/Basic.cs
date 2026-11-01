@@ -644,6 +644,8 @@ namespace OpenBve.GLForms
 
 	public class GroupBox : Control
 	{
+		public AutoSizeMode AutoSizeMode { get; set; }
+
 		public GroupBox()
 		{
 			TabStop = false;
@@ -822,6 +824,29 @@ namespace OpenBve.GLForms
 		}
 
 		protected override Size DefaultSize => new Size(200, 100);
+
+		public AutoSizeMode AutoSizeMode { get; set; }
+
+		/// <summary>With AutoSize, as large as its children reach.</summary>
+		public override Size GetPreferredSize(Size proposedSize)
+		{
+			if (!AutoSize)
+			{
+				return Size;
+			}
+
+			int right = 0, bottom = 0;
+			foreach (Control child in Controls)
+			{
+				if (child.OwnVisible)
+				{
+					right = Math.Max(right, child.Right);
+					bottom = Math.Max(bottom, child.Bottom);
+				}
+			}
+
+			return right == 0 && bottom == 0 ? Size : new Size(right + Padding.Right, bottom + Padding.Bottom);
+		}
 
 		private BorderStyle borderStyle;
 

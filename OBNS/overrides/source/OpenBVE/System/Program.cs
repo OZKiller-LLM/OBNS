@@ -227,6 +227,13 @@ namespace OpenBve {
 			string file = Path.CombineFile(folder, "Default keyboard assignment.controls");
 			Interface.LoadControls(file, out Control[] controls);
 			Interface.AddControls(ref Interface.CurrentControls, controls);
+			// OBNS: where the OpenGL or native menu is used, the input device plugins built for it (OBNS/glplugins.ps1).
+			string menuForms = Environment.GetEnvironmentVariable("OBNS_GLFORMS");
+			if (menuForms == "1" || CurrentHost.Platform == HostPlatform.AppleOSX && IntPtr.Size != 4 && menuForms != "0" && !result.ExperimentalGLMenu)
+			{
+				InputDevicePlugin.VariantFolder = "InputDevicePlugins.GL";
+			}
+
 			InputDevicePlugin.LoadPlugins(Program.FileSystem);
 			
 			

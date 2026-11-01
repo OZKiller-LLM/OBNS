@@ -59,6 +59,9 @@ start. Its Vulkan device does offer `VK_KHR_external_memory_win32`, so the missi
 | Tuen Ma Line | Off | 641 s | 23 fps once settled | stationary | 2.0 GB |
 | Tuen Ma Line | High | 512 s | 17 fps once settled | stationary | 2.1 GB |
 
+- **These figures may be low:** later the same day the same build ran Uchibo at 81.3 fps with shadows off and 64.9 fps on High
+  (driving, 150 s). Swap time had fallen from about 4.5 ms to 0.4 ms a frame; the PC had rebooted in between, and the cause isn't
+  known. The East Rail and Tuen Ma Line figures weren't taken again.
 - **Stationary trains:** the bench's AI driver didn't move the two SelTrac trains, so their figures are at the first
   platform (the East Rail Line's Off run is almost certainly stationary, not proven). They aren't driving figures.
 - **Tuen Ma Line warm-up:** frames start near 800 ms and take about 100 s after loading to settle, while video memory

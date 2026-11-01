@@ -322,6 +322,7 @@ namespace OpenBve.GLForms
 			Owner = owner as Form;
 			Modal = true;
 			dialogResult = DialogResult.None;
+			Visible = true; // as Windows Forms': a form hidden earlier (SanYingInput hides its own when it loads) shows again
 			IsOpen = true;
 			Host.RunModal(this);
 			IsOpen = false;
@@ -347,6 +348,7 @@ namespace OpenBve.GLForms
 				return;
 			}
 
+			Visible = true;
 			if (Host.NativeActive)
 			{
 				IsOpen = true;

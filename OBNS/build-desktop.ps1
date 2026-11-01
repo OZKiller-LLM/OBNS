@@ -135,6 +135,9 @@ foreach ($copy in 'OpenBve-32.exe', 'RouteViewer-32.exe') {
     if ((Get-Item (Join-Path $output $copy)).Length -eq 0) { throw "$copy was not written" }
 }
 
+# The input device plugins for the OpenGL and native menus, against the program just built (OBNS/GLFORMS.md).
+& (Join-Path $PSScriptRoot 'glplugins.ps1') -Mirror $mirror -Output (Join-Path $build 'glplugins') -Program $output -Configuration $Configuration
+
 $exe = Join-Path $output 'OpenBve.exe'
 
 Write-Host "Built: $exe"

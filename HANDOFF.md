@@ -56,24 +56,27 @@ Other notes:
   behaviour; left).
 - Package creation in the OpenGL menu was checked as far as Windows' folder dialog, which automation can't fill.
 
-Release 1.21 (user, 2026-11-01; the tagged release notes and the release page call it 1.2.1). The later roadmap: 1.22 BVE6 testing, 1.3 renderers without OpenGL, 1.31 Windows ARM64, 1.31N Switch NRO.
+Release 1.21 is on branch `1.21` (user, 2026-11-01; the tagged release notes and the release page call it 1.2.1). The later roadmap:
+1.22 BVE6 testing, 1.3 renderers without OpenGL, 1.31 Windows ARM64, 1.31N Switch NRO.
 
-- Input device plugins' settings windows on macOS. All five of upstream's (`DenshaDeGoInput`, `ZuikiInput`, `KatoInput`,
-  `SanYingInput`, `DefaultDisplayPlugin`) are Windows Forms windows opened through `IInputDevice.Config(IWin32Window)`, so
-  `GLForms/Interop.cs` only shows a message saying they can't be shown, and their settings can't be changed in the program there.
-  Likely fix: compile upstream's forms against the GLForms controls, as `glforms.ps1` does for formMain, which first needs those
-  controls reachable from the plugins (they're in `OpenBve.exe` today). Third-party plugins built against Windows Forms need their
-  own answer. Also check on a Mac whether a plugin that builds its form at load, rather than at `Config`, loads at all.
+Done for 1.21, on Windows unless noted; nothing of it is pushed:
 
-- 64-bit train plugins on Android. A train with only an `Ats64` plugin needs an x64 layer, as the x86 layer runs 32-bit plugins only
-  (`OBNS/BVE5.md`). Linux and macOS look to have the same gap: `Win64Plugin` loads the DLL directly, which only Windows can do, and
-  `OBNS/shared/OpenBve.X86` shows no x64 support. Not tested there; check it when this is picked up, so one x64 layer can serve all three.
+- 64-bit train plugins in the plugin layer (`Cpu64`, `Msvcp64`, `Cxx64`; `OBNS/README.md`). The E217's x64 set has no differences from
+  itself loaded natively or from its x86 build over 6000 frames, IC card and 57 caught exceptions included, and it runs on Uchibo in the
+  game (`OBNS_X86_PLUGINS=1 OBNS_ATS64=1`). Android compiles with it. Not run yet on Linux, macOS or a phone. A C runtime built into the
+  plugin: `Index_64` and `dgo_ac_x64` run, a throw through their own frame handlers isn't tested, and `DetailManager_.dll` stops at
+  `CreatePipe` (it starts a process, which the layer doesn't do).
+- Input device plugins' settings on the OpenGL and native menus (`OBNS/glplugins.ps1`, `GLForms/Layout.cs`; `OBNS/GLFORMS.md`). All five
+  open and work with `OBNS_GLFORMS=1` here, KATO's save checked. Not run yet on a Mac. Not compared with Windows Forms by eye: ZUIKI's
+  page shows one column of buttons there (294-pixel panels, 603 wide with a scroll bar).
+- `Win32PluginProxy.exe` no longer goes through the shell, so a download-marked copy loads a 32-bit plugin without a security prompt.
 
-- The Lisuan's Direct3D 11 readback patch, from the Chinese PC session (`obns-d3d11-readback.patch`, on bfa4c04, sha256 939a83f3...c7a0): runs only when
-  Direct3D 11 is chosen by name, 2 to 3 times slower than OpenGL there, not called stable (one 0x7F with temporary code, cause unknown). Not received yet;
-  regression-check it on the RTX 2060 before merging. Vulkan readback isn't built, and is the user's call.
-- `OBNS/GPU_SUPPORT.md`'s Lisuan figures may be low: the same build later ran Uchibo at 81 fps rather than 51 to 53 (swap time fell; cause unknown).
-- `Win32PluginProxy.exe` started through the shell, which is why a downloaded zip gets a security prompt (`ProxyPlugin.cs`).
+Still to do for 1.21:
+
+- The Lisuan's Direct3D 11 readback patch from the Chinese PC session (`obns-d3d11-readback.patch`, on bfa4c04, sha256 939a83f3...c7a0): only
+  when Direct3D 11 is chosen by name, 2 to 3 times slower than OpenGL there, not called stable (one 0x7F with temporary code, cause
+  unknown). Not received yet; regression-check it on the RTX 2060 before merging. Vulkan readback isn't built, and is the user's call.
+- `RELEASE_NOTES.md`'s 1.21 section.
 - The upstream `Track[...].Position(x, y, radius)` gap and the BVE6 cab gauges belong to 1.22.
 
 Test machines: the M1 Mac (session "OBNS (macOS Session / M1 Mac Mini)"), the Broadwell MacBook on Ubuntu (no heavy runs until
