@@ -13,7 +13,7 @@ the 1.2 section describes 1.1.
 
 ## 1.2: where things stand (2026-11-01)
 
-The `1.2` branch is pushed to origin, by the user's word once the benchmark ended without a major issue. No tag and no merge to `main`. Commits after that first push aren't pushed yet.
+The `1.2` branch is pushed to origin, by the user's word once the benchmark ended without a major issue. Released as tag `v1.2` by the user's word, with no merge to `main`. The next Android build must use `-PortRelease 5` or higher.
 
 Release files, for version 1.14.1.2-OBNS and Android 1.14.1.2-android.4:
 
@@ -25,6 +25,9 @@ Release files, for version 1.14.1.2-OBNS and Android 1.14.1.2-android.4:
   notarization would remove that step. A plain copy of `Contents/Resources` run through the launcher's environment
   was tested with new settings: native menu, SDL2 picked by itself, TML on Metal, no errors.
 - Android: checked with `-DebugKey`; the user signs it with `Android/release.ps1 -PortRelease 4` and types the password at its prompt.
+  Signed by the user 2026-11-01: `dist/1.14.1.2-android.4`, the same certificate as 1.0 and 1.1; not run on a phone in this signed form.
+- Windows, from a downloaded zip: `ProxyPlugin.cs` starts `Win32PluginProxy.exe` through the shell, so a zip unpacked with its download mark
+  asks about it when a 32-bit plugin loads (checked with marks added by hand). The release page says to unblock the zip. Worth fixing for 1.2.1.
 
 Git shows 122 `Android/` files as modified: only their line endings differ, so stage named files, and for an `Android/` file
 stage the committed text plus the change rather than the working copy.
