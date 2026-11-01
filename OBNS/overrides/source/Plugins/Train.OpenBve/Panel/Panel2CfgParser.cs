@@ -186,7 +186,7 @@ namespace Train.OpenBve
 					Block.TryGetColor24(Panel2Key.TransparentColor, ref panelTransparentColor);
 					Block.TryGetVector2(Panel2Key.Center, ',', ref PanelCenter);
 					Block.TryGetVector2(Panel2Key.Origin, ',', ref PanelOrigin);
-					// OBNS: read for BVE6's cabs. The tilted needles below have the camera's own perspective, as Perspective's default of 1 does.
+					// OBNS: read for BVE6's cabs, not applied: tilted needles stay flat in their layers (see TiltNeedle). On a gauge this small, perspective moves little.
 					Block.TryGetValue(Panel2Key.Perspective, ref PanelPerspective);
 					ApplyGlobalHacks();
 					if (bve5Rules)
@@ -1025,21 +1025,16 @@ namespace Train.OpenBve
 			}
 		}
 
-		/// <summary>OBNS: lays a needle in a plane tilted by a pitch (upward positive) and a yaw (leftward positive), and turns it about that plane's normal.</summary>
+		/// <summary>
+		/// OBNS: a needle turning in a plane tilted by a pitch (upward positive) and a yaw (leftward positive), as seen from in front:
+		/// a flat needle turns as usual, then is foreshortened as that plane is. It keeps to its layer, so its order against
+		/// the panel's other layers doesn't change with its angle, as it would if it really left the plane.
+		/// </summary>
 		private static void TiltNeedle(AnimatedObject Needle, double Pitch, double Yaw)
 		{
 			double sa = Math.Sin(Pitch), ca = Math.Cos(Pitch), sb = Math.Sin(Yaw), cb = Math.Cos(Yaw);
-			Vector3 Right = new Vector3(cb, 0.0, -sb);
-			Vector3 Up = new Vector3(sa * sb, ca, sa * cb);
-			foreach (VertexTemplate Vertex in Needle.States[0].Prototype.Mesh.Vertices)
-			{
-				double x = Vertex.Coordinates.X, y = Vertex.Coordinates.Y;
-				Vertex.Coordinates = x * Right + y * Up;
-			}
-
-			Needle.RotateZDirection = new Vector3(-sb * ca, sa, -ca * cb);
-			Needle.RotateXDirection = Right;
-			Needle.RotateYDirection = Vector3.Cross(Needle.RotateZDirection, Needle.RotateXDirection);
+			Matrix4D Foreshortening = new Matrix4D(new Vector4(cb, 0.0, 0.0, 0.0), new Vector4(sa * sb, ca, 0.0, 0.0), new Vector4(0.0, 0.0, 1.0, 0.0), new Vector4(0.0, 0.0, 0.0, 1.0));
+			Needle.States[0].Translation = Foreshortening * Needle.States[0].Translation;
 		}
 
 		internal int CreateElement(ref ElementsGroup Group, double Left, double Top, double Width, double Height, Vector2 RelativeRotationCenter, double Distance, double PanelResolution, double PanelBottom, Vector2 PanelCenter, Vector3 Driver, Texture DaytimeTexture, Texture NighttimeTexture, Color32 Color, bool AddStateToLastElement = false)

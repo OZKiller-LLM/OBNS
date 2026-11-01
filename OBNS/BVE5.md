@@ -60,9 +60,9 @@ relative to the file. The vehicle performance file and the motor noise file have
   (upstream: 1 only; KO-ATC's speed-code lamps take 2, 4, 8 ...); `#` comments; a colour without its `#`
   (`TransparentColor = 0000ff`). A BVE5 cab ported to a BVE4 train's panel2.cfg asks for the same with
   `Bve5 = true` in `[This]` (an OBNS key; upstream reports it as unknown and reads the panel as before).
-- **BVE6's panel keys**: a needle's `Tilt = pitch, yaw` lays it in a plane at that angle, for a gauge printed at one, and turns
-  it about that plane's normal; `StopPin` is upstream's `Backstop`. `Perspective` in `[This]` is read but not applied: tilted needles
-  get the camera's own perspective, as its default of 1 would. Checked on the E217's speedometer against its printed scale at rest and at three speeds.
+- **BVE6's panel keys**: a needle's `Tilt = pitch, yaw` foreshortens it as a plane at that angle would, for a gauge printed at one,
+  keeping it flat in its layer so that its order against other layers stays the same at any angle; `StopPin` is upstream's `Backstop`.
+  `Perspective` in `[This]` is read but not applied, as a flat needle has no depth for it to act on.
 - **Ammeter**: `Subject = am`, through upstream's `ampsindex`, is one motor car's current (`Bve5MotorCar`):
   the `[Power]` `Current` table's for the step the controller settles on, following the force as it builds up,
   and while the motors brake the `[Brake]` table's as a negative current, by the share of the electric
