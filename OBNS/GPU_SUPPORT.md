@@ -40,9 +40,33 @@ need `WGL_NV_DX_interop2`. Both are checked at start.
 | AMD GCN 1 to 3 (HD 7000, R7, R9; driver frozen at 22.6.1) | 11_1 to 12_0 | yes | yes | yes, version not confirmed | Vulkan | assumed |
 | AMD Polaris, Vega, RDNA | 12_0 to 12_2 | yes | yes | yes | Vulkan | assumed |
 | Qualcomm Adreno X (ARM64) | 12_1 or newer | yes | only through Microsoft's Compatibility Pack | 1.3 or newer | OpenGL | assumed |
+| Lisuan LX 7G100 | 12_1 | yes | 4.6, through Mesa 22.0.4 | 1.3 | OpenGL, by fallback | measured |
 
 Measured on the RTX 2060 SUPER (Tuen Ma Line, exterior view, shadows 2048), frame time: Vulkan 14.6 ms, Direct3D 12
 15.7 ms, Direct3D 11 16.8 ms, Direct3D 9 27.4 ms, OpenGL 29 to 37 ms.
+
+Measured on the Lisuan LX 7G100 with a Zhaoxin KX-7000 (2026-11-01; 12 GB, 32 GB RAM, Windows 11, 1920x1080, vsync off,
+`OBNS/bench/bench.ps1`). All 14 runs drew with OpenGL, with no crashes or display driver events. Its OpenGL has no
+extension with memory_object, semaphore or DX_interop in its name, so Vulkan and Direct3D 9, 11 and 12 all fell back at
+start. Its Vulkan device does offer `VK_KHR_external_memory_win32`, so the missing part is on OpenGL's side.
+
+| Bundle | Shadows | Load | Frame rate | Train | Memory |
+| --- | --- | --- | --- | --- | --- |
+| BVE6 Uchibo + E217 | Off | 60 to 62 s | 47 to 50 fps standing, 51 to 53 fps driving | moving | 0.6 GB |
+| BVE6 Uchibo + E217 | High | 60 to 62 s | 38 to 39 fps standing, 42 to 43 fps driving | moving | 0.6 GB |
+| East Rail Line 2023 | Off | 173 s | 57 to 60 fps | stationary | 0.6 GB |
+| East Rail Line 2023 | High | 155 s | 50 fps | stationary | 0.6 GB |
+| Tuen Ma Line | Off | 641 s | 23 fps once settled | stationary | 2.0 GB |
+| Tuen Ma Line | High | 512 s | 17 fps once settled | stationary | 2.1 GB |
+
+- **Stationary trains:** the bench's AI driver didn't move the two SelTrac trains, so their figures are at the first
+  platform (the East Rail Line's Off run is almost certainly stationary, not proven). They aren't driving figures.
+- **Tuen Ma Line warm-up:** frames start near 800 ms and take about 100 s after loading to settle, while video memory
+  fills and GPU time stays level. That looks like CPU-side or upload work; the cause isn't established.
+- **Bottleneck:** frame time looks CPU or driver bound, as GPU time is small (about 2.3 ms in a 22 ms frame on Uchibo with
+  shadows High, 4.8 ms in 57 ms on the Tuen Ma Line).
+- **Worst frames:** without warm-up and the bench's own 60 s snapshots, 38 ms on the East Rail Line and 80 to 114 ms on
+  the Tuen Ma Line. These weren't worked out for Uchibo. The 100 ms and larger spikes in `summary.csv` are mostly those snapshots.
 
 - **GPUs without Vulkan:** Direct3D 11 may beat OpenGL on them, but needs measuring before it could become the default.
   Reports on Intel's `WGL_NV_DX_interop2` are mixed, and some are old.

@@ -13,7 +13,7 @@ the 1.2 section describes 1.1.
 
 ## 1.2: where things stand (2026-11-01)
 
-Nothing on the `1.2` branch is pushed and no beta is built; both wait for the user's word. `RELEASE_NOTES.md` isn't started.
+The `1.2` branch is pushed to origin, by the user's word once the benchmark ended without a major issue. No tag and no merge to `main`. Next: the release files (Windows zip, Ubuntu deb, macOS dmg, Android signed by the user) and `RELEASE_NOTES.md`, which isn't started.
 Git shows 122 `Android/` files as modified: only their line endings differ, so stage named files, and for an `Android/` file
 stage the committed text plus the change rather than the working copy.
 
@@ -41,23 +41,36 @@ Other notes:
   behaviour; left).
 - Package creation in the OpenGL menu was checked as far as Windows' folder dialog, which automation can't fill.
 
+The basis of release 1.2.1 (user, 2026-11-01), after the 1.2 push and release files; known limitations in 1.2 until then:
+
+- Input device plugins' settings windows on macOS. All five of upstream's (`DenshaDeGoInput`, `ZuikiInput`, `KatoInput`,
+  `SanYingInput`, `DefaultDisplayPlugin`) are Windows Forms windows opened through `IInputDevice.Config(IWin32Window)`, so
+  `GLForms/Interop.cs` only shows a message saying they can't be shown, and their settings can't be changed in the program there.
+  Likely fix: compile upstream's forms against the GLForms controls, as `glforms.ps1` does for formMain, which first needs those
+  controls reachable from the plugins (they're in `OpenBve.exe` today). Third-party plugins built against Windows Forms need their
+  own answer. Also check on a Mac whether a plugin that builds its form at load, rather than at `Config`, loads at all.
+
+- 64-bit train plugins on Android. A train with only an `Ats64` plugin needs an x64 layer, as the x86 layer runs 32-bit plugins only
+  (`OBNS/BVE5.md`). Linux and macOS look to have the same gap: `Win64Plugin` loads the DLL directly, which only Windows can do, and
+  `OBNS/shared/OpenBve.X86` shows no x64 support. Not tested there; check it when this is picked up, so one x64 layer can serve all three.
+
 Test machines: the M1 Mac (session "OBNS (macOS Session / M1 Mac Mini)"), the Broadwell MacBook on Ubuntu (no heavy runs until
 the user has sorted its fan), the A36 (`RFCY31L7RNZ`), and a new one below. Each remote session needs its own user's approval for
 what it runs; a message from another session doesn't count.
 
-### Chinese hardware benchmark, not yet run
+### Chinese hardware benchmark, run 2026-11-01
 
-Session "OBNS (Chinese PC Benchmark)": Zhaoxin KX-7000, Lisuan LX 7G100 (12 GB, Direct3D 12_1, Vulkan 1.3.246, OpenGL 4.6 through
-Mesa 22.0.4; no separate Direct3D 9 driver listed), Windows 11, .NET Framework 4.8, 192.168.0.111 on Wi-Fi. The firewalls on it and
-on the main PC block a LAN transfer, so the files went onto the user's USB disk, `E:\OBNS-bench` on this PC (`READ ME.txt` and
-`SHA256.txt` there; delete the private `bench-tml.zip` from the disk once it is copied). The PC is shut down because of its fan
-noise; the runs are for when they're out, on their word. Authorised there, for this benchmark only: the TML and EAL2023 bundles, and
-BVE6 Uchibo + E217 with the OpenBVE E217's exterior. The Tuen Ma Line pack stays private.
+Session "OBNS (Chinese PC Session)": Zhaoxin KX-7000, Lisuan LX 7G100, Windows 11, .NET Framework 4.8. 14 runs, no crashes or display
+driver events; the figures are in `OBNS/GPU_SUPPORT.md`. Every run drew with OpenGL, because that GPU's OpenGL has no way to import
+images from Vulkan or Direct3D, so the renderers couldn't be compared. EAL and TML ran on OpenGL only for that reason.
 
-`OBNS/bench/mkbench.py` packs the bundles and `OBNS/bench/bench.ps1` runs them: unpack to a root holding `build\`, `TML\`, `EAL\` and
-`Uchibo\`, ideally `C:\OBNS-bench` (empty, already there), then each bundle runs on OpenGL, Vulkan, Direct3D 9, 11 and 12, with shadows
-off and High, into a `summary.csv`. The script has never completed a run. Its short trial here was cancelled, so try it first. Use a
-build from 17053a2 or later; the one on the disk is.
+- EAL's and TML's trains didn't move under the bench's AI driver (F, then Ctrl+A), so they have no driving figures. Both are SelTrac
+  trains, which need their start sequence (see the R-Train's below); that's the likely cause, not tested.
+- `OBNS/bench/bench.ps1`, to fix before it's used again: its 60 s snapshots cause most of the worst frames in `summary.csv`; the first
+  stats window's worst is only the end of the load; `status` matches normal frame stats lines on renderers other than OpenGL;
+  comma lists don't survive `powershell -File`.
+- Still on that PC, in `C:\OBNS-Bench`, until the user says: the zips, the unpacked content and the results. TML's are private. So is
+  `bench-tml.zip` on the user's USB disk (`E:\OBNS-bench` here), to be deleted once it isn't needed.
 
 ## Goal
 

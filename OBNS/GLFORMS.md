@@ -54,7 +54,7 @@ saved as menu.png twice a second: a capture of an OpenGL window from outside can
   automation can't fill. Finishing and installing a package, and the RailDriver calibration (it needs the hardware), were
   not exercised.
 - An input device plugin's settings window is a Windows Forms window of the plugin's own: shown on Windows; on macOS the
-  menu says it cannot be shown.
+  menu says it cannot be shown. To be fixed in 1.2.1 (see `HANDOFF.md`).
 
 ## Native (V2): the Mac's own controls
 
