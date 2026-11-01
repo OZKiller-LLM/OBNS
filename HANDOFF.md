@@ -13,7 +13,17 @@ the 1.2 section describes 1.1.
 
 ## 1.2: where things stand (2026-11-01)
 
-The `1.2` branch is pushed to origin, by the user's word once the benchmark ended without a major issue. No tag and no merge to `main`. Next: the release files (Windows zip, Ubuntu deb, macOS dmg, Android signed by the user) and `RELEASE_NOTES.md`, which isn't started.
+The `1.2` branch is pushed to origin, by the user's word once the benchmark ended without a major issue. No tag and no merge to `main`. Commits after that first push aren't pushed yet.
+
+Release files, for version 1.14.1.2-OBNS and Android 1.14.1.2-android.4:
+
+- Windows zip: `OBNS/build-desktop.ps1 -Clean -Package`; run from the zip on a real route (Uchibo, Vulkan).
+- Ubuntu deb: `OBNS/packaging/make-deb.py`; its contents are checked, but it hasn't been installed on Ubuntu (that needs root on the
+  test laptop, whose session is offline).
+- macOS: `OBNS/packaging/mac/make-app.sh`, run on the M1. Apple silicon now picks SDL2 by itself rather than needing
+  `preferNativeBackend = false`; that's unrun until the Mac builds it.
+- Android: checked with `-DebugKey`; the user signs it with `Android/release.ps1 -PortRelease 4` and types the password at its prompt.
+
 Git shows 122 `Android/` files as modified: only their line endings differ, so stage named files, and for an `Android/` file
 stage the committed text plus the change rather than the working copy.
 

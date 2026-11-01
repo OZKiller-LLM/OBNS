@@ -1,5 +1,44 @@
 # OpenBVE for Android — release notes
 
+## 1.2 (1.14.1.2-android.4; desktop 1.14.1.2-OBNS) — BVE5 trains, and Windows, Ubuntu and macOS
+
+### Android
+
+- **Upstream OpenBVE 1.14.1.2,** with the in-game commands Android didn't have: headlights, pantographs, breaker, sanders,
+  gears, uncoupling, time acceleration, mute, head-out views, the switch menu, axes and debug views. Motion blur still needs
+  OpenGL ES or Vulkan through ANGLE.
+- **BVE5 trains and their safety plugins:** vehicle, parameters, performance tables, panel, sound and motor noise files.
+  32-bit plugins run in the x86 layer.
+- **BVE5 routes:** `rand(x)` with a fractional x works, so the Uchibo line gains its missing Kominato train.
+- **BVE5 panels:** the `am` subject (the ammeter) and colours written without `#` now work.
+
+### Desktop (new)
+
+The same train and plugin support, on upstream's own program and menu, as a build separate from upstream's:
+
+| | Windows x64 | Ubuntu x86-64 | macOS |
+|---|---|---|---|
+| File | `OpenBVE-1.14.1.2-OBNS-win-x64.zip` | `OpenBVE-1.14.1.2-OBNS.deb` | `OpenBVE-1.14.1.2-OBNS.dmg` |
+| Renderers | OpenGL, Vulkan, Direct3D 9, 11 and 12 | OpenGL, Vulkan | OpenGL, Metal (Apple silicon) |
+| Needs | .NET Framework 4.8 | Mono and the rest, installed by the package | Mono, `mono-libgdiplus` and SDL2 (`brew install mono mono-libgdiplus sdl2`) |
+
+- **Renderers:** each one draws the world while OpenGL draws the rest of the frame, so a GPU also needs a way to share images
+  with OpenGL. Without one the game falls back to OpenGL and says why in the options. `OBNS/GPU_SUPPORT.md` lists the defaults.
+- **Plugins on Ubuntu and macOS:** 32-bit Windows train plugins run in the x86 layer.
+- **macOS menu:** the Windows menu's pages and layout, with the Mac's own controls.
+- **Performance:** per-frame updates on all cores and fewer draw calls, with shadows on every renderer.
+
+### Known limitations
+
+- **macOS input plugins:** their settings windows can't open, so their settings can't be changed in the program. To be fixed in 1.2.1.
+- **64-bit train plugins:** a train with only an `Ats64` plugin has no working safety plugin on Android, and probably none on
+  Ubuntu or macOS, which haven't been tested with one. To be fixed in 1.2.1.
+- **BVE5 plugins that read BVE5's memory** (AtsEx and the like) can't work outside BVE5.
+- **Some BVE5 map 2.02 statements** are rejected by the parser, such as `Track[...].Position(x, y, radius)`; such routes load without them.
+- **macOS:** the app is ad-hoc signed, so Gatekeeper warns when it's first opened. Metal is off on Intel, AMD and NVIDIA Macs,
+  which haven't been tested, and they use OpenGL.
+- **Package creation in the macOS menu and RailDriver calibration** haven't been tested through to the end.
+
 ## 1.1 (1.14.0.3-android.3) — native Vulkan renderer
 
 ### Native Vulkan renderer, now the default

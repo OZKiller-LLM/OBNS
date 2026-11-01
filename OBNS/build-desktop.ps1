@@ -70,10 +70,14 @@ if (Test-Path $overrides) {
 
 # 3. MSBuild: Visual Studio's if it has the C# compiler, else the .NET SDK's.
 $msbuild = $null
+$restorer = $null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (Test-Path $vswhere) {
     # (No -requires: a Community install may not list the MSBuild component, though it has MSBuild.)
     $candidate = & $vswhere -latest -products * -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+    # Restoring upstream's packages.config files needs Visual Studio's MSBuild, compiler or not: the .NET SDK's reports
+    # nothing to restore, and a build from nothing then fails on the missing packages.
+    $restorer = $candidate
     if ($candidate -and (Test-Path (Join-Path (Split-Path $candidate) 'Roslyn\Microsoft.CSharp.Core.targets'))) {
         $msbuild = $candidate
     }
@@ -92,7 +96,8 @@ if ($msbuild) { Write-Host "MSBuild: $msbuild" } else { Write-Host 'MSBuild: the
 $solution = Join-Path $mirror 'OpenBVE.sln'
 
 Write-Host 'Restoring upstream NuGet packages'
-Invoke-MSBuild @($solution, '-t:restore', '-p:RestorePackagesConfig=true', "-p:Configuration=$Configuration", '-v:minimal', '-nologo')
+$restoreArguments = @($solution, '-t:restore', '-p:RestorePackagesConfig=true', "-p:Configuration=$Configuration", '-v:minimal', '-nologo')
+if ($restorer) { & $restorer @restoreArguments } else { Invoke-MSBuild $restoreArguments }
 if ($LASTEXITCODE -ne 0) { throw "Restoring the packages failed ($LASTEXITCODE)" }
 
 # Upstream's plugin projects move their output into Data\Plugins (or Data\InputDevicePlugins) after
@@ -119,16 +124,15 @@ if (Test-Path $output) {
 }
 
 Write-Host "Building OpenBVE ($Configuration)"
-# Upstream's OpenBve project writes a 32-bit copy, OpenBve-32.exe, after building, and reports a failure ("Failed to
-# write 32-bit executable") without failing the build. Just after OpenBve.exe is rewritten it is often still open
-# elsewhere (a virus scan), and the copy is not made properly; building again, once it is free, makes it.
-$log = @(Invoke-MSBuild @($solution, "-p:Configuration=$Configuration", '-p:Platform=Any CPU', '-m', '-v:minimal', '-nologo') | ForEach-Object { Write-Host $_; $_ })
+# Upstream's OpenBve project writes the 32-bit copies, OpenBve-32.exe and RouteViewer-32.exe, after building, with
+# DevTools\LBAHeader.exe. Started from the project's folder that tool can fail to find the program's references, leaves
+# an empty OpenBve-32.exe and doesn't fail the build. From the output folder it finds them, so it's run again from there.
+Invoke-MSBuild @($solution, "-p:Configuration=$Configuration", '-p:Platform=Any CPU', '-m', '-v:minimal', '-nologo')
 if ($LASTEXITCODE -ne 0) { throw "The build failed ($LASTEXITCODE)" }
-if ($log -match 'Failed to write 32-bit executable') {
-    Write-Host 'OpenBve-32.exe was not written; building again'
-    Start-Sleep -Seconds 5
-    Invoke-MSBuild @($solution, "-p:Configuration=$Configuration", '-p:Platform=Any CPU', '-m', '-v:minimal', '-nologo')
-    if ($LASTEXITCODE -ne 0) { throw "The build failed ($LASTEXITCODE)" }
+Push-Location $output
+try { & (Join-Path $output 'DevTools\LBAHeader.exe') (Join-Path $output 'OpenBve.exe') } finally { Pop-Location }
+foreach ($copy in 'OpenBve-32.exe', 'RouteViewer-32.exe') {
+    if ((Get-Item (Join-Path $output $copy)).Length -eq 0) { throw "$copy was not written" }
 }
 
 $exe = Join-Path $output 'OpenBve.exe'

@@ -48,6 +48,9 @@ Win32PluginProxy). Upstream's tools are built beside it (Object Viewer, Route Vi
 editors, ObjectBender, CarXmlConvertor). It is stamped 1.14.1.2-OBNS (OBNS's `AssemblyInfo.tt`), and
 `-Package` zips it, without debug symbols, as `OBNS/build/dist/OpenBVE-1.14.1.2-OBNS-win-x64.zip`.
 
+The other systems' release files come from the same build. `OBNS/packaging/make-deb.py` makes the Ubuntu package on this
+PC, as `OBNS/build/dist/OpenBVE-1.14.1.2-OBNS.deb`. `OBNS/packaging/mac/make-app.sh` makes `OpenBVE.app` and its dmg on a Mac.
+
 Run it from its own folder, as a double-click does: upstream starts Win32PluginProxy.exe by name.
 For a test that leaves the installed OpenBVE's settings alone, upstream's `/filesystem=<file>` takes a
 filesystem.cfg naming another settings folder (`version = 2`, `settings = <folder>`).

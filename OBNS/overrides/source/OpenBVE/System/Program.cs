@@ -123,6 +123,11 @@ namespace OpenBve {
 			QuitOnSignals();
 			//Switch between SDL2 and native backends; use native backend by default
 			var options = new ToolkitOptions();
+			// OBNS: OpenTK 3's native Cocoa backend crashes on Apple silicon (a variadic objc_msgSend called as a fixed one).
+			if (CurrentHost.Platform == HostPlatform.AppleOSX && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64)
+			{
+				Interface.CurrentOptions.PreferNativeBackend = false;
+			}
 			
 			if (CurrentHost.Platform == HostPlatform.FreeBSD)
 			{

@@ -1,0 +1,17 @@
+#!/bin/bash
+# OBNS: the app's launcher, in place of the one in upstream's MacBundle.tgz. It also finds Homebrew's Mono, SDL2 and libgdiplus.
+
+CONTENTS=$(cd "$(dirname "$(dirname "$0")")" && pwd)
+RESOURCES="$CONTENTS/Resources"
+
+MONO_FRAMEWORK=/Library/Frameworks/Mono.framework/Versions/Current
+export PATH="$MONO_FRAMEWORK/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+export DYLD_FALLBACK_LIBRARY_PATH="$RESOURCES:/opt/homebrew/lib:/usr/local/lib:$MONO_FRAMEWORK/lib:/usr/lib"
+
+if ! command -v mono >/dev/null 2>&1; then
+    osascript -e 'display alert "OpenBVE cannot start" message "OpenBVE needs Mono, mono-libgdiplus and SDL2. With Homebrew: brew install mono mono-libgdiplus sdl2"'
+    exit 1
+fi
+
+cd "$RESOURCES" || exit 1
+exec mono OpenBve.exe "$@"
