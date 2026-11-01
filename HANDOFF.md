@@ -87,10 +87,9 @@ Done for 1.21, on Windows unless noted; nothing of it is pushed:
 Still to do for 1.21:
 
 - The push, packages and release, on the user's word (Android as `-PortRelease 5`, signed by the user). x64 on Ubuntu stays untested until that laptop is back.
-- Can wait, by the user: a tester reports MTR M-Train ver2026 (A195-222(DN), SACEM plugin) loading considerably slower than on upstream's release, tested on HKHOS's
-  Kwun Tong Line (調景嶺至黃埔) new Alignment. The difference wasn't reproduced on the RTX 2060 PC (Windows, fresh settings): upstream 169 s, 1.2 163 s, 1.21 162 s; on 4 threads
-  168 s and 179 s. The plugins (managed, in the game's process) take 0.3 s. The tester's OS, hardware and settings are still needed if it stays slow for them; the cab fix below
-  should be tried there first.
+- Closed (user, 2026-11-02): a tester reported MTR M-Train ver2026 (A195-222(DN), SACEM plugin) loading considerably slower than on upstream's release, on HKHOS's Kwun Tong Line
+  (調景嶺至黃埔) new Alignment. With the test ZIP from `a25e609` they now load it in 43 s (42 s on the RTX 2060 PC). Why it was slower for them than upstream was never reproduced: before the fix,
+  upstream 169 s, 1.2 163 s and 1.21 162 s here (fresh settings); on 4 threads 168 s and 179 s. Their setup isn't known.
 - The upstream `Track[...].Position(x, y, radius)` gap and the BVE6 cab gauges belong to 1.22.
 - Also 1.22 (user, 2026-11-02), further load time: route loading averages 1.8 of 12 threads on that train and route (cause not known; GDI+ suspected), about 43 s of thread time
   decoding textures, the cab and exterior on one thread, OBNS's extra 3 s before the game starts, `MeshBuilder.Apply` still quadratic for `.x`, `.obj` and LokSim, possibly a disk cache.
