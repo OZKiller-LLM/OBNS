@@ -13,7 +13,7 @@ the 1.2 section describes 1.1.
 
 ## 1.2: where things stand (2026-11-01)
 
-The `1.2` branch is pushed to origin, by the user's word once the benchmark ended without a major issue. Released as tag `v1.2` by the user's word, with no merge to `main`. The next Android build must use `-PortRelease 5` or higher.
+The `1.2` branch is pushed to origin, by the user's word once the benchmark ended without a major issue. Released on GitHub (tag `v1.2`, four files, published by the user 2026-11-01; hashes checked), with no merge to `main`. The next Android build must use `-PortRelease 5` or higher.
 
 Release files, for version 1.14.1.2-OBNS and Android 1.14.1.2-android.4:
 
@@ -56,7 +56,7 @@ Other notes:
   behaviour; left).
 - Package creation in the OpenGL menu was checked as far as Windows' folder dialog, which automation can't fill.
 
-The basis of release 1.2.1 (user, 2026-11-01), after the 1.2 push and release files; known limitations in 1.2 until then:
+Release 1.21 (user, 2026-11-01; the tagged release notes and the release page call it 1.2.1). The later roadmap: 1.22 BVE6 testing, 1.3 renderers without OpenGL, 1.31 Windows ARM64, 1.31N Switch NRO.
 
 - Input device plugins' settings windows on macOS. All five of upstream's (`DenshaDeGoInput`, `ZuikiInput`, `KatoInput`,
   `SanYingInput`, `DefaultDisplayPlugin`) are Windows Forms windows opened through `IInputDevice.Config(IWin32Window)`, so
@@ -68,6 +68,13 @@ The basis of release 1.2.1 (user, 2026-11-01), after the 1.2 push and release fi
 - 64-bit train plugins on Android. A train with only an `Ats64` plugin needs an x64 layer, as the x86 layer runs 32-bit plugins only
   (`OBNS/BVE5.md`). Linux and macOS look to have the same gap: `Win64Plugin` loads the DLL directly, which only Windows can do, and
   `OBNS/shared/OpenBve.X86` shows no x64 support. Not tested there; check it when this is picked up, so one x64 layer can serve all three.
+
+- The Lisuan's Direct3D 11 readback patch, from the Chinese PC session (`obns-d3d11-readback.patch`, on bfa4c04, sha256 939a83f3...c7a0): runs only when
+  Direct3D 11 is chosen by name, 2 to 3 times slower than OpenGL there, not called stable (one 0x7F with temporary code, cause unknown). Not received yet;
+  regression-check it on the RTX 2060 before merging. Vulkan readback isn't built, and is the user's call.
+- `OBNS/GPU_SUPPORT.md`'s Lisuan figures may be low: the same build later ran Uchibo at 81 fps rather than 51 to 53 (swap time fell; cause unknown).
+- `Win32PluginProxy.exe` started through the shell, which is why a downloaded zip gets a security prompt (`ProxyPlugin.cs`).
+- The upstream `Track[...].Position(x, y, radius)` gap and the BVE6 cab gauges belong to 1.22.
 
 Test machines: the M1 Mac (session "OBNS (macOS Session / M1 Mac Mini)"), the Broadwell MacBook on Ubuntu (no heavy runs until
 the user has sorted its fan), the A36 (`RFCY31L7RNZ`), and a new one below. Each remote session needs its own user's approval for
