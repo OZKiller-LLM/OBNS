@@ -4,7 +4,8 @@
 #
 #   make-app.sh <program folder> <MacBundle.tgz> <MenuKit folder> <licence file> <licenses folder> <version> <output folder>
 #
-# Ad-hoc signed: Apple silicon needs a signature to run, and without a Developer ID Gatekeeper warns on first opening.
+# Ad-hoc signed: Apple silicon needs a signature to run. Without a Developer ID, Gatekeeper refuses it until the user
+# chooses Open Anyway in Privacy & Security.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 program=$1; bundle=$2; menukit=$3; licence=$4; licenses=$5; version=$6; out=$7

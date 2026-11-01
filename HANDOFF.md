@@ -20,8 +20,10 @@ Release files, for version 1.14.1.2-OBNS and Android 1.14.1.2-android.4:
 - Windows zip: `OBNS/build-desktop.ps1 -Clean -Package`; run from the zip on a real route (Uchibo, Vulkan).
 - Ubuntu deb: `OBNS/packaging/make-deb.py`; its contents are checked, but it hasn't been installed on Ubuntu (that needs root on the
   test laptop, whose session is offline).
-- macOS: `OBNS/packaging/mac/make-app.sh`, run on the M1. Apple silicon now picks SDL2 by itself rather than needing
-  `preferNativeBackend = false`; that's unrun until the Mac builds it.
+- macOS: `OBNS/packaging/mac/make-app.sh`, run on the M1 with `bash` (`OBNS/build/dist/OpenBVE-1.14.1.2-OBNS.dmg`). Gatekeeper refuses the
+  app itself: no Developer ID, and it hangs behind "Apple could not verify". Past that needs Open Anyway, which is the user's to press and
+  hasn't been tried, or a Developer ID with notarization. A plain copy of `Contents/Resources` run through the launcher's environment
+  was tested with new settings: native menu, SDL2 picked by itself, TML on Metal, no errors.
 - Android: checked with `-DebugKey`; the user signs it with `Android/release.ps1 -PortRelease 4` and types the password at its prompt.
 
 Git shows 122 `Android/` files as modified: only their line endings differ, so stage named files, and for an `Android/` file

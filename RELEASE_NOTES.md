@@ -35,8 +35,9 @@ The same train and plugin support, on upstream's own program and menu, as a buil
   Ubuntu or macOS, which haven't been tested with one. To be fixed in 1.2.1.
 - **BVE5 plugins that read BVE5's memory** (AtsEx and the like) can't work outside BVE5.
 - **Some BVE5 map 2.02 statements** are rejected by the parser, such as `Track[...].Position(x, y, radius)`; such routes load without them.
-- **macOS:** the app is ad-hoc signed, so Gatekeeper warns when it's first opened. Metal is off on Intel, AMD and NVIDIA Macs,
-  which haven't been tested, and they use OpenGL.
+- **macOS, first opening:** the app has no Developer ID, so macOS refuses to open it ("Apple could not verify..."). Choose Done,
+  then System Settings > Privacy & Security > Open Anyway. On macOS 15 and later, right-click > Open no longer gets past this.
+- **macOS, Metal:** off on Intel, AMD and NVIDIA Macs, which haven't been tested, and they use OpenGL.
 - **Package creation in the macOS menu and RailDriver calibration** haven't been tested through to the end.
 
 ## 1.1 (1.14.0.3-android.3) — native Vulkan renderer
