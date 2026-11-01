@@ -15,6 +15,9 @@
   <ItemGroup>
     <Compile Include="$(UpstreamSource)Plugins\Object.CsvB3d\**\*.cs" LinkBase="Object.CsvB3d" />
     <Compile Remove="$(UpstreamSource)Plugins\Object.CsvB3d\Properties\AssemblyInfo.cs" />
+    <!-- OBNS's copy, shared with the desktop build: objects of thousands of mesh builders load in reasonable time. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Object.CsvB3d\Plugin.NewParser.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Object.CsvB3d\Plugin.NewParser.cs" Link="OBNS\Plugin.NewParser.cs" />
 
   </ItemGroup>
 

@@ -22,6 +22,12 @@
 
     <!-- Duplicated by the SDK's generated assembly info. -->
     <Compile Remove="$(UpstreamSource)OpenBveApi\Properties\AssemblyInfo.cs" />
+    <!-- OBNS's copy, shared with the desktop build: removing materials in OptimizeObject takes one pass. -->
+    <!-- OBNS's copy, shared with the desktop build: FinalizeMesh works out the wrap mode once. -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Objects\Mesh.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\OpenBveApi\Objects\Mesh.cs" Link="OBNS\Mesh.cs" />
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Objects\ObjectTypes\StaticObject.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\OpenBveApi\Objects\ObjectTypes\StaticObject.cs" Link="OBNS\StaticObject.cs" />
     <!-- WinForms .resx designer output (icons/colours); unused by the simulation. -->
     <Compile Remove="$(UpstreamSource)OpenBveApi\Resource.Designer.cs" />
     <!-- CS-Script runtime compilation is unavailable on Android (no JIT in release builds). -->

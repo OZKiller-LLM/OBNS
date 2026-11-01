@@ -75,6 +75,8 @@ Done for 1.21, on Windows unless noted; nothing of it is pushed:
 - A push button too narrow for its title wraps it where the form made it tall enough (SanYing's "Discard and close"). This is in
   `MenuKit.swift`, so not compiled or run yet: it needs the next full Mac build.
 - `Win32PluginProxy.exe` no longer goes through the shell, so a download-marked copy loads a 32-bit plugin without a security prompt.
+- Objects of thousands of mesh builders load in reasonable time (`OBNS/README.md`): that train on that route 162 s to 42 s, its cab 125 s to 5.6 s, `CH.b3d` 110 s to 0.6 s.
+  Every object's mesh (4,656 fingerprints, parsed and optimized) is the same as before. Android's two projects compile with it; not run on a phone, Linux or a Mac.
 
 Still to do for 1.21:
 
@@ -82,8 +84,10 @@ Still to do for 1.21:
   when Direct3D 11 is chosen by name, 2 to 3 times slower than OpenGL there, not called stable (one 0x7F with temporary code, cause
   unknown). Not received yet; regression-check it on the RTX 2060 before merging. Vulkan readback isn't built, and is the user's call.
 - `RELEASE_NOTES.md`'s 1.21 section.
-- A tester reports a train loading considerably slower than on upstream's release; the user will bring the details. First thing to measure, not
-  yet measured: `Bve5SoundAddOn.Find` opens every `.txt` up to two levels below a `train.dat` train's folder before its sound loads.
+- A tester reports MTR M-Train ver2026 (A195-222(DN), SACEM plugin) loading considerably slower than on upstream's release, tested on HKHOS's
+  Kwun Tong Line (調景嶺至黃埔) new Alignment. The difference wasn't reproduced on the RTX 2060 PC (Windows, fresh settings): upstream 169 s, 1.2 163 s, 1.21 162 s; on 4 threads
+  168 s and 179 s. The plugins (managed, in the game's process) take 0.3 s. The tester's OS, hardware and settings are still needed if it stays slow for them; the cab fix below
+  should be tried there first.
 - From reading the code, not run: each `<Car>` in a `train.xml` beside a BVE5 vehicle file rebuilds that car's traction (`TrainXmlParser.CarNode.cs`), so the
   BVE5 model is lost. Such a train should use `extensions.cfg` until OBNS keeps the model; the fix isn't decided.
 - The upstream `Track[...].Position(x, y, radius)` gap and the BVE6 cab gauges belong to 1.22.

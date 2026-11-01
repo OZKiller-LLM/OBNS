@@ -66,6 +66,9 @@ DetailManager.dll plugin through the proxy.
 | `source/RouteManager2/Events/Transponder.cs` | a transponder's section reference past the last section counts as none (1.14.1.x keeps orphaned references, and the Tuen Ma Line threw at its first station) | Android (`RouteManager2.Android.csproj`) |
 | `source/CarXMLConvertor/CarXMLConvertor.csproj`, `packages.config` | Windows Forms resources built preserialized with System.Resources.Extensions (as upstream's TrainEditor), so the .NET SDK's MSBuild builds it | - |
 | `source/ObjectBender/ObjectBender.csproj`, `packages.config` | the same | - |
+| `source/Plugins/Object.CsvB3d/Plugin.NewParser.cs` | an object's mesh builders joined in parts, not copying all so far for each one (15,725 of them took about 100 s) | Android (`Object.CsvB3d.Android.csproj`) |
+| `source/OpenBveApi/Objects/Mesh.cs` | `FinalizeMesh` works out the wrap mode once, not over all the faces for each material, with the same result | Android (`OpenBveApi.Android.csproj`) |
+| `source/OpenBveApi/Objects/ObjectTypes/StaticObject.cs` | `OptimizeObject` removes unused and duplicate materials in one pass each, with the same result | Android (`OpenBveApi.Android.csproj`) |
 
 Shared libraries (moving here from `Android/` as each is taken up): the x86 plugin layer
 (`shared/OpenBve.X86`, with its harness `shared/OpenBve.X86.Tests`) and plugin bridge
