@@ -86,7 +86,7 @@ Done for 1.21, on Windows unless noted; nothing of it is pushed:
 
 Still to do for 1.21:
 
-- The push, packages and release, on the user's word (Android as `-PortRelease 5`, signed by the user). x64 on Ubuntu stays untested until that laptop is back.
+- Released as tag `v1.21` (2026-11-02), built from 7bb4e3d: `1.14.1.2-android.5`, signed by the user, and the desktop files, still `1.14.1.2-OBNS`. The next Android build is `-PortRelease 6` or higher. x64 on Ubuntu stays untested until that laptop is back.
 - Closed (user, 2026-11-02): a tester reported MTR M-Train ver2026 (A195-222(DN), SACEM plugin) loading considerably slower than on upstream's release, on HKHOS's Kwun Tong Line
   (調景嶺至黃埔) new Alignment. With the test ZIP from `a25e609` they now load it in 43 s (42 s on the RTX 2060 PC). Why it was slower for them than upstream was never reproduced: before the fix,
   upstream 169 s, 1.2 163 s and 1.21 162 s here (fresh settings); on 4 threads 168 s and 179 s. Their setup isn't known.
