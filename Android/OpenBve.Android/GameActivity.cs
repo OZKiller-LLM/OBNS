@@ -310,6 +310,12 @@ namespace OpenBve.Android
 			GameView.RenderScale = Math.Clamp(Intent?.GetIntExtra("render_scale", 100) ?? 100, 25, 100) / 100.0f;
 			// For diagnosing a Win32 plugin: record its calls for replay in OpenBve.X86.Tests.
 			NativePlugins.NativePluginBridge.TraceFolder = Intent?.GetBooleanExtra("plugin_trace", false) == true ? GetExternalFilesDir(null)?.AbsolutePath : null;
+			// For testing the x64 layer: --ez plugin_ats64 true takes a BVE5 train's Ats64 where it also has Ats32.
+			if (Intent?.GetBooleanExtra("plugin_ats64", false) == true)
+			{
+				System.Environment.SetEnvironmentVariable("OBNS_ATS64", "1");
+			}
+
 			LaunchParameters launch = LaunchParameters.ReadFrom(Intent);
 
 			view = new GameView(this)

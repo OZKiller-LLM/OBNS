@@ -1,5 +1,38 @@
 # OpenBVE for Android — release notes
 
+## 1.21 (1.14.1.2-android.5; desktop 1.14.1.2-OBNS) — 64-bit train plugins
+
+### All platforms
+
+- **Heavy models load much faster:** CSV and B3D models split into thousands of mesh blocks no longer slow loading so sharply. One
+  train's cab went from about 125 s to under 6 s on a Windows test PC, and that train and route from 162 s to 42 s. Models come out the same.
+- **BVE5 trains with a `train.xml`:** a `<Car>` that only sets something like a length or object no longer replaces the car's BVE5
+  traction. Setting `MotorCar` to false, or giving acceleration curves, still replaces it. `extensions.cfg` works as before.
+
+### Android, Ubuntu and macOS
+
+- **64-bit train plugins:** a train with only an `Ats64` plugin now runs it in the plugin layer. Where a train has both, `Ats32` is still
+  used. Checked with the E217's six plugins on Android and macOS. Not yet run on Ubuntu.
+
+### Windows
+
+- **32-bit plugins from a download:** a train plugin no longer brings up a Windows security prompt when the program came from a downloaded zip.
+
+### macOS
+
+- **Input plugin settings:** the settings windows of the five input plugins included with the game (KATO, SanYing, Densha de GO, ZUIKI and
+  the default display plugin) now open and save.
+- **Menu:** links are gold as on Windows, a dialog opened from a dialog returns to it when closed, and a long title on a tall button wraps.
+
+### Known limitations
+
+- **macOS input plugins:** third-party plugins' settings windows still can't open.
+- **Plugin log wording:** the log says "x86" for the plugin layer even when it's running a 64-bit plugin.
+- **64-bit plugins that start another program,** such as `DetailManager_.dll`, can't run in the plugin layer.
+- **BVE5 plugins that read BVE5's memory** (AtsEx and the like) can't work outside BVE5.
+- **Some BVE5 map 2.02 statements** are rejected by the parser, such as `Track[...].Position(x, y, radius)`; such routes load without them. Planned for 1.22.
+- **macOS, first opening** still needs Open Anyway (see 1.2), and **Metal** is still off on Intel, AMD and NVIDIA Macs.
+
 ## 1.2 (1.14.1.2-android.4; desktop 1.14.1.2-OBNS) — BVE5 trains, and Windows, Ubuntu and macOS
 
 ### Android

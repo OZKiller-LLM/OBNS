@@ -59,7 +59,8 @@ namespace OpenBve.NativePlugins
 			{
 				string vehicleFile = ContentPlugins::Train.OpenBve.Bve5Vehicle.Find(trainFolder);
 				ContentPlugins::Train.OpenBve.Bve5Vehicle vehicle = vehicleFile != null ? ContentPlugins::Train.OpenBve.Bve5Vehicle.Load(vehicleFile) : null;
-				string file = vehicle?.Ats32 ?? vehicle?.Ats64;
+				// OBNS_ATS64=1 (--ez plugin_ats64 true): the 64-bit plugin where a train has both, for testing it.
+				string file = Environment.GetEnvironmentVariable("OBNS_ATS64") == "1" && vehicle?.Ats64 != null ? vehicle.Ats64 : vehicle?.Ats32 ?? vehicle?.Ats64;
 				return file != null && File.Exists(file) ? file : null;
 			}
 			catch (Exception ex)

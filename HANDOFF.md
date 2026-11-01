@@ -78,19 +78,26 @@ Done for 1.21, on Windows unless noted; nothing of it is pushed:
 - Objects of thousands of mesh builders load in reasonable time (`OBNS/README.md`): that train on that route 162 s to 42 s, its cab 125 s to 5.6 s, `CH.b3d` 110 s to 0.6 s.
   Every object's mesh (4,656 fingerprints, parsed and optimized) is the same as before. Android's two projects compile with it; not run on a phone, Linux or a Mac.
 
+- A `train.xml`'s `<Car>` beside a BVE5 vehicle file keeps the car's BVE5 traction unless it says otherwise (`OBNS/BVE5.md`), checked by each car's traction type on the E217.
+- Checked 2026-11-02. M1 Mac, full build from `a25e609`: compiles and packages, SanYing's button wraps (its partner "Save and close" also takes the flat tall style, accepted),
+  x64 set drives the same as x86, 77 catches each, about 20 s to load on both. A36: x64 loads and runs with 77 catches and the user passed it; the user drove the x86 set; `plugin_regression.sh` passed SelTrac
+  (TBL and FCMB aren't on the phone). E217 is one-handled: use Z, A and Q; Comma and Period do nothing, which is what stopped the first scripted drives.
+- Open, not a blocker: on the Mac, 2 of 3 x64 F6 presses about 60 s after load needed a second press, with 10 extra caught exceptions; x86 had one sample, which closed first time. `CompareProbe` covers door calls with no differences. The log's "x86" wording stays for x64 (in the notes).
+
 Still to do for 1.21:
 
-- The Lisuan's Direct3D 11 readback patch from the Chinese PC session (`obns-d3d11-readback.patch`, on bfa4c04, sha256 939a83f3...c7a0): only
-  when Direct3D 11 is chosen by name, 2 to 3 times slower than OpenGL there, not called stable (one 0x7F with temporary code, cause
-  unknown). Not received yet; regression-check it on the RTX 2060 before merging. Vulkan readback isn't built, and is the user's call.
-- `RELEASE_NOTES.md`'s 1.21 section.
-- A tester reports MTR M-Train ver2026 (A195-222(DN), SACEM plugin) loading considerably slower than on upstream's release, tested on HKHOS's
+- The push, packages and release, on the user's word (Android as `-PortRelease 5`, signed by the user). x64 on Ubuntu stays untested until that laptop is back.
+- Can wait, by the user: a tester reports MTR M-Train ver2026 (A195-222(DN), SACEM plugin) loading considerably slower than on upstream's release, tested on HKHOS's
   Kwun Tong Line (調景嶺至黃埔) new Alignment. The difference wasn't reproduced on the RTX 2060 PC (Windows, fresh settings): upstream 169 s, 1.2 163 s, 1.21 162 s; on 4 threads
   168 s and 179 s. The plugins (managed, in the game's process) take 0.3 s. The tester's OS, hardware and settings are still needed if it stays slow for them; the cab fix below
   should be tried there first.
-- From reading the code, not run: each `<Car>` in a `train.xml` beside a BVE5 vehicle file rebuilds that car's traction (`TrainXmlParser.CarNode.cs`), so the
-  BVE5 model is lost. Such a train should use `extensions.cfg` until OBNS keeps the model; the fix isn't decided.
 - The upstream `Track[...].Position(x, y, radius)` gap and the BVE6 cab gauges belong to 1.22.
+- Also 1.22 (user, 2026-11-02), further load time: route loading averages 1.8 of 12 threads on that train and route (cause not known; GDI+ suspected), about 43 s of thread time
+  decoding textures, the cab and exterior on one thread, OBNS's extra 3 s before the game starts, `MeshBuilder.Apply` still quadratic for `.x`, `.obj` and LokSim, possibly a disk cache.
+
+Cancelled for 1.21, to revisit after 1.3 (user, 2026-11-02): the Lisuan's Direct3D 11 readback patch from the Chinese PC session (`obns-d3d11-readback.patch`, on bfa4c04,
+sha256 939a83f3...c7a0): only when Direct3D 11 is chosen by name, 2 to 3 times slower than OpenGL there, not called stable (one 0x7F with temporary code, cause unknown).
+Never received here; if taken up, regression-check it on the RTX 2060 before merging. Vulkan readback isn't built, and is the user's call.
 
 Test machines: the M1 Mac (session "OBNS (macOS Session / M1 Mac Mini)"), the Broadwell MacBook on Ubuntu (no heavy runs until
 the user has sorted its fan), the A36 (`RFCY31L7RNZ`), and a new one below. Each remote session needs its own user's approval for

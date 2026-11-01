@@ -75,7 +75,9 @@ relative to the file. The vehicle performance file and the motor noise file have
 - **Exterior**: as any train's - the vehicle file's folder's `train.xml` or `extensions.cfg`, else white
   boxes. Only that folder is looked in, not the folders above it: a formation whose vehicle file is in a
   subfolder (`formation\hae\116_TWR.txt`) has its own `extensions.cfg` in that subfolder, written for
-  its own cars, as each formation's car count and order may differ.
+  its own cars, as each formation's car count and order may differ. A `train.xml`'s `<Car>` keeps a BVE5
+  motor car's traction unless it sets `MotorCar` to false, gives acceleration curves or an engine (OBNS copy of
+  `Train/XML/TrainXmlParser.CarNode.cs`); upstream's would make it a trailer, or a BVE motor car on other curves.
 - **Safety plugin**: `Ats32` through upstream's Win32PluginProxy on the desktop, or `Ats64` if it has no
   `Ats32`, loaded directly into the 64-bit program as BVE6 loads it (`Win64Plugin`; also any train.dat
   train's 64-bit plugin); on Android, Linux and macOS through the plugin layer (`NativePluginBridge`, which reads the

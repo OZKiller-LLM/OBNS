@@ -23,9 +23,11 @@
     <Compile Include="TrainXmlParser.Android.cs" />
     <!-- OBNS's copies, shared with the desktop build: BVE Trainsim 5 trains (OBNS/BVE5.md) and the [ThreadStatic] statics. -->
     <Compile Remove="$(UpstreamSource)Plugins\Train.OpenBve\Plugin.cs" />
+    <Compile Remove="$(UpstreamSource)Plugins\Train.OpenBve\Train\XML\TrainXmlParser.CarNode.cs" />
     <Compile Remove="$(UpstreamSource)Plugins\Train.OpenBve\Panel\Panel2CfgParser.cs" />
     <Compile Remove="$(UpstreamSource)Plugins\Train.OpenBve\Train\BVE5\MotorSoundTable.cs" />
     <Compile Include="$(ObnsTrainPlugin)Plugin.cs" Link="OBNS\Plugin.cs" />
+    <Compile Include="$(ObnsTrainPlugin)Train\XML\TrainXmlParser.CarNode.cs" Link="OBNS\TrainXmlParser.CarNode.cs" />
     <Compile Include="$(ObnsTrainPlugin)Panel\Panel2CfgParser.cs" Link="OBNS\Panel2CfgParser.cs" />
     <Compile Include="$(ObnsTrainPlugin)Train\BVE5\*.cs" LinkBase="OBNS\BVE5" />
     <!-- The app finds a BVE5 vehicle's safety plugin with OBNS's reader (NativePluginBridge.ResolvePlugin). -->
