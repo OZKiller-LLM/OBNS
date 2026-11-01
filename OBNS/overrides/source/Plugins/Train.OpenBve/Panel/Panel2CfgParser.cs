@@ -40,6 +40,8 @@ namespace Train.OpenBve
 		double PanelLeft = 0.0, PanelRight = 1024.0;
 		double PanelTop = 0.0, PanelBottom = 1024.0;
 		Vector2 PanelCenter = new Vector2(0, 512);
+		/// <summary>OBNS: BVE6's Perspective: the larger, the weaker the tilted gauges' perspective.</summary>
+		double PanelPerspective = 1.0;
 
 		/// <summary>
 		/// OBNS: whether the panel is a BVE5 train's (in either format). Such a panel, or a BVE4 train's panel2.cfg
@@ -184,6 +186,8 @@ namespace Train.OpenBve
 					Block.TryGetColor24(Panel2Key.TransparentColor, ref panelTransparentColor);
 					Block.TryGetVector2(Panel2Key.Center, ',', ref PanelCenter);
 					Block.TryGetVector2(Panel2Key.Origin, ',', ref PanelOrigin);
+					// OBNS: read for BVE6's cabs. The tilted needles below have the camera's own perspective, as Perspective's default of 1 does.
+					Block.TryGetValue(Panel2Key.Perspective, ref PanelPerspective);
 					ApplyGlobalHacks();
 					if (bve5Rules)
 					{
@@ -317,6 +321,9 @@ namespace Train.OpenBve
 							}
 							Block.TryGetColor24(Panel2Key.Color, ref Color);
 							Block.GetValue(Panel2Key.Backstop, out bool Backstop);
+							// OBNS: BVE6's name for a needle stopped at its minimum and maximum.
+							Block.GetValue(Panel2Key.StopPin, out bool StopPin);
+							Backstop |= StopPin;
 							Block.GetValue(Panel2Key.Smoothed, out bool Smoothed);
 							
 							Plugin.CurrentHost.RegisterTexture(DaytimeImage, new TextureParameters(null, TransparentColor), out var tday, true, 20000);
@@ -339,6 +346,12 @@ namespace Train.OpenBve
 							Car.CarSections[CarSectionType.Interior].Groups[GroupIndex].Elements[j].RotateZDirection = Vector3.Backward;
 							Car.CarSections[CarSectionType.Interior].Groups[GroupIndex].Elements[j].RotateXDirection = Vector3.Right;
 							Car.CarSections[CarSectionType.Interior].Groups[GroupIndex].Elements[j].RotateYDirection = Vector3.Cross(Car.CarSections[CarSectionType.Interior].Groups[GroupIndex].Elements[j].RotateZDirection, Car.CarSections[CarSectionType.Interior].Groups[GroupIndex].Elements[j].RotateXDirection);
+							// OBNS: BVE6's Tilt: the plane the needle turns in, for a gauge printed at an angle.
+							Vector2 Tilt = Vector2.Null;
+							if (Block.TryGetVector2(Panel2Key.Tilt, ',', ref Tilt) && (Tilt.X != 0.0 || Tilt.Y != 0.0))
+							{
+								TiltNeedle(Car.CarSections[CarSectionType.Interior].Groups[GroupIndex].Elements[j], Tilt.X.ToRadians(), Tilt.Y.ToRadians());
+							}
 							string f;
 							switch (Subject)
 							{
@@ -1010,6 +1023,23 @@ namespace Train.OpenBve
 			{
 				CreateElement(ref Group, Left, Top, DaytimeTexture.Width, DaytimeTexture.Height, RelativeRotationCenter, Distance, PanelResolution, PanelBottom, PanelCenter, Driver, DaytimeTexture, NighttimeTexture, Color32.White, AddStateToLastElement);
 			}
+		}
+
+		/// <summary>OBNS: lays a needle in a plane tilted by a pitch (upward positive) and a yaw (leftward positive), and turns it about that plane's normal.</summary>
+		private static void TiltNeedle(AnimatedObject Needle, double Pitch, double Yaw)
+		{
+			double sa = Math.Sin(Pitch), ca = Math.Cos(Pitch), sb = Math.Sin(Yaw), cb = Math.Cos(Yaw);
+			Vector3 Right = new Vector3(cb, 0.0, -sb);
+			Vector3 Up = new Vector3(sa * sb, ca, sa * cb);
+			foreach (VertexTemplate Vertex in Needle.States[0].Prototype.Mesh.Vertices)
+			{
+				double x = Vertex.Coordinates.X, y = Vertex.Coordinates.Y;
+				Vertex.Coordinates = x * Right + y * Up;
+			}
+
+			Needle.RotateZDirection = new Vector3(-sb * ca, sa, -ca * cb);
+			Needle.RotateXDirection = Right;
+			Needle.RotateYDirection = Vector3.Cross(Needle.RotateZDirection, Needle.RotateXDirection);
 		}
 
 		internal int CreateElement(ref ElementsGroup Group, double Left, double Top, double Width, double Height, Vector2 RelativeRotationCenter, double Distance, double PanelResolution, double PanelBottom, Vector2 PanelCenter, Vector3 Driver, Texture DaytimeTexture, Texture NighttimeTexture, Color32 Color, bool AddStateToLastElement = false)

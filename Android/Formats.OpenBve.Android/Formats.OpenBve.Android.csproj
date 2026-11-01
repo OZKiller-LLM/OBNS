@@ -16,6 +16,13 @@
     <Compile Include="$(UpstreamSource)Plugins\Formats.OpenBve\**\*.cs" LinkBase="Formats.OpenBve" />
     <Compile Remove="$(UpstreamSource)Plugins\Formats.OpenBve\Properties\AssemblyInfo.cs" />
     <!-- OBNS's copy, shared with the desktop build: BVE5's ammeter as a panel subject (OBNS/BVE5.md). -->
+    <!-- OBNS's copies, shared with the desktop build: BVE6's panel keys and the vehicle sound file's names. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Formats.OpenBve\Enums\Panel2\Panel2Key.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Formats.OpenBve\Enums\Panel2\Panel2Key.cs" Link="OBNS\Panel2Key.cs" />
+    <Compile Remove="$(UpstreamSource)Plugins\Formats.OpenBve\Enums\SoundCfg\SoundCfgSection.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Formats.OpenBve\Enums\SoundCfg\SoundCfgSection.cs" Link="OBNS\SoundCfgSection.cs" />
+    <Compile Remove="$(UpstreamSource)Plugins\Formats.OpenBve\Enums\SoundCfg\SoundCfgKey.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Formats.OpenBve\Enums\SoundCfg\SoundCfgKey.cs" Link="OBNS\SoundCfgKey.cs" />
     <Compile Remove="$(UpstreamSource)Plugins\Formats.OpenBve\Enums\Panel2\Panel2Subject.cs" />
     <Compile Include="..\..\OBNS\overrides\source\Plugins\Formats.OpenBve\Enums\Panel2\Panel2Subject.cs" Link="OBNS\Panel2Subject.cs" />
 

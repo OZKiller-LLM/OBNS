@@ -60,11 +60,15 @@ relative to the file. The vehicle performance file and the motor noise file have
   (upstream: 1 only; KO-ATC's speed-code lamps take 2, 4, 8 ...); `#` comments; a colour without its `#`
   (`TransparentColor = 0000ff`). A BVE5 cab ported to a BVE4 train's panel2.cfg asks for the same with
   `Bve5 = true` in `[This]` (an OBNS key; upstream reports it as unknown and reads the panel as before).
+- **BVE6's panel keys**: a needle's `Tilt = pitch, yaw` lays it in a plane at that angle, for a gauge printed at one, and turns
+  it about that plane's normal; `StopPin` is upstream's `Backstop`. `Perspective` in `[This]` is read but not applied: tilted needles
+  get the camera's own perspective, as its default of 1 would. Checked on the E217's speedometer against its printed scale at rest and at three speeds.
 - **Ammeter**: `Subject = am`, through upstream's `ampsindex`, is one motor car's current (`Bve5MotorCar`):
   the `[Power]` `Current` table's for the step the controller settles on, following the force as it builds up,
   and while the motors brake the `[Brake]` table's as a negative current, by the share of the electric
   brake in use. It reads 0 on a ported cab on a BVE4 train, which has no such tables.
-- **Sound**: the vehicle sound file through BVE4's sound.cfg parser; the motor noise as BVE5 plays it,
+- **Sound**: the vehicle sound file through BVE4's sound.cfg parser (with `[Joint]` as its `[Switch]` and `[AirSpring]` as its `[Suspension]`,
+  whose one sound a side is the release: `LeftApply` and `RightApply` are read and not played); the motor noise as BVE5 plays it,
   through OBNS copies of upstream's BVE5 motor sound (`TrainManager/Motor/BVE5/MotorSound.cs`) and table
   parser (`Train/BVE5/MotorSoundTable.cs`), which fix upstream's: comments read as rows, blank cells read
   as full volume, pitch and volume rows at different speeds, interpolation running backwards, the brake
