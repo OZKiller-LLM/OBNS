@@ -61,8 +61,17 @@ namespace OpenBve.GLForms
 			Rectangle area = DisplayRectangle;
 			area.Inflate(-Padding.Left, -Padding.Top);
 			bool vertical = FlowDirection == FlowDirection.TopDown || FlowDirection == FlowDirection.BottomUp;
-			// A scroll bar takes its width from the area, once the content is taller than the panel.
-			int limit = vertical ? area.Bottom : area.Right - (AutoScroll ? 17 : 0);
+			int end = Place(area, vertical, vertical ? area.Bottom : area.Right);
+			// A scroll bar takes its width from the area, only once the content is taller than the panel.
+			if (AutoScroll && !vertical && end > area.Bottom)
+			{
+				Place(area, false, area.Right - 17);
+			}
+		}
+
+		/// <summary>Places the children up to the limit, and says where the last line ended.</summary>
+		private int Place(Rectangle area, bool vertical, int limit)
+		{
 			int x = area.Left, y = area.Top, lineExtent = 0;
 			foreach (Control child in Controls)
 			{
@@ -102,6 +111,8 @@ namespace OpenBve.GLForms
 					lineExtent = Math.Max(lineExtent, outerHeight);
 				}
 			}
+
+			return vertical ? y : y + lineExtent;
 		}
 	}
 

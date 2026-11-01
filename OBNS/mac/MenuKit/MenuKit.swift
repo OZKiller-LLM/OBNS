@@ -829,7 +829,12 @@ private func fit(_ id: Int32) {
 		}
 
 		let extra = min(12, ceil(button.cell?.cellSize.width ?? 0) - place.width)
-		if extra > 0 {
+		if extra > 0 && place.height >= 30 {
+			// Two lines where the form made it tall enough, as Windows wraps it (the rounded bezel holds one).
+			button.controlSize = .small
+			button.bezelStyle = .regularSquare
+			button.cell?.wraps = true
+		} else if extra > 0 {
 			frame.origin.x -= floor(extra / 2)
 			frame.size.width += extra
 		}

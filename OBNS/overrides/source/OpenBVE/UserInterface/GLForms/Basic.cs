@@ -204,12 +204,14 @@ namespace OpenBve.GLForms
 
 		public event LinkLabelLinkClickedEventHandler LinkClicked;
 
+		internal Color CurrentLinkColor => !Enabled ? DisabledLinkColor : IsPressed ? ActiveLinkColor : LinkVisited ? VisitedLinkColor : LinkColor;
+
 		internal override bool CanTakeFocus => true;
 
 		protected override void OnPaint(PaintEventArgs e)
 		{
 			bool underline = LinkBehavior != LinkBehavior.NeverUnderline && (LinkBehavior != LinkBehavior.HoverUnderline || IsMouseOver);
-			Color color = !Enabled ? DisabledLinkColor : IsPressed ? ActiveLinkColor : LinkVisited ? VisitedLinkColor : LinkColor;
+			Color color = CurrentLinkColor;
 			using (Font font = new Font(Font, underline ? Font.Style | FontStyle.Underline : Font.Style))
 			{
 				DrawText(e.Graphics, Text, font, color, new RectangleF(1, 0, Width - 1, Height), TextAlign, !AutoSize, AutoEllipsis);

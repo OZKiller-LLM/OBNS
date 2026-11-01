@@ -250,7 +250,8 @@ namespace OpenBve.GLForms
 			Peer owner = null;
 			if (!main && MainForm != null && MainForm != form)
 			{
-				peers.TryGetValue(MainForm, out owner);
+				// A dialog opened from a dialog goes back to that one when it closes.
+				peers.TryGetValue(nativeForms.LastOrDefault(other => other != form && other.Modal) ?? MainForm, out owner);
 			}
 
 			mk_window_show(id, form.Modal ? owner?.Id ?? 0 : 0);
@@ -468,7 +469,7 @@ namespace OpenBve.GLForms
 		{
 			Control control = peer.Control;
 			Color back = control.OwnBackColor;
-			Color fore = control.ForeColor;
+			Color fore = control is LinkLabel link ? link.CurrentLinkColor : control.ForeColor;
 			if (back == peer.Back && fore == peer.Fore)
 			{
 				return;

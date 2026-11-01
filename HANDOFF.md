@@ -67,8 +67,13 @@ Done for 1.21, on Windows unless noted; nothing of it is pushed:
   plugin: `Index_64` and `dgo_ac_x64` run, a throw through their own frame handlers isn't tested, and `DetailManager_.dll` stops at
   `CreatePipe` (it starts a process, which the layer doesn't do).
 - Input device plugins' settings on the OpenGL and native menus (`OBNS/glplugins.ps1`, `GLForms/Layout.cs`; `OBNS/GLFORMS.md`). All five
-  open and work with `OBNS_GLFORMS=1` here, KATO's save checked. Not run yet on a Mac. Not compared with Windows Forms by eye: ZUIKI's
-  page shows one column of buttons there (294-pixel panels, 603 wide with a scroll bar).
+  open and work with `OBNS_GLFORMS=1` here and on the M1's native menu (with no controller attached), KATO's save checked on both. ZUIKI's page
+  has two columns, panel for panel as real Windows Forms lays it out (measured here; 12 rows by 2 and no scroll bar on the Mac). The `/glmenu`
+  pass on the Mac wasn't run. Third-party plugins' Windows Forms windows still can't open on macOS.
+- The Mac native menu's links are Gold, as on Windows (checked on the M1), not underlined and not Crimson while pressed.
+  A dialog opened from a dialog goes back to that dialog when it closes (Densha de GO's Help, checked on the M1).
+- A push button too narrow for its title wraps it where the form made it tall enough (SanYing's "Discard and close"). This is in
+  `MenuKit.swift`, so not compiled or run yet: it needs the next full Mac build.
 - `Win32PluginProxy.exe` no longer goes through the shell, so a download-marked copy loads a 32-bit plugin without a security prompt.
 
 Still to do for 1.21:
@@ -77,6 +82,10 @@ Still to do for 1.21:
   when Direct3D 11 is chosen by name, 2 to 3 times slower than OpenGL there, not called stable (one 0x7F with temporary code, cause
   unknown). Not received yet; regression-check it on the RTX 2060 before merging. Vulkan readback isn't built, and is the user's call.
 - `RELEASE_NOTES.md`'s 1.21 section.
+- A tester reports a train loading considerably slower than on upstream's release; the user will bring the details. First thing to measure, not
+  yet measured: `Bve5SoundAddOn.Find` opens every `.txt` up to two levels below a `train.dat` train's folder before its sound loads.
+- From reading the code, not run: each `<Car>` in a `train.xml` beside a BVE5 vehicle file rebuilds that car's traction (`TrainXmlParser.CarNode.cs`), so the
+  BVE5 model is lost. Such a train should use `extensions.cfg` until OBNS keeps the model; the fix isn't decided.
 - The upstream `Track[...].Position(x, y, radius)` gap and the BVE6 cab gauges belong to 1.22.
 
 Test machines: the M1 Mac (session "OBNS (macOS Session / M1 Mac Mini)"), the Broadwell MacBook on Ubuntu (no heavy runs until
