@@ -21,8 +21,8 @@ Release files, for version 1.14.1.2-OBNS and Android 1.14.1.2-android.4:
 - Ubuntu deb: `OBNS/packaging/make-deb.py`; its contents are checked, but it hasn't been installed on Ubuntu (that needs root on the
   test laptop, whose session is offline).
 - macOS: `OBNS/packaging/mac/make-app.sh`, run on the M1 with `bash` (`OBNS/build/dist/OpenBVE-1.14.1.2-OBNS.dmg`). Gatekeeper refuses the
-  app itself: no Developer ID, and it hangs behind "Apple could not verify". Past that needs Open Anyway, which is the user's to press and
-  hasn't been tried, or a Developer ID with notarization. A plain copy of `Contents/Resources` run through the launcher's environment
+  app itself: no Developer ID, and it hangs behind "Apple could not verify". The user chose Open Anyway on the M1: the app then starts and its native menu opens. A Developer ID with
+  notarization would remove that step. A plain copy of `Contents/Resources` run through the launcher's environment
   was tested with new settings: native menu, SDL2 picked by itself, TML on Metal, no errors.
 - Android: checked with `-DebugKey`; the user signs it with `Android/release.ps1 -PortRelease 4` and types the password at its prompt.
 
