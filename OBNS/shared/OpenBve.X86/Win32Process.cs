@@ -38,6 +38,8 @@ namespace OpenBve.X86
 		public uint Base;
 		public uint Size;
 		public uint EntryPoint;
+		/// <summary>A 64-bit module's table of functions and how to unwind them (the exception directory): its address and size.</summary>
+		public uint ExceptionTable, ExceptionTableSize;
 		public readonly Dictionary<string, uint> Exports = new Dictionary<string, uint>(StringComparer.Ordinal);
 		public readonly Dictionary<ushort, uint> ExportsByOrdinal = new Dictionary<ushort, uint>();
 
@@ -83,9 +85,33 @@ namespace OpenBve.X86
 
 		public IReadOnlyList<LoadedModule> Modules => modules;
 
-		public Win32Process(string rootFolder)
+		/// <summary>Whether the process runs 64-bit plugins, on the x64 processor (Cpu.Long), rather than 32-bit ones.</summary>
+		public bool Is64 { get; }
+
+		private uint ReadPtr(uint address)
+		{
+			return Memory.Read32(address);
+		}
+
+		/// <summary>Writes a pointer as the process's code expects one: 8 bytes in a 64-bit process, whose addresses are all below 4 GB.</summary>
+		private void WritePtr(uint address, uint value)
+		{
+			if (Is64)
+			{
+				Memory.Write64(address, value);
+			}
+			else
+			{
+				Memory.Write32(address, value);
+			}
+		}
+
+		private uint PtrSize => Is64 ? 8u : 4u;
+
+		public Win32Process(string rootFolder, bool is64 = false)
 		{
 			RootFolder = Path.GetFullPath(rootFolder);
+			Is64 = is64;
 			Cpu = new Cpu(Memory);
 
 			Memory.Map(StackTop - StackSize, StackSize);
@@ -104,6 +130,20 @@ namespace OpenBve.X86
 			Cpu.FsBase = TebAddress;
 			Cpu.ThrowDispatcher = DispatchThrow;
 			Memory.Map(PebAddress, 0x1000);
+			if (is64)
+			{
+				// The x64 thread information block, at GS: the stack range, the self pointer, the ids, TLS and the PEB.
+				Memory.Write64(TebAddress + 0x08, StackTop);
+				Memory.Write64(TebAddress + 0x10, StackTop - StackSize);
+				Memory.Write64(TebAddress + 0x30, TebAddress);
+				Memory.Write64(TebAddress + 0x40, 1);
+				Memory.Write64(TebAddress + 0x48, 1);
+				Memory.Write64(TebAddress + 0x58, TebAddress + 0x1000);
+				Memory.Write64(TebAddress + 0x60, PebAddress);
+				Cpu.Long = new Cpu64(Memory, Cpu) { GsBase = TebAddress };
+				Cpu.Long.R[Cpu64.RSP] = StackTop - 0x100;
+				Cpu.Long.ThrowDispatcher = DispatchThrow64;
+			}
 
 			Memory.Map(MiscBase, 0x10000);
 			miscNext = MiscBase + 0x10;
@@ -111,7 +151,14 @@ namespace OpenBve.X86
 			RegisterKernel32();
 			RegisterMsvcrt();
 			RegisterExtras();
-			RegisterMsvcp();
+			if (is64)
+			{
+				RegisterMsvcp64();
+			}
+			else
+			{
+				RegisterMsvcp();
+			}
 		}
 
 		// --- small fixed allocations (data imports, strings the process hands out) ---
@@ -390,19 +437,20 @@ namespace OpenBve.X86
 			}
 
 			int pe = BitConverter.ToInt32(image, 0x3C);
-			if (BitConverter.ToUInt32(image, pe) != 0x4550 || BitConverter.ToUInt16(image, pe + 4) != 0x14C)
+			if (BitConverter.ToUInt32(image, pe) != 0x4550 || BitConverter.ToUInt16(image, pe + 4) != (Is64 ? 0x8664 : 0x14C))
 			{
-				throw new X86Exception(Path.GetFileName(hostPath) + " is not a 32-bit x86 DLL");
+				throw new X86Exception(Path.GetFileName(hostPath) + (Is64 ? " is not a 64-bit x64 DLL" : " is not a 32-bit x86 DLL"));
 			}
 
 			int sectionCount = BitConverter.ToUInt16(image, pe + 6);
 			int optionalSize = BitConverter.ToUInt16(image, pe + 20);
 			int optional = pe + 24;
-			uint preferredBase = BitConverter.ToUInt32(image, optional + 28);
+			// A 64-bit image goes below 4 GB wherever it asks to be, as the whole of the address space does.
+			ulong preferredBase = Is64 ? BitConverter.ToUInt64(image, optional + 24) : BitConverter.ToUInt32(image, optional + 28);
 			uint imageSize = BitConverter.ToUInt32(image, optional + 56);
 			uint headersSize = BitConverter.ToUInt32(image, optional + 60);
 			uint entry = BitConverter.ToUInt32(image, optional + 16);
-			int directories = optional + 96;
+			int directories = optional + (Is64 ? 112 : 96);
 
 			uint Dir(int index, out uint size)
 			{
@@ -410,7 +458,7 @@ namespace OpenBve.X86
 				return BitConverter.ToUInt32(image, directories + 8 * index);
 			}
 
-			uint baseAddress = ChooseBase(preferredBase, imageSize);
+			uint baseAddress = ChooseBase(preferredBase < 0x70000000 ? (uint)preferredBase : 0x01000000, imageSize);
 			Memory.Map(baseAddress, imageSize);
 			Memory.WriteBytes(baseAddress, image.AsSpan(0, (int)Math.Min(headersSize, (uint)image.Length)));
 
@@ -439,8 +487,11 @@ namespace OpenBve.X86
 				EntryPoint = entry == 0 ? 0 : baseAddress + entry
 			};
 
+			module.ExceptionTable = Is64 && Dir(3, out uint exceptionSize) != 0 ? baseAddress + Dir(3, out exceptionSize) : 0;
+			module.ExceptionTableSize = module.ExceptionTable != 0 ? BitConverter.ToUInt32(image, directories + 28) : 0;
+
 			// Relocations, if not at the preferred base.
-			uint delta = baseAddress - preferredBase;
+			ulong delta = baseAddress - preferredBase;
 			uint relocations = Dir(5, out uint relocationSize);
 			if (delta != 0)
 			{
@@ -467,7 +518,11 @@ namespace OpenBve.X86
 						uint target = baseAddress + page + (uint)(entryValue & 0xFFF);
 						if (type == 3)
 						{
-							Memory.Write32(target, Memory.Read32(target) + delta);
+							Memory.Write32(target, Memory.Read32(target) + (uint)delta);
+						}
+						else if (type == 10)
+						{
+							Memory.Write64(target, Memory.Read64(target) + delta);
 						}
 						else if (type != 0)
 						{
@@ -519,18 +574,18 @@ namespace OpenBve.X86
 					uint lookup = Memory.Read32(d);
 					uint thunks = baseAddress + Memory.Read32(d + 16);
 					uint names = lookup != 0 ? baseAddress + lookup : thunks;
-					for (uint i = 0; ; i += 4)
+					for (uint i = 0; ; i += PtrSize)
 					{
-						uint value = Memory.Read32(names + i);
+						ulong value = Is64 ? Memory.Read64(names + i) : Memory.Read32(names + i);
 						if (value == 0)
 						{
 							break;
 						}
 
-						string function = (value & 0x80000000) != 0
+						string function = (value >> (Is64 ? 63 : 31)) != 0
 							? "#" + (value & 0xFFFF)
-							: Memory.ReadCString(baseAddress + value + 2);
-						Memory.Write32(thunks + i, ResolveImport(dll, function, module));
+							: Memory.ReadCString(baseAddress + (uint)value + 2);
+						WritePtr(thunks + i, ResolveImport(dll, function, module));
 					}
 				}
 			}

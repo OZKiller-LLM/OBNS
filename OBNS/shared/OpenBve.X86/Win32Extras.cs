@@ -67,20 +67,20 @@ namespace OpenBve.X86
 			Export(k, "InterlockedPushEntrySList", 8, c =>
 			{
 				uint head = c.Arg(0), entry = c.Arg(1);
-				uint first = Memory.Read32(head);
-				Memory.Write32(entry, first);
-				Memory.Write32(head, entry);
-				Memory.Write16(head + 4, (ushort)(Memory.Read16(head + 4) + 1));
+				uint first = Memory.Read32(head + (Is64 ? 8u : 0u));
+				WritePtr(entry, first);
+				WritePtr(head + (Is64 ? 8u : 0u), entry);
+				Memory.Write16(Is64 ? head : head + 4, (ushort)(Memory.Read16(Is64 ? head : head + 4) + 1));
 				return first;
 			});
 			Export(k, "InterlockedPopEntrySList", 4, c =>
 			{
 				uint head = c.Arg(0);
-				uint first = Memory.Read32(head);
+				uint first = Memory.Read32(head + (Is64 ? 8u : 0u));
 				if (first != 0)
 				{
-					Memory.Write32(head, Memory.Read32(first));
-					Memory.Write16(head + 4, (ushort)(Memory.Read16(head + 4) - 1));
+					WritePtr(head + (Is64 ? 8u : 0u), Memory.Read32(first));
+					Memory.Write16(Is64 ? head : head + 4, (ushort)(Memory.Read16(Is64 ? head : head + 4) - 1));
 				}
 
 				return first;
@@ -133,7 +133,7 @@ namespace OpenBve.X86
 			Export("winmm", "joyGetNumDevs", 0, c => 0);
 
 			// --- Visual Studio 2015+ runtime start-up and shut-down (UCRT, vcruntime140) ---
-			Export(m, "_initialize_onexit_table", 0, c => { Memory.Fill(c.Arg(0), 0, 12); onexitTables[c.Arg(0)] = new List<uint>(); return 0; });
+			Export(m, "_initialize_onexit_table", 0, c => { Memory.Fill(c.Arg(0), 0, 3 * PtrSize); onexitTables[c.Arg(0)] = new List<uint>(); return 0; });
 			Export(m, "_register_onexit_function", 0, c =>
 			{
 				if (!onexitTables.TryGetValue(c.Arg(0), out List<uint> table))
@@ -172,7 +172,8 @@ namespace OpenBve.X86
 			Export(m, "_invalid_parameter_noinfo_noreturn", 0, c => throw new X86Exception("the plugin's C runtime reported an invalid parameter"));
 			Export(m, "__std_type_info_destroy_list", 0, c => 0);
 			Export(m, "__current_exception", 0, c => CurrentExceptionSlot());
-			Export(m, "__current_exception_context", 0, c => CurrentExceptionSlot() + 4);
+			Export(m, "__current_exception_context", 0, c => CurrentExceptionSlot() + PtrSize);
+			Export(m, "__C_specific_handler", 0, c => 1); // ExceptionContinueSearch: a __try doesn't take a C++ exception
 			Export(m, "__CxxFrameHandler3", 0, c => 1); // ExceptionContinueSearch: only reached if an exception is raised
 			Export(m, "__CxxFrameHandler4", 0, c => 1);
 			Export(m, "__std_terminate", 0, c => throw new X86Exception("the plugin called std::terminate"));
@@ -180,7 +181,7 @@ namespace OpenBve.X86
 			{
 				// struct __std_exception_data { const char* _What; bool _DoFree; }
 				uint what = Memory.Read32(c.Arg(0));
-				bool free = Memory.Read8(c.Arg(0) + 4) != 0;
+				bool free = Memory.Read8(c.Arg(0) + PtrSize) != 0;
 				if (free && what != 0)
 				{
 					uint length = CLength(what);
@@ -189,15 +190,15 @@ namespace OpenBve.X86
 					what = copy;
 				}
 
-				Memory.Write32(c.Arg(1), what);
-				Memory.Write8(c.Arg(1) + 4, (byte)(free ? 1 : 0));
+				WritePtr(c.Arg(1), what);
+				Memory.Write8(c.Arg(1) + PtrSize, (byte)(free ? 1 : 0));
 				return 0;
 			});
 			Export(m, "__std_exception_destroy", 0, c =>
 			{
-				if (Memory.Read8(c.Arg(0) + 4) != 0) HeapFree(Memory.Read32(c.Arg(0)));
-				Memory.Write32(c.Arg(0), 0);
-				Memory.Write8(c.Arg(0) + 4, 0);
+				if (Memory.Read8(c.Arg(0) + PtrSize) != 0) HeapFree(Memory.Read32(c.Arg(0)));
+				WritePtr(c.Arg(0), 0);
+				Memory.Write8(c.Arg(0) + PtrSize, 0);
 				return 0;
 			});
 			foreach (string thrower in new[] { "?_Xbad_function_call@std@@YAXXZ", "?_Xinvalid_argument@std@@YAXPBD@Z", "?_Xlength_error@std@@YAXPBD@Z", "?_Xout_of_range@std@@YAXPBD@Z", "?_Xbad_alloc@std@@YAXXZ", "?_Xruntime_error@std@@YAXPBD@Z" })
@@ -243,7 +244,7 @@ namespace OpenBve.X86
 				string text = Memory.ReadWString(c.Arg(0)) ?? string.Empty;
 				int used = NumberPrefix(text, true);
 				double.TryParse(text.Substring(0, used).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value);
-				if (c.Arg(1) != 0) Memory.Write32(c.Arg(1), c.Arg(0) + (uint)(2 * used));
+				if (c.Arg(1) != 0) WritePtr(c.Arg(1), c.Arg(0) + (uint)(2 * used));
 				c.ReturnDouble(value);
 				return 0;
 			});
@@ -252,7 +253,7 @@ namespace OpenBve.X86
 				string text = Memory.ReadWString(c.Arg(0)) ?? string.Empty;
 				int used = NumberPrefix(text, false);
 				long.TryParse(text.Substring(0, used).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long value);
-				if (c.Arg(1) != 0) Memory.Write32(c.Arg(1), c.Arg(0) + (uint)(2 * used));
+				if (c.Arg(1) != 0) WritePtr(c.Arg(1), c.Arg(0) + (uint)(2 * used));
 				return (uint)(int)Math.Max(int.MinValue, Math.Min(value, int.MaxValue));
 			});
 			Export(m, "iswblank", 0, c => c.Arg(0) == ' ' || c.Arg(0) == '\t' ? 0x40u : 0u);

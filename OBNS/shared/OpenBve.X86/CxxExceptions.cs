@@ -199,9 +199,17 @@ namespace OpenBve.X86
 		{
 			if (standardExceptionVftable == 0)
 			{
-				standardExceptionVftable = AllocateStatic(8);
-				Memory.Write32(standardExceptionVftable, Cpu.AddHostFunction("std::exception destructor", c => c.R[Cpu.ECX], 4));
-				Memory.Write32(standardExceptionVftable + 4, Cpu.AddHostFunction("std::exception::what", c => Memory.Read32(c.R[Cpu.ECX] + 4), 0));
+				standardExceptionVftable = AllocateStatic(16);
+				if (Is64)
+				{
+					Memory.Write64(standardExceptionVftable, Cpu.AddHostFunction("std::exception destructor", c => c.Arg(0), 0));
+					Memory.Write64(standardExceptionVftable + 8, Cpu.AddHostFunction("std::exception::what", c => Memory.Read32(c.Arg(0) + 8), 0));
+				}
+				else
+				{
+					Memory.Write32(standardExceptionVftable, Cpu.AddHostFunction("std::exception destructor", c => c.R[Cpu.ECX], 4));
+					Memory.Write32(standardExceptionVftable + 4, Cpu.AddHostFunction("std::exception::what", c => Memory.Read32(c.R[Cpu.ECX] + 4), 0));
+				}
 			}
 
 			if (!standardThrowInfo.TryGetValue(type, out uint throwInfo))
@@ -213,13 +221,14 @@ namespace OpenBve.X86
 				for (int i = 0; i < names.Count; i++)
 				{
 					string mangled = ".?AV" + names[i] + "@std@@";
-					uint descriptor = AllocateStatic(8 + (uint)mangled.Length + 1);
-					Memory.Write32(descriptor, standardExceptionVftable);
-					Memory.WriteCString(descriptor + 8, mangled);
+					// A type descriptor: the vptr and a spare pointer, then the name. On x64 these tables hold RVAs, here from nothing.
+					uint descriptor = AllocateStatic(2 * PtrSize + (uint)mangled.Length + 1);
+					WritePtr(descriptor, standardExceptionVftable);
+					Memory.WriteCString(descriptor + 2 * PtrSize, mangled);
 					uint catchable = AllocateStatic(28);
 					Memory.Write32(catchable + 4, descriptor);
 					Memory.Write32(catchable + 12, 0xFFFFFFFF); // pdisp: no virtual base
-					Memory.Write32(catchable + 20, 12);
+					Memory.Write32(catchable + 20, 3 * PtrSize);
 					Memory.Write32(array + 4 + 4 * (uint)i, catchable);
 				}
 
@@ -228,9 +237,9 @@ namespace OpenBve.X86
 				standardThrowInfo[type] = throwInfo;
 			}
 
-			uint thrownObject = HeapAllocate(12);
-			Memory.Write32(thrownObject, standardExceptionVftable);
-			Memory.Write32(thrownObject + 4, StaticCString(what));
+			uint thrownObject = HeapAllocate(3 * PtrSize);
+			WritePtr(thrownObject, standardExceptionVftable);
+			WritePtr(thrownObject + PtrSize, StaticCString(what));
 			return new GuestThrow(thrownObject, throwInfo, "std::" + type + ": " + what);
 		}
 	}

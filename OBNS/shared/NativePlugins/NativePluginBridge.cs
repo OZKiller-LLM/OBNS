@@ -83,13 +83,13 @@ namespace OpenBve.NativePlugins
 			}
 
 			/*
-			 * First choice: run the plugin itself, in the x86 emulator. A 32-bit Windows DLL is
+			 * First choice: run the plugin itself, in the x86 emulator. A 32-bit or 64-bit Windows DLL is
 			 * interpreted instruction by instruction, with its Windows and C runtime calls answered
 			 * by a small compatibility layer, so it behaves as it does on Windows - signalling,
 			 * panel indices and sounds included. Only if it cannot start there does a managed
 			 * translation (or a pass-through) stand in.
 			 */
-			if (image.Kind == NativePluginKind.NativeX86 && EmulationEnabled)
+			if ((image.Kind == NativePluginKind.NativeX86 || image.Kind == NativePluginKind.NativeX64) && EmulationEnabled)
 			{
 				string root = EmulationRoot(trainFolder);
 				EmulatedWin32Plugin emulated = new EmulatedWin32Plugin(file, root, AnsiEncoding(encoding, trainFolder), train);

@@ -47,9 +47,9 @@ namespace OpenBve.X86
 			dataImports[m + "!_iob"] = () => Iob();
 			dataImports[m + "!_adjust_fdiv"] = () => AllocateStatic(4);
 			dataImports[m + "!__initenv"] = () => AllocateStatic(4);
-			dataImports[m + "!_acmdln"] = () => { uint p = AllocateStatic(4); Memory.Write32(p, StaticCString("OpenBve.exe")); return p; };
+			dataImports[m + "!_acmdln"] = () => { uint p = AllocateStatic(8); WritePtr(p, StaticCString("OpenBve.exe")); return p; };
 			dataImports[m + "!__mb_cur_max"] = () => { uint p = AllocateStatic(4); Memory.Write32(p, 1); return p; };
-			dataImports[m + "!_pctype"] = () => { uint p = AllocateStatic(4); Memory.Write32(p, CtypeTable() + 2); return p; };
+			dataImports[m + "!_pctype"] = () => { uint p = AllocateStatic(8); WritePtr(p, CtypeTable() + 2); return p; };
 			dataImports[m + "!_environ"] = () => AllocateStatic(8);
 
 			// --- startup and shutdown ---
@@ -58,7 +58,7 @@ namespace OpenBve.X86
 			Export(m, "atexit", 0, c => 0);
 			Export(m, "_initterm", 0, c =>
 			{
-				for (uint p = c.Arg(0); p < c.Arg(1); p += 4)
+				for (uint p = c.Arg(0); p < c.Arg(1); p += PtrSize)
 				{
 					uint function = Memory.Read32(p);
 					if (function != 0)
@@ -71,7 +71,7 @@ namespace OpenBve.X86
 			});
 			Export(m, "_initterm_e", 0, c =>
 			{
-				for (uint p = c.Arg(0); p < c.Arg(1); p += 4)
+				for (uint p = c.Arg(0); p < c.Arg(1); p += PtrSize)
 				{
 					uint function = Memory.Read32(p);
 					if (function != 0)
@@ -210,22 +210,22 @@ namespace OpenBve.X86
 			Export(m, "wcslen", 0, c => (uint)(Memory.ReadWString(c.Arg(0))?.Length ?? 0));
 
 			// --- formatted output ---
-			Export(m, "sprintf", 0, c => (uint)Memory.WriteCString(c.Arg(0), Format(c.Arg(1), c.R[Cpu.ESP] + 12), AnsiEncoding));
+			Export(m, "sprintf", 0, c => (uint)Memory.WriteCString(c.Arg(0), Format(c.Arg(1), c.VarArgs(2)), AnsiEncoding));
 			Export(m, "vsprintf", 0, c => (uint)Memory.WriteCString(c.Arg(0), Format(c.Arg(1), c.Arg(2)), AnsiEncoding));
-			Export(m, "_snprintf", 0, c => WriteLimited(c.Arg(0), c.Arg(1), Format(c.Arg(2), c.R[Cpu.ESP] + 16)));
+			Export(m, "_snprintf", 0, c => WriteLimited(c.Arg(0), c.Arg(1), Format(c.Arg(2), c.VarArgs(3))));
 			Export(m, "_vsnprintf", 0, c => WriteLimited(c.Arg(0), c.Arg(1), Format(c.Arg(2), c.Arg(3))));
-			Export(m, "sprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), false, 0, Format(c.Arg(2), c.R[Cpu.ESP] + 16)));
+			Export(m, "sprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), false, 0, Format(c.Arg(2), c.VarArgs(3))));
 			Export(m, "vsprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), false, 0, Format(c.Arg(2), c.Arg(3))));
-			Export(m, "_snprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), true, c.Arg(2), Format(c.Arg(3), c.R[Cpu.ESP] + 20)));
+			Export(m, "_snprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), true, c.Arg(2), Format(c.Arg(3), c.VarArgs(4))));
 			Export(m, "_vsnprintf_s", 0, c => WriteSecure(c.Arg(0), c.Arg(1), true, c.Arg(2), Format(c.Arg(3), c.Arg(4))));
 			// The Universal CRT's forms: a 64-bit options word first, a locale before the argument list.
-			Export(m, "__stdio_common_vsprintf", 0, c => WriteCommon(c.Arg(0), c.Arg(2), c.Arg(3), Format(c.Arg(4), c.Arg(6))));
-			Export(m, "__stdio_common_vsprintf_s", 0, c => WriteSecure(c.Arg(2), c.Arg(3), false, 0, Format(c.Arg(4), c.Arg(6))));
-			Export(m, "__stdio_common_vsnprintf_s", 0, c => WriteSecure(c.Arg(2), c.Arg(3), true, c.Arg(4), Format(c.Arg(5), c.Arg(7))));
-			Export(m, "__stdio_common_vfprintf", 0, c => { string s = Format(c.Arg(3), c.Arg(5)); WriteStream(c.Arg(2), AnsiEncoding.GetBytes(s)); return (uint)s.Length; });
-			Export(m, "printf", 0, c => { string s = Format(c.Arg(0), c.R[Cpu.ESP] + 8); Log("plugin: " + s.TrimEnd()); return (uint)s.Length; });
+			Export(m, "__stdio_common_vsprintf", 0, c => WriteCommon(c.Arg(0), c.Arg(Common(2)), c.Arg(Common(3)), Format(c.Arg(Common(4)), c.Arg(Common(6)))));
+			Export(m, "__stdio_common_vsprintf_s", 0, c => WriteSecure(c.Arg(Common(2)), c.Arg(Common(3)), false, 0, Format(c.Arg(Common(4)), c.Arg(Common(6)))));
+			Export(m, "__stdio_common_vsnprintf_s", 0, c => WriteSecure(c.Arg(Common(2)), c.Arg(Common(3)), true, c.Arg(Common(4)), Format(c.Arg(Common(5)), c.Arg(Common(7)))));
+			Export(m, "__stdio_common_vfprintf", 0, c => { string s = Format(c.Arg(Common(3)), c.Arg(Common(5))); WriteStream(c.Arg(Common(2)), AnsiEncoding.GetBytes(s)); return (uint)s.Length; });
+			Export(m, "printf", 0, c => { string s = Format(c.Arg(0), c.VarArgs(1)); Log("plugin: " + s.TrimEnd()); return (uint)s.Length; });
 			Export(m, "vprintf", 0, c => { string s = Format(c.Arg(0), c.Arg(1)); Log("plugin: " + s.TrimEnd()); return (uint)s.Length; });
-			Export(m, "fprintf", 0, c => { string s = Format(c.Arg(1), c.R[Cpu.ESP] + 12); WriteStream(c.Arg(0), AnsiEncoding.GetBytes(s)); return (uint)s.Length; });
+			Export(m, "fprintf", 0, c => { string s = Format(c.Arg(1), c.VarArgs(2)); WriteStream(c.Arg(0), AnsiEncoding.GetBytes(s)); return (uint)s.Length; });
 			Export(m, "vfprintf", 0, c => { string s = Format(c.Arg(1), c.Arg(2)); WriteStream(c.Arg(0), AnsiEncoding.GetBytes(s)); return (uint)s.Length; });
 			Export(m, "puts", 0, c => { Log("plugin: " + Memory.ReadCString(c.Arg(0), AnsiEncoding)); return 1; });
 			Export(m, "fputs", 0, c => { WriteStream(c.Arg(1), AnsiEncoding.GetBytes(Memory.ReadCString(c.Arg(0), AnsiEncoding))); return 1; });
@@ -301,7 +301,7 @@ namespace OpenBve.X86
 			Export(m, "_fseeki64", 0, c =>
 			{
 				if (!crtFiles.TryGetValue(c.Arg(0), out Stream stream)) return 0xFFFFFFFF;
-				stream.Seek((long)(c.Arg(1) | ((ulong)c.Arg(2) << 32)), (SeekOrigin)c.Arg(3));
+				stream.Seek(Is64 ? (long)c.Long.Arg(1) : (long)(c.Arg(1) | ((ulong)c.Arg(2) << 32)), (SeekOrigin)(Is64 ? c.Arg(2) : c.Arg(3)));
 				return 0;
 			});
 			Export(m, "_ftelli64", 0, c => crtFiles.TryGetValue(c.Arg(0), out Stream stream) ? (ulong)stream.Position : ulong.MaxValue);
@@ -312,9 +312,9 @@ namespace OpenBve.X86
 			Export(m, "_get_stream_buffer_pointers", 0, c =>
 			{
 				uint file = c.Arg(0);
-				if (c.Arg(1) != 0) Memory.Write32(c.Arg(1), file + 4);
-				if (c.Arg(2) != 0) Memory.Write32(c.Arg(2), file);
-				if (c.Arg(3) != 0) Memory.Write32(c.Arg(3), file + 8);
+				if (c.Arg(1) != 0) WritePtr(c.Arg(1), file + PtrSize);
+				if (c.Arg(2) != 0) WritePtr(c.Arg(2), file);
+				if (c.Arg(3) != 0) WritePtr(c.Arg(3), file + 2 * PtrSize);
 				return 0;
 			});
 			Export(m, "___lc_codepage_func", 0, c => (uint)AnsiEncoding.CodePage);
@@ -366,7 +366,7 @@ namespace OpenBve.X86
 			Export(m, "ceil", 0, c => { c.ReturnDouble(Math.Ceiling(c.ArgDouble(0))); return 0; });
 			Export(m, "fabs", 0, c => { c.ReturnDouble(Math.Abs(c.ArgDouble(0))); return 0; });
 			Export(m, "fmod", 0, c => { c.ReturnDouble(c.ArgDouble(0) % c.ArgDouble(8)); return 0; });
-			Export(m, "ldexp", 0, c => { c.ReturnDouble(c.ArgDouble(0) * Math.Pow(2, (int)Memory.Read32(c.R[Cpu.ESP] + 12))); return 0; });
+			Export(m, "ldexp", 0, c => { c.ReturnDouble(c.ArgDouble(0) * Math.Pow(2, (int)(Is64 ? c.Arg(1) : c.Arg(2)))); return 0; });
 			Export(m, "abs", 0, c => (uint)Math.Abs((int)c.Arg(0)));
 			Export(m, "labs", 0, c => (uint)Math.Abs((int)c.Arg(0)));
 			// The _CI* helpers take their operands on the x87 stack instead.
@@ -536,7 +536,7 @@ namespace OpenBve.X86
 				p++;
 			}
 
-			if (end != 0) Memory.Write32(end, p == start ? text : p);
+			if (end != 0) WritePtr(end, p == start ? text : p);
 			if (negative) value = -value;
 			if (signed)
 			{
@@ -563,7 +563,7 @@ namespace OpenBve.X86
 			}
 
 			double.TryParse(s.Substring(start, i - start), NumberStyles.Float, CultureInfo.InvariantCulture, out double value);
-			if (end != 0) Memory.Write32(end, i == start ? text : text + (uint)i);
+			if (end != 0) WritePtr(end, i == start ? text : text + (uint)i);
 			return value;
 		}
 
@@ -936,7 +936,7 @@ namespace OpenBve.X86
 		{
 			if (target != 0)
 			{
-				Memory.Write32(target, file);
+				WritePtr(target, file);
 			}
 
 			if (file == 0)
@@ -1005,12 +1005,19 @@ namespace OpenBve.X86
 			}
 		}
 
+		/// <summary>An argument of __stdio_common_*, numbered as on x86: there its 64-bit options take two slots, on x64 one.</summary>
+		private int Common(int slot)
+		{
+			return Is64 ? slot - 1 : slot;
+		}
+
 		/// <summary>printf formatting, reading arguments from emulated memory in order.</summary>
 		private string Format(uint format, uint args)
 		{
 			string f = Memory.ReadCString(format, AnsiEncoding);
 			StringBuilder output = new StringBuilder();
 			uint next = args;
+			uint slot = Is64 ? 8u : 4u; // x64 gives every argument a slot of 8 bytes
 			for (int i = 0; i < f.Length; i++)
 			{
 				char ch = f[i];
@@ -1043,7 +1050,7 @@ namespace OpenBve.X86
 				if (i < f.Length && f[i] == '*')
 				{
 					width = (int)Memory.Read32(next);
-					next += 4;
+					next += slot;
 					i++;
 				}
 				else
@@ -1059,7 +1066,7 @@ namespace OpenBve.X86
 					if (i < f.Length && f[i] == '*')
 					{
 						precision = (int)Memory.Read32(next);
-						next += 4;
+						next += slot;
 						i++;
 					}
 					else
@@ -1097,7 +1104,7 @@ namespace OpenBve.X86
 					case 'i':
 					{
 						long v = wide64 ? (long)Memory.Read64(next) : (int)Memory.Read32(next);
-						next += wide64 ? 8u : 4u;
+						next += wide64 ? 8u : slot;
 						text = Math.Abs(v).ToString(CultureInfo.InvariantCulture);
 						if (precision >= 0) text = text.PadLeft(precision, '0');
 						text = (v < 0 ? "-" : plus ? "+" : space ? " " : string.Empty) + text;
@@ -1109,7 +1116,7 @@ namespace OpenBve.X86
 					case 'o':
 					{
 						ulong v = wide64 ? Memory.Read64(next) : Memory.Read32(next);
-						next += wide64 ? 8u : 4u;
+						next += wide64 ? 8u : slot;
 						text = conversion == 'u' ? v.ToString(CultureInfo.InvariantCulture)
 							: conversion == 'o' ? Convert.ToString((long)v, 8)
 							: v.ToString(conversion == 'x' ? "x" : "X", CultureInfo.InvariantCulture);
@@ -1132,13 +1139,13 @@ namespace OpenBve.X86
 					}
 					case 'c':
 						text = ((char)(byte)Memory.Read32(next)).ToString();
-						next += 4;
+						next += slot;
 						numeric = false;
 						break;
 					case 's':
 					{
 						uint p = Memory.Read32(next);
-						next += 4;
+						next += slot;
 						text = p == 0 ? "(null)" : Memory.ReadCString(p, AnsiEncoding);
 						if (precision >= 0 && text.Length > precision) text = text.Substring(0, precision);
 						numeric = false;
@@ -1147,18 +1154,18 @@ namespace OpenBve.X86
 					case 'S':
 					{
 						uint p = Memory.Read32(next);
-						next += 4;
+						next += slot;
 						text = p == 0 ? "(null)" : Memory.ReadWString(p);
 						numeric = false;
 						break;
 					}
 					case 'p':
 						text = Memory.Read32(next).ToString("X8");
-						next += 4;
+						next += slot;
 						break;
 					case 'n':
 						Memory.Write32(Memory.Read32(next), (uint)output.Length);
-						next += 4;
+						next += slot;
 						continue;
 					default:
 						text = "%" + conversion;

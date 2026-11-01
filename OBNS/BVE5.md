@@ -78,8 +78,9 @@ relative to the file. The vehicle performance file and the motor noise file have
   its own cars, as each formation's car count and order may differ.
 - **Safety plugin**: `Ats32` through upstream's Win32PluginProxy on the desktop, or `Ats64` if it has no
   `Ats32`, loaded directly into the 64-bit program as BVE6 loads it (`Win64Plugin`; also any train.dat
-  train's 64-bit plugin); on Android through the x86 plugin layer (`NativePluginBridge`, which reads the vehicle file
-  as an ats.cfg would be read). A plugin under a path the system's ANSI code page cannot name (a Japanese
+  train's 64-bit plugin); on Android, Linux and macOS through the plugin layer (`NativePluginBridge`, which reads the
+  vehicle file as an ats.cfg would be read), `Ats32` in its x86 processor and `Ats64`, if the train has no `Ats32`, in its
+  x64 one. `OBNS_ATS64=1` takes `Ats64` where a train has both, for testing. A plugin under a path the system's ANSI code page cannot name (a Japanese
   train on a Chinese Windows) is loaded through an ASCII-named junction (`%LOCALAPPDATA%\OBNS\PluginPaths`),
   so that it can open its own files (OBNS copy of `TrainManager/SafetySystems/Plugin/Plugin.Functions.cs`).
   Each plugin proxy is started with a name of its own (OBNS copies of `ProxyPlugin.cs` and
@@ -88,7 +89,6 @@ relative to the file. The vehicle performance file and the motor noise file have
 
 ## Not yet
 
-- An `Ats64`-only train on Android needs an x64 layer (the x86 layer runs 32-bit plugins).
 - Upstream's BVE5 map parser (the `Bve5_Parsing` package) rejects some map 2.02 statements, such as
   `Track[...].Position(x, y, radius)`; such routes load without them.
 - BVE5-only plugins that read BVE5's memory (AtsEx and the like) cannot work outside BVE5.

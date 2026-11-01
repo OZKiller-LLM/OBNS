@@ -48,6 +48,11 @@ namespace OpenBve.X86.Tests
 
 			string root = args[0];
 			string dll = args[1];
+			if (args.Length > 3 && args[2] == "compare")
+			{
+				return CompareProbe.Run(root, dll, args[3], args.Length > 4 ? int.Parse(args[4]) : 3000, Encoding.GetEncoding(932));
+			}
+
 			if (args.Length > 2 && args[2] == "ato")
 			{
 				AtoProbe.Run(root, dll);

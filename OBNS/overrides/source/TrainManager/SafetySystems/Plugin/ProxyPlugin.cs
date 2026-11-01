@@ -86,6 +86,8 @@ namespace TrainManager.SafetySystems {
 					hostProcess = new Process();
 					hostProcess.StartInfo.FileName = @"Win32PluginProxy.exe";
 					hostProcess.StartInfo.Arguments = name;
+					// OBNS: not through the shell, which stops at a security prompt for a zip unpacked with its download mark.
+					hostProcess.StartInfo.UseShellExecute = false;
 					hostProcess.Start();
 					if (!ready.WaitOne(TimeSpan.FromSeconds(30)))
 					{

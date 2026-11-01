@@ -176,6 +176,14 @@ ATS-Sx brake its real system would not have applied.
 - Log: what was installed goes to the log file; `OBNS_X86_DEBUG=1` adds every key, signal, beacon
   and panel change; `OBNS_PLUGIN_TRACE=<folder>` (or `1`, for `plugin-trace` in the settings
   folder) records the calls (`plugin-trace.bin`) for `OpenBve.X86.Tests <root> <dll> replay <trace>`.
+- 64-bit plugins (1.21): `Cpu64.cs` and `Cpu64.Sse.cs` interpret x86-64 beside the x86 processor, under the Windows x64
+  convention, with the image, stack and heap below 4 GB so that the same `Memory` serves. The Windows and C runtime functions
+  are shared: `Cpu` routes their arguments to the x64 processor, and they write pointers with `WritePtr`. `Msvcp64.cs` is
+  `Msvcp.cs`'s stream classes in x64 layouts, and `Cxx64.cs` Visual C++'s table-driven exceptions (unwind codes, FH3 and FH4;
+  as on x86, the destructors of what a throw leaves behind aren't run). `OpenBve.X86.Tests <root> <dll> compare <other dll>`
+  runs one drive through two copies and compares every frame's handles, panel and sounds; `native:<dll>` loads a 64-bit one for
+  real, on Windows. The E217's set (2026-11-01) has no differences from itself natively over 6000 frames, IC card and exceptions
+  included. `OBNS_X86_PLUGINS=1` runs either kind in the layer on Windows.
 - Running it (2026-10-29): Linux needs Mono (`mono-complete`; Ubuntu 22.04's 6.8 works) with OpenAL and
   SDL2. macOS needs Mono, `mono-libgdiplus` and SDL2 (Homebrew; arm64 on Apple silicon), and on Apple
   silicon `preferNativeBackend = false` under `[display]` in options.cfg: OpenTK 3's native Cocoa

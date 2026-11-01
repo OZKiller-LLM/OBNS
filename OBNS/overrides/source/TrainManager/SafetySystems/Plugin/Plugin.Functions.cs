@@ -409,8 +409,8 @@ namespace TrainManager.Trains
 
 		/// <summary>
 		/// OBNS: whether a native plugin runs in the x86 layer: wherever upstream gives up on it - on Linux, macOS and
-		/// FreeBSD, and in the 64-bit program under WINE, which has no plugin proxy - and, with OBNS_X86_PLUGINS=1, a
-		/// 32-bit one on Windows too, for comparing the layer with the proxy.
+		/// FreeBSD, and in the 64-bit program under WINE, which has no plugin proxy - and, with OBNS_X86_PLUGINS=1, one on
+		/// Windows too, 32-bit or 64-bit, for comparing the layer with the proxy or the direct load.
 		/// </summary>
 		private static bool UseX86Layer(string pluginFile)
 		{
@@ -436,7 +436,7 @@ namespace TrainManager.Trains
 
 			try
 			{
-				return Win32Plugin.CheckHeader(pluginFile);
+				return Win32Plugin.CheckHeader(pluginFile) || Win64Plugin.CheckHeader(pluginFile);
 			}
 			catch (Exception)
 			{

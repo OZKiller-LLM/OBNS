@@ -457,7 +457,8 @@ namespace Train.OpenBve
 					}
 
 					Bve5MotorNoise.Apply(currentTrain, bve5Vehicle);
-					string atsPlugin = IntPtr.Size == 8 && bve5Vehicle.Ats32 == null ? bve5Vehicle.Ats64 : bve5Vehicle.Ats32;
+					// OBNS_ATS64=1: the 64-bit plugin where a train has both, for testing it.
+					string atsPlugin = IntPtr.Size == 8 && (bve5Vehicle.Ats32 == null || bve5Vehicle.Ats64 != null && Environment.GetEnvironmentVariable("OBNS_ATS64") == "1") ? bve5Vehicle.Ats64 : bve5Vehicle.Ats32;
 					if (currentTrain.IsPlayerTrain && atsPlugin != null)
 					{
 						FileSystem.AppendToLogFile("Loading train plugin: " + atsPlugin);

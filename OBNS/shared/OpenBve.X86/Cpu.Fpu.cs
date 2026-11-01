@@ -44,12 +44,23 @@ namespace OpenBve.X86
 		/// <summary>Returns a floating-point result from a host function, in ST(0) as the x86 ABI requires.</summary>
 		public void ReturnDouble(double value)
 		{
+			if (Long != null)
+			{
+				Long.ReturnDouble(value);
+				return;
+			}
+
 			FPush(value);
 		}
 
 		/// <summary>Reads a double argument of a host function at a byte offset into the arguments.</summary>
 		public double ArgDouble(int byteOffset)
 		{
+			if (Long != null)
+			{
+				return Long.ArgDouble(byteOffset / 8); // each argument has a slot of its own: the x86 offsets are multiples of 8
+			}
+
 			return Memory.ReadDouble(R[ESP] + 4 + (uint)byteOffset);
 		}
 

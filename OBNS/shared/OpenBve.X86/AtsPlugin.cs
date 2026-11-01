@@ -108,7 +108,7 @@ namespace OpenBve.X86
 		/// </summary>
 		public static AtsPlugin Open(string rootFolder, string dllPath, Encoding ansiEncoding, Action<string> log, Action<Win32Process> beforeLoad = null)
 		{
-			Win32Process process = new Win32Process(rootFolder)
+			Win32Process process = new Win32Process(rootFolder, IsX64(dllPath))
 			{
 				Log = log ?? (_ => { }),
 				AnsiEncoding = ansiEncoding ?? Compat.Latin1
@@ -119,6 +119,22 @@ namespace OpenBve.X86
 			process.CurrentDirectoryRelative = windows.Substring(3, Math.Max(0, slash - 3));
 			LoadedModule module = process.LoadLibrary(dllPath);
 			return new AtsPlugin(process, module);
+		}
+
+		/// <summary>Whether a Windows DLL is a 64-bit one, from its headers.</summary>
+		public static bool IsX64(string dllPath)
+		{
+			using (System.IO.FileStream stream = System.IO.File.OpenRead(dllPath))
+			{
+				byte[] header = new byte[0x40];
+				if (stream.Read(header, 0, 0x40) != 0x40 || header[0] != 'M' || header[1] != 'Z')
+				{
+					return false;
+				}
+
+				stream.Position = BitConverter.ToUInt32(header, 0x3C) + 4;
+				return stream.Read(header, 0, 2) == 2 && BitConverter.ToUInt16(header, 0) == 0x8664;
+			}
 		}
 
 		private Cpu Cpu => Process.Cpu;
@@ -143,6 +159,19 @@ namespace OpenBve.X86
 		{
 			Trace?.Op(AtsTrace.OpSetVehicleSpec, brakeNotches, powerNotches, atsNotch, b67Notch, cars);
 			if (setVehicleSpec == 0) return;
+			if (Process.Is64)
+			{
+				// x64 passes a structure over 8 bytes as a pointer to a copy.
+				uint spec = Scratch();
+				Process.Memory.Write32(spec, (uint)brakeNotches);
+				Process.Memory.Write32(spec + 4, (uint)powerNotches);
+				Process.Memory.Write32(spec + 8, (uint)atsNotch);
+				Process.Memory.Write32(spec + 12, (uint)b67Notch);
+				Process.Memory.Write32(spec + 16, (uint)cars);
+				Cpu.Call(setVehicleSpec, spec);
+				return;
+			}
+
 			// struct ATS_VEHICLESPEC { int BrakeNotches, PowerNotches, AtsNotch, B67Notch, Cars; } by value.
 			Cpu.Call(setVehicleSpec, (uint)brakeNotches, (uint)powerNotches, (uint)atsNotch, (uint)b67Notch, (uint)cars);
 		}
@@ -182,7 +211,26 @@ namespace OpenBve.X86
 			}
 
 			AtsHandles result = default;
-			if (elapse != 0)
+			if (elapse != 0 && Process.Is64)
+			{
+				// The hidden return pointer, then the 40-byte state as a pointer to a copy, then the arrays.
+				uint s = Scratch();
+				memory.WriteDouble(s, state.Location);
+				memory.WriteSingle(s + 8, state.Speed);
+				memory.Write32(s + 12, (uint)state.Time);
+				memory.WriteSingle(s + 16, state.BcPressure);
+				memory.WriteSingle(s + 20, state.MrPressure);
+				memory.WriteSingle(s + 24, state.ErPressure);
+				memory.WriteSingle(s + 28, state.BpPressure);
+				memory.WriteSingle(s + 32, state.SapPressure);
+				memory.WriteSingle(s + 36, state.Current);
+				Cpu.Call(elapse, handlesAddress, s, panelAddress, soundAddress);
+				result.Brake = (int)memory.Read32(handlesAddress);
+				result.Power = (int)memory.Read32(handlesAddress + 4);
+				result.Reverser = (int)memory.Read32(handlesAddress + 8);
+				result.ConstantSpeed = (int)memory.Read32(handlesAddress + 12);
+			}
+			else if (elapse != 0)
 			{
 				// Arguments right to left: sound, panel, the 40-byte state by value, then the hidden return pointer.
 				Cpu.Push(soundAddress);
@@ -223,6 +271,14 @@ namespace OpenBve.X86
 			return result;
 		}
 
+		private uint scratch;
+
+		/// <summary>Memory for a structure passed by pointer to a 64-bit plugin.</summary>
+		private uint Scratch()
+		{
+			return scratch != 0 ? scratch : scratch = Process.HeapAllocate(64);
+		}
+
 		private void CallInt(uint function, int value)
 		{
 			if (function != 0)
@@ -257,6 +313,17 @@ namespace OpenBve.X86
 		{
 			Trace?.Op(AtsTrace.OpSetBeaconData, type, signal, Compat.SingleToInt32Bits(distance), optional);
 			if (setBeaconData == 0) return;
+			if (Process.Is64)
+			{
+				uint beacon = Scratch();
+				Process.Memory.Write32(beacon, (uint)type);
+				Process.Memory.Write32(beacon + 4, (uint)signal);
+				Process.Memory.WriteSingle(beacon + 8, distance);
+				Process.Memory.Write32(beacon + 12, (uint)optional);
+				Cpu.Call(setBeaconData, beacon);
+				return;
+			}
+
 			uint esp = Cpu.R[Cpu.ESP];
 			// struct ATS_BEACONDATA { int Type; int Signal; float Distance; int Optional; } by value.
 			Cpu.Call(setBeaconData, (uint)type, (uint)signal, (uint)Compat.SingleToInt32Bits(distance), (uint)optional);

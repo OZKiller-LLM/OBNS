@@ -69,6 +69,12 @@ namespace OpenBve.X86
 
 		public readonly Memory Memory;
 
+		/// <summary>
+		/// The x64 processor, for a 64-bit plugin (Cpu64.cs): the host functions stay here, and what they use to read their
+		/// arguments and call back goes to it. Null for a 32-bit plugin.
+		/// </summary>
+		public Cpu64 Long;
+
 		// --- host functions ---
 
 		/*
@@ -142,6 +148,17 @@ namespace OpenBve.X86
 		/// <summary>Calls an emulated function with 32-bit arguments, returning EAX (and EDX in the high half).</summary>
 		public ulong Call(uint function, params uint[] args)
 		{
+			if (Long != null)
+			{
+				ulong[] wide = new ulong[args.Length];
+				for (int i = 0; i < args.Length; i++)
+				{
+					wide[i] = args[i];
+				}
+
+				return Long.Call(function, wide);
+			}
+
 			// Restored afterwards whatever the callee pops, so stdcall and cdecl callees both leave the stack balanced.
 			uint savedEsp = R[ESP];
 			for (int i = args.Length - 1; i >= 0; i--)
@@ -209,6 +226,22 @@ namespace OpenBve.X86
 
 				InstructionCount++;
 			}
+		}
+
+		/// <summary>Runs the host function at an address for the x64 processor, which has homed its arguments and takes its result.</summary>
+		internal ulong InvokeHostFor64(uint address)
+		{
+			int index = (int)((address - HostRegion) / 4);
+			if (index >= hostFunctions.Count)
+			{
+				throw new X86Exception("call to an unknown host address 0x" + address.ToString("X8"));
+			}
+
+			(HostFunction function, _, string name) = hostFunctions[index];
+			uint[] traceArgs = HostCallTrace != null ? new[] { Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5) } : null;
+			ulong result = function(this);
+			HostCallTrace?.Invoke(name, traceArgs, result);
+			return result;
 		}
 
 		private void InvokeHost()
@@ -281,7 +314,13 @@ namespace OpenBve.X86
 		/// <summary>Reads the n-th 32-bit argument of a host function (0-based).</summary>
 		public uint Arg(int n)
 		{
-			return Memory.Read32(R[ESP] + 4 + (uint)(4 * n));
+			return Long != null ? (uint)Long.Arg(n) : Memory.Read32(R[ESP] + 4 + (uint)(4 * n));
+		}
+
+		/// <summary>The address of a host function's variable arguments, which follow its first n named ones.</summary>
+		public uint VarArgs(int n)
+		{
+			return Long != null ? Long.ArgAddress(n) : R[ESP] + 4 + (uint)(4 * n);
 		}
 
 		// --- decoding state for the current instruction ---

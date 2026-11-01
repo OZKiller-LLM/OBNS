@@ -83,7 +83,7 @@ namespace OpenBve.X86
 			{
 				uint flags = c.Arg(0);
 				uint handle = (flags & 4) != 0 ? ModuleAt(c.Arg(1))?.Base ?? 0 : ModuleHandle(Memory.ReadWString(c.Arg(1)));
-				if (c.Arg(2) != 0) Memory.Write32(c.Arg(2), handle);
+				if (c.Arg(2) != 0) WritePtr(c.Arg(2), handle);
 				return handle != 0 ? 1u : 0u;
 			});
 			Export(k, "GetModuleFileNameA", 12, c => ModuleFileName(c.Arg(0), c.Arg(1), c.Arg(2), false));
@@ -105,13 +105,28 @@ namespace OpenBve.X86
 			Export(k, "IsDebuggerPresent", 0, c => 0);
 			Export(k, "SetUnhandledExceptionFilter", 4, c => 0);
 			Export(k, "UnhandledExceptionFilter", 4, c => 0);
-			Export(k, "RaiseException", 16, c => throw new X86Exception("the plugin raised a Windows exception 0x" + c.Arg(0).ToString("X8")));
+			Export(k, "RaiseException", 16, c =>
+			{
+				// A C runtime built into a 64-bit plugin throws C++ exceptions this way: { magic, object, ThrowInfo, image base }.
+				if (Is64 && c.Arg(0) == 0xE06D7363 && c.Arg(2) >= 3)
+				{
+					throw new GuestThrow(Memory.Read32(c.Arg(3) + 8), Memory.Read32(c.Arg(3) + 16), "a C++ exception the plugin threw");
+				}
+
+				throw new X86Exception("the plugin raised a Windows exception 0x" + c.Arg(0).ToString("X8"));
+			});
 			Export(k, "RtlUnwind", 16, c => 0);
+			// x64's: a C runtime reports a security failure with them, which ends the plugin anyway.
+			Export(k, "RtlCaptureContext", 0, c => 0);
+			Export(k, "RtlLookupFunctionEntry", 0, c => 0);
+			Export(k, "RtlVirtualUnwind", 0, c => 0);
+			Export(k, "RtlPcToFileHeader", 0, c => { uint found = ModuleAt(c.Arg(0))?.Base ?? 0; WritePtr(c.Arg(1), found); return found; });
+			Export(k, "RtlUnwindEx", 0, c => throw new X86Exception("the plugin's own C runtime tried to unwind the stack (RtlUnwindEx)"));
 			Export(k, "IsProcessorFeaturePresent", 4, c => c.Arg(0) == 6 || c.Arg(0) == 10 ? 1u : 0u); // SSE, SSE2
 			Export(k, "GetCommandLineA", 0, c => commandLineA != 0 ? commandLineA : commandLineA = StaticCString("\"C:\\OpenBve.exe\""));
 			Export(k, "GetCommandLineW", 0, c => commandLineW != 0 ? commandLineW : commandLineW = StaticWString("\"C:\\OpenBve.exe\""));
-			Export(k, "GetStartupInfoA", 4, c => { Memory.Fill(c.Arg(0), 0, 68); Memory.Write32(c.Arg(0), 68); return 0; });
-			Export(k, "GetStartupInfoW", 4, c => { Memory.Fill(c.Arg(0), 0, 68); Memory.Write32(c.Arg(0), 68); return 0; });
+			Export(k, "GetStartupInfoA", 4, c => { Memory.Fill(c.Arg(0), 0, Is64 ? 104u : 68u); Memory.Write32(c.Arg(0), Is64 ? 104u : 68u); return 0; });
+			Export(k, "GetStartupInfoW", 4, c => { Memory.Fill(c.Arg(0), 0, Is64 ? 104u : 68u); Memory.Write32(c.Arg(0), Is64 ? 104u : 68u); return 0; });
 			Export(k, "GetVersion", 0, c => 0x1DB10106); // 6.1 (Windows 7), build 7601
 			Export(k, "GetVersionExA", 4, c => VersionInfo(c.Arg(0), false));
 			Export(k, "GetVersionExW", 4, c => VersionInfo(c.Arg(0), true));
@@ -291,9 +306,10 @@ namespace OpenBve.X86
 			Export(k, "SetFilePointerEx", 20, c =>
 			{
 				if (!(handles.TryGetValue(c.Arg(0), out object value) && value is FileStream stream)) return 0;
-				long distance = (long)(c.Arg(1) | ((ulong)c.Arg(2) << 32));
-				long position = stream.Seek(distance, (SeekOrigin)c.Arg(4));
-				if (c.Arg(3) != 0) Memory.Write64(c.Arg(3), (ulong)position);
+				long distance = Is64 ? (long)c.Long.Arg(1) : (long)(c.Arg(1) | ((ulong)c.Arg(2) << 32));
+				long position = stream.Seek(distance, (SeekOrigin)(Is64 ? c.Arg(3) : c.Arg(4)));
+				uint newPosition = Is64 ? c.Arg(2) : c.Arg(3);
+				if (newPosition != 0) Memory.Write64(newPosition, (ulong)position);
 				return 1;
 			});
 			Export(k, "GetFileSize", 8, c =>
@@ -1012,7 +1028,7 @@ namespace OpenBve.X86
 			if (filePart != 0)
 			{
 				int slash = full.LastIndexOf('\\');
-				Memory.Write32(filePart, buffer + (uint)((slash + 1) * (wide ? 2 : 1)));
+				WritePtr(filePart, buffer + (uint)((slash + 1) * (wide ? 2 : 1)));
 			}
 
 			return length;
