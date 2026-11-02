@@ -53,6 +53,10 @@ under OpenGL and Vulkan; the Vulkan cab differs only in the countdown message. T
 pixels that two runs of 1.22 also show. Load time 30.1 s against 28.8 s (three runs each, ranges overlap). The loading screen,
 Object Viewer and Route Viewer start and draw. Train Editor, Linux and macOS not run yet.
 
-Open before step 3: with OpenGL drawing the world (`OBNS_VULKAN=0`), this route shows white patches where Vulkan shows a blue
-signal, in 1.22 as well. So it isn't this work, but which one matches upstream isn't known: pristine upstream's window comes
-out black through `PrintWindow`, and it has no `OBNS_SNAPSHOT_EVERY`.
+With OpenGL drawing the world, faces and HUD elements are blank for about 20 s after loading on this route (17 to 22 s, in 1.22
+as well), while worker threads decode what is in view, and the frame then shows what Vulkan shows. `OBNS_ASYNC_DECODE=0`
+decodes on the main thread instead. A finished decode no longer holds one of the decode places until its texture is asked for
+again: that could stop decoding altogether, from reading the code; no run has shown it happening, and the time above is unchanged.
+
+Comparisons use `OBNS_SNAPSHOT_EVERY`: `PrintWindow` starts returning black some seconds into a run, and pristine upstream's
+window has only come out black through it.

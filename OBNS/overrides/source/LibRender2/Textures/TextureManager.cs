@@ -428,8 +428,51 @@ namespace LibRender2.Textures
 		/// </summary>
 		public static bool ObnsAsyncDecoding;
 
-		private static readonly Dictionary<Texture, System.Threading.Tasks.Task<Texture>> obnsDecoding = new Dictionary<Texture, System.Threading.Tasks.Task<Texture>>();
+		/// <summary>A worker's decode, and the frame its texture was last asked for.</summary>
+		private sealed class ObnsDecode
+		{
+			internal System.Threading.Tasks.Task<Texture> Task;
+			internal long LastAsked;
+		}
+
+		private static readonly Dictionary<Texture, ObnsDecode> obnsDecoding = new Dictionary<Texture, ObnsDecode>();
 		private static readonly int obnsMaximumDecodes = Math.Max(1, Environment.ProcessorCount / 4);
+		/// <summary>How many frames a finished decode waits for its texture to be asked for again.</summary>
+		private const int ObnsDecodeKeptFrames = 120;
+		private static long obnsFrame;
+
+		/// <summary>The decodes still running. Finished ones waiting too long are let go: their texture has gone out of view, and is decoded again if it returns.</summary>
+		private static int ObnsDecodesRunning()
+		{
+			int running = 0;
+			List<Texture> stale = null;
+			foreach (KeyValuePair<Texture, ObnsDecode> decode in obnsDecoding)
+			{
+				if (!decode.Value.Task.IsCompleted)
+				{
+					running++;
+				}
+				else if (obnsFrame - decode.Value.LastAsked > ObnsDecodeKeptFrames)
+				{
+					if (stale == null)
+					{
+						stale = new List<Texture>();
+					}
+
+					stale.Add(decode.Key);
+				}
+			}
+
+			if (stale != null)
+			{
+				foreach (Texture handle in stale)
+				{
+					obnsDecoding.Remove(handle);
+				}
+			}
+
+			return running;
+		}
 
 		/// <summary>A handle's decode once its worker has finished it (true); starts one if none is running (false meanwhile).</summary>
 		private static bool ObnsTakeDecode(Texture handle, out Texture decoded)
@@ -437,12 +480,13 @@ namespace LibRender2.Textures
 			decoded = null;
 			lock (obnsDecoding)
 			{
-				if (!obnsDecoding.TryGetValue(handle, out System.Threading.Tasks.Task<Texture> task))
+				if (!obnsDecoding.TryGetValue(handle, out ObnsDecode decode))
 				{
-					if (obnsDecoding.Count < obnsMaximumDecodes)
+					// Only those still running count: a finished decode nobody asks for again must not hold a place for ever.
+					if (ObnsDecodesRunning() < obnsMaximumDecodes)
 					{
 						TextureOrigin origin = handle.Origin;
-						obnsDecoding[handle] = System.Threading.Tasks.Task.Run(() =>
+						obnsDecoding[handle] = new ObnsDecode { LastAsked = obnsFrame, Task = System.Threading.Tasks.Task.Run(() =>
 						{
 							System.Threading.Thread thread = System.Threading.Thread.CurrentThread;
 							System.Threading.ThreadPriority priority = thread.Priority;
@@ -455,19 +499,20 @@ namespace LibRender2.Textures
 							{
 								thread.Priority = priority;
 							}
-						});
+						}) };
 					}
 
 					return false;
 				}
 
-				if (!task.IsCompleted)
+				decode.LastAsked = obnsFrame;
+				if (!decode.Task.IsCompleted)
 				{
 					return false;
 				}
 
 				obnsDecoding.Remove(handle);
-				decoded = task.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? task.Result : null;
+				decoded = decode.Task.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? decode.Task.Result : null;
 				return true;
 			}
 		}
@@ -477,7 +522,7 @@ namespace LibRender2.Textures
 		{
 			lock (obnsDecoding)
 			{
-				obnsDecoding[handle] = System.Threading.Tasks.Task.FromResult(decoded);
+				obnsDecoding[handle] = new ObnsDecode { LastAsked = obnsFrame, Task = System.Threading.Tasks.Task.FromResult(decoded) };
 			}
 		}
 
@@ -488,6 +533,7 @@ namespace LibRender2.Textures
 		public static void ObnsFrameStarted()
 		{
 			obnsUploadedThisFrame = false;
+			obnsFrame++;
 		}
 
 		/// <summary>Whether this frame's uploads have taken their 4 ms (the first of a frame always goes ahead).</summary>

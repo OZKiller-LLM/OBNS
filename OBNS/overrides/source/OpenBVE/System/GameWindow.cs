@@ -1242,7 +1242,7 @@ namespace OpenBve
 
 			simulationSetup = true;
 			// OBNS: from now, textures OpenGL first needs are decoded on worker threads (TextureManager).
-			LibRender2.Textures.TextureManager.ObnsAsyncDecoding = true;
+			LibRender2.Textures.TextureManager.ObnsAsyncDecoding = Environment.GetEnvironmentVariable("OBNS_ASYNC_DECODE") != "0";
 			Program.FileSystem.AppendToLogFile(@"--------------------", false);
 			Program.FileSystem.AppendToLogFile(@"Loading complete, starting simulation.");
 			Program.FileSystem.AppendToLogFile("Texture stats @load: decodes " + Program.CurrentHost.TextureDecodeCalls + " calls / " + Program.CurrentHost.TextureDecodeMs + " ms | uploads " + LibRender2.Textures.TextureManager.UploadCount + " calls / " + LibRender2.Textures.TextureManager.UploadMs + " ms | GC gen0/1/2: " + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2));
