@@ -1,5 +1,11 @@
 # OpenBVE for Android — release notes
 
+## 1.3 (not released) — Renderers without OpenGL
+
+### Windows
+
+- **OGG sounds** load. The 1.2, 1.21 and 1.22 zips shipped a version of NAudio.Core that the OGG plugin can't use.
+
 ## 1.22 (1.14.1.2-android.6; desktop 1.14.1.2-OBNS) — BVE6 cabs and sounds, and faster loading
 
 ### All platforms
