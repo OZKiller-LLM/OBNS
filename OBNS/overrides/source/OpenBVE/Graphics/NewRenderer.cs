@@ -374,6 +374,11 @@ namespace OpenBve.Graphics
 			SetBlendFunc();
 			SetAlphaFunc(AlphaFunction.Greater, 0.0f);
 			// OBNS: with Vulkan drawing the whole game they were given before its frame was made (GatherParticles).
+			if (!Vulkan.VulkanWorld.PresentsItself)
+			{
+				ParticleTest();
+			}
+
 			if(CurrentInterface != InterfaceType.GLMainMenu && !Vulkan.VulkanWorld.PresentsItself)
 			{
 				foreach (TrainBase train in Program.TrainManager.Trains)
@@ -722,6 +727,43 @@ namespace OpenBve.Graphics
 			scene.SetShadows(vulkanShadowCaster, (float)options.ShadowStrength, options.ShadowSmooth, filterRadius, (float)options.ShadowBias, normalBias);
 		}
 
+		private static readonly bool particleTest = Environment.GetEnvironmentVariable("OBNS_PARTICLE_TEST") == "1";
+		private Texture particleTestTexture;
+
+		/// <summary>
+		/// OBNS_PARTICLE_TEST=1: particles at fixed places from the camera, with upstream's state for them, for comparing the APIs' drawing
+		/// of them (real ones move at random). Some are far enough to be behind the scenery.
+		/// </summary>
+		private void ParticleTest()
+		{
+			if (!particleTest)
+			{
+				return;
+			}
+
+			if (particleTestTexture == null)
+			{
+				TextureManager.RegisterTexture(OpenBveApi.Path.CombineFile(OpenBveApi.Path.CombineDirectory(Program.FileSystem.GetDataFolder(), "Compatibility"), "smoke.png"), out particleTestTexture);
+			}
+
+			Vector3 direction = Camera.AbsoluteDirection, up = Camera.AbsoluteUp, side = Camera.AbsoluteSide;
+			GL.Enable(EnableCap.CullFace);
+			GL.Enable(EnableCap.DepthTest);
+			GL.DepthMask(true);
+			DefaultShader.SetCurrentProjectionMatrix(CurrentProjectionMatrix);
+			DefaultShader.SetMaterialAmbient(OpenBveApi.Colors.Color32.White);
+			DefaultShader.SetMaterialDiffuse(OpenBveApi.Colors.Color32.White);
+			DefaultShader.SetMaterialSpecular(OpenBveApi.Colors.Color32.White);
+			DefaultShader.SetBrightness(1.0f);
+			DefaultShader.SetAlphaTest(true);
+			for (int i = 0; i < 24; i++)
+			{
+				double distance = 12.0 + i * i;
+				Vector3 position = Camera.AbsolutePosition + direction * distance + side * ((i % 6 - 2.5) * (0.4 + distance * 0.08)) + up * ((i % 4 - 1.0) * (0.2 + distance * 0.04));
+				Particle.Draw(i % 12, position, direction, up, side, new Vector2(1.0 + distance * 0.05, 1.0 + distance * 0.05), particleTestTexture, 1.0f - i * 0.03f);
+			}
+		}
+
 		/// <summary>The frame's particles given to Vulkan: upstream's update, which also moves them on, with what it would draw sent there.</summary>
 		private void GatherParticles(double timeElapsed)
 		{
@@ -733,6 +775,7 @@ namespace OpenBve.Graphics
 			}
 
 			Particle.ObnsDraw = drawing.Particle;
+			ParticleTest();
 			foreach (TrainBase train in Program.TrainManager.Trains)
 			{
 				train.UpdateParticleSources(timeElapsed);
