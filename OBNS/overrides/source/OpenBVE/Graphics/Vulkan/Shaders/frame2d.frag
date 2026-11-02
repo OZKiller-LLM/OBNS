@@ -12,6 +12,7 @@ layout(push_constant) uniform Quad
 	vec2 alphaTest;
 	int textureIndex;
 	int samplerIndex;
+	float depth;
 } quad;
 
 layout(set = 0, binding = 4) uniform sampler samplers[4];

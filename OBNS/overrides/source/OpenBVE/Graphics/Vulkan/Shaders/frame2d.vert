@@ -12,6 +12,7 @@ layout(push_constant) uniform Quad
 	vec2 alphaTest;
 	int textureIndex;
 	int samplerIndex;
+	float depth;
 } quad;
 
 layout(location = 0) out vec2 textureCoord;
@@ -22,5 +23,5 @@ void main()
 	const vec2 corners[6] = vec2[6](vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 0), vec2(0, 1), vec2(1, 1));
 	vec2 corner = corners[gl_VertexIndex];
 	textureCoord = quad.coordinates.xy + corner * quad.coordinates.zw;
-	gl_Position = vec4(quad.position.xy + corner * quad.position.zw, 0.0, 1.0);
+	gl_Position = vec4(quad.position.xy + corner * quad.position.zw, quad.depth, 1.0);
 }

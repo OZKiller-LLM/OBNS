@@ -987,6 +987,7 @@ namespace OpenBve.Graphics.Vulkan
 				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.WorldLayerIndex);
 			}
 
+			frameDrawing.RecordParticles(commandBuffer, slot);
 			Vk.vkCmdEndRendering(commandBuffer);
 
 			// The cab over it, its depth its own, as upstream clears the depth for it.
@@ -1012,6 +1013,9 @@ namespace OpenBve.Graphics.Vulkan
 
 		/// <summary>Whether Vulkan presents the game (OpenGL's SwapBuffers must not be called).</summary>
 		internal static bool PresentsItself => VulkanDevice.Full && Enabled;
+
+		/// <summary>The frame's particles are given before its commands are made: they go between the world and the cab.</summary>
+		internal VulkanFrameDrawing FrameDrawing => frameDrawing;
 
 		/// <summary>Saves the frame about to be shown, when it is.</summary>
 		internal void RequestSnapshot(string file)

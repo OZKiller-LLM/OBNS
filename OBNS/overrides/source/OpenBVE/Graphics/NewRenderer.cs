@@ -373,7 +373,8 @@ namespace OpenBve.Graphics
 			// particle sources
 			SetBlendFunc();
 			SetAlphaFunc(AlphaFunction.Greater, 0.0f);
-			if(CurrentInterface != InterfaceType.GLMainMenu)
+			// OBNS: with Vulkan drawing the whole game they were given before its frame was made (GatherParticles).
+			if(CurrentInterface != InterfaceType.GLMainMenu && !Vulkan.VulkanWorld.PresentsItself)
 			{
 				foreach (TrainBase train in Program.TrainManager.Trains)
 				{
@@ -721,6 +722,29 @@ namespace OpenBve.Graphics
 			scene.SetShadows(vulkanShadowCaster, (float)options.ShadowStrength, options.ShadowSmooth, filterRadius, (float)options.ShadowBias, normalBias);
 		}
 
+		/// <summary>The frame's particles given to Vulkan: upstream's update, which also moves them on, with what it would draw sent there.</summary>
+		private void GatherParticles(double timeElapsed)
+		{
+			Vulkan.VulkanFrameDrawing drawing = Vulkan.VulkanWorld.Instance.FrameDrawing;
+			drawing.BeginParticles();
+			if (CurrentInterface == InterfaceType.GLMainMenu)
+			{
+				return;
+			}
+
+			Particle.ObnsDraw = drawing.Particle;
+			foreach (TrainBase train in Program.TrainManager.Trains)
+			{
+				train.UpdateParticleSources(timeElapsed);
+			}
+
+			// ReSharper disable once PossibleInvalidCastExceptionInForeachLoop
+			foreach (ScriptedTrain scriptedTrain in Program.TrainManager.TFOs)
+			{
+				scriptedTrain.UpdateParticleSources(timeElapsed);
+			}
+		}
+
 		/// <summary>The frame's background given to the layer: upstream's update, which also moves its fades on, with what it would draw sent to the layer.</summary>
 		private void GatherSky(IWorldScene scene, double timeElapsed)
 		{
@@ -788,6 +812,11 @@ namespace OpenBve.Graphics
 			if (sky)
 			{
 				GatherSky(scene, timeElapsed);
+			}
+
+			if (Vulkan.VulkanWorld.PresentsItself)
+			{
+				GatherParticles(timeElapsed);
 			}
 
 			vulkanGathering = true;

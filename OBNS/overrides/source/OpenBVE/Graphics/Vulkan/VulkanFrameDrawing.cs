@@ -51,6 +51,7 @@ namespace OpenBve.Graphics.Vulkan
 		{
 			internal float X, Y, Width, Height, U, V, UWidth, VHeight, R, G, B, A, AlphaFunction, AlphaValue;
 			internal int Texture, Sampler;
+			internal float Depth;
 		}
 
 		private struct Quad
@@ -64,6 +65,9 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly IFrameDrawing openGl;
 		private readonly List<Quad> quads = new List<Quad>();
 		private readonly ulong[] pipelines = new ulong[4];
+		/// <summary>The pipelines for particles, in the world's rendering with its depth: opaque texels writing depth, then blended ones not.</summary>
+		private readonly ulong[] particlePipelines = new ulong[2];
+		private readonly List<Quad> particles = new List<Quad>();
 		private readonly ulong vertexModule, fragmentModule, pipelineLayout;
 		private bool active = VulkanDevice.Full, blendEnabled = true;
 		private float alphaFunction, alphaValue;
@@ -126,6 +130,93 @@ namespace OpenBve.Graphics.Vulkan
 			scene.Textures.StartBudget();
 		}
 
+		/// <summary>The frame's particles are about to be given.</summary>
+		internal void BeginParticles()
+		{
+			particles.Clear();
+		}
+
+		/// <summary>
+		/// A particle, in upstream's two passes: its model-view keeps it square to the view, so all of it is at one depth and it can be a
+		/// rectangle on the screen.
+		/// </summary>
+		internal void Particle(int particleIndex, Matrix4D modelView, Texture texture, float opacity)
+		{
+			int index = texture == null ? scene.Textures.WhiteIndex : TextureIndex(texture, OpenGlTextureWrapMode.ClampClamp);
+			if (index == WorldTextures.Later)
+			{
+				return;
+			}
+
+			Matrix4D matrix = modelView * Program.Renderer.CurrentProjectionMatrix;
+			// The corners' clip coordinates: (-1,1) and (1,-1) in the particle's own space; the shader's Z is negated, and it is 0 here.
+			double w0 = -matrix.Row0.W + matrix.Row1.W + matrix.Row3.W, w1 = matrix.Row0.W - matrix.Row1.W + matrix.Row3.W;
+			if (w0 <= 0.0 || w1 <= 0.0)
+			{
+				return;
+			}
+
+			double left = (-matrix.Row0.X + matrix.Row1.X + matrix.Row3.X) / w0, top = (-matrix.Row0.Y + matrix.Row1.Y + matrix.Row3.Y) / w0;
+			double right = (matrix.Row0.X - matrix.Row1.X + matrix.Row3.X) / w1, bottom = (matrix.Row0.Y - matrix.Row1.Y + matrix.Row3.Y) / w1;
+			double depth = ((-matrix.Row0.Z + matrix.Row1.Z + matrix.Row3.Z) / w0 + 1.0) * 0.5;
+			int column = particleIndex / 4, row = particleIndex % 4;
+			QuadData data = new QuadData
+			{
+				X = (float)left,
+				Y = (float)top,
+				Width = (float)(right - left),
+				Height = (float)(bottom - top),
+				U = column * 0.25f,
+				V = row * 0.25f,
+				UWidth = 0.25f,
+				VHeight = 0.25f,
+				R = 1.0f,
+				G = 1.0f,
+				B = 1.0f,
+				A = opacity,
+				Texture = index,
+				Sampler = (int)OpenGlTextureWrapMode.ClampClamp,
+				Depth = (float)depth
+			};
+			// Opaque texels first (alpha exactly 1, writing depth), then blended ones (alpha below 1, not).
+			data.AlphaFunction = (float)(int)AlphaFunction.Equal;
+			data.AlphaValue = 1.0f;
+			particles.Add(new Quad { Data = data, Blend = Blend.None });
+			data.AlphaFunction = (float)(int)AlphaFunction.Less;
+			particles.Add(new Quad { Data = data, Blend = Blend.Normal });
+		}
+
+		/// <summary>Records the frame's particles, inside the world's rendering, tested against its depth.</summary>
+		internal void RecordParticles(IntPtr commandBuffer, int slot)
+		{
+			if (particles.Count == 0)
+			{
+				return;
+			}
+
+			ulong set = scene.DescriptorSets[slot];
+			Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 0, 1, &set, 0, null);
+			Blend bound = (Blend)(-1);
+			foreach (Quad quad in particles)
+			{
+				if (quad.Blend != bound)
+				{
+					bound = quad.Blend;
+					int which = bound == Blend.None ? 0 : 1;
+					if (particlePipelines[which] == 0)
+					{
+						particlePipelines[which] = MakePipeline(bound, true, bound == Blend.None);
+					}
+
+					Vk.vkCmdBindPipeline(commandBuffer, Vk.PipelineBindPointGraphics, particlePipelines[which]);
+				}
+
+				QuadData data = quad.Data;
+				Vk.vkCmdPushConstants(commandBuffer, pipelineLayout, Vk.ShaderStageVertex | Vk.ShaderStageFragment, 0, (uint)sizeof(QuadData), &data);
+				Vk.vkCmdDraw(commandBuffer, 6, 1, 0, 0);
+			}
+		}
+
 		/// <summary>Records the frame's quads, inside its rendering.</summary>
 		internal void Record(IntPtr commandBuffer, int slot, uint width, uint height)
 		{
@@ -152,11 +243,16 @@ namespace OpenBve.Graphics.Vulkan
 
 		private ulong Pipeline(Blend blend)
 		{
-			if (pipelines[(int)blend] != 0)
+			if (pipelines[(int)blend] == 0)
 			{
-				return pipelines[(int)blend];
+				pipelines[(int)blend] = MakePipeline(blend, false, false);
 			}
 
+			return pipelines[(int)blend];
+		}
+
+		private ulong MakePipeline(Blend blend, bool withDepth, bool depthWrite)
+		{
 			IntPtr main = Marshal.StringToHGlobalAnsi("main");
 			try
 			{
@@ -176,7 +272,14 @@ namespace OpenBve.Graphics.Vulkan
 					LineWidth = 1.0f
 				};
 				Vk.PipelineMultisampleStateCreateInfo multisample = new Vk.PipelineMultisampleStateCreateInfo { SType = Vk.StructureTypePipelineMultisampleStateCreateInfo, RasterizationSamples = 1 };
-				Vk.PipelineDepthStencilStateCreateInfo depth = new Vk.PipelineDepthStencilStateCreateInfo { SType = Vk.StructureTypePipelineDepthStencilStateCreateInfo, MaxDepthBounds = 1.0f };
+				Vk.PipelineDepthStencilStateCreateInfo depth = new Vk.PipelineDepthStencilStateCreateInfo
+				{
+					SType = Vk.StructureTypePipelineDepthStencilStateCreateInfo,
+					DepthTestEnable = withDepth ? 1u : 0u,
+					DepthWriteEnable = depthWrite ? 1u : 0u,
+					DepthCompareOp = Vk.CompareOpLessOrEqual,
+					MaxDepthBounds = 1.0f
+				};
 				// OpenGL's blend functions apply to alpha alike.
 				Vk.PipelineColorBlendAttachmentState attachment = new Vk.PipelineColorBlendAttachmentState { ColorWriteMask = Vk.ColorComponentAll };
 				switch (blend)
@@ -204,7 +307,7 @@ namespace OpenBve.Graphics.Vulkan
 				dynamicStates[1] = Vk.DynamicStateScissor;
 				Vk.PipelineDynamicStateCreateInfo dynamic = new Vk.PipelineDynamicStateCreateInfo { SType = Vk.StructureTypePipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dynamicStates };
 				uint colorFormat = SharedTarget.ColorFormat;
-				Vk.PipelineRenderingCreateInfo rendering = new Vk.PipelineRenderingCreateInfo { SType = Vk.StructureTypePipelineRenderingCreateInfo, ColorAttachmentCount = 1, PColorAttachmentFormats = &colorFormat };
+				Vk.PipelineRenderingCreateInfo rendering = new Vk.PipelineRenderingCreateInfo { SType = Vk.StructureTypePipelineRenderingCreateInfo, ColorAttachmentCount = 1, PColorAttachmentFormats = &colorFormat, DepthAttachmentFormat = withDepth ? SharedTarget.DepthFormat : 0 };
 				Vk.GraphicsPipelineCreateInfo info = new Vk.GraphicsPipelineCreateInfo
 				{
 					SType = Vk.StructureTypeGraphicsPipelineCreateInfo,
@@ -224,7 +327,6 @@ namespace OpenBve.Graphics.Vulkan
 				};
 				ulong pipeline;
 				Vk.Check(Vk.vkCreateGraphicsPipelines(device.Device, 0, 1, &info, null, &pipeline), "vkCreateGraphicsPipelines (2D)");
-				pipelines[(int)blend] = pipeline;
 				return pipeline;
 			}
 			finally
@@ -343,6 +445,11 @@ namespace OpenBve.Graphics.Vulkan
 		public void Dispose()
 		{
 			foreach (ulong pipeline in pipelines)
+			{
+				if (pipeline != 0) Vk.vkDestroyPipeline(device.Device, pipeline, null);
+			}
+
+			foreach (ulong pipeline in particlePipelines)
 			{
 				if (pipeline != 0) Vk.vkDestroyPipeline(device.Device, pipeline, null);
 			}
