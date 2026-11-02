@@ -78,6 +78,9 @@ namespace OpenBve.Graphics
 		/// <summary>The white texture (made by the API's constructor, <see cref="MakeWhite"/>).</summary>
 		protected Entry WhiteEntry { get; private set; }
 
+		/// <summary>A place in the layer's textures for an image made elsewhere (it is never given back).</summary>
+		internal int ReserveIndex() => nextIndex++;
+
 		/// <summary>The white texture's place in the layer's textures, for what is drawn without one.</summary>
 		internal int WhiteIndex => WhiteEntry.Index;
 
@@ -176,6 +179,49 @@ namespace OpenBve.Graphics
 
 		private static readonly int maximumDecodes = Math.Max(2, Environment.ProcessorCount / 2);
 
+		/// <summary>The frame each decode's texture was last asked for.</summary>
+		private readonly Dictionary<Texture, long> decodeAsked = new Dictionary<Texture, long>();
+
+		/// <summary>How many frames a finished decode waits for its texture to be asked for again.</summary>
+		private const int DecodeKeptFrames = 120;
+
+		/// <summary>
+		/// The decodes still running. Finished ones whose textures have gone out of view are let go (decoded again if they return): held
+		/// on to, they used up the places, and after a jump to a station no more textures were made, for as long as the game ran.
+		/// </summary>
+		private int DecodesRunning()
+		{
+			int running = 0;
+			List<Texture> stale = null;
+			foreach (KeyValuePair<Texture, System.Threading.Tasks.Task<Texture>> decode in decoding)
+			{
+				if (!decode.Value.IsCompleted)
+				{
+					running++;
+				}
+				else if (frame - decodeAsked[decode.Key] > DecodeKeptFrames)
+				{
+					if (stale == null)
+					{
+						stale = new List<Texture>();
+					}
+
+					stale.Add(decode.Key);
+				}
+			}
+
+			if (stale != null)
+			{
+				foreach (Texture texture in stale)
+				{
+					decoding.Remove(texture);
+					decodeAsked.Remove(texture);
+				}
+			}
+
+			return running;
+		}
+
 		private bool BudgetSpent => !loadingAll && budgetBytes >= BudgetBytes || !loadingAll && (System.Diagnostics.Stopwatch.GetTimestamp() - budgetStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency >= BudgetMilliseconds;
 
 		/// <summary>
@@ -223,20 +269,23 @@ namespace OpenBve.Graphics
 				}
 				else if (!decoding.TryGetValue(texture, out System.Threading.Tasks.Task<Texture> task))
 				{
-					if (decoding.Count < maximumDecodes)
+					if (DecodesRunning() < maximumDecodes)
 					{
 						decoding[texture] = System.Threading.Tasks.Task.Run(() => manager.ObnsDecoded(texture, out Texture result) ? result : null);
+						decodeAsked[texture] = frame;
 					}
 
 					return Later;
 				}
 				else if (!task.IsCompleted)
 				{
+					decodeAsked[texture] = frame;
 					return Later;
 				}
 				else
 				{
 					decoding.Remove(texture);
+					decodeAsked.Remove(texture);
 					decoded = task.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? task.Result : null;
 					haveDecode = decoded != null;
 				}

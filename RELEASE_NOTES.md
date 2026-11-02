@@ -2,6 +2,10 @@
 
 ## 1.3 (not released) — Renderers without OpenGL
 
+### Windows, Ubuntu and macOS
+
+- **White scenery after a jump:** jumping to a station could leave much of the scenery white for the rest of the game, on every renderer except plain OpenGL. Textures whose decode had finished but which had gone out of view used up the places for new ones.
+
 ### Windows
 
 - **OGG sounds** load. The 1.2, 1.21 and 1.22 zips shipped a version of NAudio.Core that the OGG plugin can't use.
