@@ -91,8 +91,10 @@ Still to do for 1.21:
   (調景嶺至黃埔) new Alignment. With the test ZIP from `a25e609` they now load it in 43 s (42 s on the RTX 2060 PC). Why it was slower for them than upstream was never reproduced: before the fix,
   upstream 169 s, 1.2 163 s and 1.21 162 s here (fresh settings); on 4 threads 168 s and 179 s. Their setup isn't known.
 - BVE6 cab gauges belong to 1.22 (done: `OBNS/BVE5.md`). The "`Track[...].Position(x, y, radius)` is rejected" limitation in the 1.2 and 1.21 notes was wrong: all its forms parse (checked 2026-11-02).
-- Also 1.22 (user, 2026-11-02), further load time: route loading averages 1.8 of 12 threads on that train and route (cause not known; GDI+ suspected), about 43 s of thread time
-  decoding textures, the cab and exterior on one thread, OBNS's extra 3 s before the game starts, `MeshBuilder.Apply` still quadratic for `.x`, `.obj` and LokSim, possibly a disk cache.
+- 1.22's load time (user, 2026-11-02). MTR M-Train on the Kwun Tong Line, warm, RTX 2060 PC: 42 s to 24 s, Vulkan; upstream 169 s. Route objects one at a time per worker (route 22 s to 16 s),
+  a train's models loaded ahead on workers (`TrainObjectPrefetch`; 12 s to about 3 s), the world layer's cab textures decoded on workers (`WorldTextures.PreloadTrain`; last stage 7 s to 4 s; every world layer, seen on Vulkan and Direct3D 11).
+  Ruled out by measuring: GC settings (no gain), a new PNG decoder (GDI+ does the route's 2,851 PNGs in 9.3 s on one thread and scales about 5 times on 8).
+  Left: register-time decodes are about 4 times the plain decode's cost (transparency scan and the rest, not split yet), `InitializeVisibility` 1.7 s, `MeshBuilder.Apply` still quadratic for `.x`, `.obj` and LokSim. A disk cache looks unneeded.
 
 Cancelled for 1.21, to revisit after 1.3 (user, 2026-11-02): the Lisuan's Direct3D 11 readback patch from the Chinese PC session (`obns-d3d11-readback.patch`, on bfa4c04,
 sha256 939a83f3...c7a0): only when Direct3D 11 is chosen by name, 2 to 3 times slower than OpenGL there, not called stable (one 0x7F with temporary code, cause unknown).

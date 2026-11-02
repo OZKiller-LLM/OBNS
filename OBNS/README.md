@@ -68,6 +68,7 @@ DetailManager.dll plugin through the proxy.
 | `source/ObjectBender/ObjectBender.csproj`, `packages.config` | the same | - |
 | `source/Plugins/Object.CsvB3d/Plugin.NewParser.cs` | an object's mesh builders joined in parts, not copying all so far for each one (15,725 of them took about 100 s) | Android (`Object.CsvB3d.Android.csproj`) |
 | `source/OpenBveApi/Objects/Mesh.cs` | `FinalizeMesh` works out the wrap mode once, not over all the faces for each material, with the same result | Android (`OpenBveApi.Android.csproj`) |
+| `source/Plugins/Route.CsvRw/CsvRwRouteParser.ObjectLoader.cs` | workers take one route object at a time: `Parallel.For`'s ranges left one thread alone with a route's heavy objects | Android (`Route.CsvRw.Android.csproj`) |
 | `source/OpenBveApi/Objects/ObjectTypes/StaticObject.cs` | `OptimizeObject` removes unused and duplicate materials in one pass each, with the same result | Android (`OpenBveApi.Android.csproj`) |
 
 Shared libraries (moving here from `Android/` as each is taken up): the x86 plugin layer

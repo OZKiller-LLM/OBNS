@@ -207,7 +207,16 @@ namespace OpenBve.Graphics
 				bool haveDecode;
 				if (loadingAll)
 				{
-					haveDecode = manager.ObnsDecoded(texture, out decoded);
+					// Decoded ahead on a worker (PreloadTrain), or here.
+					if (decodedAhead.TryGetValue(texture, out decoded))
+					{
+						decodedAhead.Remove(texture);
+						haveDecode = decoded != null;
+					}
+					else
+					{
+						haveDecode = manager.ObnsDecoded(texture, out decoded);
+					}
 				}
 				else if (!decoding.TryGetValue(texture, out System.Threading.Tasks.Task<Texture> task))
 				{
@@ -335,17 +344,63 @@ namespace OpenBve.Graphics
 			loadingAll = true;
 			try
 			{
-				foreach (KeyValuePair<Texture, OpenGlTextureWrapMode> texture in cab)
+				// A batch at a time: decoded together on worker threads, then made in order on this one. Only a batch's pixels
+				// are held at once, whatever the cab's size.
+				for (int first = 0; first < cab.Count; first += PreloadBatch)
 				{
-					Prepare(texture.Key, texture.Value, out bool _);
+					int last = Math.Min(first + PreloadBatch, cab.Count);
+					DecodeAhead(cab, first, last);
+					for (int i = first; i < last; i++)
+					{
+						Prepare(cab[i].Key, cab[i].Value, out bool _);
+					}
 				}
 			}
 			finally
 			{
 				loadingAll = false;
+				decodedAhead.Clear();
 			}
 
 			Flush();
+		}
+
+		/// <summary>How many of the cab's textures are decoded together before they are made.</summary>
+		private const int PreloadBatch = 16;
+
+		/// <summary>Decodes made ahead for Prepare, on this thread's side of the workers.</summary>
+		private readonly Dictionary<Texture, Texture> decodedAhead = new Dictionary<Texture, Texture>();
+
+		/// <summary>Decodes a batch of textures not yet made on worker threads, with their transparency, which Prepare would scan for next.</summary>
+		private void DecodeAhead(List<KeyValuePair<Texture, OpenGlTextureWrapMode>> textures, int first, int last)
+		{
+			TextureManager manager = Program.Renderer.TextureManager;
+			HashSet<Texture> wanted = new HashSet<Texture>();
+			for (int i = first; i < last; i++)
+			{
+				Texture texture = textures[i].Key;
+				if (texture != null && !texture.MultipleFrames && !entries.ContainsKey(texture))
+				{
+					wanted.Add(texture);
+				}
+			}
+
+			Texture[] batch = new Texture[wanted.Count];
+			wanted.CopyTo(batch);
+			Texture[] results = new Texture[batch.Length];
+			Parallel.For(0, batch.Length, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) }, i =>
+			{
+				if (manager.ObnsDecoded(batch[i], out Texture decoded))
+				{
+					decoded.GetTransparencyType();
+					results[i] = decoded;
+				}
+			});
+
+			for (int i = 0; i < batch.Length; i++)
+			{
+				decodedAhead[batch[i]] = results[i];
+			}
 		}
 
 		/// <summary>
