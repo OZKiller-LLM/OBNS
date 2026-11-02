@@ -129,6 +129,10 @@ Write-Host "Building OpenBVE ($Configuration)"
 # an empty OpenBve-32.exe and doesn't fail the build. From the output folder it finds them, so it's run again from there.
 Invoke-MSBuild @($solution, "-p:Configuration=$Configuration", '-p:Platform=Any CPU', '-m', '-v:minimal', '-nologo')
 if ($LASTEXITCODE -ne 0) { throw "The build failed ($LASTEXITCODE)" }
+# Upstream's sound plugins reference two versions of NAudio.Core and copy them to the same file, so a parallel build ships
+# whichever finished last, and on Windows the plugins wanting the other version can't load. Always the newer: OBNS's
+# app.config redirects the older references to it.
+Copy-Item (Join-Path $mirror 'packages\NAudio.Core.2.3.0\lib\netstandard2.0\NAudio.Core.dll') (Join-Path $output 'NAudio.Core.dll') -Force
 Push-Location $output
 try { & (Join-Path $output 'DevTools\LBAHeader.exe') (Join-Path $output 'OpenBve.exe') } finally { Pop-Location }
 foreach ($copy in 'OpenBve-32.exe', 'RouteViewer-32.exe') {

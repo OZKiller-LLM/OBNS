@@ -51,7 +51,10 @@ Windows, the native menu on macOS, the OpenGL host on Ubuntu) are separate and s
 Step 1 done on Windows x64. Against the 1.22 release, M-Train on the Kwun Tong Line: the paused in-game menu is byte-identical
 under OpenGL and Vulkan; the Vulkan cab differs only in the countdown message. The other frames differ by a scatter of edge
 pixels that two runs of 1.22 also show. Load time 30.1 s against 28.8 s (three runs each, ranges overlap). The loading screen,
-Object Viewer and Route Viewer start and draw. Train Editor, Linux and macOS not run yet.
+Object Viewer and Route Viewer start and draw. Train Editor and Linux not run yet.
+
+macOS (M1, TML, exterior view, against 1.22): the same under OpenGL and Metal in the world, HUD, loading screen, in-game menu and
+native menu pictures; load time and frame rate within 1.22's own spread; no new log errors. Cab view, driving and audio not covered.
 
 With OpenGL drawing the world, faces and HUD elements are blank for about 20 s after loading on this route (17 to 22 s, in 1.22
 as well), while worker threads decode what is in view, and the frame then shows what Vulkan shows. `OBNS_ASYNC_DECODE=0`
