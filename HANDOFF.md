@@ -82,7 +82,7 @@ Done for 1.21, on Windows unless noted; nothing of it is pushed:
 - Checked 2026-11-02. M1 Mac, full build from `a25e609`: compiles and packages, SanYing's button wraps (its partner "Save and close" also takes the flat tall style, accepted),
   x64 set drives the same as x86, 77 catches each, about 20 s to load on both. A36: x64 loads and runs with 77 catches and the user passed it; the user drove the x86 set; `plugin_regression.sh` passed SelTrac
   (TBL and FCMB aren't on the phone). E217 is one-handled: use Z, A and Q; Comma and Period do nothing, which is what stopped the first scripted drives.
-- Open, not a blocker: on the Mac, 2 of 3 x64 F6 presses about 60 s after load needed a second press, with 10 extra caught exceptions; x86 had one sample, which closed first time. `CompareProbe` covers door calls with no differences. Seen too on Windows with the native x86 set (2026-11-02): one F6 at +58 s and P4 didn't move the train, two F6 did. So it isn't the x64 layer; the cause isn't known. The log's "x86" wording stays for x64 (in the notes).
+- Not a bug (2026-11-02): on the Mac, F6 about 60 s after load seemed to need a second press, and on Windows with the native x86 set one F6 at +58 s and P4 didn't move the train. In OpenBVE's default door mode the doors close by themselves when the station stop completes, at about +52 s on Uchibo, and F6 toggles, so a press after that re-opens them. With no F6 at all the E217 drives off at P4. The 10 extra caught exceptions at such a press probably come from the plugin seeing the doors open; not checked. The log's "x86" wording stays for x64 (in the notes).
 
 Still to do for 1.21:
 
