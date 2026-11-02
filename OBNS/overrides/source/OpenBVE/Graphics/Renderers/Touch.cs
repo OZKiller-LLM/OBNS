@@ -96,7 +96,7 @@ namespace OpenBve.Graphics.Renderers
             pickProjection = renderer.CurrentProjectionMatrix;
             pickView = renderer.CurrentViewMatrix;
             pickCamera = renderer.Camera.TranslationMatrix;
-            if (OpenBve.Graphics.Vulkan.VulkanDevice.Full)
+            if (WholeGame.Full)
             {
                 return;
             }
@@ -313,7 +313,7 @@ namespace OpenBve.Graphics.Renderers
 
         private ObjectState ParseFBO(Vector2 point, int deltaX, int deltaY)
         {
-            if (OpenBve.Graphics.Vulkan.VulkanDevice.Full)
+            if (WholeGame.Full)
             {
                 return Pick(point, deltaX, deltaY);
             }

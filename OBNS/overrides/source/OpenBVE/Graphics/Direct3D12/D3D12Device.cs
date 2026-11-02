@@ -115,30 +115,35 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 
 			D12.CheckLayouts();
-			foreach (string extension in new[] { "GL_EXT_memory_object_win32", "GL_EXT_semaphore_win32" })
-			{
-				if (!HasExtension(extension))
-				{
-					return "OpenGL has no " + extension;
-				}
-			}
-
-			// OpenGL's adapter, by LUID (GL_EXT_memory_object_win32): images can only be shared on the same GPU.
-			IntPtr address = ((IGraphicsContextInternal)GraphicsContext.CurrentContext).GetAddress("glGetUnsignedBytevEXT");
-			if (address == IntPtr.Zero)
-			{
-				return "OpenGL has no glGetUnsignedBytevEXT";
-			}
-
+			// With Direct3D drawing the whole game there is no OpenGL to share with: the first GPU that isn't software.
+			bool shared = !D3D12World.Full;
 			byte[] luid = new byte[8];
-			fixed (byte* data = luid)
+			if (shared)
 			{
-				const uint deviceLuid = 0x9599; // GL_DEVICE_LUID_EXT
-				((GetUnsignedBytev)Marshal.GetDelegateForFunctionPointer(address, typeof(GetUnsignedBytev)))(deviceLuid, data);
-			}
+				foreach (string extension in new[] { "GL_EXT_memory_object_win32", "GL_EXT_semaphore_win32" })
+				{
+					if (!HasExtension(extension))
+					{
+						return "OpenGL has no " + extension;
+					}
+				}
 
-			while (GL.GetError() != ErrorCode.NoError)
-			{
+				// OpenGL's adapter, by LUID (GL_EXT_memory_object_win32): images can only be shared on the same GPU.
+				IntPtr address = ((IGraphicsContextInternal)GraphicsContext.CurrentContext).GetAddress("glGetUnsignedBytevEXT");
+				if (address == IntPtr.Zero)
+				{
+					return "OpenGL has no glGetUnsignedBytevEXT";
+				}
+
+				fixed (byte* data = luid)
+				{
+					const uint deviceLuid = 0x9599; // GL_DEVICE_LUID_EXT
+					((GetUnsignedBytev)Marshal.GetDelegateForFunctionPointer(address, typeof(GetUnsignedBytev)))(deviceLuid, data);
+				}
+
+				while (GL.GetError() != ErrorCode.NoError)
+				{
+				}
 			}
 
 			IntPtr factory = Dx.Factory();
@@ -150,7 +155,7 @@ namespace OpenBve.Graphics.Direct3D12
 				{
 					Dx.AdapterDesc1 desc = Dx.GetDesc1(adapter);
 					bool software = (desc.Flags & 2) != 0; // DXGI_ADAPTER_FLAG_SOFTWARE
-					if (chosen == IntPtr.Zero && !software && BitConverter.ToUInt32(luid, 0) == desc.LuidLow && BitConverter.ToInt32(luid, 4) == desc.LuidHigh)
+					if (chosen == IntPtr.Zero && !software && (!shared || BitConverter.ToUInt32(luid, 0) == desc.LuidLow && BitConverter.ToInt32(luid, 4) == desc.LuidHigh))
 					{
 						chosen = adapter;
 						name = Dx.Name(desc).TrimEnd('\0');
@@ -168,7 +173,7 @@ namespace OpenBve.Graphics.Direct3D12
 
 			if (chosen == IntPtr.Zero)
 			{
-				return "no Direct3D adapter is the GPU OpenGL is on";
+				return shared ? "no Direct3D adapter is the GPU OpenGL is on" : "no Direct3D adapter";
 			}
 
 			int hr = D12.CreateDevice(chosen, out IntPtr device);
@@ -181,7 +186,13 @@ namespace OpenBve.Graphics.Direct3D12
 			Device = device;
 			Description = name + ", feature level 11.0 or later";
 			Queue = D12.CreateCommandQueue(Device);
-			exchange = D12.CreateFence(Device, true);
+			exchange = D12.CreateFence(Device, shared);
+			waitEvent = CreateEventW(IntPtr.Zero, false, false, null);
+			if (!shared)
+			{
+				return null;
+			}
+
 			IntPtr handle = D12.CreateSharedHandle(Device, exchange);
 			GL.Ext.GenSemaphores(1, out glExchange);
 			GL.Ext.ImportSemaphoreWin32Handle(glExchange, ExternalHandleType.HandleTypeD3D12FenceExt, handle);
@@ -192,7 +203,6 @@ namespace OpenBve.Graphics.Direct3D12
 				return "OpenGL could not import the Direct3D 12 fence (" + error + ")";
 			}
 
-			waitEvent = CreateEventW(IntPtr.Zero, false, false, null);
 			return null;
 		}
 

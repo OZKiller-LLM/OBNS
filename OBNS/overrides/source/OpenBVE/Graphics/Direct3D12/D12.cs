@@ -54,7 +54,7 @@ namespace OpenBve.Graphics.Direct3D12
 
 		// D3D12_COMMAND_LIST_TYPE, D3D12_HEAP_TYPE, D3D12_HEAP_FLAGS, D3D12_RESOURCE_DIMENSION, D3D12_RESOURCE_FLAGS
 		internal const int CommandListDirect = 0;
-		internal const int HeapDefault = 1, HeapUpload = 2;
+		internal const int HeapDefault = 1, HeapUpload = 2, HeapReadback = 3;
 		internal const int HeapFlagNone = 0, HeapFlagShared = 1;
 		internal const int DimensionBuffer = 1, DimensionTexture2D = 3;
 		internal const int LayoutUnknown = 0, LayoutRowMajor = 1;
@@ -62,7 +62,7 @@ namespace OpenBve.Graphics.Direct3D12
 
 		// D3D12_RESOURCE_STATES
 		internal const int StateCommon = 0, StateVertexAndConstantBuffer = 0x1, StateIndexBuffer = 0x2, StateRenderTarget = 0x4, StateDepthWrite = 0x10,
-			StateNonPixelShaderResource = 0x40, StatePixelShaderResource = 0x80, StateCopyDest = 0x400, StateGenericRead = 0xAC3;
+			StateNonPixelShaderResource = 0x40, StatePixelShaderResource = 0x80, StateCopyDest = 0x400, StateCopySource = 0x800, StateGenericRead = 0xAC3, StatePresent = 0;
 
 		internal const uint AllSubresources = 0xFFFFFFFF;
 
@@ -565,6 +565,22 @@ namespace OpenBve.Graphics.Direct3D12
 			return (byte*)data;
 		}
 
+		/// <summary>ID3D12Resource::Map (8): the whole resource, to be read.</summary>
+		internal static byte* MapForReading(IntPtr resource)
+		{
+			void* data;
+			Check(((delegate* unmanaged[Stdcall]<IntPtr, uint, ulong*, void**, int>)Table(resource)[8])(resource, 0, null, &data), "ID3D12Resource::Map");
+			return (byte*)data;
+		}
+
+		/// <summary>ID3D12Resource::Unmap (9): nothing written.</summary>
+		internal static void Unmap(IntPtr resource)
+		{
+			ulong* range = stackalloc ulong[2];
+			range[0] = range[1] = 0;
+			((delegate* unmanaged[Stdcall]<IntPtr, uint, ulong*, void>)Table(resource)[9])(resource, 0, range);
+		}
+
 		/// <summary>ID3D12Resource::GetGPUVirtualAddress (11).</summary>
 		internal static ulong GpuAddress(IntPtr resource) => ((delegate* unmanaged[Stdcall]<IntPtr, ulong>)Table(resource)[11])(resource);
 
@@ -584,6 +600,32 @@ namespace OpenBve.Graphics.Direct3D12
 			return handle;
 		}
 
+		// --- the swap chain (IDXGISwapChain3) ---
+
+		private static readonly Guid ISwapChain3 = new Guid("94d99bdb-f1f8-4ab0-b236-7da0170edab1");
+
+		/// <summary>IUnknown::QueryInterface (0), for the swap chain's IDXGISwapChain3; the one asked of is released.</summary>
+		internal static IntPtr SwapChain3(IntPtr swapChain)
+		{
+			Guid id = ISwapChain3;
+			IntPtr made;
+			int hr = ((delegate* unmanaged[Stdcall]<IntPtr, Guid*, IntPtr*, int>)Table(swapChain)[0])(swapChain, &id, &made);
+			Release(swapChain);
+			return Make(hr, "IDXGISwapChain::QueryInterface", made);
+		}
+
+		/// <summary>IDXGISwapChain::GetBuffer (9), as a resource.</summary>
+		internal static IntPtr SwapChainBuffer(IntPtr swapChain, uint index)
+		{
+			Guid id = IResource;
+			IntPtr buffer;
+			int hr = ((delegate* unmanaged[Stdcall]<IntPtr, uint, Guid*, IntPtr*, int>)Table(swapChain)[9])(swapChain, index, &id, &buffer);
+			return Make(hr, "IDXGISwapChain::GetBuffer", buffer);
+		}
+
+		/// <summary>IDXGISwapChain3::GetCurrentBackBufferIndex (36).</summary>
+		internal static uint CurrentBackBuffer(IntPtr swapChain) => ((delegate* unmanaged[Stdcall]<IntPtr, uint>)Table(swapChain)[36])(swapChain);
+
 		// --- ID3D12GraphicsCommandList ---
 
 		/// <summary>ID3D12GraphicsCommandList::Close (9).</summary>
@@ -591,6 +633,12 @@ namespace OpenBve.Graphics.Direct3D12
 
 		/// <summary>ID3D12GraphicsCommandList::Reset (10).</summary>
 		internal static void Reset(IntPtr list, IntPtr allocator) => Check(((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr, int>)Table(list)[10])(list, allocator, IntPtr.Zero), "ID3D12GraphicsCommandList::Reset");
+
+		/// <summary>ID3D12GraphicsCommandList::DrawInstanced (12).</summary>
+		internal static void DrawInstanced(IntPtr list, uint vertexCount, uint instanceCount, uint startVertex, uint startInstance)
+		{
+			((delegate* unmanaged[Stdcall]<IntPtr, uint, uint, uint, uint, void>)Table(list)[12])(list, vertexCount, instanceCount, startVertex, startInstance);
+		}
 
 		/// <summary>ID3D12GraphicsCommandList::DrawIndexedInstanced (13).</summary>
 		internal static void DrawIndexedInstanced(IntPtr list, uint indexCount, uint instanceCount, uint startIndex, int baseVertex, uint startInstance)
@@ -608,6 +656,12 @@ namespace OpenBve.Graphics.Direct3D12
 		internal static void CopyTextureRegion(IntPtr list, TextureCopyLocation destination, TextureCopyLocation source)
 		{
 			((delegate* unmanaged[Stdcall]<IntPtr, TextureCopyLocation*, uint, uint, uint, TextureCopyLocation*, void*, void>)Table(list)[16])(list, &destination, 0, 0, 0, &source, null);
+		}
+
+		/// <summary>ID3D12GraphicsCommandList::CopyResource (17).</summary>
+		internal static void CopyResource(IntPtr list, IntPtr destination, IntPtr source)
+		{
+			((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr, void>)Table(list)[17])(list, destination, source);
 		}
 
 		/// <summary>ID3D12GraphicsCommandList::IASetPrimitiveTopology (20).</summary>

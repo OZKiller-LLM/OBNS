@@ -124,6 +124,25 @@ namespace OpenBve.Graphics
 				return;
 			}
 
+			// Or Direct3D 11 alone (OBNS_D3D11_FULL=1), or 12 (OBNS_D3D12_FULL=1), or 9 (OBNS_D3D9_FULL=1).
+			if (Direct3D11.D3D11World.Full)
+			{
+				Direct3D11.D3D11World.Initialize();
+				return;
+			}
+
+			if (Direct3D12.D3D12World.Full)
+			{
+				Direct3D12.D3D12World.Initialize();
+				return;
+			}
+
+			if (Direct3D9.D3D9World.Full)
+			{
+				Direct3D9.D3D9World.Initialize();
+				return;
+			}
+
 			// The renderer asked for, turned off by its switch: said here, as the layer itself says nothing and what is tried after has another reason.
 			ObnsOptions.RendererKind asked = ObnsOptions.Renderer;
 			string askedName = asked == ObnsOptions.RendererKind.Metal ? "METAL" : asked == ObnsOptions.RendererKind.Direct3D9 ? "D3D9" : asked == ObnsOptions.RendererKind.Direct3D11 ? "D3D11" : asked == ObnsOptions.RendererKind.Direct3D12 ? "D3D12" : null;

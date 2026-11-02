@@ -109,7 +109,13 @@ namespace OpenBve.Graphics.Direct3D12
 			long start = System.Diagnostics.Stopwatch.GetTimestamp();
 			for (int layer = 0; layer < 2; layer++)
 			{
-				for (int key = 0; key < 32; key++)
+				// The drawing of the whole game has the background's depth clamp too (32), and one target whichever the layer.
+				if (layer > 0 && D3D12World.Full)
+				{
+					break;
+				}
+
+				for (int key = 0; key < (D3D12World.Full ? 64 : 32); key++)
 				{
 					// Blending is none, normal or additive (WorldBlend's 0 to 2).
 					if ((key & 3) != 3)
@@ -239,7 +245,7 @@ namespace OpenBve.Graphics.Direct3D12
 		private static readonly string[] semantics = { "POSITION", "NORMAL", "TEXCOORD", "COLOR", "BLENDINDICES", "DRAW" };
 
 		/// <summary>A pipeline object from a description with LibRender2's vertex and the instance stream as its input.</summary>
-		private IntPtr MakePipeline(D12.GraphicsPipelineStateDesc desc)
+		private IntPtr MakePipeline(D12.GraphicsPipelineStateDesc desc, bool depthClamp = false)
 		{
 			IntPtr[] names = new IntPtr[semantics.Length];
 			try
@@ -263,7 +269,7 @@ namespace OpenBve.Graphics.Direct3D12
 				desc.SampleMask = 0xFFFFFFFF;
 				desc.SampleCount = 1;
 				desc.FillMode = Dx.FillSolid;
-				desc.DepthClipEnable = 1;
+				desc.DepthClipEnable = depthClamp ? 0 : 1;
 				desc.StencilReadMask = desc.StencilWriteMask = 0xFF;
 				D12.StencilOpDesc keep = new D12.StencilOpDesc { StencilFailOp = Dx.StencilOpKeep, StencilDepthFailOp = Dx.StencilOpKeep, StencilPassOp = Dx.StencilOpKeep, StencilFunc = Dx.ComparisonAlways };
 				desc.FrontFace = desc.BackFace = keep;
@@ -295,7 +301,7 @@ namespace OpenBve.Graphics.Direct3D12
 		/// </summary>
 		private IntPtr Pipeline(int key, int layer)
 		{
-			int full = key | (layer << 5);
+			int full = key | (layer << 6);
 			if (pipelines.TryGetValue(full, out IntPtr pipeline))
 			{
 				return pipeline;
@@ -332,7 +338,7 @@ namespace OpenBve.Graphics.Direct3D12
 			desc.DepthWriteMask = depthWrite ? 1u : 0u;
 			desc.DepthFunc = Dx.ComparisonLessEqual;
 			desc.RTVFormats[0] = Dx.FormatR8G8B8A8Unorm;
-			if (layer == WorldLayerIndex)
+			if (layer == WorldLayerIndex && !D3D12World.Full)
 			{
 				desc.NumRenderTargets = 2;
 				desc.RTVFormats[1] = Dx.FormatR32Float;
@@ -347,7 +353,7 @@ namespace OpenBve.Graphics.Direct3D12
 			{
 				desc.VS = Code(vertexCode, vs);
 				desc.PS = Code(pixelCode, ps);
-				pipeline = MakePipeline(desc);
+				pipeline = MakePipeline(desc, (key & 32) != 0);
 			}
 
 			pipelines[full] = pipeline;
@@ -632,10 +638,13 @@ namespace OpenBve.Graphics.Direct3D12
 			return changed;
 		}
 
+		/// <summary>The sampler of an OpenGL wrap mode, for the shaders.</summary>
+		internal ulong SamplerView(int wrap) => samplerStart + (ulong)(wrap & 3) * samplerSize;
+
 		/// <summary>Draws a layer's draws into the targets set (Bind first).</summary>
 		internal void Draw(IntPtr list, int layer, uint width, uint height)
 		{
-			int start = layer == WorldLayerIndex ? 0 : cabCommandStart, end = layer == WorldLayerIndex ? cabCommandStart : commandCount;
+			int start = layer == SkyLayer ? 0 : layer == WorldLayerIndex ? skyCommandEnd : cabCommandStart, end = layer == SkyLayer ? skyCommandEnd : layer == WorldLayerIndex ? cabCommandStart : commandCount;
 			if (layer == WorldLayerIndex)
 			{
 				LastStateChanges = 0;
@@ -656,7 +665,7 @@ namespace OpenBve.Graphics.Direct3D12
 				int pipelineKey = (int)((key >> 48) & 0x3FFF);
 				if (pipelineKey != boundPipeline)
 				{
-					D12.SetPipelineState(list, Pipeline(pipelineKey & 31, layer));
+					D12.SetPipelineState(list, Pipeline(pipelineKey & 63, D3D12World.Full ? WorldLayerIndex : layer));
 					boundPipeline = pipelineKey;
 					changes++;
 				}

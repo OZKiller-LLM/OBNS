@@ -60,18 +60,20 @@ namespace OpenBve
 		/// <summary>OBNS: with Vulkan drawing the whole game (OBNS/RENDERERS.md), the window gets no OpenGL context.</summary>
 		static OpenBVEGame()
 		{
-			OpenBve.Graphics.Vulkan.VulkanDevice.ProbeFull();
-			if (OpenBve.Graphics.Vulkan.VulkanDevice.Full)
+			OpenBve.Graphics.WholeGame.Probe();
+			if (OpenBve.Graphics.WholeGame.Full)
 			{
 				OpenBve.Graphics.NoGLContext.Install();
 			}
 		}
 
 		//We need to explicitly specify the default constructor
+		private static readonly double obnsCameraTurn = double.TryParse(System.Environment.GetEnvironmentVariable("OBNS_CAMERA_TURN"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double turn) ? turn : 0.0;
+
 		public OpenBVEGame(int width, int height, GraphicsMode currentGraphicsMode, GameWindowFlags @default): base(width, height, currentGraphicsMode, Translations.GetInterfaceString(HostApplication.OpenBve, new[] {"program","title"}), @default)
 		{
 			// OBNS: upstream's OpenGL calls do nothing from now.
-			if (OpenBve.Graphics.Vulkan.VulkanDevice.Full)
+			if (OpenBve.Graphics.WholeGame.Full)
 			{
 				OpenBve.Graphics.GLStub.Install();
 			}
@@ -96,7 +98,7 @@ namespace OpenBve
 		public OpenBVEGame(int width, int height, GraphicsMode currentGraphicsMode, GameWindowFlags @default, GraphicsContextFlags flags): base(width, height, currentGraphicsMode, Translations.GetInterfaceString(HostApplication.OpenBve, new[] {"program","title"}), @default, DisplayDevice.Default, 3,3, flags)
 		{
 			// OBNS: upstream's OpenGL calls do nothing from now.
-			if (OpenBve.Graphics.Vulkan.VulkanDevice.Full)
+			if (OpenBve.Graphics.WholeGame.Full)
 			{
 				OpenBve.Graphics.GLStub.Install();
 			}
@@ -287,6 +289,8 @@ namespace OpenBve
 			}
 
 			Program.Renderer.Camera.AlignmentDirection = new CameraAlignment();
+			// OBNS: a camera turning with no keys (OBNS_CAMERA_TURN=radians a second), for comparing the APIs' drawing of motion blur.
+			Program.Renderer.Camera.AlignmentDirection.Yaw = obnsCameraTurn;
 			if (MainLoop.Quit != QuitMode.ContinueGame)
 			{
 				Exit();
@@ -521,9 +525,9 @@ namespace OpenBve
 		/// <summary>OBNS: shows the frame: with Vulkan drawing the whole game (OBNS/RENDERERS.md), its swap chain, not OpenGL's.</summary>
 		private new void SwapBuffers()
 		{
-			if (OpenBve.Graphics.Vulkan.VulkanWorld.PresentsItself)
+			if (OpenBve.Graphics.WholeGame.PresentsItself)
 			{
-				OpenBve.Graphics.Vulkan.VulkanWorld.Instance.Present();
+				OpenBve.Graphics.WholeGame.Layer.Present();
 			}
 			else
 			{
@@ -1434,11 +1438,11 @@ namespace OpenBve
 
 			next = clock.Elapsed.TotalSeconds + every;
 			count++;
-			if (OpenBve.Graphics.Vulkan.VulkanWorld.PresentsItself)
+			if (OpenBve.Graphics.WholeGame.PresentsItself)
 			{
-				// OBNS: Vulkan saves it as it shows it.
+				// OBNS: the API saves it as it shows it.
 				string shown = OpenBveApi.Path.CombineFile(Program.FileSystem.SettingsFolder, "snapshot-" + count + ".png");
-				OpenBve.Graphics.Vulkan.VulkanWorld.Instance.RequestSnapshot(shown);
+				OpenBve.Graphics.WholeGame.Layer.RequestSnapshot(shown);
 				Program.FileSystem.AppendToLogFile("OBNS snapshot " + count + ": " + shown);
 				return;
 			}

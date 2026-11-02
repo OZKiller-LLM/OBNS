@@ -32,9 +32,31 @@ using TrainManager.Trains;
 
 namespace OpenBve.Graphics.Direct3D9
 {
-	internal sealed class D3D9World : IWorldLayer, IDisposable
+	internal sealed unsafe class D3D9World : IWorldLayer, IWholeFrameLayer, IDisposable
 	{
 		private static D3D9World instance;
+
+		/// <summary>Whether Direct3D 9 draws the whole game with OpenGL out of it (OBNS_D3D9_FULL=1, OBNS/RENDERERS.md).</summary>
+		internal static bool Full { get; private set; } = Environment.GetEnvironmentVariable("OBNS_D3D9_FULL") == "1" && GLStub.Available && !Vulkan.VulkanDevice.Full && !Direct3D11.D3D11World.Full && !Direct3D12.D3D12World.Full;
+
+		/// <summary>Before the window is made: whether a device can be had for it. If not, OpenGL draws, as usual.</summary>
+		internal static void ProbeFull()
+		{
+			if (!Full)
+			{
+				return;
+			}
+
+			D3D9Device device = D3D9Device.Create(out string reason);
+			if (device == null)
+			{
+				Full = false;
+				Program.FileSystem.AppendToLogFile("OBNS Direct3D 9 can't draw the whole game: " + reason);
+				return;
+			}
+
+			device.Dispose();
+		}
 
 		internal static bool Enabled => instance != null && !instance.failed;
 
@@ -78,7 +100,7 @@ namespace OpenBve.Graphics.Direct3D9
 		internal static void Initialize()
 		{
 			string forced = Environment.GetEnvironmentVariable("OBNS_D3D9");
-			if (instance != null || forced == "0" || forced != "1" && ObnsOptions.Renderer != ObnsOptions.RendererKind.Direct3D9)
+			if (instance != null || !Full && (forced == "0" || forced != "1" && ObnsOptions.Renderer != ObnsOptions.RendererKind.Direct3D9))
 			{
 				return;
 			}
@@ -90,10 +112,15 @@ namespace OpenBve.Graphics.Direct3D9
 			}
 
 			D3D9Device device = D3D9Device.Create(out string reason);
-			string test = device?.SelfTest();
+			string test = Full ? null : device?.SelfTest();
 			if (device == null || test != null)
 			{
 				device?.Dispose();
+				if (Full)
+				{
+					throw new InvalidOperationException("Direct3D 9 can't draw the game, and the window has no OpenGL to fall back on: " + (reason ?? test));
+				}
+
 				Log("OBNS Direct3D 9 world layer not used: " + (reason ?? test) + "; Vulkan is tried");
 				return;
 			}
@@ -101,22 +128,233 @@ namespace OpenBve.Graphics.Direct3D9
 			D3D9World world = new D3D9World(device);
 			try
 			{
-				world.composite = new WorldComposite();
+				if (!Full)
+				{
+					world.composite = new WorldComposite();
+				}
+
 				world.Meshes = new D3D9Meshes(device);
 				world.Textures = new D3D9Textures(device);
 				world.scene = new D3D9Scene(device, world.Meshes, world.Textures);
 				world.ownTarget = D9.GetRenderTarget(device.Device, 0);
 				WorldHooks.Install("Direct3D 9", "OBNS_D3D9", world.Meshes, world.Textures);
+				if (Full)
+				{
+					world.frameDrawing = new D3D9FrameDrawing(device, world.scene, world.Textures, Program.Renderer.Frame);
+					Program.Renderer.Frame = world.frameDrawing;
+					world.window = Program.Renderer.GameWindow.WindowInfo.Handle;
+				}
 			}
 			catch (Exception ex)
 			{
 				world.Dispose();
+				if (Full)
+				{
+					throw new InvalidOperationException("Direct3D 9 can't draw the game, and the window has no OpenGL to fall back on: " + ex.Message, ex);
+				}
+
 				Log("OBNS Direct3D 9 world layer not used: " + ex.Message + "; Vulkan is tried");
 				return;
 			}
 
 			instance = world;
 			Log("OBNS Direct3D 9 world layer on: " + device.Description + " (the world and cab layers, with shadows" + (device.FloatBlending ? "" : "; blended faces write no depth for the composite") + ")");
+			if (Full)
+			{
+				Log("OBNS Direct3D 9 draws the whole game: " + device.Description + "; " + NoGLContext.Describe(world.window));
+			}
+		}
+
+		// --- the whole game drawn by Direct3D 9 (OBNS/RENDERERS.md) ---
+
+		private D3D9FrameDrawing frameDrawing;
+		private IntPtr window, swapChain, backSurface, lastFrameTexture, lastFrameSurface, snapshotSurface;
+		private uint swapWidth, swapHeight;
+		private bool swapSync, worldDrawn, lastFrameValid;
+		private float motionBlurAlpha;
+		private string snapshotFile;
+
+		public WholeFrameDrawing FrameDrawing => frameDrawing;
+
+		public void RequestSnapshot(string file)
+		{
+			snapshotFile = file;
+		}
+
+		public void SetMotionBlur(double frameRate, double speed)
+		{
+			motionBlurAlpha = WholeGame.MotionBlurAlpha(Interface.CurrentOptions.MotionBlur, frameRate, speed);
+		}
+
+		private static bool MotionBlurOn => Interface.CurrentOptions.MotionBlur != LibRender2.MotionBlurs.MotionBlurMode.None;
+
+		private static uint ClearColor => 0xFF000000u | (uint)Interface.CurrentOptions.ClearColor.R << 16 | (uint)Interface.CurrentOptions.ClearColor.G << 8 | Interface.CurrentOptions.ClearColor.B;
+
+		/// <summary>The images for the whole frame: its colour, which shaders read for showing it, and the two depths.</summary>
+		private void EnsureWholeTarget(int newWidth, int newHeight)
+		{
+			if (colorTexture != IntPtr.Zero && width == newWidth && height == newHeight)
+			{
+				return;
+			}
+
+			D9.SetRenderTarget(device.Device, 0, ownTarget);
+			D9.SetDepthStencilSurface(device.Device, IntPtr.Zero);
+			ReleaseTarget();
+			width = (uint)Math.Max(1, newWidth);
+			height = (uint)Math.Max(1, newHeight);
+			colorTexture = D9.CreateTexture(device.Device, width, height, 1, D9.UsageRenderTarget, D9.FormatA8R8G8B8, D9.PoolDefault);
+			colorSurface = D9.SurfaceLevel(colorTexture, 0);
+			if (MotionBlurOn)
+			{
+				lastFrameTexture = D9.CreateTexture(device.Device, width, height, 1, D9.UsageRenderTarget, D9.FormatA8R8G8B8, D9.PoolDefault);
+				lastFrameSurface = D9.SurfaceLevel(lastFrameTexture, 0);
+				lastFrameValid = false;
+			}
+
+			depthBuffer = D9.CreateDepthStencilSurface(device.Device, width, height, device.DepthFormat);
+			cabDepthBuffer = D9.CreateDepthStencilSurface(device.Device, width, height, device.DepthFormat);
+		}
+
+		/// <summary>The background, world, motion blur, particles and cab, in the frame's one image, as upstream draws them into its framebuffer.</summary>
+		private void DrawWhole()
+		{
+			IntPtr d = device.Device;
+			D9.SetRenderTarget(d, 1, IntPtr.Zero);
+			D9.SetRenderTarget(d, 0, colorSurface);
+			D9.SetDepthStencilSurface(d, depthBuffer);
+			D9.SetViewport(d, 0, 0, width, height);
+			D9.Clear(d, D9.ClearTarget | D9.ClearZBuffer, ClearColor, 1.0f);
+			scene.Draw(WorldScene.SkyLayer, width, height, IntPtr.Zero);
+			scene.Draw(WorldScene.WorldLayerIndex, width, height, IntPtr.Zero);
+			if (MotionBlurOn)
+			{
+				if (lastFrameValid && motionBlurAlpha > 0.0f)
+				{
+					D9.SetDepthStencilSurface(d, IntPtr.Zero);
+					frameDrawing.DrawImage(lastFrameTexture, width, height, motionBlurAlpha, true, false);
+					D9.SetDepthStencilSurface(d, depthBuffer);
+				}
+
+				D9.EndScene(d);
+				D9.StretchRect(d, colorSurface, lastFrameSurface);
+				lastFrameValid = true;
+				D9.BeginScene(d);
+			}
+
+			frameDrawing.RecordParticles(width, height);
+			D9.SetDepthStencilSurface(d, cabDepthBuffer);
+			D9.Clear(d, D9.ClearZBuffer, 0u, 1.0f);
+			scene.Draw(WorldScene.CabLayer, width, height, IntPtr.Zero);
+			worldDrawn = true;
+		}
+
+		public void Present()
+		{
+			int screenWidth = Program.Renderer.Screen.Width, screenHeight = Program.Renderer.Screen.Height;
+			if (Program.Renderer.Screen.Minimized || screenWidth <= 0 || screenHeight <= 0)
+			{
+				frameDrawing.Presented();
+				worldDrawn = false;
+				return;
+			}
+
+			try
+			{
+				IntPtr d = device.Device;
+				if (!worldDrawn)
+				{
+					EnsureWholeTarget(screenWidth, screenHeight);
+					frameNumber++;
+					Textures.FrameStarted(frameNumber);
+					Meshes.FrameStarted(frameNumber);
+				}
+
+				Textures.Send();
+				D9.SetRenderTarget(d, 0, colorSurface);
+				D9.SetDepthStencilSurface(d, IntPtr.Zero);
+				D9.SetViewport(d, 0, 0, width, height);
+				if (!worldDrawn)
+				{
+					D9.Clear(d, D9.ClearTarget, ClearColor, 1.0f);
+				}
+
+				D9.BeginScene(d);
+				scene.SetFixedStates();
+				frameDrawing.Record(width, height);
+				D9.EndScene(d);
+				if (snapshotFile != null)
+				{
+					SaveSnapshot(snapshotFile);
+					snapshotFile = null;
+				}
+
+				System.Drawing.Size client = Program.Renderer.GameWindow.ClientSize;
+				EnsureSwapChain((uint)Math.Max(1, client.Width), (uint)Math.Max(1, client.Height));
+				D9.SetRenderTarget(d, 0, backSurface);
+				D9.BeginScene(d);
+				// Row 0 of the frame's image is the bottom of the screen; a swap chain's is the top.
+				frameDrawing.DrawImage(colorTexture, swapWidth, swapHeight, 1.0f, false, true);
+				D9.EndScene(d);
+				D9.PresentSwapChain(swapChain);
+			}
+			catch (Exception ex)
+			{
+				Fail(ex);
+			}
+
+			frameDrawing.Presented();
+			worldDrawn = false;
+		}
+
+		private void EnsureSwapChain(uint newWidth, uint newHeight)
+		{
+			bool sync = Interface.CurrentOptions.VerticalSynchronization;
+			if (swapChain != IntPtr.Zero && swapWidth == newWidth && swapHeight == newHeight && swapSync == sync)
+			{
+				return;
+			}
+
+			D9.SetRenderTarget(device.Device, 0, ownTarget);
+			D9.Release(backSurface);
+			D9.Release(swapChain);
+			backSurface = swapChain = IntPtr.Zero;
+			const uint discard = 1, intervalOne = 1, intervalImmediate = 0x80000000;
+			swapChain = D9.CreateAdditionalSwapChain(device.Device, new D9.PresentParameters
+			{
+				BackBufferWidth = newWidth,
+				BackBufferHeight = newHeight,
+				BackBufferFormat = D9.FormatX8R8G8B8,
+				BackBufferCount = 1,
+				SwapEffect = discard,
+				DeviceWindow = window,
+				Windowed = 1,
+				PresentationInterval = sync ? intervalOne : intervalImmediate
+			});
+			backSurface = D9.SwapChainBackBuffer(swapChain);
+			swapWidth = newWidth;
+			swapHeight = newHeight;
+			swapSync = sync;
+		}
+
+		/// <summary>The frame's image saved as OpenGL's is.</summary>
+		private void SaveSnapshot(string file)
+		{
+			if (snapshotSurface == IntPtr.Zero)
+			{
+				snapshotSurface = D9.CreateSystemSurface(device.Device, width, height, D9.FormatA8R8G8B8);
+			}
+
+			D9.GetRenderTargetData(device.Device, colorSurface, snapshotSurface);
+			D9.LockedRect locked = D9.LockSurface(snapshotSurface);
+			try
+			{
+				WholeGame.SaveImage(locked.Bits, locked.Pitch, (int)width, (int)height, file, true);
+			}
+			finally
+			{
+				D9.UnlockSurface(snapshotSurface);
+			}
 		}
 
 		public IWorldScene Scene => scene;
@@ -178,7 +416,16 @@ namespace OpenBve.Graphics.Direct3D9
 
 			try
 			{
-				EnsureTarget(viewportWidth, viewportHeight);
+				if (Full)
+				{
+					// OpenGL's viewport is a stub's.
+					EnsureWholeTarget(Program.Renderer.Screen.Width, Program.Renderer.Screen.Height);
+				}
+				else
+				{
+					EnsureTarget(viewportWidth, viewportHeight);
+				}
+
 				// The faces resolved (meshes, textures made), what the frames before let go of freed, the textures' uploads sent.
 				scene.Prepare();
 				frameNumber++;
@@ -198,6 +445,12 @@ namespace OpenBve.Graphics.Direct3D9
 				D9.BeginScene(d);
 				scene.SetFixedStates();
 				scene.DrawShadows();
+				if (Full)
+				{
+					DrawWhole();
+					D9.EndScene(d);
+					return;
+				}
 
 				// The world layer: its depth as a colour cleared to the far plane, its colour to nothing (coverage 0).
 				D9.SetDepthStencilSurface(d, depthBuffer);
@@ -228,7 +481,7 @@ namespace OpenBve.Graphics.Direct3D9
 		/// <summary>OpenGL takes the images back and lays the world over its frame.</summary>
 		public void Finish()
 		{
-			if (failed || handles == null)
+			if (failed || handles == null || Full)
 			{
 				return;
 			}
@@ -259,6 +512,11 @@ namespace OpenBve.Graphics.Direct3D9
 
 		private void Fail(Exception ex)
 		{
+			if (Full)
+			{
+				throw new InvalidOperationException("Direct3D 9 stopped drawing the game, and the window has no OpenGL to fall back on: " + ex.Message, ex);
+			}
+
 			failed = true;
 			Log("OBNS Direct3D 9 world layer stopped, OpenGL draws it from now: " + ex);
 		}
@@ -290,6 +548,12 @@ namespace OpenBve.Graphics.Direct3D9
 			}
 
 			glColor = glDepth = glCab = 0;
+			foreach (IntPtr com in new[] { lastFrameSurface, lastFrameTexture, snapshotSurface })
+			{
+				D9.Release(com);
+			}
+
+			lastFrameSurface = lastFrameTexture = snapshotSurface = IntPtr.Zero;
 			foreach (IntPtr com in new[] { colorSurface, depthSurface, cabSurface, colorTexture, depthTexture, cabTexture, depthBuffer, cabDepthBuffer })
 			{
 				D9.Release(com);
@@ -325,6 +589,9 @@ namespace OpenBve.Graphics.Direct3D9
 			}
 
 			ReleaseTarget();
+			frameDrawing?.Dispose();
+			D9.Release(backSurface);
+			D9.Release(swapChain);
 			composite?.Dispose();
 			composite = null;
 			scene?.Dispose();

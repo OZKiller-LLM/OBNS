@@ -146,7 +146,7 @@ namespace OpenBve.Graphics
 
 			// OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md), unless the debug views are on (not drawn by it):
 			// its shadows are drawn by Vulkan too, so upstream's OpenGL shadow pass is not needed then.
-			bool vulkanWorld = WorldLayer.Enabled && (Vulkan.VulkanDevice.Full || !OptionWireFrame && !OptionNormals);
+			bool vulkanWorld = WorldLayer.Enabled && (WholeGame.Full || !OptionWireFrame && !OptionNormals);
 			// OBNS: the faces first, as the shadow pass draws what the scene draws: the static batches rather than the faces they cover.
 			List<FaceState> opaqueFaces = null, alphaFaces = null, unsortedAlphaFaces = null, overlayOpaqueFaces = null, overlayAlphaFaces = null;
 			if (!vulkanWorld)
@@ -207,7 +207,7 @@ namespace OpenBve.Graphics
 			List<FaceState> vulkanOverlayOpaque = null, vulkanOverlayAlpha = null;
 			SceneLaps.Lap(0);
 			// OBNS: and with OBNS_VULKAN_SKY=1 Vulkan draws the background too, before the world.
-			bool vulkanSky = vulkanWorld && Vulkan.VulkanWorld.Enabled && Vulkan.VulkanWorld.Instance.DrawsSky;
+			bool vulkanSky = vulkanWorld && (WholeGame.Full || Vulkan.VulkanWorld.Enabled && Vulkan.VulkanWorld.Instance.DrawsSky);
 			if (vulkanWorld)
 			{
 				StartVulkanWorld(out vulkanOverlayOpaque, out vulkanOverlayAlpha, vulkanSky, TimeElapsed);
@@ -374,12 +374,12 @@ namespace OpenBve.Graphics
 			SetBlendFunc();
 			SetAlphaFunc(AlphaFunction.Greater, 0.0f);
 			// OBNS: with Vulkan drawing the whole game they were given before its frame was made (GatherParticles).
-			if (!Vulkan.VulkanWorld.PresentsItself)
+			if (!WholeGame.PresentsItself)
 			{
 				ParticleTest();
 			}
 
-			if(CurrentInterface != InterfaceType.GLMainMenu && !Vulkan.VulkanWorld.PresentsItself)
+			if(CurrentInterface != InterfaceType.GLMainMenu && !WholeGame.PresentsItself)
 			{
 				foreach (TrainBase train in Program.TrainManager.Trains)
 				{
@@ -770,7 +770,7 @@ namespace OpenBve.Graphics
 		/// <summary>The frame's particles given to Vulkan: upstream's update, which also moves them on, with what it would draw sent there.</summary>
 		private void GatherParticles(double timeElapsed)
 		{
-			Vulkan.VulkanFrameDrawing drawing = Vulkan.VulkanWorld.Instance.FrameDrawing;
+			WholeFrameDrawing drawing = WholeGame.Layer.FrameDrawing;
 			drawing.BeginParticles();
 			if (CurrentInterface == InterfaceType.GLMainMenu)
 			{
@@ -860,12 +860,12 @@ namespace OpenBve.Graphics
 				GatherSky(scene, timeElapsed);
 			}
 
-			if (Vulkan.VulkanWorld.PresentsItself)
+			if (WholeGame.PresentsItself)
 			{
 				GatherParticles(timeElapsed);
 				if (Interface.CurrentOptions.MotionBlur != MotionBlurMode.None)
 				{
-					Vulkan.VulkanWorld.Instance.SetMotionBlur(FrameRate, blurTestSpeed > 0.0 ? blurTestSpeed : Math.Abs(Camera.CurrentSpeed));
+					WholeGame.Layer.SetMotionBlur(FrameRate, blurTestSpeed > 0.0 ? blurTestSpeed : Math.Abs(Camera.CurrentSpeed));
 				}
 			}
 

@@ -76,7 +76,7 @@ float4 shadowTexelSize : register(c35);
 float4 shadowParams : register(c36);  // strength, filter radius
 float4 recordsSize : register(c37);   // width, 1 / width, 1 / height
 float4 recordBases : register(c38);   // texels where the draws', objects' and matrices' records start; the shadow pass's cascade
-float4 pixelOffset : register(c39);   // a pixel in clip space (1 / width, 1 / height): Direct3D 9's pixel centres
+float4 pixelOffset : register(c39);   // a pixel in clip space (1 / width, 1 / height): Direct3D 9's pixel centres; 1 for a background
 float4 drawIndex : register(c40);     // the draw's record
 float4 shadowAtlas : register(c41);   // a cascade's size in texels, 1 / the atlas's size
 
@@ -185,6 +185,12 @@ float3 ChainedPosition(VertexIn input, float objectIndex)
 float4 ToTarget(float4 clip)
 {
 	clip.z = 0.5 * (clip.z + clip.w);
+	// A background has no depth test, and must not meet the far plane: what OpenGL's depth clamp is for, which Direct3D 9 hasn't.
+	if (pixelOffset.z > 0.5)
+	{
+		clip.z = 0.5 * clip.w;
+	}
+
 	clip.y = -clip.y;
 	clip.xy += float2(-pixelOffset.x, pixelOffset.y) * clip.w;
 	return clip;

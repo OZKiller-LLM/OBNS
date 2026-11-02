@@ -225,6 +225,10 @@
     <Compile Include="Graphics\Vulkan\VulkanPresenter.cs" />
     <Compile Include="Graphics\GLStub.cs" />
     <Compile Include="Graphics\NoGLContext.cs" />
+    <Compile Include="Graphics\WholeFrame.cs" />
+    <Compile Include="Graphics\Direct3D11\D3D11FrameDrawing.cs" />
+    <Compile Include="Graphics\Direct3D12\D3D12FrameDrawing.cs" />
+    <Compile Include="Graphics\Direct3D9\D3D9FrameDrawing.cs" />
     <Compile Include="Graphics\Vulkan\GpuMemory.cs" />
     <Compile Include="Graphics\Vulkan\SharedHeap.cs" />
     <Compile Include="Graphics\Vulkan\VulkanTextures.cs" />
@@ -258,6 +262,9 @@
     <EmbeddedResource Include="Graphics\Direct3D9\Shaders\world9.hlsl">
       <LogicalName>OBNS.Direct3D9.world9.hlsl</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Direct3D9\Shaders\frame2d9.hlsl">
+      <LogicalName>OBNS.Direct3D9.frame2d9.hlsl</LogicalName>
+    </EmbeddedResource>
     <Compile Include="Graphics\Metal\Mtl.cs" />
     <Compile Include="Graphics\Metal\MetalDevice.cs" />
     <Compile Include="Graphics\Metal\MetalMeshes.cs" />
@@ -269,6 +276,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Graphics\Direct3D11\Shaders\world.hlsl">
       <LogicalName>OBNS.Direct3D11.world.hlsl</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Direct3D11\Shaders\frame2d.hlsl">
+      <LogicalName>OBNS.Direct3D11.frame2d.hlsl</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Graphics\Vulkan\Shaders\world.vert.spv">
       <LogicalName>OBNS.Vulkan.world.vert.spv</LogicalName>

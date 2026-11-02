@@ -40,7 +40,7 @@ namespace OpenBve.Graphics.Vulkan
 	/// side of the exchange (importing the images, the semaphores, laying the image over the background and writing
 	/// its depth). Used on the main thread, with upstream's GL context current.
 	/// </summary>
-	internal sealed unsafe class VulkanWorld : IWorldLayer, IDisposable
+	internal sealed unsafe class VulkanWorld : IWorldLayer, IWholeFrameLayer, IDisposable
 	{
 		/// <summary>Whether the world layer is drawn by Vulkan (this session, unless a frame has failed).</summary>
 		internal static bool Enabled => instance != null && !instance.failed;
@@ -959,20 +959,9 @@ namespace OpenBve.Graphics.Vulkan
 		private int lastFrameTexture;
 		private bool lastFrameValid;
 
-		/// <summary>Works out motion blur for the frame about to be made, from the frame rate and the camera's speed, as upstream does.</summary>
-		internal void SetMotionBlur(double frameRate, double speed)
+		public void SetMotionBlur(double frameRate, double speed)
 		{
-			double strength;
-			switch (Interface.CurrentOptions.MotionBlur)
-			{
-				case MotionBlurMode.Low: strength = 0.0025; break;
-				case MotionBlurMode.Medium: strength = 0.0040; break;
-				case MotionBlurMode.High: strength = 0.0064; break;
-				default: strength = 0.0040; break;
-			}
-
-			double denominator = strength * frameRate * Math.Sqrt(speed);
-			motionBlurAlpha = denominator > 0.001 ? (float)Math.Exp(-1.0 / denominator) : 0.0f;
+			motionBlurAlpha = WholeGame.MotionBlurAlpha(Interface.CurrentOptions.MotionBlur, frameRate, speed);
 		}
 
 		/// <summary>Motion blur, between the world and the particles: the last frame laid over this one, and this one kept for the next. The world's rendering has ended.</summary>
@@ -1098,20 +1087,17 @@ namespace OpenBve.Graphics.Vulkan
 			return new Vk.ClearValue { R = Interface.CurrentOptions.ClearColor.R * inv255, G = Interface.CurrentOptions.ClearColor.G * inv255, B = Interface.CurrentOptions.ClearColor.B * inv255, A = 1.0f };
 		}
 
-		/// <summary>Whether Vulkan presents the game (OpenGL's SwapBuffers must not be called).</summary>
-		internal static bool PresentsItself => VulkanDevice.Full && Enabled;
-
 		/// <summary>The frame's particles are given before its commands are made: they go between the world and the cab.</summary>
-		internal VulkanFrameDrawing FrameDrawing => frameDrawing;
+		public WholeFrameDrawing FrameDrawing => frameDrawing;
 
 		/// <summary>Saves the frame about to be shown, when it is.</summary>
-		internal void RequestSnapshot(string file)
+		public void RequestSnapshot(string file)
 		{
 			snapshotFile = file;
 		}
 
 		/// <summary>The frame is finished: the 2D part drawn over it, and shown. What SwapBuffers does for OpenGL.</summary>
-		internal void Present()
+		public void Present()
 		{
 			if (Program.Renderer.Screen.Minimized || Program.Renderer.Screen.Width <= 0 || Program.Renderer.Screen.Height <= 0)
 			{

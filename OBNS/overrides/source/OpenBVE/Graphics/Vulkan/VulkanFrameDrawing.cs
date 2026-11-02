@@ -26,13 +26,8 @@
 // first pass darkens what is under it, so this can't be a layer of its own laid over: it has to draw on the frame itself.
 
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using LibRender2.Frame;
-using OpenBveApi.Colors;
-using OpenBveApi.Math;
-using OpenBveApi.Textures;
-using OpenTK.Graphics.OpenGL;
 
 namespace OpenBve.Graphics.Vulkan
 {
@@ -40,43 +35,21 @@ namespace OpenBve.Graphics.Vulkan
 	/// Between <see cref="Begin"/> and <see cref="End"/>, keeps the frame's rectangles and glyphs for Vulkan to draw; the rest of
 	/// the time everything goes to OpenGL, as does the state, which the 3D part of the frame and the loading screen use.
 	/// </summary>
-	internal sealed unsafe class VulkanFrameDrawing : IFrameDrawing, IDisposable
+	internal sealed unsafe class VulkanFrameDrawing : WholeFrameDrawing, IDisposable
 	{
-		/// <summary>The blending of a quad, as upstream's blend functions (each is a pipeline).</summary>
-		private enum Blend { None = 0, Normal = 1, GlyphMask = 2, GlyphAdd = 3 }
-
-		/// <summary>What frame2d.vert and frame2d.frag are pushed for a quad.</summary>
-		[StructLayout(LayoutKind.Sequential)]
-		private struct QuadData
-		{
-			internal float X, Y, Width, Height, U, V, UWidth, VHeight, R, G, B, A, AlphaFunction, AlphaValue;
-			internal int Texture, Sampler;
-			internal float Depth;
-		}
-
-		private struct Quad
-		{
-			internal QuadData Data;
-			internal Blend Blend;
-		}
-
 		private readonly VulkanDevice device;
 		private readonly VulkanScene scene;
-		private readonly IFrameDrawing openGl;
-		private readonly List<Quad> quads = new List<Quad>();
 		private readonly ulong[] pipelines = new ulong[4];
 		/// <summary>The pipelines for particles, in the world's rendering with its depth: opaque texels writing depth, then blended ones not.</summary>
 		private readonly ulong[] particlePipelines = new ulong[2];
-		private readonly List<Quad> particles = new List<Quad>();
 		private readonly ulong vertexModule, fragmentModule, pipelineLayout;
-		private bool active = VulkanDevice.Full, blendEnabled = true;
-		private float alphaFunction, alphaValue;
 
-		internal VulkanFrameDrawing(VulkanDevice device, VulkanScene scene, IFrameDrawing openGl)
+		protected override WorldTextures Textures => scene.Textures;
+
+		internal VulkanFrameDrawing(VulkanDevice device, VulkanScene scene, IFrameDrawing openGl) : base(openGl)
 		{
 			this.device = device;
 			this.scene = scene;
-			this.openGl = openGl;
 			ulong setLayout = scene.SetLayout;
 			Vk.PushConstantRange push = new Vk.PushConstantRange { StageFlags = Vk.ShaderStageVertex | Vk.ShaderStageFragment, Size = (uint)sizeof(QuadData) };
 			Vk.PipelineLayoutCreateInfo layoutInfo = new Vk.PipelineLayoutCreateInfo
@@ -122,69 +95,6 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		private long framesDrawn;
-
-		/// <summary>A frame drawn wholly by Vulkan has shown its quads.</summary>
-		internal void Presented()
-		{
-			quads.Clear();
-			scene.Textures.StartBudget();
-		}
-
-		/// <summary>The frame's particles are about to be given.</summary>
-		internal void BeginParticles()
-		{
-			particles.Clear();
-		}
-
-		/// <summary>
-		/// A particle, in upstream's two passes: its model-view keeps it square to the view, so all of it is at one depth and it can be a
-		/// rectangle on the screen.
-		/// </summary>
-		internal void Particle(int particleIndex, Matrix4D modelView, Texture texture, float opacity)
-		{
-			int index = texture == null ? scene.Textures.WhiteIndex : TextureIndex(texture, OpenGlTextureWrapMode.ClampClamp);
-			if (index == WorldTextures.Later)
-			{
-				return;
-			}
-
-			Matrix4D matrix = modelView * Program.Renderer.CurrentProjectionMatrix;
-			// The corners' clip coordinates: (-1,1) and (1,-1) in the particle's own space; the shader's Z is negated, and it is 0 here.
-			double w0 = -matrix.Row0.W + matrix.Row1.W + matrix.Row3.W, w1 = matrix.Row0.W - matrix.Row1.W + matrix.Row3.W;
-			if (w0 <= 0.0 || w1 <= 0.0)
-			{
-				return;
-			}
-
-			double left = (-matrix.Row0.X + matrix.Row1.X + matrix.Row3.X) / w0, top = (-matrix.Row0.Y + matrix.Row1.Y + matrix.Row3.Y) / w0;
-			double right = (matrix.Row0.X - matrix.Row1.X + matrix.Row3.X) / w1, bottom = (matrix.Row0.Y - matrix.Row1.Y + matrix.Row3.Y) / w1;
-			double depth = ((-matrix.Row0.Z + matrix.Row1.Z + matrix.Row3.Z) / w0 + 1.0) * 0.5;
-			int column = particleIndex / 4, row = particleIndex % 4;
-			QuadData data = new QuadData
-			{
-				X = (float)left,
-				Y = (float)top,
-				Width = (float)(right - left),
-				Height = (float)(bottom - top),
-				U = column * 0.25f,
-				V = row * 0.25f,
-				UWidth = 0.25f,
-				VHeight = 0.25f,
-				R = 1.0f,
-				G = 1.0f,
-				B = 1.0f,
-				A = opacity,
-				Texture = index,
-				Sampler = (int)OpenGlTextureWrapMode.ClampClamp,
-				Depth = (float)depth
-			};
-			// Opaque texels first (alpha exactly 1, writing depth), then blended ones (alpha below 1, not).
-			data.AlphaFunction = (float)(int)AlphaFunction.Equal;
-			data.AlphaValue = 1.0f;
-			particles.Add(new Quad { Data = data, Blend = Blend.None });
-			data.AlphaFunction = (float)(int)AlphaFunction.Less;
-			particles.Add(new Quad { Data = data, Blend = Blend.Normal });
-		}
 
 		/// <summary>Records the last frame's image laid over the whole frame, with the blur's alpha, as upstream draws it (its rows run as the frame's).</summary>
 		internal void RecordLastFrame(IntPtr commandBuffer, int slot, uint width, uint height, int texture, float alpha)
@@ -351,113 +261,6 @@ namespace OpenBve.Graphics.Vulkan
 			finally
 			{
 				Marshal.FreeHGlobal(main);
-			}
-		}
-
-		private void Add(Blend blend, int texture, OpenGlTextureWrapMode wrapMode, Vector2 point, Vector2 size, Color128 color, double u, double v, double uWidth, double vHeight)
-		{
-			float scaleX = 2.0f / Program.Renderer.Screen.Width, scaleY = 2.0f / Program.Renderer.Screen.Height;
-			quads.Add(new Quad
-			{
-				Blend = blend,
-				Data = new QuadData
-				{
-					// Row 0 of the images is the bottom of the screen, as in OpenGL; points come from the top.
-					X = (float)point.X * scaleX - 1.0f,
-					Y = 1.0f - (float)point.Y * scaleY,
-					Width = (float)size.X * scaleX,
-					Height = -(float)size.Y * scaleY,
-					U = (float)u,
-					V = (float)v,
-					UWidth = (float)uWidth,
-					VHeight = (float)vHeight,
-					R = color.R,
-					G = color.G,
-					B = color.B,
-					A = color.A,
-					AlphaFunction = alphaFunction,
-					AlphaValue = alphaValue,
-					Texture = texture,
-					Sampler = (int)wrapMode
-				}
-			});
-		}
-
-		/// <summary>A texture's place in the layer's textures, white without one or if it can't be made; Later if not made yet.</summary>
-		private int TextureIndex(Texture texture, OpenGlTextureWrapMode wrapMode)
-		{
-			int index = scene.Textures.Prepare(texture, wrapMode, out bool _);
-			return index == -1 ? scene.Textures.WhiteIndex : index;
-		}
-
-		public void Initialize() => openGl.Initialize();
-
-		public void ScreenChanged() => openGl.ScreenChanged();
-
-		public void Clear() => openGl.Clear();
-
-		public void SetBlend(bool enabled, BlendingFactor source, BlendingFactor destination)
-		{
-			blendEnabled = enabled;
-			openGl.SetBlend(enabled, source, destination);
-		}
-
-		public void SetAlphaTest(bool enabled, AlphaFunction function, float value)
-		{
-			alphaFunction = enabled ? (float)(int)function : 0.0f;
-			alphaValue = value;
-			openGl.SetAlphaTest(enabled, function, value);
-		}
-
-		public void SetDepthWrite(bool enabled) => openGl.SetDepthWrite(enabled);
-
-		public void Rectangle(Texture texture, OpenGlTextureWrapMode wrapMode, Vector2 point, Vector2 size, Color128 color, Vector2 coordinates)
-		{
-			if (!active)
-			{
-				openGl.Rectangle(texture, wrapMode, point, size, color, coordinates);
-				return;
-			}
-
-			int index = TextureIndex(texture, wrapMode);
-			if (index != WorldTextures.Later)
-			{
-				Add(blendEnabled ? Blend.Normal : Blend.None, index, wrapMode, point, size, color, 0.0, 0.0, coordinates.X, coordinates.Y);
-			}
-		}
-
-		public void BeginText()
-		{
-			if (!active)
-			{
-				openGl.BeginText();
-			}
-		}
-
-		public void Glyph(Texture texture, Vector4 atlas, Vector2 point, Vector2 size, Color128 color)
-		{
-			if (!active)
-			{
-				openGl.Glyph(texture, atlas, point, size, color);
-				return;
-			}
-
-			int index = TextureIndex(texture, OpenGlTextureWrapMode.ClampClamp);
-			if (index == WorldTextures.Later)
-			{
-				return;
-			}
-
-			// Upstream's two passes: the background masked off, then the character added.
-			Add(blendEnabled ? Blend.GlyphMask : Blend.None, index, OpenGlTextureWrapMode.ClampClamp, point, size, new Color128(color.A, color.A, color.A, 1.0f), atlas.X, atlas.Y, atlas.Z, atlas.W);
-			Add(blendEnabled ? Blend.GlyphAdd : Blend.None, index, OpenGlTextureWrapMode.ClampClamp, point, size, color, atlas.X, atlas.Y, atlas.Z, atlas.W);
-		}
-
-		public void EndText()
-		{
-			if (!active)
-			{
-				openGl.EndText();
 			}
 		}
 

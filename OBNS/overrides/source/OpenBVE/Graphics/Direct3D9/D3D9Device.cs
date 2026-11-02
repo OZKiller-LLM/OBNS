@@ -124,27 +124,32 @@ namespace OpenBve.Graphics.Direct3D9
 			}
 
 			D9.CheckLayouts();
-			dxOpenDevice = Function<DXOpenDevice>("wglDXOpenDeviceNV");
-			dxCloseDevice = Function<DXCloseDevice>("wglDXCloseDeviceNV");
-			dxSetResourceShareHandle = Function<DXSetResourceShareHandle>("wglDXSetResourceShareHandleNV");
-			dxRegisterObject = Function<DXRegisterObject>("wglDXRegisterObjectNV");
-			dxUnregisterObject = Function<DXUnregisterObject>("wglDXUnregisterObjectNV");
-			dxLockObjects = Function<DXLockObjects>("wglDXLockObjectsNV");
-			dxUnlockObjects = Function<DXUnlockObjects>("wglDXUnlockObjectsNV");
-			if (dxOpenDevice == null || dxCloseDevice == null || dxSetResourceShareHandle == null || dxRegisterObject == null || dxUnregisterObject == null || dxLockObjects == null || dxUnlockObjects == null)
-			{
-				return "OpenGL has no WGL_NV_DX_interop";
-			}
-
-			// OpenGL's adapter, by LUID (GL_EXT_memory_object), else the first.
+			// With Direct3D drawing the whole game there is no OpenGL to share with.
+			bool shared = !D3D9World.Full;
 			ulong luid = 0;
-			GetUnsignedBytev getUnsignedBytev = Function<GetUnsignedBytev>("glGetUnsignedBytevEXT");
-			if (getUnsignedBytev != null)
+			if (shared)
 			{
-				const uint deviceLuid = 0x9599; // GL_DEVICE_LUID_EXT
-				getUnsignedBytev(deviceLuid, (byte*)&luid);
-				while (GL.GetError() != ErrorCode.NoError)
+				dxOpenDevice = Function<DXOpenDevice>("wglDXOpenDeviceNV");
+				dxCloseDevice = Function<DXCloseDevice>("wglDXCloseDeviceNV");
+				dxSetResourceShareHandle = Function<DXSetResourceShareHandle>("wglDXSetResourceShareHandleNV");
+				dxRegisterObject = Function<DXRegisterObject>("wglDXRegisterObjectNV");
+				dxUnregisterObject = Function<DXUnregisterObject>("wglDXUnregisterObjectNV");
+				dxLockObjects = Function<DXLockObjects>("wglDXLockObjectsNV");
+				dxUnlockObjects = Function<DXUnlockObjects>("wglDXUnlockObjectsNV");
+				if (dxOpenDevice == null || dxCloseDevice == null || dxSetResourceShareHandle == null || dxRegisterObject == null || dxUnregisterObject == null || dxLockObjects == null || dxUnlockObjects == null)
 				{
+					return "OpenGL has no WGL_NV_DX_interop";
+				}
+
+				// OpenGL's adapter, by LUID (GL_EXT_memory_object), else the first.
+				GetUnsignedBytev getUnsignedBytev = Function<GetUnsignedBytev>("glGetUnsignedBytevEXT");
+				if (getUnsignedBytev != null)
+				{
+					const uint deviceLuid = 0x9599; // GL_DEVICE_LUID_EXT
+					getUnsignedBytev(deviceLuid, (byte*)&luid);
+					while (GL.GetError() != ErrorCode.NoError)
+					{
+					}
 				}
 			}
 
@@ -215,6 +220,11 @@ namespace OpenBve.Graphics.Direct3D9
 
 			Description += ", Direct3D 9Ex, " + (DepthFormat == D9.FormatD32FLockable ? "32-bit float" : DepthFormat == D9.FormatD32 ? "32-bit" : "24-bit") + " depth";
 			flushQuery = D9.CreateQuery(Device, D9.QueryEvent);
+			if (!shared)
+			{
+				return null;
+			}
+
 			Interop = dxOpenDevice(Device);
 			if (Interop == IntPtr.Zero)
 			{

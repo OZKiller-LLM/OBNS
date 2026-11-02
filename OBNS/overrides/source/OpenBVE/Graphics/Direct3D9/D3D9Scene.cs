@@ -65,7 +65,7 @@ namespace OpenBve.Graphics.Direct3D9
 		private readonly float[] recordBases = new float[4];
 
 		/// <summary>The layers' frame records as constant registers (their integers as floats).</summary>
-		private readonly float[][] frameConstants = { new float[FrameRegisters * 4], new float[FrameRegisters * 4] };
+		private readonly float[][] frameConstants = { new float[FrameRegisters * 4], new float[FrameRegisters * 4], new float[FrameRegisters * 4] };
 
 		// The shadow pass: the atlas (a cascade a quarter; R32F, the depth as a colour) and its depth buffer.
 		private IntPtr shadowAtlas, shadowSurface, shadowDepth;
@@ -265,7 +265,7 @@ namespace OpenBve.Graphics.Direct3D9
 			at += matrixCount * 16;
 			WriteRecords(at / 4);
 
-			for (int layer = 0; layer < 2; layer++)
+			for (int layer = 0; layer < frameConstants.Length; layer++)
 			{
 				fixed (FrameData* frame = &frameData[layer])
 				fixed (float* to = frameConstants[layer])
@@ -341,12 +341,30 @@ namespace OpenBve.Graphics.Direct3D9
 
 			SetConstant(RecordsSizeRegister, RecordsWidth, 1.0f / RecordsWidth, 1.0f / recordsHeight, 0);
 			SetConstant(RecordBasesRegister, recordBases[0], recordBases[1], recordBases[2], cascade);
-			SetConstant(PixelOffsetRegister, 1.0f / width, 1.0f / height, 0, 0);
+			SetConstant(PixelOffsetRegister, 1.0f / width, 1.0f / height, layer == SkyLayer ? 1 : 0, 0);
 			SetConstant(ShadowAtlasRegister, shadowResolution, 1.0f / (2 * shadowResolution), 0, 0);
 			D9.SetSamplerState(d, FaceSampler, D9.SamplerMinFilter, minFilter);
 			D9.SetSamplerState(d, FaceSampler, D9.SamplerMagFilter, magFilter);
 			D9.SetSamplerState(d, FaceSampler, D9.SamplerMipFilter, mipFilter);
 			D9.SetSamplerState(d, FaceSampler, D9.SamplerMaxAnisotropy, maxAnisotropy);
+		}
+
+		/// <summary>The 2D quads' sampler filtering as the faces' is.</summary>
+		internal void QuadFiltering()
+		{
+			IntPtr d = device.Device;
+			D9.SetSamplerState(d, FaceSampler, D9.SamplerMinFilter, minFilter);
+			D9.SetSamplerState(d, FaceSampler, D9.SamplerMagFilter, magFilter);
+			D9.SetSamplerState(d, FaceSampler, D9.SamplerMipFilter, mipFilter);
+			D9.SetSamplerState(d, FaceSampler, D9.SamplerMaxAnisotropy, maxAnisotropy);
+		}
+
+		/// <summary>The 2D quads' sampler wrapping as an OpenGL wrap mode.</summary>
+		internal void QuadWrapping(int wrap)
+		{
+			IntPtr d = device.Device;
+			D9.SetSamplerState(d, FaceSampler, D9.SamplerAddressU, (wrap & 2) != 0 ? D9.AddressWrap : D9.AddressClamp);
+			D9.SetSamplerState(d, FaceSampler, D9.SamplerAddressV, (wrap & 1) != 0 ? D9.AddressWrap : D9.AddressClamp);
 		}
 
 		/// <summary>
@@ -452,7 +470,7 @@ namespace OpenBve.Graphics.Direct3D9
 		/// </summary>
 		internal void Draw(int layer, uint width, uint height, IntPtr depthTarget)
 		{
-			int start = layer == WorldLayerIndex ? 0 : cabCommandStart, end = layer == WorldLayerIndex ? cabCommandStart : commandCount;
+			int start = layer == SkyLayer ? 0 : layer == WorldLayerIndex ? skyCommandEnd : cabCommandStart, end = layer == SkyLayer ? skyCommandEnd : layer == WorldLayerIndex ? cabCommandStart : commandCount;
 			if (layer == WorldLayerIndex)
 			{
 				LastStateChanges = 0;
@@ -480,7 +498,7 @@ namespace OpenBve.Graphics.Direct3D9
 					SetPipeline(pipelineKey & 31);
 					Blend blend = (Blend)(pipelineKey & 3);
 					// The depth as a colour, written where depth is: bound for those draws (blended ones where R32F can be blended).
-					bool bind = layer == WorldLayerIndex && (pipelineKey & 4) != 0 && (blend == Blend.None || device.FloatBlending);
+					bool bind = depthTarget != IntPtr.Zero && layer == WorldLayerIndex && (pipelineKey & 4) != 0 && (blend == Blend.None || device.FloatBlending);
 					if (bind != depthBound)
 					{
 						D9.SetRenderTarget(d, 1, bind ? depthTarget : IntPtr.Zero);

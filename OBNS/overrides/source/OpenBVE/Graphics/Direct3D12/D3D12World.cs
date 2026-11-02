@@ -33,9 +33,31 @@ using Dx = OpenBve.Graphics.Direct3D11.Dx;
 
 namespace OpenBve.Graphics.Direct3D12
 {
-	internal sealed unsafe class D3D12World : IWorldLayer, IDisposable
+	internal sealed unsafe class D3D12World : IWorldLayer, IWholeFrameLayer, IDisposable
 	{
 		private static D3D12World instance;
+
+		/// <summary>Whether Direct3D 12 draws the whole game with OpenGL out of it (OBNS_D3D12_FULL=1, OBNS/RENDERERS.md).</summary>
+		internal static bool Full { get; private set; } = Environment.GetEnvironmentVariable("OBNS_D3D12_FULL") == "1" && GLStub.Available && !Vulkan.VulkanDevice.Full && !Direct3D11.D3D11World.Full;
+
+		/// <summary>Before the window is made: whether a device can be had for it. If not, OpenGL draws, as usual.</summary>
+		internal static void ProbeFull()
+		{
+			if (!Full)
+			{
+				return;
+			}
+
+			D3D12Device device = D3D12Device.Create(out string reason);
+			if (device == null)
+			{
+				Full = false;
+				Program.FileSystem.AppendToLogFile("OBNS Direct3D 12 can't draw the whole game: " + reason);
+				return;
+			}
+
+			device.Dispose();
+		}
 
 		internal static bool Enabled => instance != null && !instance.failed;
 
@@ -113,7 +135,7 @@ namespace OpenBve.Graphics.Direct3D12
 		internal static void Initialize()
 		{
 			string forced = Environment.GetEnvironmentVariable("OBNS_D3D12");
-			if (instance != null || forced == "0" || forced != "1" && ObnsOptions.Renderer != ObnsOptions.RendererKind.Direct3D12)
+			if (instance != null || !Full && (forced == "0" || forced != "1" && ObnsOptions.Renderer != ObnsOptions.RendererKind.Direct3D12))
 			{
 				return;
 			}
@@ -125,10 +147,15 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 
 			D3D12Device device = D3D12Device.Create(out string reason);
-			string test = device?.SelfTest();
+			string test = Full ? null : device?.SelfTest();
 			if (device == null || test != null)
 			{
 				device?.Dispose();
+				if (Full)
+				{
+					throw new InvalidOperationException("Direct3D 12 can't draw the game, and the window has no OpenGL to fall back on: " + (reason ?? test));
+				}
+
 				Log("OBNS Direct3D 12 world layer not used: " + (reason ?? test) + "; Direct3D 11 is tried");
 				return;
 			}
@@ -136,7 +163,11 @@ namespace OpenBve.Graphics.Direct3D12
 			D3D12World world = new D3D12World(device);
 			try
 			{
-				world.composite = new WorldComposite();
+				if (!Full)
+				{
+					world.composite = new WorldComposite();
+				}
+
 				world.uploads = new D3D12Uploads(device);
 				world.Meshes = new D3D12Meshes(device, world.uploads);
 				world.Textures = new D3D12Textures(device, world.uploads);
@@ -153,16 +184,320 @@ namespace OpenBve.Graphics.Direct3D12
 				world.targetViewSize = D12.DescriptorSize(device.Device, D12.DescriptorHeapRenderTargets);
 				world.depthViewSize = D12.DescriptorSize(device.Device, D12.DescriptorHeapDepthStencils);
 				WorldHooks.Install("Direct3D 12", "OBNS_D3D12", world.Meshes, world.Textures);
+				if (Full)
+				{
+					world.frameDrawing = new D3D12FrameDrawing(device, world.scene, world.Textures, Program.Renderer.Frame);
+					Program.Renderer.Frame = world.frameDrawing;
+					world.window = Program.Renderer.GameWindow.WindowInfo.Handle;
+				}
 			}
 			catch (Exception ex)
 			{
 				world.Dispose();
+				if (Full)
+				{
+					throw new InvalidOperationException("Direct3D 12 can't draw the game, and the window has no OpenGL to fall back on: " + ex.Message, ex);
+				}
+
 				Log("OBNS Direct3D 12 world layer not used: " + ex.Message + "; Direct3D 11 is tried");
 				return;
 			}
 
 			instance = world;
 			Log("OBNS Direct3D 12 world layer on: " + device.Description + " (the world and cab layers, with shadows; " + world.scene.PipelineCount + " pipeline objects made in " + world.scene.MadeIn.ToString("0") + " ms)");
+			if (Full)
+			{
+				Log("OBNS Direct3D 12 draws the whole game: " + device.Description + "; " + NoGLContext.Describe(world.window));
+			}
+		}
+
+		// --- the whole game drawn by Direct3D 12 (OBNS/RENDERERS.md): one list a frame, from the start of the frame until it is shown ---
+
+		private const int ExtraColor = 1, ExtraLastFrame = 2, BackBuffers = 2;
+
+		private D3D12FrameDrawing frameDrawing;
+		private IntPtr window, swapChain, lastFrame, readback;
+		private readonly IntPtr[] backBuffer = new IntPtr[BackBuffers];
+		private uint swapWidth, swapHeight, readbackPitch;
+		private bool listOpen, lastFrameValid;
+		private int openSlot;
+		private float motionBlurAlpha;
+		private string snapshotFile;
+
+		public WholeFrameDrawing FrameDrawing => frameDrawing;
+
+		public void RequestSnapshot(string file)
+		{
+			snapshotFile = file;
+		}
+
+		public void SetMotionBlur(double frameRate, double speed)
+		{
+			motionBlurAlpha = WholeGame.MotionBlurAlpha(Interface.CurrentOptions.MotionBlur, frameRate, speed);
+		}
+
+		private static bool MotionBlurOn => Interface.CurrentOptions.MotionBlur != LibRender2.MotionBlurs.MotionBlurMode.None;
+
+		private void ClearColor(IntPtr list)
+		{
+			const float inv255 = 1.0f / 255.0f;
+			D12.ClearRenderTargetView(list, TargetView(0), Interface.CurrentOptions.ClearColor.R * inv255, Interface.CurrentOptions.ClearColor.G * inv255, Interface.CurrentOptions.ClearColor.B * inv255, 1.0f);
+		}
+
+		private void Transition(IntPtr list, IntPtr resource, int before, int after)
+		{
+			D12.ResourceBarrier barrier = D12.Transition(resource, before, after);
+			D12.ResourceBarriers(list, &barrier, 1);
+		}
+
+		/// <summary>The images for the whole frame: its colour, which stays a render target between its uses as something else; its two depths.</summary>
+		private void EnsureWholeTarget(int newWidth, int newHeight)
+		{
+			if (colorImage != IntPtr.Zero && width == newWidth && height == newHeight)
+			{
+				return;
+			}
+
+			ReleaseTarget();
+			width = (uint)Math.Max(1, newWidth);
+			height = (uint)Math.Max(1, newHeight);
+			D12.ResourceDesc desc = new D12.ResourceDesc { Dimension = D12.DimensionTexture2D, Width = width, Height = height, DepthOrArraySize = 1, MipLevels = 1, Format = Dx.FormatR8G8B8A8Unorm, SampleCount = 1, Flags = D12.ResourceAllowRenderTarget };
+			colorImage = D12.CreateCommittedResource(device.Device, D12.HeapDefault, D12.HeapFlagNone, desc, D12.StateRenderTarget);
+			D12.CreateRenderTargetView(device.Device, colorImage, TargetView(0));
+			D12.ShaderResourceViewDesc read = new D12.ShaderResourceViewDesc { Format = Dx.FormatR8G8B8A8Unorm, ViewDimension = D12.SrvTexture2D, Shader4ComponentMapping = D12.DefaultComponentMapping, MipLevels = 1 };
+			D12.CreateShaderResourceView(device.Device, colorImage, &read, Textures.ExtraCpuView(ExtraColor));
+			if (MotionBlurOn)
+			{
+				lastFrame = D12.CreateCommittedResource(device.Device, D12.HeapDefault, D12.HeapFlagNone, desc, D12.StatePixelShaderResource);
+				D12.CreateShaderResourceView(device.Device, lastFrame, &read, Textures.ExtraCpuView(ExtraLastFrame));
+				lastFrameValid = false;
+			}
+
+			desc.Format = Dx.FormatD32Float;
+			desc.Flags = D12.ResourceAllowDepthStencil;
+			depthBuffer = D12.CreateCommittedResource(device.Device, D12.HeapDefault, D12.HeapFlagNone, desc, D12.StateDepthWrite);
+			cabDepthBuffer = D12.CreateCommittedResource(device.Device, D12.HeapDefault, D12.HeapFlagNone, desc, D12.StateDepthWrite);
+			D12.CreateDepthStencilView(device.Device, depthBuffer, null, DepthView(0));
+			D12.CreateDepthStencilView(device.Device, cabDepthBuffer, null, DepthView(1));
+			readbackPitch = (width * 4 + D12.PitchAlignment - 1) / D12.PitchAlignment * D12.PitchAlignment;
+		}
+
+		/// <summary>The frame's list opened (the GPU having drawn what last used its slot): what the frames before let go of freed.</summary>
+		private void OpenFrame()
+		{
+			if (listOpen)
+			{
+				// A frame not shown: its drawing is finished with all the same.
+				SendFrame(false);
+			}
+
+			frameNumber++;
+			Textures.FrameStarted(frameNumber);
+			Meshes.FrameStarted(frameNumber);
+			openSlot = (int)(frameNumber % D3D12Scene.FramesInFlight);
+			device.WaitFor(drawnValues[openSlot]);
+			D12.ResetAllocator(allocators[openSlot]);
+			D12.Reset(lists[openSlot], allocators[openSlot]);
+			frameDrawing.BeginFrame(openSlot);
+			listOpen = true;
+		}
+
+		/// <summary>The list sent, after the uploads the frame asked for, and shown if asked; drawn when the returned value is signalled.</summary>
+		private ulong SendFrame(bool show)
+		{
+			D12.Close(lists[openSlot]);
+			listOpen = false;
+			Textures.Send();
+			uploads.Submit();
+			D12.ExecuteCommandList(device.Queue, lists[openSlot]);
+			if (show)
+			{
+				D12.Check(Dx.Present(swapChain, Interface.CurrentOptions.VerticalSynchronization ? 1u : 0u), "IDXGISwapChain::Present");
+			}
+
+			ulong value = drawnValues[openSlot] = device.QueueSignal();
+			uploads.Trim();
+			return value;
+		}
+
+		/// <summary>The background, world, motion blur, particles and cab, in the frame's one image, as upstream draws them into its framebuffer.</summary>
+		private void DrawWhole(IntPtr list)
+		{
+			ClearColor(list);
+			D12.ClearDepthView(list, DepthView(0), 1.0f);
+			UIntPtr target = TargetView(0), depth = DepthView(0);
+			D12.OMSetRenderTargets(list, 1, &target, &depth);
+			scene.Draw(list, WorldScene.SkyLayer, width, height);
+			scene.Draw(list, WorldScene.WorldLayerIndex, width, height);
+			if (MotionBlurOn)
+			{
+				if (lastFrameValid && motionBlurAlpha > 0.0f)
+				{
+					D12.OMSetRenderTargets(list, 1, &target, null);
+					frameDrawing.DrawImage(list, Textures.ExtraView(ExtraLastFrame), width, height, motionBlurAlpha, true, false);
+				}
+
+				Transition(list, colorImage, D12.StateRenderTarget, D12.StateCopySource);
+				Transition(list, lastFrame, D12.StatePixelShaderResource, D12.StateCopyDest);
+				D12.CopyResource(list, lastFrame, colorImage);
+				Transition(list, lastFrame, D12.StateCopyDest, D12.StatePixelShaderResource);
+				Transition(list, colorImage, D12.StateCopySource, D12.StateRenderTarget);
+				lastFrameValid = true;
+				D12.OMSetRenderTargets(list, 1, &target, &depth);
+			}
+
+			frameDrawing.RecordParticles(list, width, height);
+			depth = DepthView(1);
+			D12.ClearDepthView(list, depth, 1.0f);
+			D12.OMSetRenderTargets(list, 1, &target, &depth);
+			scene.Bind(list);
+			scene.Draw(list, WorldScene.CabLayer, width, height);
+		}
+
+		public void Present()
+		{
+			int screenWidth = Program.Renderer.Screen.Width, screenHeight = Program.Renderer.Screen.Height;
+			bool show = !Program.Renderer.Screen.Minimized && screenWidth > 0 && screenHeight > 0;
+			try
+			{
+				if (!listOpen)
+				{
+					if (!show)
+					{
+						frameDrawing.Presented();
+						return;
+					}
+
+					EnsureWholeTarget(screenWidth, screenHeight);
+					OpenFrame();
+					ClearColor(lists[openSlot]);
+				}
+
+				IntPtr list = lists[openSlot];
+				string snapshot = null;
+				if (show)
+				{
+					UIntPtr target = TargetView(0);
+					D12.OMSetRenderTargets(list, 1, &target, null);
+					frameDrawing.Record(list, width, height);
+					if (snapshotFile != null)
+					{
+						snapshot = snapshotFile;
+						snapshotFile = null;
+						CopyForSnapshot(list);
+					}
+
+					System.Drawing.Size client = Program.Renderer.GameWindow.ClientSize;
+					EnsureSwapChain((uint)Math.Max(1, client.Width), (uint)Math.Max(1, client.Height));
+					IntPtr back = backBuffer[D12.CurrentBackBuffer(swapChain)];
+					UIntPtr backView = TargetView(1 + (int)D12.CurrentBackBuffer(swapChain));
+					Transition(list, colorImage, D12.StateRenderTarget, D12.StatePixelShaderResource);
+					Transition(list, back, D12.StatePresent, D12.StateRenderTarget);
+					D12.OMSetRenderTargets(list, 1, &backView, null);
+					// Row 0 of the frame's image is the bottom of the screen; a swap chain's is the top.
+					frameDrawing.DrawImage(list, Textures.ExtraView(ExtraColor), swapWidth, swapHeight, 1.0f, false, true);
+					Transition(list, back, D12.StateRenderTarget, D12.StatePresent);
+					Transition(list, colorImage, D12.StatePixelShaderResource, D12.StateRenderTarget);
+				}
+
+				ulong value = SendFrame(show);
+				if (snapshot != null)
+				{
+					device.WaitFor(value);
+					byte* pixels = D12.MapForReading(readback);
+					try
+					{
+						WholeGame.SaveImage(pixels, readbackPitch, (int)width, (int)height, snapshot);
+					}
+					finally
+					{
+						D12.Unmap(readback);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Fail(ex);
+			}
+
+			frameDrawing.Presented();
+		}
+
+		private void CopyForSnapshot(IntPtr list)
+		{
+			if (readback == IntPtr.Zero)
+			{
+				D12.ResourceDesc desc = new D12.ResourceDesc { Dimension = D12.DimensionBuffer, Width = (ulong)readbackPitch * height, Height = 1, DepthOrArraySize = 1, MipLevels = 1, SampleCount = 1, Layout = D12.LayoutRowMajor };
+				readback = D12.CreateCommittedResource(device.Device, D12.HeapReadback, D12.HeapFlagNone, desc, D12.StateCopyDest);
+			}
+
+			Transition(list, colorImage, D12.StateRenderTarget, D12.StateCopySource);
+			D12.TextureCopyLocation destination = new D12.TextureCopyLocation { Resource = readback, Type = D12.CopyFootprint, Format = Dx.FormatR8G8B8A8Unorm, Width = width, Height = height, Depth = 1, RowPitch = readbackPitch };
+			D12.TextureCopyLocation source = new D12.TextureCopyLocation { Resource = colorImage, Type = D12.CopySubresource };
+			D12.CopyTextureRegion(list, destination, source);
+			Transition(list, colorImage, D12.StateCopySource, D12.StateRenderTarget);
+		}
+
+		private void ReleaseBackBuffers()
+		{
+			for (int i = 0; i < BackBuffers; i++)
+			{
+				D12.Release(backBuffer[i]);
+				backBuffer[i] = IntPtr.Zero;
+			}
+		}
+
+		private void EnsureSwapChain(uint newWidth, uint newHeight)
+		{
+			if (swapChain != IntPtr.Zero && swapWidth == newWidth && swapHeight == newHeight)
+			{
+				return;
+			}
+
+			if (swapChain == IntPtr.Zero)
+			{
+				IntPtr factory = Dx.Factory();
+				try
+				{
+					const uint noAltEnter = 2, flipDiscard = 4;
+					Dx.SwapChainDesc desc = new Dx.SwapChainDesc
+					{
+						Width = newWidth,
+						Height = newHeight,
+						Format = Dx.FormatR8G8B8A8Unorm,
+						SampleCount = 1,
+						BufferUsage = Dx.UsageRenderTargetOutput,
+						BufferCount = BackBuffers,
+						OutputWindow = window,
+						Windowed = 1,
+						SwapEffect = flipDiscard
+					};
+					// For Direct3D 12 a swap chain is made on the queue.
+					Dx.Check(Dx.CreateSwapChain(factory, device.Queue, desc, out IntPtr made), "IDXGIFactory::CreateSwapChain");
+					swapChain = D12.SwapChain3(made);
+					// Full screen is the window's business, as with OpenGL.
+					Dx.MakeWindowAssociation(factory, window, noAltEnter);
+				}
+				finally
+				{
+					Dx.Release(factory);
+				}
+			}
+			else
+			{
+				// The frames in flight draw into the buffers: done with first.
+				device.WaitIdle();
+				ReleaseBackBuffers();
+				Dx.ResizeBuffers(swapChain, newWidth, newHeight);
+			}
+
+			swapWidth = newWidth;
+			swapHeight = newHeight;
+			for (uint i = 0; i < BackBuffers; i++)
+			{
+				backBuffer[i] = D12.SwapChainBuffer(swapChain, i);
+				D12.CreateRenderTargetView(device.Device, backBuffer[i], TargetView(1 + (int)i));
+			}
 		}
 
 		public IWorldScene Scene => scene;
@@ -222,6 +557,12 @@ namespace OpenBve.Graphics.Direct3D12
 			pendingValue = 0;
 			if (failed)
 			{
+				return;
+			}
+
+			if (Full)
+			{
+				StartWhole();
 				return;
 			}
 
@@ -314,6 +655,30 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 		}
 
+		/// <summary>The frame's list opened, and what is under the 2D part recorded into it.</summary>
+		private void StartWhole()
+		{
+			try
+			{
+				// OpenGL's viewport is a stub's.
+				EnsureWholeTarget(Program.Renderer.Screen.Width, Program.Renderer.Screen.Height);
+				scene.Prepare();
+				OpenFrame();
+				Textures.Send();
+				cabStarted = scene.HasCab;
+				scene.BuildRecords();
+				scene.Upload(openSlot, frameNumber);
+				IntPtr list = lists[openSlot];
+				scene.Bind(list);
+				scene.DrawShadows(list);
+				DrawWhole(list);
+			}
+			catch (Exception ex)
+			{
+				Fail(ex);
+			}
+		}
+
 		/// <summary>OpenGL waits for the frame to be drawn, and lays the world over its frame.</summary>
 		public void Finish()
 		{
@@ -343,6 +708,11 @@ namespace OpenBve.Graphics.Direct3D12
 
 		private void Fail(Exception ex)
 		{
+			if (Full)
+			{
+				throw new InvalidOperationException("Direct3D 12 stopped drawing the game, and the window has no OpenGL to fall back on: " + ex.Message, ex);
+			}
+
 			failed = true;
 			pendingValue = 0;
 			Log("OBNS Direct3D 12 world layer stopped, OpenGL draws it from now: " + ex);
@@ -374,12 +744,12 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 
 			glColor = glDepth = glCab = glColorMemory = glDepthMemory = glCabMemory = 0;
-			foreach (IntPtr com in new[] { colorImage, depthImage, cabImage, depthBuffer, cabDepthBuffer })
+			foreach (IntPtr com in new[] { colorImage, depthImage, cabImage, depthBuffer, cabDepthBuffer, lastFrame, readback })
 			{
 				D12.Release(com);
 			}
 
-			colorImage = depthImage = cabImage = depthBuffer = cabDepthBuffer = IntPtr.Zero;
+			colorImage = depthImage = cabImage = depthBuffer = cabDepthBuffer = lastFrame = readback = IntPtr.Zero;
 		}
 
 		/// <summary>The renderer as it is drawing, for the debug overlay.</summary>
@@ -416,6 +786,9 @@ namespace OpenBve.Graphics.Direct3D12
 				// A removed device: nothing is running.
 			}
 
+			frameDrawing?.Dispose();
+			ReleaseBackBuffers();
+			D12.Release(swapChain);
 			composite?.Dispose();
 			composite = null;
 			scene?.Dispose();

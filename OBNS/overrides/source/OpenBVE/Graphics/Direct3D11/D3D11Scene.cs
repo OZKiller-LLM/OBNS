@@ -47,7 +47,7 @@ namespace OpenBve.Graphics.Direct3D11
 		/// <summary>The pixel shaders: blended (coverage from alpha), and opaque (full coverage).</summary>
 		private IntPtr blendedShader, opaqueShader;
 		/// <summary>The layers' constant buffers, each holding its frame record's index.</summary>
-		private readonly IntPtr[] layerBuffers = new IntPtr[2];
+		private readonly IntPtr[] layerBuffers = new IntPtr[3];
 		/// <summary>The samplers by OpenGL wrap mode (ClampClamp, ClampRepeat, RepeatClamp, RepeatRepeat).</summary>
 		private readonly IntPtr[] samplers = new IntPtr[4];
 		private readonly Dictionary<int, IntPtr> blendStates = new Dictionary<int, IntPtr>(), depthStates = new Dictionary<int, IntPtr>(), rasterStates = new Dictionary<int, IntPtr>();
@@ -79,7 +79,7 @@ namespace OpenBve.Graphics.Direct3D11
 			TexturePage = 1;
 			CreateShaders();
 			CreateSamplers(Interface.CurrentOptions.Interpolation, Interface.CurrentOptions.AnisotropicFilteringLevel);
-			for (int layer = 0; layer < 2; layer++)
+			for (int layer = 0; layer < layerBuffers.Length; layer++)
 			{
 				int* data = stackalloc int[4];
 				data[0] = layer;
@@ -424,7 +424,7 @@ namespace OpenBve.Graphics.Direct3D11
 		/// <summary>Draws a layer's draws into the render targets bound (Upload first).</summary>
 		internal void Draw(int layer, uint width, uint height)
 		{
-			int start = layer == WorldLayerIndex ? 0 : cabCommandStart, end = layer == WorldLayerIndex ? cabCommandStart : commandCount;
+			int start = layer == SkyLayer ? 0 : layer == WorldLayerIndex ? skyCommandEnd : cabCommandStart, end = layer == SkyLayer ? skyCommandEnd : layer == WorldLayerIndex ? cabCommandStart : commandCount;
 			if (start >= end)
 			{
 				return;
@@ -504,8 +504,11 @@ namespace OpenBve.Graphics.Direct3D11
 			Dx.PSSetShader(context, blend == Blend.None ? opaqueShader : blendedShader);
 			Dx.OMSetBlendState(context, BlendState(blend, depthWrite));
 			Dx.OMSetDepthStencilState(context, DepthState(depthTest, depthWrite));
-			Dx.RSSetState(context, RasterState(cull));
+			Dx.RSSetState(context, RasterState(cull, (key & 32) != 0));
 		}
+
+		/// <summary>The sampler for an OpenGL wrap mode.</summary>
+		internal IntPtr Sampler(int wrap) => samplers[wrap & 3];
 
 		/// <summary>Colour blends as upstream, alpha accumulating coverage for the composite; the depth target written only with depth writes.</summary>
 		private IntPtr BlendState(Blend blend, bool depthWrite)
@@ -541,7 +544,7 @@ namespace OpenBve.Graphics.Direct3D11
 			return state;
 		}
 
-		private IntPtr DepthState(bool depthTest, bool depthWrite)
+		internal IntPtr DepthState(bool depthTest, bool depthWrite)
 		{
 			int key = (depthTest ? 1 : 0) | (depthWrite ? 2 : 0);
 			if (depthStates.TryGetValue(key, out IntPtr state))
@@ -558,15 +561,15 @@ namespace OpenBve.Graphics.Direct3D11
 		}
 
 		/// <summary>Upstream culls OpenGL's front faces; drawn upside down, those are clockwise, Direct3D's front faces by default.</summary>
-		private IntPtr RasterState(bool cull)
+		internal IntPtr RasterState(bool cull, bool depthClamp = false)
 		{
-			int key = cull ? 1 : 0;
+			int key = (cull ? 1 : 0) | (depthClamp ? 2 : 0);
 			if (rasterStates.TryGetValue(key, out IntPtr state))
 			{
 				return state;
 			}
 
-			Dx.RasterizerDesc desc = new Dx.RasterizerDesc { FillMode = Dx.FillSolid, CullMode = cull ? Dx.CullFront : Dx.CullNone, DepthClipEnable = 1 };
+			Dx.RasterizerDesc desc = new Dx.RasterizerDesc { FillMode = Dx.FillSolid, CullMode = cull ? Dx.CullFront : Dx.CullNone, DepthClipEnable = depthClamp ? 0 : 1 };
 			state = Dx.CreateRasterizerState(device.Device, desc);
 			rasterStates[key] = state;
 			return state;

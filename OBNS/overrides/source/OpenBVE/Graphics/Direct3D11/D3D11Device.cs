@@ -102,20 +102,26 @@ namespace OpenBve.Graphics.Direct3D11
 				return "Direct3D is Windows' only";
 			}
 
-			dxOpenDevice = Function<DXOpenDevice>("wglDXOpenDeviceNV");
-			dxCloseDevice = Function<DXCloseDevice>("wglDXCloseDeviceNV");
-			dxRegisterObject = Function<DXRegisterObject>("wglDXRegisterObjectNV");
-			dxUnregisterObject = Function<DXUnregisterObject>("wglDXUnregisterObjectNV");
-			dxLockObjects = Function<DXLockObjects>("wglDXLockObjectsNV");
-			dxUnlockObjects = Function<DXUnlockObjects>("wglDXUnlockObjectsNV");
-			if (dxOpenDevice == null || dxCloseDevice == null || dxRegisterObject == null || dxUnregisterObject == null || dxLockObjects == null || dxUnlockObjects == null)
+			// With Direct3D drawing the whole game there is no OpenGL to share with.
+			bool shared = !D3D11World.Full;
+			if (shared)
+			{
+				dxOpenDevice = Function<DXOpenDevice>("wglDXOpenDeviceNV");
+				dxCloseDevice = Function<DXCloseDevice>("wglDXCloseDeviceNV");
+				dxRegisterObject = Function<DXRegisterObject>("wglDXRegisterObjectNV");
+				dxUnregisterObject = Function<DXUnregisterObject>("wglDXUnregisterObjectNV");
+				dxLockObjects = Function<DXLockObjects>("wglDXLockObjectsNV");
+				dxUnlockObjects = Function<DXUnlockObjects>("wglDXUnlockObjectsNV");
+			}
+
+			if (shared && (dxOpenDevice == null || dxCloseDevice == null || dxRegisterObject == null || dxUnregisterObject == null || dxLockObjects == null || dxUnlockObjects == null))
 			{
 				return "OpenGL has no WGL_NV_DX_interop2";
 			}
 
 			// OpenGL's adapter, by LUID (GL_EXT_memory_object), else the first.
 			byte[] luid = null;
-			GetUnsignedBytev getUnsignedBytev = Function<GetUnsignedBytev>("glGetUnsignedBytevEXT");
+			GetUnsignedBytev getUnsignedBytev = shared ? Function<GetUnsignedBytev>("glGetUnsignedBytevEXT") : null;
 			if (getUnsignedBytev != null)
 			{
 				luid = new byte[8];
@@ -171,6 +177,11 @@ namespace OpenBve.Graphics.Direct3D11
 			Device = device;
 			Context = context;
 			Description = name + ", feature level " + (level >> 12) + "." + ((level >> 8) & 0xF);
+			if (!shared)
+			{
+				return null;
+			}
+
 			Interop = dxOpenDevice(Device);
 			if (Interop == IntPtr.Zero)
 			{

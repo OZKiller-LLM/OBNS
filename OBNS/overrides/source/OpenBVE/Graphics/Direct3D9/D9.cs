@@ -57,7 +57,7 @@ namespace OpenBve.Graphics.Direct3D9
 			StateColorWriteEnable1 = 190, StateSeparateAlphaBlendEnable = 206, StateSrcBlendAlpha = 207, StateDestBlendAlpha = 208, StateBlendOpAlpha = 209;
 
 		// D3DBLEND, D3DBLENDOP, D3DCMPFUNC, D3DCULL
-		internal const uint BlendZero = 1, BlendOne = 2, BlendSrcAlpha = 5, BlendInvSrcAlpha = 6, BlendOpAdd = 1;
+		internal const uint BlendZero = 1, BlendOne = 2, BlendInvSrcColor = 4, BlendSrcAlpha = 5, BlendInvSrcAlpha = 6, BlendOpAdd = 1;
 		internal const uint CompareLess = 2, CompareLessEqual = 4, CompareAlways = 8;
 		internal const uint CullNone = 1, CullClockwise = 2;
 
@@ -182,6 +182,66 @@ namespace OpenBve.Graphics.Direct3D9
 		{
 			Check(hr, call);
 			return made;
+		}
+
+		/// <summary>IDirect3DDevice9Ex::CreateAdditionalSwapChain (13).</summary>
+		internal static IntPtr CreateAdditionalSwapChain(IntPtr device, PresentParameters parameters)
+		{
+			IntPtr swapChain;
+			int hr = ((delegate* unmanaged[Stdcall]<IntPtr, PresentParameters*, IntPtr*, int>)Table(device)[13])(device, &parameters, &swapChain);
+			return Made(hr, "IDirect3DDevice9Ex::CreateAdditionalSwapChain", swapChain);
+		}
+
+		/// <summary>IDirect3DSwapChain9::Present (3).</summary>
+		internal static void PresentSwapChain(IntPtr swapChain)
+		{
+			Check(((delegate* unmanaged[Stdcall]<IntPtr, void*, void*, IntPtr, void*, uint, int>)Table(swapChain)[3])(swapChain, null, null, IntPtr.Zero, null, 0), "IDirect3DSwapChain9::Present");
+		}
+
+		/// <summary>IDirect3DSwapChain9::GetBackBuffer (5): its surface (to be released).</summary>
+		internal static IntPtr SwapChainBackBuffer(IntPtr swapChain)
+		{
+			IntPtr surface;
+			int hr = ((delegate* unmanaged[Stdcall]<IntPtr, uint, uint, IntPtr*, int>)Table(swapChain)[5])(swapChain, 0, 0, &surface);
+			return Made(hr, "IDirect3DSwapChain9::GetBackBuffer", surface);
+		}
+
+		/// <summary>IDirect3DDevice9Ex::GetRenderTargetData (32): a target's pixels into a system-memory surface.</summary>
+		internal static void GetRenderTargetData(IntPtr device, IntPtr target, IntPtr surface)
+		{
+			Check(((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr, int>)Table(device)[32])(device, target, surface), "IDirect3DDevice9Ex::GetRenderTargetData");
+		}
+
+		/// <summary>IDirect3DDevice9Ex::StretchRect (34): the whole of one surface onto another, of the same size.</summary>
+		internal static void StretchRect(IntPtr device, IntPtr source, IntPtr destination)
+		{
+			Check(((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, void*, IntPtr, void*, uint, int>)Table(device)[34])(device, source, null, destination, null, FilterNone), "IDirect3DDevice9Ex::StretchRect");
+		}
+
+		/// <summary>IDirect3DDevice9Ex::CreateOffscreenPlainSurface (36), in system memory.</summary>
+		internal static IntPtr CreateSystemSurface(IntPtr device, uint width, uint height, uint format)
+		{
+			IntPtr surface;
+			int hr = ((delegate* unmanaged[Stdcall]<IntPtr, uint, uint, uint, uint, IntPtr*, IntPtr*, int>)Table(device)[36])(device, width, height, format, PoolSystemMemory, &surface, null);
+			return Made(hr, "IDirect3DDevice9Ex::CreateOffscreenPlainSurface", surface);
+		}
+
+		/// <summary>IDirect3DSurface9::LockRect (13): all of it, for reading.</summary>
+		internal static LockedRect LockSurface(IntPtr surface)
+		{
+			const uint readOnly = 0x10; // D3DLOCK_READONLY
+			LockedRect locked;
+			Check(((delegate* unmanaged[Stdcall]<IntPtr, LockedRect*, void*, uint, int>)Table(surface)[13])(surface, &locked, null, readOnly), "IDirect3DSurface9::LockRect");
+			return locked;
+		}
+
+		/// <summary>IDirect3DSurface9::UnlockRect (14).</summary>
+		internal static void UnlockSurface(IntPtr surface) => ((delegate* unmanaged[Stdcall]<IntPtr, int>)Table(surface)[14])(surface);
+
+		/// <summary>IDirect3DDevice9Ex::DrawPrimitive (81): triangles.</summary>
+		internal static void DrawTriangles(IntPtr device, uint startVertex, uint triangles)
+		{
+			((delegate* unmanaged[Stdcall]<IntPtr, uint, uint, uint, int>)Table(device)[81])(device, TriangleList, startVertex, triangles);
 		}
 
 		/// <summary>IDirect3DDevice9Ex::CreateTexture (23); with a share handle given back when shared is not null.</summary>
