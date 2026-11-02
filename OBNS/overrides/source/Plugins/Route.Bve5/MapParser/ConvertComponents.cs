@@ -1176,6 +1176,9 @@ namespace Route.Bve5
 		{
 			int BlockIndex = RouteData.FindOrAddBlock(Statement.Distance);
 			RouteData.Blocks[BlockIndex].JointSound = true;
+			// OBNS: which sound, of the train's [Joint].
+			object Index = Statement.GetArgumentValue(ArgumentName.Index);
+			RouteData.Blocks[BlockIndex].JointSoundIndex = Index != null ? Convert.ToInt32(Index) : -1;
 		}
 	}
 }

@@ -90,7 +90,7 @@ Still to do for 1.21:
 - Closed (user, 2026-11-02): a tester reported MTR M-Train ver2026 (A195-222(DN), SACEM plugin) loading considerably slower than on upstream's release, on HKHOS's Kwun Tong Line
   (調景嶺至黃埔) new Alignment. With the test ZIP from `a25e609` they now load it in 43 s (42 s on the RTX 2060 PC). Why it was slower for them than upstream was never reproduced: before the fix,
   upstream 169 s, 1.2 163 s and 1.21 162 s here (fresh settings); on 4 threads 168 s and 179 s. Their setup isn't known.
-- The upstream `Track[...].Position(x, y, radius)` gap and the BVE6 cab gauges belong to 1.22.
+- BVE6 cab gauges belong to 1.22 (done: `OBNS/BVE5.md`). The "`Track[...].Position(x, y, radius)` is rejected" limitation in the 1.2 and 1.21 notes was wrong: all its forms parse (checked 2026-11-02).
 - Also 1.22 (user, 2026-11-02), further load time: route loading averages 1.8 of 12 threads on that train and route (cause not known; GDI+ suspected), about 43 s of thread time
   decoding textures, the cab and exterior on one thread, OBNS's extra 3 s before the game starts, `MeshBuilder.Apply` still quadratic for `.x`, `.obj` and LokSim, possibly a disk cache.
 

@@ -30,7 +30,7 @@
 - **Plugin log wording:** the log says "x86" for the plugin layer even when it's running a 64-bit plugin.
 - **64-bit plugins that start another program,** such as `DetailManager_.dll`, can't run in the plugin layer.
 - **BVE5 plugins that read BVE5's memory** (AtsEx and the like) can't work outside BVE5.
-- **Some BVE5 map 2.02 statements** are rejected by the parser, such as `Track[...].Position(x, y, radius)`; such routes load without them. Planned for 1.22.
+- **`Track[...].Position(x, y, radius)`:** earlier notes, including 1.21's as first published, said the parser rejects this. It doesn't: all its forms load.
 - **macOS, first opening** still needs Open Anyway (see 1.2), and **Metal** is still off on Intel, AMD and NVIDIA Macs.
 
 ## 1.2 (1.14.1.2-android.4; desktop 1.14.1.2-OBNS) — BVE5 trains, and Windows, Ubuntu and macOS

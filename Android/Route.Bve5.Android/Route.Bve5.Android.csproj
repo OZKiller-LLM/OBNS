@@ -14,6 +14,11 @@
 
   <ItemGroup>
     <Compile Include="$(UpstreamSource)Plugins\Route.Bve5\**\*.cs" LinkBase="Route.Bve5" />
+    <!-- OBNS's copy, shared with the desktop build: JointNoise.Play's index picks the point sound. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\MapParser\Structures.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\MapParser\Structures.cs" Link="OBNS\Structures.cs" />
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\MapParser\ApplyRouteData.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\MapParser\ApplyRouteData.cs" Link="OBNS\ApplyRouteData.cs" />
     <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\Properties\AssemblyInfo.cs" />
     <!-- OBNS's copy, shared with the desktop build: the scenario's vehicle is the route's suggested train. -->
     <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\ScenarioParser.cs" />

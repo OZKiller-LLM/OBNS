@@ -16,6 +16,9 @@
     <Compile Include="AndroidInternals.cs" />
     <Compile Include="$(UpstreamSource)TrainManager\**\*.cs" LinkBase="TrainManager" />
     <!-- ANDROID PORT copies of upstream files (OpenBVE 1.14.1.2), compiled in their place; see Android/UpstreamPatches. -->
+    <!-- OBNS's copy, shared with the desktop build: JointNoise.Play's index picks the point sound. -->
+    <Compile Remove="$(UpstreamSource)TrainManager\Train\TrainBase.Physics.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\TrainManager\Train\TrainBase.Physics.cs" Link="OBNS\TrainBase.Physics.cs" />
     <Compile Remove="$(UpstreamSource)TrainManager\SafetySystems\Plugin\Plugin.cs" />
     <Compile Include="..\..\OBNS\overrides\source\TrainManager\SafetySystems\Plugin\Plugin.cs" Link="OBNS\Plugin.cs" />
     <Compile Remove="$(UpstreamSource)TrainManager\SafetySystems\Plugin\Plugin.Functions.cs" />

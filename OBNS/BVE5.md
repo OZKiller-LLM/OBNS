@@ -68,7 +68,8 @@ relative to the file. The vehicle performance file and the motor noise file have
   and while the motors brake the `[Brake]` table's as a negative current, by the share of the electric
   brake in use. It reads 0 on a ported cab on a BVE4 train, which has no such tables.
 - **Sound**: the vehicle sound file through BVE4's sound.cfg parser (with `[Joint]` as its `[Switch]` and `[AirSpring]` as its `[Suspension]`,
-  whose one sound a side is the release: `LeftApply` and `RightApply` are read and not played); the motor noise as BVE5 plays it,
+  whose one sound a side is the release: `LeftApply` and `RightApply` are read and not played; a route's `JointNoise.Play(index)` picks the
+  `[Joint]` sound, or none if a train with several hasn't that one); the motor noise as BVE5 plays it,
   through OBNS copies of upstream's BVE5 motor sound (`TrainManager/Motor/BVE5/MotorSound.cs`) and table
   parser (`Train/BVE5/MotorSoundTable.cs`), which fix upstream's: comments read as rows, blank cells read
   as full volume, pitch and volume rows at different speeds, interpolation running backwards, the brake
@@ -95,6 +96,6 @@ relative to the file. The vehicle performance file and the motor noise file have
 
 ## Not yet
 
-- Upstream's BVE5 map parser (the `Bve5_Parsing` package) rejects some map 2.02 statements, such as
-  `Track[...].Position(x, y, radius)`; such routes load without them.
+- Map 2.02: Uchibo's 69 map files (51 kinds of statement) log no parser errors, and all forms of `Track[...].Position` are accepted,
+  with a deliberately wrong statement in the same file reported as a control. Not every statement in the format has been tried.
 - BVE5-only plugins that read BVE5's memory (AtsEx and the like) cannot work outside BVE5.

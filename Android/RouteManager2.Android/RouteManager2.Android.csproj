@@ -14,6 +14,9 @@
 
   <ItemGroup>
     <Compile Include="$(UpstreamSource)RouteManager2\**\*.cs" LinkBase="RouteManager2" />
+    <!-- OBNS's copy, shared with the desktop build: JointNoise.Play's index picks the point sound. -->
+    <Compile Remove="$(UpstreamSource)RouteManager2\Events\PointSound.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\RouteManager2\Events\PointSound.cs" Link="OBNS\PointSound.cs" />
     <Compile Remove="$(UpstreamSource)RouteManager2\Properties\AssemblyInfo.cs" />
     <!-- Upstream's Transponder.cs (OpenBVE 1.14.1.2) replaced by OBNS's copy with the orphaned-section fix, shared with the desktop build. -->
     <Compile Remove="$(UpstreamSource)RouteManager2\Events\Transponder.cs" />
