@@ -7,21 +7,24 @@ path, and Direct3D 11 there can only read frames back at 2 to 3 times OpenGL's c
 
 In 1.3 a chosen renderer draws the whole game frame, owns the swap chain and needs no OpenGL context.
 
-## The game on Vulkan alone (`OBNS_VULKAN_FULL=1`)
+## The game on one API alone
 
-Windows x64, off by default so far. Everything below is in that mode unless it says otherwise.
+`OBNS_VULKAN_FULL=1`, `OBNS_D3D12_FULL=1`, `OBNS_D3D11_FULL=1` or `OBNS_D3D9_FULL=1`. Windows x64, off by default so far. Metal isn't done.
+Everything below is on Vulkan unless it says otherwise, and is the same on Direct3D, with its own frame image and swap chain
+(`D3D11World`, `D3D12World`, `D3D9World`, each with its `FrameDrawing`). What is the same whichever API it is lives in `WholeFrame.cs`.
 
 - **The frame.** One image: the sky and background objects, the world, motion blur, particles, then the cab with its own depth, then
   the HUD, text and menus, as upstream draws them into its framebuffer. `VulkanWorld.RecordWhole` and `Present`.
 - **Presenting.** A swap chain on the window (`VulkanPresenter`), which replaces `SwapBuffers`. FIFO with vertical sync on, immediate
-  without it. Made again when the window changes size.
+  without it. Made again when the window changes size. Direct3D 11 and 12 use a flip swap chain with tearing allowed: without tearing it can
+  show only as many frames a refresh as it has buffers to spare, however fast the frames are made. Direct3D 9 uses an additional swap chain.
 - **No context.** OpenTK's window always makes one, so its platform factory is wrapped: all is passed on, but a context asked for is
   OpenTK's own dummy (`NoGLContext`). The system reports no current context and no pixel format on the window.
 - **Upstream's OpenGL calls.** Hundreds remain that no longer draw anything. OpenTK calls through a table, so the table points at machine
   code that does nothing (`GLStub`); a few have answers upstream depends on (a new object's name, a shader's status). Upstream's code
   otherwise runs as it is, which keeps this small and lets an upstream update come in as before.
-- **Falling back.** Whether a Vulkan device can be had is checked before the window is made (`VulkanDevice.ProbeFull`). If not, OpenGL
-  draws as usual. There is no falling back once the window is made, as it has no OpenGL.
+- **Falling back.** Whether a device can be had is checked before the window is made (`WholeGame.Probe`). If not, OpenGL draws as usual.
+  There is no falling back once the window is made, as it has no OpenGL: a frame that fails stops the game with the reason.
 - **Textures.** Through `WorldTextures`, as the world's are. Upstream's texture loading still runs, with its uploads stubbed, so a texture
   used in 2D is decoded twice. That's the next thing to trim.
 - **Touch areas.** Picked from their faces, with no framebuffer to read (`Touch.Pick`). `OBNS_TOUCH_CHECK=1` compares it with OpenGL's
@@ -31,6 +34,9 @@ Windows x64, off by default so far. Everything below is in that mode unless it s
 - **The 2D part.** `IFrameDrawing`, with OpenGL as one implementation and `VulkanFrameDrawing` as the other. Text's first pass darkens
   what is under it, so it can't be a layer laid over: it draws on the frame itself. `OBNS_VULKAN_2D=1` turns it on in the hybrid mode.
   Upstream draws rectangles as a strip of six vertices with culling on, which leaves each half covered once: a list of two triangles here.
+- **Particles.** Square to the view, so each is one rectangle at one depth, tested against the world's. The world's fog is on for them as it is
+  in upstream, taken at each one's middle.
+- **Direct3D 9.** Shader model 3: six plain vertices a quad, and no depth clamp, so a background's depth is set in the vertex shader.
 
 ## Tested
 
@@ -54,7 +60,22 @@ black some seconds into a run).
 | 30 minutes running | memory flat at 2,796 MB, 120 fps, 18 to 23 ms worst frame |
 | TML pack | load, memory and frame times as the hybrid (numbers only) |
 | Motion blur (`OBNS_BLUR_SPEED=s` forces it on, camera turning) | blurs as the hybrid does while moving. Stopped, it comes back crisp; the hybrid stays slightly soft, with faint ghost lines |
-| The other renderers, against 1.22 | Vulkan, OpenGL, Direct3D 12 and 11: 0 pixels; Direct3D 9: 1 pixel by 2 or less |
+| The other renderers, against 1.22 | Vulkan, OpenGL, Direct3D 12, 11 and 9: 0 pixels |
+
+The same machine and route for Direct3D alone, against each one's hybrid:
+
+| What | Direct3D 11 | Direct3D 12 | Direct3D 9 |
+| --- | --- | --- | --- |
+| Pixels of a matched frame by more than 2 levels | 5 to 13 | 3 to 8 | 5 to 7 |
+| By 1 or 2 levels (mipmaps: OpenGL's against Direct3D 12's and 9's own, in the sky, most likely) | about 4,600 | about 24,000 | about 24,000 |
+| Frame cost, vertical sync off | 2.20 to 2.36 ms against 3.28 to 3.70 ms | 2.52 to 2.69 ms against 3.01 to 3.44 ms | 3.28 to 3.54 ms against 3.47 to 3.59 ms |
+| Particles, fixed places | 3 to 14 by more than 2 | 5 to 7 | 4 to 7 |
+| Particles in fog (fog to 850 m, particles to 541 m), against the hybrid | 0 by more than 2 | 0 | 0 |
+| Resizing, minimizing, views, menu | no errors, pictures right | the same | the same |
+| Jump to a station | 0.1 to 0.3% white | the same | the same |
+| Motion blur | as the hybrid while moving, by eye and by sharpness | the same | the same |
+
+Vulkan's frame cost in the same comparison: 2.92 to 3.57 ms against 2.89 to 3.44 ms. Particles in fog on Vulkan: 0 by more than 2.
 
 Step 1 on the M1 Mac (OpenGL drawing the 2D part, under OpenGL and Metal) matches 1.22 in the world, HUD, loading screen, in-game menu and
 native menu, with load time and frame rate within 1.22's own spread.
@@ -62,13 +83,13 @@ native menu, with load time and frame rate within 1.22's own spread.
 ## Not done
 
 - **Event cubes and the rail path overlay:** debug views, not drawn in this mode. Nor are the wireframe and normals views.
-- **Particles' fog:** upstream's shader still has the world's fog on when it draws them, so they fade with distance on a foggy route. Not done here.
 - **Linux:** `GLStub`'s machine code is for Windows' calling convention, and the surface is Win32's.
 - **The older Vulkan tiers:** this needs bindless textures and dynamic rendering, so not the core 1.0 tier.
 - **Full screen:** not run, as it changes the display mode.
-- **Direct3D 12, 11, 9 and Metal:** the same frame and `IFrameDrawing` on each is still to do. `WorldSky` and the layers are shared already.
+- **Metal:** the same frame and `IFrameDrawing` is still to do. `WorldSky`, the layers and `WholeFrameDrawing` are shared already.
+- **Direct3D's fallback:** the path for no device is written as Vulkan's, but hasn't been run, as this machine has all of them.
 - **The options:** no entry yet; it's the switch alone.
-- **The Lisuan:** not run there. It's what this is for: no shared images, and no OpenGL.
+- **The Lisuan:** not run there. It's what this is for: no shared images, and no OpenGL. Direct3D 11 alone is the one to try first.
 
 ## Rules
 

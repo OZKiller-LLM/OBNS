@@ -38,7 +38,7 @@ namespace OpenBve.Graphics.Direct3D9
 		[StructLayout(LayoutKind.Sequential)]
 		private struct Vertex
 		{
-			public float X, Y, Z, U, V, R, G, B, A, AlphaFunction, AlphaValue;
+			public float X, Y, Z, U, V, R, G, B, A, AlphaFunction, AlphaValue, FogR, FogG, FogB, FogAmount;
 		}
 
 		private readonly D3D9Device device;
@@ -72,12 +72,13 @@ namespace OpenBve.Graphics.Direct3D9
 			IntPtr d = device.Device;
 			vertexShader = D9.CreateVertexShader(d, Direct3D11.Dx.Compile(source, "frame2d9.hlsl", "VS", "vs_3_0"));
 			pixelShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "frame2d9.hlsl", "PS", "ps_3_0"));
-			D9.VertexElement* elements = stackalloc D9.VertexElement[5];
+			D9.VertexElement* elements = stackalloc D9.VertexElement[6];
 			elements[0] = new D9.VertexElement { Offset = 0, Type = D9.DeclFloat3, Usage = D9.UsagePosition };
 			elements[1] = new D9.VertexElement { Offset = 12, Type = D9.DeclFloat2, Usage = D9.UsageTexCoord };
 			elements[2] = new D9.VertexElement { Offset = 20, Type = D9.DeclFloat4, Usage = D9.UsageColor };
 			elements[3] = new D9.VertexElement { Offset = 36, Type = D9.DeclFloat2, Usage = D9.UsageTexCoord, UsageIndex = 1 };
-			elements[4] = new D9.VertexElement { Stream = 0xFF, Type = D9.DeclUnused };
+			elements[4] = new D9.VertexElement { Offset = 44, Type = D9.DeclFloat4, Usage = D9.UsageTexCoord, UsageIndex = 2 };
+			elements[5] = new D9.VertexElement { Stream = 0xFF, Type = D9.DeclUnused };
 			declaration = D9.CreateVertexDeclaration(d, elements);
 		}
 
@@ -141,7 +142,7 @@ namespace OpenBve.Graphics.Direct3D9
 				{
 					// (0,0), (1,0), (1,1), (0,0), (0,1), (1,1), as Direct3D 11's shader has them.
 					float x = corner == 1 || corner == 2 || corner == 5 ? 1.0f : 0.0f, y = corner == 2 || corner == 4 || corner == 5 ? 1.0f : 0.0f;
-					*to++ = new Vertex { X = q.X + x * q.Width, Y = q.Y + y * q.Height, Z = q.Depth, U = q.U + x * q.UWidth, V = q.V + y * q.VHeight, R = q.R, G = q.G, B = q.B, A = q.A, AlphaFunction = q.AlphaFunction, AlphaValue = q.AlphaValue };
+					*to++ = new Vertex { X = q.X + x * q.Width, Y = q.Y + y * q.Height, Z = q.Depth, U = q.U + x * q.UWidth, V = q.V + y * q.VHeight, R = q.R, G = q.G, B = q.B, A = q.A, AlphaFunction = q.AlphaFunction, AlphaValue = q.AlphaValue, FogR = q.FogR, FogG = q.FogG, FogB = q.FogB, FogAmount = q.FogAmount };
 				}
 			}
 

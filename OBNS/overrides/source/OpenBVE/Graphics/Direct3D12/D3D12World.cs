@@ -179,7 +179,7 @@ namespace OpenBve.Graphics.Direct3D12
 					D12.Close(world.lists[i]);
 				}
 
-				world.targetViews = D12.CreateDescriptorHeap(device.Device, D12.DescriptorHeapRenderTargets, 3, false);
+				world.targetViews = D12.CreateDescriptorHeap(device.Device, D12.DescriptorHeapRenderTargets, Full ? 1 + BackBuffers : 3u, false);
 				world.depthViews = D12.CreateDescriptorHeap(device.Device, D12.DescriptorHeapDepthStencils, 2, false);
 				world.targetViewSize = D12.DescriptorSize(device.Device, D12.DescriptorHeapRenderTargets);
 				world.depthViewSize = D12.DescriptorSize(device.Device, D12.DescriptorHeapDepthStencils);
@@ -213,12 +213,13 @@ namespace OpenBve.Graphics.Direct3D12
 
 		// --- the whole game drawn by Direct3D 12 (OBNS/RENDERERS.md): one list a frame, from the start of the frame until it is shown ---
 
-		private const int ExtraColor = 1, ExtraLastFrame = 2, BackBuffers = 2;
+		private const int ExtraColor = 1, ExtraLastFrame = 2, BackBuffers = 3;
 
 		private D3D12FrameDrawing frameDrawing;
 		private IntPtr window, swapChain, lastFrame, readback;
 		private readonly IntPtr[] backBuffer = new IntPtr[BackBuffers];
-		private uint swapWidth, swapHeight, readbackPitch;
+		private uint swapWidth, swapHeight, swapFlags, readbackPitch;
+		private int backBufferCount;
 		private bool listOpen, lastFrameValid;
 		private int openSlot;
 		private float motionBlurAlpha;
@@ -312,7 +313,8 @@ namespace OpenBve.Graphics.Direct3D12
 			D12.ExecuteCommandList(device.Queue, lists[openSlot]);
 			if (show)
 			{
-				D12.Check(Dx.Present(swapChain, Interface.CurrentOptions.VerticalSynchronization ? 1u : 0u), "IDXGISwapChain::Present");
+				bool sync = Interface.CurrentOptions.VerticalSynchronization;
+				D12.Check(Dx.Present(swapChain, sync ? 1u : 0u, !sync && swapFlags != 0 ? Dx.PresentAllowTearing : 0), "IDXGISwapChain::Present");
 			}
 
 			ulong value = drawnValues[openSlot] = device.QueueSignal();
@@ -460,6 +462,9 @@ namespace OpenBve.Graphics.Direct3D12
 				try
 				{
 					const uint noAltEnter = 2, flipDiscard = 4;
+					swapFlags = Dx.TearingAllowed(factory) ? Dx.SwapChainAllowTearing : 0;
+					// Without tearing, two would hold the game to the display's rate even with vertical sync off.
+					backBufferCount = swapFlags != 0 ? 2 : BackBuffers;
 					Dx.SwapChainDesc desc = new Dx.SwapChainDesc
 					{
 						Width = newWidth,
@@ -467,7 +472,8 @@ namespace OpenBve.Graphics.Direct3D12
 						Format = Dx.FormatR8G8B8A8Unorm,
 						SampleCount = 1,
 						BufferUsage = Dx.UsageRenderTargetOutput,
-						BufferCount = BackBuffers,
+						BufferCount = (uint)backBufferCount,
+						Flags = swapFlags,
 						OutputWindow = window,
 						Windowed = 1,
 						SwapEffect = flipDiscard
@@ -488,12 +494,12 @@ namespace OpenBve.Graphics.Direct3D12
 				// The frames in flight draw into the buffers: done with first.
 				device.WaitIdle();
 				ReleaseBackBuffers();
-				Dx.ResizeBuffers(swapChain, newWidth, newHeight);
+				Dx.ResizeBuffers(swapChain, newWidth, newHeight, swapFlags);
 			}
 
 			swapWidth = newWidth;
 			swapHeight = newHeight;
-			for (uint i = 0; i < BackBuffers; i++)
+			for (uint i = 0; i < backBufferCount; i++)
 			{
 				backBuffer[i] = D12.SwapChainBuffer(swapChain, i);
 				D12.CreateRenderTargetView(device.Device, backBuffer[i], TargetView(1 + (int)i));
@@ -753,7 +759,7 @@ namespace OpenBve.Graphics.Direct3D12
 		}
 
 		/// <summary>The renderer as it is drawing, for the debug overlay.</summary>
-		internal static string RendererName => "Direct3D 12 world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
+		internal static string RendererName => Full ? "Direct3D 12 alone (" + instance.device.Description + ")" : "Direct3D 12 world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
 
 		/// <summary>The layer's state for the frame statistics.</summary>
 		internal static string Summary

@@ -188,6 +188,11 @@ namespace OpenBve.Graphics.Vulkan
 		{
 			get
 			{
+				if (Enabled && VulkanDevice.Full)
+				{
+					return "Vulkan alone (" + instance.device.Description + ")";
+				}
+
 				if (Enabled && Program.Renderer != null && !Program.Renderer.ShadowsEnabled && !Program.Renderer.OptionWireFrame && !Program.Renderer.OptionNormals)
 				{
 					return "Vulkan world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
@@ -684,6 +689,11 @@ namespace OpenBve.Graphics.Vulkan
 			}
 			catch (Exception ex)
 			{
+				if (VulkanDevice.Full)
+				{
+					throw new InvalidOperationException("Vulkan stopped drawing the game, and the window has no OpenGL to fall back on: " + ex.Message, ex);
+				}
+
 				// Not submitted: OpenGL must not wait for it. OpenGL draws the world layer from the next frame.
 				failed = true;
 				Log("OBNS Vulkan world layer stopped, OpenGL draws it from now: a frame failed: " + ex);

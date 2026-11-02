@@ -9,6 +9,7 @@ struct Input
 	float4 color : COLOR;
 	float2 alphaTest : TEXCOORD1;
 	float depth : DEPTHVALUE;
+	float4 fog : FOGVALUE;
 	uint vertex : SV_VertexID;
 };
 
@@ -18,6 +19,7 @@ struct Output
 	float2 uv : TEXCOORD0;
 	float4 color : COLOR;
 	float2 alphaTest : TEXCOORD1;
+	float4 fog : TEXCOORD2;
 };
 
 Texture2D quadTexture : register(t0);
@@ -33,6 +35,7 @@ Output VS(Input input)
 	output.uv = input.coordinates.xy + corner * input.coordinates.zw;
 	output.color = input.color;
 	output.alphaTest = input.alphaTest;
+	output.fog = input.fog;
 	return output;
 }
 
@@ -63,5 +66,5 @@ float4 PS(Output input) : SV_Target0
 		}
 	}
 
-	return finalColor;
+	return float4(lerp(finalColor.rgb, input.fog.rgb, input.fog.a), finalColor.a);
 }

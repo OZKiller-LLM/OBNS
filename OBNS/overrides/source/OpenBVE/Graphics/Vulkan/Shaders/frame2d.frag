@@ -13,6 +13,7 @@ layout(push_constant) uniform Quad
 	int textureIndex;
 	int samplerIndex;
 	float depth;
+	float fogR, fogG, fogB, fogAmount;
 } quad;
 
 layout(set = 0, binding = 4) uniform sampler samplers[4];
@@ -48,5 +49,5 @@ void main()
 		}
 	}
 
-	fragColor = finalColor;
+	fragColor = vec4(mix(finalColor.rgb, vec3(quad.fogR, quad.fogG, quad.fogB), quad.fogAmount), finalColor.a);
 }

@@ -36,6 +36,9 @@ namespace OpenBve.Graphics.Direct3D11
 	{
 		internal const uint BlendInvSrcColor = 4, UsageRenderTargetOutput = 0x20, MapRead = 1;
 
+		/// <summary>DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING and DXGI_PRESENT_ALLOW_TEARING.</summary>
+		internal const uint SwapChainAllowTearing = 2048, PresentAllowTearing = 0x200;
+
 		[StructLayout(LayoutKind.Sequential)]
 		internal struct SwapChainDesc
 		{
@@ -48,6 +51,26 @@ namespace OpenBve.Graphics.Direct3D11
 		}
 
 		private static readonly Guid ID3D11Texture2D = new Guid("6f15aaf2-d208-4e89-9ab4-489535d34f9c");
+		private static readonly Guid IDXGIFactory5 = new Guid("7632e1f5-ee65-4dca-87fd-84cd75f8838d");
+
+		/// <summary>
+		/// Whether presenting can skip the wait for a refresh (IDXGIFactory5::CheckFeatureSupport, 28). A flip swap chain without it can only show
+		/// as many frames a refresh as it has buffers to spare, whatever the sync interval.
+		/// </summary>
+		internal static bool TearingAllowed(IntPtr factory)
+		{
+			Guid id = IDXGIFactory5;
+			IntPtr factory5;
+			if (((delegate* unmanaged[Stdcall]<IntPtr, Guid*, IntPtr*, int>)Table(factory)[0])(factory, &id, &factory5) < 0)
+			{
+				return false;
+			}
+
+			int allowed = 0;
+			int hr = ((delegate* unmanaged[Stdcall]<IntPtr, int, int*, uint, int>)Table(factory5)[28])(factory5, 0, &allowed, sizeof(int));
+			Release(factory5);
+			return hr >= 0 && allowed != 0;
+		}
 
 		/// <summary>IDXGIFactory::MakeWindowAssociation (8).</summary>
 		internal static void MakeWindowAssociation(IntPtr factory, IntPtr window, uint flags) => Check(((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, int>)Table(factory)[8])(factory, window, flags), "IDXGIFactory::MakeWindowAssociation");
@@ -62,7 +85,7 @@ namespace OpenBve.Graphics.Direct3D11
 		}
 
 		/// <summary>IDXGISwapChain::Present (8).</summary>
-		internal static int Present(IntPtr swapChain, uint syncInterval) => ((delegate* unmanaged[Stdcall]<IntPtr, uint, uint, int>)Table(swapChain)[8])(swapChain, syncInterval, 0);
+		internal static int Present(IntPtr swapChain, uint syncInterval, uint flags) => ((delegate* unmanaged[Stdcall]<IntPtr, uint, uint, int>)Table(swapChain)[8])(swapChain, syncInterval, flags);
 
 		/// <summary>IDXGISwapChain::GetBuffer (9), as a texture.</summary>
 		internal static IntPtr GetBuffer(IntPtr swapChain)
@@ -74,7 +97,7 @@ namespace OpenBve.Graphics.Direct3D11
 		}
 
 		/// <summary>IDXGISwapChain::ResizeBuffers (13), keeping their number and format.</summary>
-		internal static void ResizeBuffers(IntPtr swapChain, uint width, uint height) => Check(((delegate* unmanaged[Stdcall]<IntPtr, uint, uint, uint, uint, uint, int>)Table(swapChain)[13])(swapChain, 0, width, height, 0, 0), "IDXGISwapChain::ResizeBuffers");
+		internal static void ResizeBuffers(IntPtr swapChain, uint width, uint height, uint flags) => Check(((delegate* unmanaged[Stdcall]<IntPtr, uint, uint, uint, uint, uint, int>)Table(swapChain)[13])(swapChain, 0, width, height, 0, flags), "IDXGISwapChain::ResizeBuffers");
 
 		/// <summary>ID3D11DeviceContext::DrawInstanced (21).</summary>
 		internal static void DrawInstanced(IntPtr context, uint vertices, uint instances, uint startVertex, uint startInstance) => ((delegate* unmanaged[Stdcall]<IntPtr, uint, uint, uint, uint, void>)Table(context)[21])(context, vertices, instances, startVertex, startInstance);
@@ -126,10 +149,10 @@ namespace OpenBve.Graphics.Direct3D11
 			byte[] vertexCode = Dx.Compile(source, "frame2d.hlsl", "VS", "vs_5_0");
 			vertexShader = Dx.CreateVertexShader(device.Device, vertexCode);
 			pixelShader = Dx.CreatePixelShader(device.Device, Dx.Compile(source, "frame2d.hlsl", "PS", "ps_5_0"));
-			string[] names = { "POSITION", "TEXCOORD", "COLOR", "TEXCOORD", "DEPTHVALUE" };
-			uint[] indices = { 0, 0, 0, 1, 0 };
-			uint[] formats = { Dx.FormatR32G32B32A32Float, Dx.FormatR32G32B32A32Float, Dx.FormatR32G32B32A32Float, Dx.FormatR32G32Float, Dx.FormatR32Float };
-			uint[] offsets = { 0, 16, 32, 48, 64 };
+			string[] names = { "POSITION", "TEXCOORD", "COLOR", "TEXCOORD", "DEPTHVALUE", "FOGVALUE" };
+			uint[] indices = { 0, 0, 0, 1, 0, 0 };
+			uint[] formats = { Dx.FormatR32G32B32A32Float, Dx.FormatR32G32B32A32Float, Dx.FormatR32G32B32A32Float, Dx.FormatR32G32Float, Dx.FormatR32Float, Dx.FormatR32G32B32A32Float };
+			uint[] offsets = { 0, 16, 32, 48, 64, 68 };
 			IntPtr[] nameTexts = new IntPtr[names.Length];
 			try
 			{

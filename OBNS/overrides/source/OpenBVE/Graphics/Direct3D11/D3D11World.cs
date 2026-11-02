@@ -172,7 +172,7 @@ namespace OpenBve.Graphics.Direct3D11
 
 		private D3D11FrameDrawing frameDrawing;
 		private IntPtr window, swapChain, backBuffer, backView, colorResource, lastFrame, lastFrameResource, staging;
-		private uint swapWidth, swapHeight;
+		private uint swapWidth, swapHeight, swapFlags;
 		private bool worldDrawn, lastFrameValid;
 		private float motionBlurAlpha;
 		private string snapshotFile;
@@ -302,7 +302,8 @@ namespace OpenBve.Graphics.Direct3D11
 				frameDrawing.DrawImage(colorResource, swapWidth, swapHeight, 1.0f, false, true);
 				targets[0] = IntPtr.Zero;
 				Dx.OMSetRenderTargets(context, 0, targets, IntPtr.Zero);
-				Dx.Check(Dx.Present(swapChain, Interface.CurrentOptions.VerticalSynchronization ? 1u : 0u), "IDXGISwapChain::Present");
+				bool sync = Interface.CurrentOptions.VerticalSynchronization;
+				Dx.Check(Dx.Present(swapChain, sync ? 1u : 0u, !sync && swapFlags != 0 ? Dx.PresentAllowTearing : 0), "IDXGISwapChain::Present");
 			}
 			catch (Exception ex)
 			{
@@ -329,6 +330,7 @@ namespace OpenBve.Graphics.Direct3D11
 				try
 				{
 					const uint noAltEnter = 2, flipDiscard = 4;
+					swapFlags = Dx.TearingAllowed(factory) ? Dx.SwapChainAllowTearing : 0;
 					Dx.SwapChainDesc desc = new Dx.SwapChainDesc
 					{
 						Width = newWidth,
@@ -336,7 +338,9 @@ namespace OpenBve.Graphics.Direct3D11
 						Format = Dx.FormatR8G8B8A8Unorm,
 						SampleCount = 1,
 						BufferUsage = Dx.UsageRenderTargetOutput,
-						BufferCount = 2,
+						// Without tearing, two would hold the game to the display's rate even with vertical sync off.
+						BufferCount = swapFlags != 0 ? 2u : 3u,
+						Flags = swapFlags,
 						OutputWindow = window,
 						Windowed = 1,
 						SwapEffect = flipDiscard
@@ -345,6 +349,8 @@ namespace OpenBve.Graphics.Direct3D11
 					if (hr < 0)
 					{
 						// Before Windows 10: the old way of swapping.
+						swapFlags = 0;
+						desc.Flags = 0;
 						desc.BufferCount = 1;
 						desc.SwapEffect = 0;
 						Dx.Check(Dx.CreateSwapChain(factory, device.Device, desc, out swapChain), "IDXGIFactory::CreateSwapChain");
@@ -360,7 +366,7 @@ namespace OpenBve.Graphics.Direct3D11
 			}
 			else
 			{
-				Dx.ResizeBuffers(swapChain, newWidth, newHeight);
+				Dx.ResizeBuffers(swapChain, newWidth, newHeight, swapFlags);
 			}
 
 			swapWidth = newWidth;
@@ -610,7 +616,7 @@ namespace OpenBve.Graphics.Direct3D11
 		}
 
 		/// <summary>The renderer as it is drawing, for the debug overlay.</summary>
-		internal static string RendererName => "Direct3D 11 world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
+		internal static string RendererName => Full ? "Direct3D 11 alone (" + instance.device.Description + ")" : "Direct3D 11 world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
 
 		/// <summary>The layer's state for the frame statistics.</summary>
 		internal static string Summary

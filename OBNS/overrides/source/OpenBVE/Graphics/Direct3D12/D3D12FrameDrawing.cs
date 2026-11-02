@@ -126,10 +126,10 @@ namespace OpenBve.Graphics.Direct3D12
 
 		private IntPtr MakePipeline(Blend blend, bool depthTest, bool depthWrite)
 		{
-			string[] names = { "POSITION", "TEXCOORD", "COLOR", "TEXCOORD", "DEPTHVALUE" };
-			uint[] indices = { 0, 0, 0, 1, 0 };
-			uint[] formats = { Dx.FormatR32G32B32A32Float, Dx.FormatR32G32B32A32Float, Dx.FormatR32G32B32A32Float, Dx.FormatR32G32Float, Dx.FormatR32Float };
-			uint[] offsets = { 0, 16, 32, 48, 64 };
+			string[] names = { "POSITION", "TEXCOORD", "COLOR", "TEXCOORD", "DEPTHVALUE", "FOGVALUE" };
+			uint[] indices = { 0, 0, 0, 1, 0, 0 };
+			uint[] formats = { Dx.FormatR32G32B32A32Float, Dx.FormatR32G32B32A32Float, Dx.FormatR32G32B32A32Float, Dx.FormatR32G32Float, Dx.FormatR32Float, Dx.FormatR32G32B32A32Float };
+			uint[] offsets = { 0, 16, 32, 48, 64, 68 };
 			IntPtr[] nameTexts = new IntPtr[names.Length];
 			try
 			{

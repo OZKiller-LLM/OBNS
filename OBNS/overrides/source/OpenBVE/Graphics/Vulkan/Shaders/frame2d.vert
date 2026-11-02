@@ -13,6 +13,7 @@ layout(push_constant) uniform Quad
 	int textureIndex;
 	int samplerIndex;
 	float depth;
+	float fogR, fogG, fogB, fogAmount;
 } quad;
 
 layout(location = 0) out vec2 textureCoord;

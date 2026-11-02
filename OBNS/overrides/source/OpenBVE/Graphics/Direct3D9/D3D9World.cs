@@ -563,7 +563,7 @@ namespace OpenBve.Graphics.Direct3D9
 		}
 
 		/// <summary>The renderer as it is drawing, for the debug overlay.</summary>
-		internal static string RendererName => "Direct3D 9 world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
+		internal static string RendererName => Full ? "Direct3D 9 alone (" + instance.device.Description + ")" : "Direct3D 9 world layer (" + instance.device.Description + "), OpenGL 4 for the rest";
 
 		/// <summary>The layer's state for the frame statistics.</summary>
 		internal static string Summary

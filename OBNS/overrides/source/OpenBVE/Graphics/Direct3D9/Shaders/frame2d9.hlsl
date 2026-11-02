@@ -12,6 +12,7 @@ struct Input
 	float2 uv : TEXCOORD0;
 	float4 color : COLOR0;
 	float2 alphaTest : TEXCOORD1;
+	float4 fog : TEXCOORD2;
 };
 
 struct Output
@@ -20,6 +21,7 @@ struct Output
 	float2 uv : TEXCOORD0;
 	float4 color : COLOR0;
 	float2 alphaTest : TEXCOORD1;
+	float4 fog : TEXCOORD2;
 };
 
 Output VS(Input input)
@@ -29,6 +31,7 @@ Output VS(Input input)
 	output.uv = input.uv;
 	output.color = input.color;
 	output.alphaTest = input.alphaTest;
+	output.fog = input.fog;
 	return output;
 }
 
@@ -50,5 +53,5 @@ float4 PS(Output input) : COLOR0
 		clip(finalColor.a > input.alphaTest.y ? 1.0 : -1.0);
 	}
 
-	return finalColor;
+	return float4(lerp(finalColor.rgb, input.fog.rgb, input.fog.a), finalColor.a);
 }

@@ -149,6 +149,8 @@ namespace OpenBve.Graphics
 			internal float X, Y, Width, Height, U, V, UWidth, VHeight, R, G, B, A, AlphaFunction, AlphaValue;
 			internal int Texture, Sampler;
 			internal float Depth;
+			/// <summary>The fog's colour, and how much of it (a particle's; none for the rest).</summary>
+			internal float FogR, FogG, FogB, FogAmount;
 		}
 
 		protected struct Quad
@@ -209,8 +211,35 @@ namespace OpenBve.Graphics
 			double right = (matrix.Row0.X - matrix.Row1.X + matrix.Row3.X) / w1, bottom = (matrix.Row0.Y - matrix.Row1.Y + matrix.Row3.Y) / w1;
 			double depth = ((-matrix.Row0.Z + matrix.Row1.Z + matrix.Row3.Z) / w0 + 1.0) * 0.5;
 			int column = particleIndex / 4, row = particleIndex % 4;
+			// Upstream's particles have the world's fog on. They are square to the view, so it is taken at the middle of each.
+			float fogAmount = 0.0f;
+			if (Program.Renderer.Fog.Enabled)
+			{
+				float fogFactor;
+				if (Program.Renderer.Fog.IsLinear)
+				{
+					double distance = System.Math.Sqrt(modelView.Row3.X * modelView.Row3.X + modelView.Row3.Y * modelView.Row3.Y + modelView.Row3.Z * modelView.Row3.Z);
+					fogFactor = (float)((Program.Renderer.Fog.End - distance) / (Program.Renderer.Fog.End - Program.Renderer.Fog.Start));
+					fogFactor = System.Math.Max(0.0f, System.Math.Min(1.0f, fogFactor));
+				}
+				else
+				{
+					// The depth, in the window, times w: gl_FragCoord.z / gl_FragCoord.w in upstream's shader.
+					double clipDepth = (matrix.Row3.Z / matrix.Row3.W + 1.0) * 0.5 * matrix.Row3.W;
+					double fogDepth = Program.Renderer.Fog.Density * clipDepth;
+					fogFactor = (float)System.Math.Exp(-fogDepth * fogDepth);
+				}
+
+				fogAmount = 1.0f - fogFactor;
+			}
+
+			const float inv255 = 1.0f / 255.0f;
 			QuadData data = new QuadData
 			{
+				FogR = Program.Renderer.Fog.Color.R * inv255,
+				FogG = Program.Renderer.Fog.Color.G * inv255,
+				FogB = Program.Renderer.Fog.Color.B * inv255,
+				FogAmount = fogAmount,
 				X = (float)left,
 				Y = (float)top,
 				Width = (float)(right - left),
