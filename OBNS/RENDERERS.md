@@ -46,6 +46,20 @@ Windows, the native menu on macOS, the OpenGL host on Ubuntu) are separate and s
 - Each step is compared against 1.22 by snapshot (`OBNS_SNAPSHOT_EVERY`), on Uchibo, the Kwun Tong Line and a CSV route, in cab and exterior views.
 - Android has its own renderers, and isn't part of this.
 
+## Vulkan's 2D part (`OBNS_VULKAN_2D=1`)
+
+Text's first pass darkens what is under it, so the 2D part can't be a layer of its own laid over the frame: it has to draw on the
+frame itself. So for now OpenGL copies its finished 3D frame into a shared image, Vulkan draws the 2D part over it, and OpenGL
+shows the result (`VulkanFrameDrawing`). The copies are for comparing, and go when the rest of the frame moves over. Textures come
+through `WorldTextures`, so the path needs bindless textures and dynamic rendering so far, and OpenGL still loads each texture too.
+
+Upstream draws its rectangles as a strip of six vertices with culling on, which leaves each half covered once: a list of two
+triangles here. Drawing the strip without culling covers each half twice, and comes out too opaque.
+
+Windows, RTX 2060 SUPER, M-Train on the Kwun Tong Line, against OpenGL drawing the 2D part: a frame with the HUD is byte-identical,
+and the paused menu differs by the same 6,614 pixels as two OpenGL runs against each other. Frame rate not compared properly.
+The loading screen stays on OpenGL. Not run: Linux, or the other Vulkan tiers (where it stays off).
+
 ## Status
 
 Step 1 done on Windows x64. Against the 1.22 release, M-Train on the Kwun Tong Line: the paused in-game menu is byte-identical

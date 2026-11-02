@@ -133,6 +133,17 @@ void main()
 			Unbind();
 		}
 
+		/// <summary>Copies a finished frame's image to the framebuffer (drawn, as the framebuffer may be multisampled). Leaves upstream's renderer to set its own state again.</summary>
+		internal void Frame(int colorTexture)
+		{
+			Bind(colorTexture, colorTexture);
+			GL.Disable(EnableCap.Blend);
+			GL.Disable(EnableCap.DepthTest);
+			GL.DepthMask(false);
+			GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+			Unbind();
+		}
+
 		private void Bind(int colorTexture, int depthTexture)
 		{
 			GL.UseProgram(program);

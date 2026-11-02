@@ -544,6 +544,9 @@ namespace OpenBve.Graphics
 			UnsetAlphaFunc();
 			SetBlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha); //FIXME: Remove when text switches between two renderer types
 			GL.Disable(EnableCap.DepthTest);
+			// OBNS: Vulkan draws the 2D part over the finished 3D frame, with OBNS_VULKAN_2D=1 (OBNS/RENDERERS.md).
+			Vulkan.VulkanFrameDrawing frame2D = vulkanWorld ? Frame as Vulkan.VulkanFrameDrawing : null;
+			frame2D?.Begin();
 			overlays.Render(RealTimeElapsed);
 			switch (CurrentInterface)
 			{
@@ -554,6 +557,14 @@ namespace OpenBve.Graphics
 				case InterfaceType.SwitchChangeMap:
 					Game.SwitchChangeDialog.Draw();
 					break;
+			}
+			if (frame2D != null)
+			{
+				frame2D.End();
+				CurrentShader?.Deactivate();
+				lastVAO = -1;
+				LastBoundTexture = null;
+				ResetOpenGlState();
 			}
 			OptionLighting = true;
 			SceneParts.Add(worldStart - sceneStart, worldEnd - worldStart, System.Diagnostics.Stopwatch.GetTimestamp() - worldEnd);

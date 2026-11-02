@@ -220,6 +220,7 @@
     <Compile Include="Graphics\Vulkan\VulkanDevice.cs" />
     <Compile Include="Graphics\Vulkan\SharedTarget.cs" />
     <Compile Include="Graphics\Vulkan\VulkanWorld.cs" />
+    <Compile Include="Graphics\Vulkan\VulkanFrameDrawing.cs" />
     <Compile Include="Graphics\Vulkan\GpuMemory.cs" />
     <Compile Include="Graphics\Vulkan\SharedHeap.cs" />
     <Compile Include="Graphics\Vulkan\VulkanTextures.cs" />
@@ -294,6 +295,12 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Graphics\Vulkan\Shaders\shadow.vk10.frag.spv">
       <LogicalName>OBNS.Vulkan.shadow.vk10.frag.spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\frame2d.vert.spv">
+      <LogicalName>OBNS.Vulkan.frame2d.vert.spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Graphics\Vulkan\Shaders\frame2d.frag.spv">
+      <LogicalName>OBNS.Vulkan.frame2d.frag.spv</LogicalName>
     </EmbeddedResource>
     <Compile Include="Graphics\Renderers\Events.cs" />
     <Compile Include="Graphics\Renderers\Overlays.Lamp.cs" />

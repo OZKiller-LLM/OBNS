@@ -132,6 +132,10 @@ namespace OpenBve.Graphics.Vulkan
 
 			instance = world;
 			Log("OBNS Vulkan world layer on: " + device.Description);
+			if (Environment.GetEnvironmentVariable("OBNS_VULKAN_2D") == "1")
+			{
+				world.StartFrameDrawing();
+			}
 			if (Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
 			{
 				Step.Watch();
@@ -279,7 +283,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			ReleaseTarget();
-			target = new SharedTarget(device, (uint)width, (uint)height);
+			target = new SharedTarget(device, (uint)width, (uint)height, frameDrawing != null);
 			if (device.Core10)
 			{
 				// The core Vulkan 1.0 tier's framebuffers of the images, for the world's and the cab's render passes.
@@ -302,6 +306,159 @@ namespace OpenBve.Graphics.Vulkan
 			VulkanDevice.CloseExported(target.CabColorHandle);
 			VulkanDevice.CloseExported(target.GLDoneHandle);
 			VulkanDevice.CloseExported(target.VulkanDoneHandle);
+			if (frameDrawing != null)
+			{
+				glFrameMemory = ImportMemory(target.FrameHandle, target.FrameSize);
+				glFrameTexture = ImportTexture(glFrameMemory, (int)All.Rgba8, width, height);
+				glFrameDoneSemaphore = ImportSemaphore(target.FrameGLDoneHandle);
+				glFrameVulkanDoneSemaphore = ImportSemaphore(target.FrameVulkanDoneHandle);
+				glFrameFramebuffer = GL.GenFramebuffer();
+				GL.BindFramebuffer(FramebufferTarget.Framebuffer, glFrameFramebuffer);
+				GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, glFrameTexture, 0);
+				GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+				VulkanDevice.CloseExported(target.FrameHandle);
+				VulkanDevice.CloseExported(target.FrameGLDoneHandle);
+				VulkanDevice.CloseExported(target.FrameVulkanDoneHandle);
+			}
+		}
+
+		// --- the 2D part of a frame (OBNS/RENDERERS.md) ---
+
+		private VulkanFrameDrawing frameDrawing;
+		private int glFrameMemory, glFrameTexture, glFrameDoneSemaphore, glFrameVulkanDoneSemaphore, glFrameFramebuffer;
+		private readonly IntPtr[] frameCommandBuffers = new IntPtr[FramesInFlight];
+		private readonly ulong[] frameFences = new ulong[FramesInFlight];
+		private int frameSlot;
+
+		/// <summary>Has Vulkan draw the 2D part of each frame it draws the world of, where it can (OBNS_VULKAN_2D=1).</summary>
+		private void StartFrameDrawing()
+		{
+			if (device.Core10 || !device.Bindless)
+			{
+				Log("OBNS Vulkan 2D drawing not used: it needs bindless textures and dynamic rendering so far");
+				return;
+			}
+
+			try
+			{
+				Vk.CommandBufferAllocateInfo allocateInfo = new Vk.CommandBufferAllocateInfo { SType = Vk.StructureTypeCommandBufferAllocateInfo, CommandPool = commandPool, Level = 0, CommandBufferCount = FramesInFlight };
+				fixed (IntPtr* buffers = frameCommandBuffers)
+				{
+					Vk.Check(Vk.vkAllocateCommandBuffers(device.Device, &allocateInfo, buffers), "vkAllocateCommandBuffers");
+				}
+
+				for (int i = 0; i < FramesInFlight; i++)
+				{
+					Vk.FenceCreateInfo fenceInfo = new Vk.FenceCreateInfo { SType = Vk.StructureTypeFenceCreateInfo, Flags = Vk.FenceCreateSignaled };
+					Vk.Check(Vk.vkCreateFence(device.Device, &fenceInfo, null, out frameFences[i]), "vkCreateFence");
+				}
+
+				frameDrawing = new VulkanFrameDrawing(device, Scene, Program.Renderer.Frame);
+				Program.Renderer.Frame = frameDrawing;
+				Log("OBNS Vulkan draws the 2D part of the frame (OBNS_VULKAN_2D=1)");
+			}
+			catch (Exception ex)
+			{
+				frameDrawing = null;
+				Log("OBNS Vulkan 2D drawing not used: " + ex.Message);
+			}
+		}
+
+		/// <summary>The images' size, if this frame's are ready for the 2D part of a frame to be drawn over.</summary>
+		internal bool FrameReady(out uint width, out uint height)
+		{
+			width = target?.Width ?? 0;
+			height = target?.Height ?? 0;
+			return target != null && target.FrameImage != 0;
+		}
+
+		/// <summary>
+		/// The 3D frame is finished in OpenGL's framebuffer: copied into the shared image, the 2D part drawn over it by Vulkan,
+		/// and shown by OpenGL. Called on the main thread, with the frame's thread done.
+		/// </summary>
+		internal void DrawFrame2D()
+		{
+			int width = (int)target.Width, height = (int)target.Height;
+			GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0);
+			GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, glFrameFramebuffer);
+			GL.BlitFramebuffer(0, 0, width, height, 0, 0, width, height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+			GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+
+			// The textures first made for this frame's 2D part.
+			uploader.Submit(false, true);
+
+			int[] texture = { glFrameTexture };
+			if (cpuSync)
+			{
+				GL.Finish();
+			}
+			else
+			{
+				GL.Ext.SignalSemaphore(glFrameDoneSemaphore, 0, (int[])null, 1, texture, new[] { TextureLayout.LayoutColorAttachmentExt });
+				GL.Flush();
+			}
+
+			int slot = frameSlot;
+			frameSlot = (frameSlot + 1) % FramesInFlight;
+			ulong fence = frameFences[slot];
+			Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
+			Vk.Check(Vk.vkResetFences(device.Device, 1, &fence), "vkResetFences");
+			IntPtr commandBuffer = frameCommandBuffers[slot];
+			Vk.Check(Vk.vkResetCommandBuffer(commandBuffer, 0), "vkResetCommandBuffer");
+			Vk.CommandBufferBeginInfo beginInfo = new Vk.CommandBufferBeginInfo { SType = Vk.StructureTypeCommandBufferBeginInfo, Flags = Vk.CommandBufferUsageOneTimeSubmit };
+			Vk.Check(Vk.vkBeginCommandBuffer(commandBuffer, &beginInfo), "vkBeginCommandBuffer");
+			target.AcquireFrame(commandBuffer);
+			Vk.RenderingAttachmentInfo color = new Vk.RenderingAttachmentInfo
+			{
+				SType = Vk.StructureTypeRenderingAttachmentInfo,
+				ImageView = target.FrameView,
+				ImageLayout = Vk.ImageLayoutColorAttachmentOptimal,
+				LoadOp = Vk.AttachmentLoadOpLoad,
+				StoreOp = Vk.AttachmentStoreOpStore
+			};
+			Vk.RenderingInfo renderingInfo = new Vk.RenderingInfo
+			{
+				SType = Vk.StructureTypeRenderingInfo,
+				RenderArea = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = target.Width, Height = target.Height } },
+				LayerCount = 1,
+				ColorAttachmentCount = 1,
+				PColorAttachments = &color
+			};
+			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			frameDrawing.Record(commandBuffer, startedSlot, target.Width, target.Height);
+			Vk.vkCmdEndRendering(commandBuffer);
+			target.ReleaseFrame(commandBuffer);
+			Vk.Check(Vk.vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
+
+			ulong wait = target.FrameGLDone, signal = target.FrameVulkanDone;
+			uint waitStage = Vk.PipelineStageColorAttachmentOutput;
+			Vk.SubmitInfo submit = new Vk.SubmitInfo
+			{
+				SType = Vk.StructureTypeSubmitInfo,
+				WaitSemaphoreCount = cpuSync ? 0u : 1u,
+				PWaitSemaphores = &wait,
+				PWaitDstStageMask = &waitStage,
+				CommandBufferCount = 1,
+				PCommandBuffers = &commandBuffer,
+				SignalSemaphoreCount = cpuSync ? 0u : 1u,
+				PSignalSemaphores = &signal
+			};
+			lock (device.QueueLock)
+			{
+				Vk.Check(Vk.vkQueueSubmit(device.Queue, 1, &submit, fence), "vkQueueSubmit");
+			}
+
+			if (cpuSync)
+			{
+				Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
+			}
+			else
+			{
+				GL.Ext.WaitSemaphore(glFrameVulkanDoneSemaphore, 0, (int[])null, 1, texture, new[] { TextureLayout.LayoutShaderReadOnlyExt });
+			}
+
+			GL.Viewport(0, 0, width, height);
+			composite.Frame(glFrameTexture);
 		}
 
 		private static int ImportMemory(IntPtr handle, ulong size)
@@ -792,6 +949,16 @@ namespace OpenBve.Graphics.Vulkan
 			GL.Ext.DeleteMemoryObjects(1, ref glCabColorMemory);
 			GL.Ext.DeleteSemaphores(1, ref glDoneSemaphore);
 			GL.Ext.DeleteSemaphores(1, ref glVulkanDoneSemaphore);
+			if (glFrameTexture != 0)
+			{
+				GL.DeleteFramebuffer(glFrameFramebuffer);
+				GL.DeleteTexture(glFrameTexture);
+				GL.Ext.DeleteMemoryObjects(1, ref glFrameMemory);
+				GL.Ext.DeleteSemaphores(1, ref glFrameDoneSemaphore);
+				GL.Ext.DeleteSemaphores(1, ref glFrameVulkanDoneSemaphore);
+				glFrameTexture = 0;
+			}
+
 			// (SharedTarget waits for the device too: the framebuffers are not in use.)
 			Vk.vkDeviceWaitIdle(device.Device);
 			if (worldFramebuffer != 0) Vk.vkDestroyFramebuffer(device.Device, worldFramebuffer, null);
@@ -822,6 +989,16 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			ReleaseTarget();
+			frameDrawing?.Dispose();
+			for (int i = 0; i < FramesInFlight; i++)
+			{
+				if (frameFences[i] != 0)
+				{
+					Vk.vkDestroyFence(device.Device, frameFences[i], null);
+					frameFences[i] = 0;
+				}
+			}
+
 			Scene?.Dispose();
 			uploader?.Dispose();
 			composite?.Dispose();

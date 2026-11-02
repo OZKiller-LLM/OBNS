@@ -92,11 +92,12 @@ namespace OpenBve.Graphics.Vulkan
 		// Pipelines.
 		internal const uint PipelineBindPointGraphics = 0;
 		internal const uint PrimitiveTopologyTriangleList = 3;
+		internal const uint AccessColorAttachmentRead = 0x80;
 		internal const uint PolygonModeFill = 0;
 		internal const uint CullModeNone = 0, CullModeFront = 1, CullModeBack = 2;
 		internal const uint FrontFaceCounterClockwise = 0, FrontFaceClockwise = 1;
 		internal const uint CompareOpLess = 1, CompareOpLessOrEqual = 3, CompareOpAlways = 7;
-		internal const uint BlendFactorZero = 0, BlendFactorOne = 1, BlendFactorSrcAlpha = 6, BlendFactorOneMinusSrcAlpha = 7;
+		internal const uint BlendFactorZero = 0, BlendFactorOne = 1, BlendFactorOneMinusSrcColor = 3, BlendFactorSrcAlpha = 6, BlendFactorOneMinusSrcAlpha = 7;
 		internal const uint BlendOpAdd = 0;
 		internal const uint ColorComponentAll = 0xF;
 		internal const uint DynamicStateViewport = 0, DynamicStateScissor = 1;
@@ -626,6 +627,7 @@ namespace OpenBve.Graphics.Vulkan
 		[DllImport(Library)] internal static extern void vkCmdSetViewport(IntPtr commandBuffer, uint firstViewport, uint viewportCount, Viewport* viewports);
 		[DllImport(Library)] internal static extern void vkCmdSetScissor(IntPtr commandBuffer, uint firstScissor, uint scissorCount, Rect2D* scissors);
 		[DllImport(Library)] internal static extern void vkCmdPushConstants(IntPtr commandBuffer, ulong layout, uint stageFlags, uint offset, uint size, void* values);
+		[DllImport(Library)] internal static extern void vkCmdDraw(IntPtr commandBuffer, uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance);
 		[DllImport(Library)] internal static extern int vkCreateQueryPool(IntPtr device, QueryPoolCreateInfo* createInfo, void* allocator, out ulong pool);
 		[DllImport(Library)] internal static extern void vkDestroyQueryPool(IntPtr device, ulong pool, void* allocator);
 		[DllImport(Library)] internal static extern void vkCmdResetQueryPool(IntPtr commandBuffer, ulong pool, uint firstQuery, uint queryCount);

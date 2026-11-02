@@ -376,7 +376,10 @@ namespace OpenBve.Graphics.Vulkan
 			return pipeline;
 		}
 
-		private ulong ShaderModule(string name)
+		/// <summary>The layout of the descriptor sets, for the 2D part of a frame drawing with the same textures (VulkanFrameDrawing).</summary>
+		internal ulong SetLayout => setLayout;
+
+		internal ulong ShaderModule(string name)
 		{
 			byte[] code;
 			using (Stream stream = typeof(VulkanScene).Assembly.GetManifestResourceStream("OBNS.Vulkan." + name))

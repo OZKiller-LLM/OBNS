@@ -78,6 +78,9 @@ namespace OpenBve.Graphics
 		/// <summary>The white texture (made by the API's constructor, <see cref="MakeWhite"/>).</summary>
 		protected Entry WhiteEntry { get; private set; }
 
+		/// <summary>The white texture's place in the layer's textures, for what is drawn without one.</summary>
+		internal int WhiteIndex => WhiteEntry.Index;
+
 		/// <summary>Each texture made, logged (OBNS_VULKAN_DEBUG=1, OBNS_D3D11_DEBUG=1).</summary>
 		protected readonly bool logTextures;
 

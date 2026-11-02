@@ -53,13 +53,30 @@ namespace OpenBve.Graphics.Vulkan
 		internal IntPtr ColorHandle, DepthHandle, CabColorHandle, GLDoneHandle, VulkanDoneHandle;
 		internal ulong ColorSize, DepthSize, CabColorSize;
 
-		internal SharedTarget(VulkanDevice device, uint width, uint height)
+		/// <summary>The finished frame's image, for the 2D part of a frame (0 unless asked for).</summary>
+		internal ulong FrameImage, FrameView, FrameGLDone, FrameVulkanDone, FrameSize;
+		private ulong frameMemory;
+		internal IntPtr FrameHandle, FrameGLDoneHandle, FrameVulkanDoneHandle;
+
+		/// <summary>
+		/// With frame2D, an image of the finished frame and its two semaphores: OpenGL copies its finished 3D frame in, Vulkan
+		/// draws the 2D part over it, and OpenGL shows it (VulkanFrameDrawing).
+		/// </summary>
+		internal SharedTarget(VulkanDevice device, uint width, uint height, bool frame2D = false)
 		{
 			this.device = device;
 			Width = width;
 			Height = height;
 			try
 			{
+				if (frame2D)
+				{
+					CreateImage(ColorFormat, Vk.ImageUsageColorAttachment | Vk.ImageUsageSampled, Vk.ImageAspectColor,
+						out FrameImage, out frameMemory, out FrameView, out FrameHandle, out FrameSize);
+					FrameGLDone = CreateSemaphore(out FrameGLDoneHandle);
+					FrameVulkanDone = CreateSemaphore(out FrameVulkanDoneHandle);
+				}
+
 				CreateImage(ColorFormat, Vk.ImageUsageColorAttachment | Vk.ImageUsageSampled | Vk.ImageUsageTransferSrc, Vk.ImageAspectColor,
 					out ColorImage, out colorMemory, out ColorView, out ColorHandle, out ColorSize);
 				CreateImage(DepthFormat, Vk.ImageUsageDepthStencilAttachment | Vk.ImageUsageSampled, Vk.ImageAspectDepth,
@@ -179,6 +196,20 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageLateFragmentTests, Vk.PipelineStageBottomOfPipe, 0, 0, null, 0, null, 3, barriers);
 		}
 
+		/// <summary>Records the barrier taking the finished frame from OpenGL, keeping what it holds.</summary>
+		internal void AcquireFrame(IntPtr commandBuffer)
+		{
+			Vk.ImageMemoryBarrier barrier = Barrier(FrameImage, Vk.ImageAspectColor, 0, Vk.AccessColorAttachmentRead | Vk.AccessColorAttachmentWrite, Vk.ImageLayoutColorAttachmentOptimal, Vk.ImageLayoutColorAttachmentOptimal, Vk.QueueFamilyExternal, device.QueueFamily);
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTopOfPipe, Vk.PipelineStageColorAttachmentOutput, 0, 0, null, 0, null, 1, &barrier);
+		}
+
+		/// <summary>Records the barrier handing the finished frame back to OpenGL.</summary>
+		internal void ReleaseFrame(IntPtr commandBuffer)
+		{
+			Vk.ImageMemoryBarrier barrier = Barrier(FrameImage, Vk.ImageAspectColor, Vk.AccessColorAttachmentWrite, 0, Vk.ImageLayoutColorAttachmentOptimal, ColorLayoutForGL, device.QueueFamily, Vk.QueueFamilyExternal);
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput, Vk.PipelineStageBottomOfPipe, 0, 0, null, 0, null, 1, &barrier);
+		}
+
 		private static Vk.ImageMemoryBarrier Barrier(ulong image, uint aspect, uint srcAccess, uint dstAccess, uint oldLayout, uint newLayout, uint srcFamily, uint dstFamily)
 		{
 			return new Vk.ImageMemoryBarrier
@@ -204,6 +235,12 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			Vk.vkDeviceWaitIdle(d);
+			if (FrameView != 0) Vk.vkDestroyImageView(d, FrameView, null);
+			if (FrameImage != 0) Vk.vkDestroyImage(d, FrameImage, null);
+			if (frameMemory != 0) Vk.vkFreeMemory(d, frameMemory, null);
+			if (FrameGLDone != 0) Vk.vkDestroySemaphore(d, FrameGLDone, null);
+			if (FrameVulkanDone != 0) Vk.vkDestroySemaphore(d, FrameVulkanDone, null);
+			FrameView = FrameImage = frameMemory = FrameGLDone = FrameVulkanDone = 0;
 			if (ColorView != 0) Vk.vkDestroyImageView(d, ColorView, null);
 			if (DepthView != 0) Vk.vkDestroyImageView(d, DepthView, null);
 			if (CabColorView != 0) Vk.vkDestroyImageView(d, CabColorView, null);

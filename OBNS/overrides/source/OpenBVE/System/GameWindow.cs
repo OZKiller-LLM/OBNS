@@ -135,6 +135,8 @@ namespace OpenBve
 					Thread.Sleep(10);
 				}
 				Program.Renderer.RenderScene(TimeElapsed, RealTimeElapsed);
+				// OBNS: snapshots while paused too, for comparing the in-game menu between renderers (OBNS_SNAPSHOT_EVERY).
+				FrameSnapshots.Take(Width, Height);
 				SwapBuffers();
 				if (MainLoop.Quit != QuitMode.ContinueGame)
 				{
