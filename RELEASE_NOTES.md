@@ -1,5 +1,31 @@
 # OpenBVE for Android — release notes
 
+## 1.22 (1.14.1.2-android.6; desktop 1.14.1.2-OBNS) — BVE6 cabs and sounds, and faster loading
+
+### All platforms
+
+- **BVE6 cabs:** a needle's `Tilt` makes it follow a gauge printed at an angle, staying in its own layer, and `StopPin` stops it at its limits. `Perspective` is read but not applied.
+- **BVE5 and BVE6 sounds:** the vehicle sound file's `[Joint]` and `[AirSpring]` now load, and a route's `JointNoise.Play(index)` picks the point sound. `LeftApply` and `RightApply` aren't played, because OpenBVE has one suspension sound a side.
+- **Faster loading:** route objects are shared out one at a time between worker threads, and a train's models load on workers before the parsers need them. Models come out the same.
+
+### Windows, Ubuntu and macOS
+
+- **Cab textures** decode on worker threads during the last stage of loading, on every renderer except plain OpenGL.
+
+### Windows
+
+- **Images that aren't 32-bit** decode about twice as fast, with the same pixels.
+- One train and route on a test PC: 42 s in 1.21, 22 s now.
+
+### Android, Ubuntu and macOS
+
+- **The plugin layer's log** says x64 when it's running a 64-bit plugin.
+
+### Known limitations
+
+- **BVE6 content** has only been tested with one route and train, Uchibo and the E217.
+- Otherwise as in 1.21, apart from its log wording.
+
 ## 1.21 (1.14.1.2-android.5; desktop 1.14.1.2-OBNS) — 64-bit train plugins
 
 ### All platforms
