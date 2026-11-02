@@ -117,6 +117,13 @@ namespace OpenBve.Graphics
 		/// <summary>Makes the layer the options (or the switches) ask for, where it can share images with OpenGL; logs which, and why.</summary>
 		internal static void Initialize()
 		{
+			// Vulkan alone, with OpenGL out of it (OBNS_VULKAN_FULL=1): if it can't start, OpenGL draws, untouched.
+			if (Vulkan.VulkanDevice.Full)
+			{
+				Vulkan.VulkanWorld.Initialize();
+				return;
+			}
+
 			// The renderer asked for, turned off by its switch: said here, as the layer itself says nothing and what is tried after has another reason.
 			ObnsOptions.RendererKind asked = ObnsOptions.Renderer;
 			string askedName = asked == ObnsOptions.RendererKind.Metal ? "METAL" : asked == ObnsOptions.RendererKind.Direct3D9 ? "D3D9" : asked == ObnsOptions.RendererKind.Direct3D11 ? "D3D11" : asked == ObnsOptions.RendererKind.Direct3D12 ? "D3D12" : null;

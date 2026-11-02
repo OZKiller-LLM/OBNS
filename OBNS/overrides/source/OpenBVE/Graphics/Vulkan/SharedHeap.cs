@@ -113,7 +113,7 @@ namespace OpenBve.Graphics.Vulkan
 					SType = Vk.StructureTypeExternalMemoryBufferCreateInfo,
 					HandleTypes = VulkanDevice.MemoryHandleType
 				};
-				Vk.BufferCreateInfo bufferInfo = new Vk.BufferCreateInfo { SType = Vk.StructureTypeBufferCreateInfo, PNext = &external, Size = size, Usage = bufferUsage };
+				Vk.BufferCreateInfo bufferInfo = new Vk.BufferCreateInfo { SType = Vk.StructureTypeBufferCreateInfo, PNext = VulkanDevice.Full ? null : &external, Size = size, Usage = bufferUsage };
 				Vk.Check(Vk.vkCreateBuffer(device.Device, &bufferInfo, null, out buffer), "vkCreateBuffer (shared)");
 				Vk.vkGetBufferMemoryRequirements(device.Device, buffer, out requirements);
 			}
@@ -130,7 +130,7 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.MemoryAllocateInfo allocateInfo = new Vk.MemoryAllocateInfo
 			{
 				SType = Vk.StructureTypeMemoryAllocateInfo,
-				PNext = &export,
+				PNext = VulkanDevice.Full ? null : &export,
 				AllocationSize = requirements.Size,
 				MemoryTypeIndex = device.MemoryType(requirements.MemoryTypeBits, Vk.MemoryPropertyDeviceLocal)
 			};
@@ -141,12 +141,16 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			// OpenGL imports the block once (a Windows handle is closed after, a file descriptor taken over).
-			IntPtr handle = device.ExportMemory(memory);
-			LibRender2.ObnsSharing.CheckError("before importing a shared block (left by an earlier call)");
-			GL.Ext.CreateMemoryObjects(1, out int glMemory);
-			VulkanDevice.GLImportMemory(glMemory, requirements.Size, handle);
-			LibRender2.ObnsSharing.CheckError("importing a shared " + name + " block of " + (requirements.Size >> 20) + " MB");
-			VulkanDevice.CloseExported(handle);
+			int glMemory = 0;
+			if (!VulkanDevice.Full)
+			{
+				IntPtr handle = device.ExportMemory(memory);
+				LibRender2.ObnsSharing.CheckError("before importing a shared block (left by an earlier call)");
+				GL.Ext.CreateMemoryObjects(1, out glMemory);
+				VulkanDevice.GLImportMemory(glMemory, requirements.Size, handle);
+				LibRender2.ObnsSharing.CheckError("importing a shared " + name + " block of " + (requirements.Size >> 20) + " MB");
+				VulkanDevice.CloseExported(handle);
+			}
 
 			memories.Add(memory);
 			Buffers.Add(buffer);

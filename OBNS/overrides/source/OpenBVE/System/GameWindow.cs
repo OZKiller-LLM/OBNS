@@ -284,7 +284,7 @@ namespace OpenBve
 			FrameStats.Mark(FrameStats.Part.Other);
 			// OBNS: a picture of the frame now and then, for comparing renderers (OBNS_SNAPSHOT_EVERY).
 			FrameSnapshots.Take(Width, Height);
-			Program.Renderer.GameWindow.SwapBuffers();
+			SwapBuffers();
 			FrameStats.Mark(FrameStats.Part.Swap);
 			Game.UpdateBlackBox();
 			// pause/menu
@@ -495,6 +495,19 @@ namespace OpenBve
 		private static extern int ShowWindow(int hwnd, int command);
 		[DllImport("user32.dll")]
 		private static extern int GetDesktopWindow();
+		/// <summary>OBNS: shows the frame: with Vulkan drawing the whole game (OBNS/RENDERERS.md), its swap chain, not OpenGL's.</summary>
+		private new void SwapBuffers()
+		{
+			if (OpenBve.Graphics.Vulkan.VulkanWorld.PresentsItself)
+			{
+				OpenBve.Graphics.Vulkan.VulkanWorld.Instance.Present();
+			}
+			else
+			{
+				base.SwapBuffers();
+			}
+		}
+
 		protected override void OnLoad(EventArgs e)
 		{
 			// OBNS: with OBNS_GL_FILTER=1, sets of GL state that change nothing are skipped (Graphics/GLStateFilter.cs); the context is current here.
@@ -1398,6 +1411,15 @@ namespace OpenBve
 
 			next = clock.Elapsed.TotalSeconds + every;
 			count++;
+			if (OpenBve.Graphics.Vulkan.VulkanWorld.PresentsItself)
+			{
+				// OBNS: Vulkan saves it as it shows it.
+				string shown = OpenBveApi.Path.CombineFile(Program.FileSystem.SettingsFolder, "snapshot-" + count + ".png");
+				OpenBve.Graphics.Vulkan.VulkanWorld.Instance.RequestSnapshot(shown);
+				Program.FileSystem.AppendToLogFile("OBNS snapshot " + count + ": " + shown);
+				return;
+			}
+
 			using (Bitmap bitmap = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
 			{
 				System.Drawing.Imaging.BitmapData data = bitmap.LockBits(new Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, bitmap.PixelFormat);

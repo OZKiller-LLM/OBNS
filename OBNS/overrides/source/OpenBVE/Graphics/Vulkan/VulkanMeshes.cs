@@ -61,7 +61,8 @@ namespace OpenBve.Graphics.Vulkan
 		internal override ObnsSharedMemory AllocateVertices(long bytes)
 		{
 			GpuRange range = Vertices.Allocate((ulong)bytes, vertexAlignment, ~0u);
-			return new ObnsSharedMemory { GLMemory = Vertices.GLMemory(range.Block), Offset = range.Offset, Owner = range };
+			// With OpenGL out of it, nothing is shared: its "storage" is its stub's, and the vertices are written here.
+			return new ObnsSharedMemory { GLMemory = Vertices.GLMemory(range.Block), Offset = range.Offset, Owner = range, Mirror = VulkanDevice.Full };
 		}
 
 		/// <summary>A vertex buffer's storage is let go of: back to the heap once the frames in flight are done with it.</summary>

@@ -45,7 +45,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal static bool Enabled => instance != null && !instance.failed;
 
 		/// <summary>Whether Vulkan draws the frame's background too (OBNS_VULKAN_SKY=1, OBNS/RENDERERS.md): the world image is then the whole frame so far.</summary>
-		internal bool DrawsSky { get; } = Environment.GetEnvironmentVariable("OBNS_VULKAN_SKY") == "1";
+		internal bool DrawsSky { get; } = VulkanDevice.Full || Environment.GetEnvironmentVariable("OBNS_VULKAN_SKY") == "1";
 
 		/// <summary>The renderer, once <see cref="Initialize"/> has made it.</summary>
 		internal static VulkanWorld Instance => instance;
@@ -98,13 +98,14 @@ namespace OpenBve.Graphics.Vulkan
 
 			// The renderer chosen in the options; OBNS_VULKAN=0 or 1 overrides it (for testing).
 			string forced = Environment.GetEnvironmentVariable("OBNS_VULKAN");
-			if (forced == "0" || forced != "1" && (ObnsOptions.Renderer == ObnsOptions.RendererKind.OpenGL || ObnsOptions.OpenGLByDefaultOn(GL.GetString(StringName.Renderer))))
+			if (!VulkanDevice.Full && (forced == "0" || forced != "1" && (ObnsOptions.Renderer == ObnsOptions.RendererKind.OpenGL || ObnsOptions.OpenGLByDefaultOn(GL.GetString(StringName.Renderer)))))
 			{
 				Log("OBNS Vulkan world layer off (" + (forced == "0" ? "OBNS_VULKAN=0" : ObnsOptions.Chosen ? "the OpenGL renderer is chosen in the options" : "OpenGL is the default on this GPU") + "); OpenGL draws it");
 				return;
 			}
 
-			string reason = GLCanShare(out byte[] uuid);
+			byte[] uuid = null;
+			string reason = VulkanDevice.Full ? null : GLCanShare(out uuid);
 			VulkanDevice device = null;
 			if (reason == null)
 			{
@@ -125,6 +126,10 @@ namespace OpenBve.Graphics.Vulkan
 				world.uploader = new Uploader(device);
 				world.Scene = new VulkanScene(device, world.uploader, Program.Renderer);
 				world.Hook();
+				if (VulkanDevice.Full)
+				{
+					world.presenter = new VulkanPresenter(device, Program.Renderer.GameWindow.WindowInfo.Handle, Interface.CurrentOptions.VerticalSynchronization);
+				}
 			}
 			catch (Exception ex)
 			{
@@ -135,9 +140,16 @@ namespace OpenBve.Graphics.Vulkan
 
 			instance = world;
 			Log("OBNS Vulkan world layer on: " + device.Description);
-			if (Environment.GetEnvironmentVariable("OBNS_VULKAN_2D") == "1")
+			if (VulkanDevice.Full || Environment.GetEnvironmentVariable("OBNS_VULKAN_2D") == "1")
 			{
 				world.StartFrameDrawing();
+			}
+
+			if (VulkanDevice.Full)
+			{
+				// Vulkan draws it all: OpenGL's functions do nothing from now.
+				GLStub.Install();
+				Log("OBNS Vulkan draws the whole game, with OpenGL's functions stubbed: " + device.Description);
 			}
 			if (Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
 			{
@@ -287,6 +299,11 @@ namespace OpenBve.Graphics.Vulkan
 
 			ReleaseTarget();
 			target = new SharedTarget(device, (uint)width, (uint)height, frameDrawing != null);
+			if (VulkanDevice.Full)
+			{
+				return;
+			}
+
 			if (device.Core10)
 			{
 				// The core Vulkan 1.0 tier's framebuffers of the images, for the world's and the cab's render passes.
@@ -530,6 +547,13 @@ namespace OpenBve.Graphics.Vulkan
 		public void Start(int x, int y, int width, int height)
 		{
 			started = false;
+			if (VulkanDevice.Full)
+			{
+				// OpenGL's viewport is a stub's.
+				width = Program.Renderer.Screen.Width;
+				height = Program.Renderer.Screen.Height;
+			}
+
 			if (width <= 0 || height <= 0 || failed)
 			{
 				return;
@@ -566,7 +590,11 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			Step.Main = "OpenGL's signal";
-			if (cpuSync)
+			if (VulkanDevice.Full)
+			{
+				// Nothing to hand over.
+			}
+			else if (cpuSync)
 			{
 				// OpenGL's work finished on the CPU's side instead.
 				GL.Finish();
@@ -639,6 +667,13 @@ namespace OpenBve.Graphics.Vulkan
 				// Not submitted: OpenGL must not wait for it. OpenGL draws the world layer from the next frame.
 				failed = true;
 				Log("OBNS Vulkan world layer stopped, OpenGL draws it from now: a frame failed: " + ex);
+				return;
+			}
+
+			if (VulkanDevice.Full)
+			{
+				worldDrawn = true;
+				Step.Frames++;
 				return;
 			}
 
@@ -788,6 +823,12 @@ namespace OpenBve.Graphics.Vulkan
 
 		private void Record(IntPtr commandBuffer, int slot)
 		{
+			if (VulkanDevice.Full)
+			{
+				RecordWhole(commandBuffer, slot);
+				return;
+			}
+
 			Vk.Check(Vk.vkResetCommandBuffer(commandBuffer, 0), "vkResetCommandBuffer");
 			Vk.CommandBufferBeginInfo beginInfo = new Vk.CommandBufferBeginInfo { SType = Vk.StructureTypeCommandBufferBeginInfo, Flags = Vk.CommandBufferUsageOneTimeSubmit };
 			Vk.Check(Vk.vkBeginCommandBuffer(commandBuffer, &beginInfo), "vkBeginCommandBuffer");
@@ -881,6 +922,258 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.Check(Vk.vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 		}
 
+		// --- the whole game drawn by Vulkan (OBNS/RENDERERS.md) ---
+
+		private VulkanPresenter presenter;
+
+		/// <summary>Whether this frame's world has been drawn into the frame's image (else the image is cleared for the 2D part: the loading screen).</summary>
+		private bool worldDrawn;
+
+		private string snapshotFile;
+		private HostBuffer snapshotBuffer;
+
+		/// <summary>The background, world and cab, in the frame's one image, as upstream draws them into its framebuffer.</summary>
+		private void RecordWhole(IntPtr commandBuffer, int slot)
+		{
+			Vk.Check(Vk.vkResetCommandBuffer(commandBuffer, 0), "vkResetCommandBuffer");
+			Vk.CommandBufferBeginInfo beginInfo = new Vk.CommandBufferBeginInfo { SType = Vk.StructureTypeCommandBufferBeginInfo, Flags = Vk.CommandBufferUsageOneTimeSubmit };
+			Vk.Check(Vk.vkBeginCommandBuffer(commandBuffer, &beginInfo), "vkBeginCommandBuffer");
+			target.AcquireWhole(commandBuffer);
+			Vk.RenderingAttachmentInfo color = new Vk.RenderingAttachmentInfo
+			{
+				SType = Vk.StructureTypeRenderingAttachmentInfo,
+				ImageView = target.ColorView,
+				ImageLayout = Vk.ImageLayoutColorAttachmentOptimal,
+				LoadOp = Vk.AttachmentLoadOpClear,
+				StoreOp = Vk.AttachmentStoreOpStore,
+				ClearValue = ClearColor()
+			};
+			Vk.RenderingAttachmentInfo depth = new Vk.RenderingAttachmentInfo
+			{
+				SType = Vk.StructureTypeRenderingAttachmentInfo,
+				ImageView = target.DepthView,
+				ImageLayout = Vk.ImageLayoutDepthStencilAttachmentOptimal,
+				LoadOp = Vk.AttachmentLoadOpClear,
+				StoreOp = Vk.AttachmentStoreOpDontCare,
+				ClearValue = new Vk.ClearValue { Depth = 1.0f }
+			};
+			Vk.RenderingInfo renderingInfo = new Vk.RenderingInfo
+			{
+				SType = Vk.StructureTypeRenderingInfo,
+				RenderArea = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = target.Width, Height = target.Height } },
+				LayerCount = 1,
+				ColorAttachmentCount = 1,
+				PColorAttachments = &color,
+				PDepthAttachment = &depth
+			};
+			Scene.Upload(slot);
+			Scene.RecordShadows(commandBuffer, slot);
+			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			if (!Scene.Empty(VulkanScene.SkyLayer))
+			{
+				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.SkyLayer);
+			}
+
+			if (!Scene.Empty(VulkanScene.WorldLayerIndex))
+			{
+				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.WorldLayerIndex);
+			}
+
+			Vk.vkCmdEndRendering(commandBuffer);
+
+			// The cab over it, its depth its own, as upstream clears the depth for it.
+			color.LoadOp = Vk.AttachmentLoadOpLoad;
+			depth.ImageView = target.CabDepthView;
+			Vk.MemoryBarrier written = new Vk.MemoryBarrier { SType = Vk.StructureTypeMemoryBarrier, SrcAccessMask = Vk.AccessColorAttachmentWrite, DstAccessMask = Vk.AccessColorAttachmentRead | Vk.AccessColorAttachmentWrite };
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput, Vk.PipelineStageColorAttachmentOutput, 0, 1, &written, 0, null, 0, null);
+			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			if (!Scene.Empty(VulkanScene.CabLayer))
+			{
+				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.CabLayer);
+			}
+
+			Vk.vkCmdEndRendering(commandBuffer);
+			Vk.Check(Vk.vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
+		}
+
+		private static Vk.ClearValue ClearColor()
+		{
+			const float inv255 = 1.0f / 255.0f;
+			return new Vk.ClearValue { R = Interface.CurrentOptions.ClearColor.R * inv255, G = Interface.CurrentOptions.ClearColor.G * inv255, B = Interface.CurrentOptions.ClearColor.B * inv255, A = 1.0f };
+		}
+
+		/// <summary>Whether Vulkan presents the game (OpenGL's SwapBuffers must not be called).</summary>
+		internal static bool PresentsItself => VulkanDevice.Full && Enabled;
+
+		/// <summary>Saves the frame about to be shown, when it is.</summary>
+		internal void RequestSnapshot(string file)
+		{
+			snapshotFile = file;
+		}
+
+		/// <summary>The frame is finished: the 2D part drawn over it, and shown. What SwapBuffers does for OpenGL.</summary>
+		internal void Present()
+		{
+			if (Program.Renderer.Screen.Minimized || Program.Renderer.Screen.Width <= 0 || Program.Renderer.Screen.Height <= 0)
+			{
+				frameDrawing.Presented();
+				worldDrawn = false;
+				return;
+			}
+
+			if (!worldDrawn)
+			{
+				EnsureTarget(Program.Renderer.Screen.Width, Program.Renderer.Screen.Height);
+			}
+
+			uploader.Submit(false, true);
+			if (!presenter.Acquire())
+			{
+				frameDrawing.Presented();
+				worldDrawn = false;
+				return;
+			}
+
+			int slot = frameSlot;
+			frameSlot = (frameSlot + 1) % FramesInFlight;
+			ulong fence = frameFences[slot];
+			Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
+			Vk.Check(Vk.vkResetFences(device.Device, 1, &fence), "vkResetFences");
+			IntPtr commandBuffer = frameCommandBuffers[slot];
+			Vk.Check(Vk.vkResetCommandBuffer(commandBuffer, 0), "vkResetCommandBuffer");
+			Vk.CommandBufferBeginInfo beginInfo = new Vk.CommandBufferBeginInfo { SType = Vk.StructureTypeCommandBufferBeginInfo, Flags = Vk.CommandBufferUsageOneTimeSubmit };
+			Vk.Check(Vk.vkBeginCommandBuffer(commandBuffer, &beginInfo), "vkBeginCommandBuffer");
+
+			Vk.ImageMemoryBarrier toDraw = target.ColorBarrier(worldDrawn ? Vk.AccessColorAttachmentWrite : 0, Vk.AccessColorAttachmentRead | Vk.AccessColorAttachmentWrite, worldDrawn ? Vk.ImageLayoutColorAttachmentOptimal : Vk.ImageLayoutUndefined, Vk.ImageLayoutColorAttachmentOptimal);
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput, Vk.PipelineStageColorAttachmentOutput, 0, 0, null, 0, null, 1, &toDraw);
+			Vk.RenderingAttachmentInfo color = new Vk.RenderingAttachmentInfo
+			{
+				SType = Vk.StructureTypeRenderingAttachmentInfo,
+				ImageView = target.ColorView,
+				ImageLayout = Vk.ImageLayoutColorAttachmentOptimal,
+				LoadOp = worldDrawn ? Vk.AttachmentLoadOpLoad : Vk.AttachmentLoadOpClear,
+				StoreOp = Vk.AttachmentStoreOpStore,
+				ClearValue = ClearColor()
+			};
+			Vk.RenderingInfo renderingInfo = new Vk.RenderingInfo
+			{
+				SType = Vk.StructureTypeRenderingInfo,
+				RenderArea = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = target.Width, Height = target.Height } },
+				LayerCount = 1,
+				ColorAttachmentCount = 1,
+				PColorAttachments = &color
+			};
+			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			frameDrawing.Record(commandBuffer, startedSlot, target.Width, target.Height);
+			Vk.vkCmdEndRendering(commandBuffer);
+
+			Vk.ImageMemoryBarrier* barriers = stackalloc Vk.ImageMemoryBarrier[2];
+			barriers[0] = target.ColorBarrier(Vk.AccessColorAttachmentWrite, Vk.AccessTransferRead, Vk.ImageLayoutColorAttachmentOptimal, Vk.ImageLayoutTransferSrcOptimal);
+			barriers[1] = new Vk.ImageMemoryBarrier
+			{
+				SType = Vk.StructureTypeImageMemoryBarrier,
+				SrcAccessMask = 0,
+				DstAccessMask = Vk.AccessTransferWrite,
+				OldLayout = Vk.ImageLayoutUndefined,
+				NewLayout = Vk.ImageLayoutTransferDstOptimal,
+				SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+				DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+				Image = presenter.Image,
+				SubresourceRange = new Vk.ImageSubresourceRange { AspectMask = Vk.ImageAspectColor, LevelCount = 1, LayerCount = 1 }
+			};
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput, Vk.PipelineStageTransfer, 0, 0, null, 0, null, 2, barriers);
+
+			string snapshot = snapshotFile;
+			snapshotFile = null;
+			if (snapshot != null)
+			{
+				ulong bytes = (ulong)target.Width * target.Height * 4;
+				if (snapshotBuffer == null || snapshotBuffer.Size < bytes)
+				{
+					snapshotBuffer?.Dispose();
+					snapshotBuffer = new HostBuffer(device, bytes, Vk.BufferUsageTransferDst);
+				}
+
+				Vk.BufferImageCopy copy = new Vk.BufferImageCopy
+				{
+					ImageSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, LayerCount = 1 },
+					ImageExtent = new Vk.Extent3D { Width = target.Width, Height = target.Height, Depth = 1 }
+				};
+				Vk.vkCmdCopyImageToBuffer(commandBuffer, target.ColorImage, Vk.ImageLayoutTransferSrcOptimal, snapshotBuffer.Buffer, 1, &copy);
+			}
+
+			// Row 0 of the image is the bottom of the screen, as in OpenGL.
+			Vk.ImageBlit blit = new Vk.ImageBlit
+			{
+				SrcSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, LayerCount = 1 },
+				SrcOffset1 = new Vk.Offset3D { X = (int)target.Width, Y = (int)target.Height, Z = 1 },
+				DstSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, LayerCount = 1 },
+				DstOffset0 = new Vk.Offset3D { X = 0, Y = (int)presenter.Height, Z = 0 },
+				DstOffset1 = new Vk.Offset3D { X = (int)presenter.Width, Y = 0, Z = 1 }
+			};
+			Vk.vkCmdBlitImage(commandBuffer, target.ColorImage, Vk.ImageLayoutTransferSrcOptimal, presenter.Image, Vk.ImageLayoutTransferDstOptimal, 1, &blit, Vk.FilterNearest);
+
+			Vk.ImageMemoryBarrier toPresent = barriers[1];
+			toPresent.SrcAccessMask = Vk.AccessTransferWrite;
+			toPresent.DstAccessMask = 0;
+			toPresent.OldLayout = Vk.ImageLayoutTransferDstOptimal;
+			toPresent.NewLayout = Vk.ImageLayoutPresentSrc;
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTransfer, Vk.PipelineStageBottomOfPipe, 0, 0, null, 0, null, 1, &toPresent);
+			Vk.Check(Vk.vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
+
+			ulong wait = presenter.AcquiredSemaphore, signal = presenter.RenderedSemaphore;
+			uint waitStage = Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageTransfer;
+			Vk.SubmitInfo submit = new Vk.SubmitInfo
+			{
+				SType = Vk.StructureTypeSubmitInfo,
+				WaitSemaphoreCount = 1,
+				PWaitSemaphores = &wait,
+				PWaitDstStageMask = &waitStage,
+				CommandBufferCount = 1,
+				PCommandBuffers = &commandBuffer,
+				SignalSemaphoreCount = 1,
+				PSignalSemaphores = &signal
+			};
+			lock (device.QueueLock)
+			{
+				Vk.Check(Vk.vkQueueSubmit(device.Queue, 1, &submit, fence), "vkQueueSubmit");
+			}
+
+			presenter.Present();
+			if (snapshot != null)
+			{
+				Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
+				SaveSnapshot(snapshot);
+			}
+
+			frameDrawing.Presented();
+			worldDrawn = false;
+		}
+
+		/// <summary>The snapshot's pixels saved as OpenGL's are: its rows run bottom to top, and it is opaque.</summary>
+		private void SaveSnapshot(string file)
+		{
+			int width = (int)target.Width, height = (int)target.Height;
+			using (System.Drawing.Bitmap bitmap = new System.Drawing.Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format24bppRgb))
+			{
+				System.Drawing.Imaging.BitmapData data = bitmap.LockBits(new System.Drawing.Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, bitmap.PixelFormat);
+				for (int y = 0; y < height; y++)
+				{
+					byte* from = snapshotBuffer.Data + (long)(height - 1 - y) * width * 4;
+					byte* to = (byte*)data.Scan0 + (long)y * data.Stride;
+					for (int x = 0; x < width; x++)
+					{
+						to[x * 3] = from[x * 4 + 2];
+						to[x * 3 + 1] = from[x * 4 + 1];
+						to[x * 3 + 2] = from[x * 4];
+					}
+				}
+
+				bitmap.UnlockBits(data);
+				bitmap.Save(file, System.Drawing.Imaging.ImageFormat.Png);
+			}
+		}
+
 		/// <summary>The APIs ordered by the CPU waiting for each (glFinish, the frame's fence) rather than by the semaphores they share.</summary>
 		private bool cpuSync => device.CpuSync;
 
@@ -916,12 +1209,12 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.SubmitInfo submit = new Vk.SubmitInfo
 			{
 				SType = Vk.StructureTypeSubmitInfo,
-				WaitSemaphoreCount = cpuSync ? 0u : 1u,
+				WaitSemaphoreCount = cpuSync || VulkanDevice.Full ? 0u : 1u,
 				PWaitSemaphores = &wait,
 				PWaitDstStageMask = &waitStage,
 				CommandBufferCount = 1,
 				PCommandBuffers = &commandBuffer,
-				SignalSemaphoreCount = cpuSync ? 0u : 1u,
+				SignalSemaphoreCount = cpuSync || VulkanDevice.Full ? 0u : 1u,
 				PSignalSemaphores = &signal
 			};
 			lock (device.QueueLock)
@@ -935,7 +1228,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Lays the frame's cab layer over the framebuffer, where upstream draws it (after the particles).</summary>
 		public void CompositeCab()
 		{
-			if (cabStarted)
+			if (cabStarted && !VulkanDevice.Full)
 			{
 				composite.Cab(glCabColorTexture, glDepthTexture);
 			}
@@ -1004,6 +1297,8 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			ReleaseTarget();
+			presenter?.Dispose();
+			snapshotBuffer?.Dispose();
 			frameDrawing?.Dispose();
 			for (int i = 0; i < FramesInFlight; i++)
 			{

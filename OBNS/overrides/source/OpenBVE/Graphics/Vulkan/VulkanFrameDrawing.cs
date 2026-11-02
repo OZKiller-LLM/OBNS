@@ -65,9 +65,8 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly List<Quad> quads = new List<Quad>();
 		private readonly ulong[] pipelines = new ulong[4];
 		private readonly ulong vertexModule, fragmentModule, pipelineLayout;
-		private bool active, blendEnabled = true;
+		private bool active = VulkanDevice.Full, blendEnabled = true;
 		private float alphaFunction, alphaValue;
-		private float scaleX, scaleY;
 
 		internal VulkanFrameDrawing(VulkanDevice device, VulkanScene scene, IFrameDrawing openGl)
 		{
@@ -92,19 +91,19 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>The frame's 2D part starts, if this frame's images are ready for it.</summary>
 		internal void Begin()
 		{
+			if (VulkanDevice.Full)
+			{
+				return;
+			}
+
 			quads.Clear();
 			active = VulkanWorld.Enabled && VulkanWorld.Instance.FrameReady(out uint width, out uint height) && width == (uint)Program.Renderer.Screen.Width && height == (uint)Program.Renderer.Screen.Height;
-			if (active)
-			{
-				scaleX = 2.0f / Program.Renderer.Screen.Width;
-				scaleY = 2.0f / Program.Renderer.Screen.Height;
-			}
 		}
 
 		/// <summary>The frame's 2D part is done: drawn, and the frame shown through OpenGL.</summary>
 		internal void End()
 		{
-			if (!active)
+			if (VulkanDevice.Full || !active)
 			{
 				return;
 			}
@@ -119,6 +118,13 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		private long framesDrawn;
+
+		/// <summary>A frame drawn wholly by Vulkan has shown its quads.</summary>
+		internal void Presented()
+		{
+			quads.Clear();
+			scene.Textures.StartBudget();
+		}
 
 		/// <summary>Records the frame's quads, inside its rendering.</summary>
 		internal void Record(IntPtr commandBuffer, int slot, uint width, uint height)
@@ -229,6 +235,7 @@ namespace OpenBve.Graphics.Vulkan
 
 		private void Add(Blend blend, int texture, OpenGlTextureWrapMode wrapMode, Vector2 point, Vector2 size, Color128 color, double u, double v, double uWidth, double vHeight)
 		{
+			float scaleX = 2.0f / Program.Renderer.Screen.Width, scaleY = 2.0f / Program.Renderer.Screen.Height;
 			quads.Add(new Quad
 			{
 				Blend = blend,

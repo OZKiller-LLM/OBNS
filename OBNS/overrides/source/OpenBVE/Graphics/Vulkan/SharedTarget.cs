@@ -69,6 +69,18 @@ namespace OpenBve.Graphics.Vulkan
 			Height = height;
 			try
 			{
+				if (VulkanDevice.Full)
+				{
+					// Nothing shared: the frame's image, its depth, and the cab's depth.
+					CreateImage(ColorFormat, Vk.ImageUsageColorAttachment | Vk.ImageUsageTransferSrc, Vk.ImageAspectColor,
+						out ColorImage, out colorMemory, out ColorView, out ColorHandle, out ColorSize, false);
+					CreateImage(DepthFormat, Vk.ImageUsageDepthStencilAttachment, Vk.ImageAspectDepth,
+						out DepthImage, out depthMemory, out DepthView, out DepthHandle, out DepthSize, false);
+					CreateImage(DepthFormat, Vk.ImageUsageDepthStencilAttachment, Vk.ImageAspectDepth,
+						out CabDepthImage, out cabDepthMemory, out CabDepthView, out IntPtr _, out ulong _, false);
+					return;
+				}
+
 				if (frame2D)
 				{
 					CreateImage(ColorFormat, Vk.ImageUsageColorAttachment | Vk.ImageUsageSampled, Vk.ImageAspectColor,
@@ -194,6 +206,22 @@ namespace OpenBve.Graphics.Vulkan
 			barriers[1] = Barrier(DepthImage, Vk.ImageAspectDepth, Vk.AccessDepthStencilAttachmentWrite, 0, Vk.ImageLayoutDepthStencilAttachmentOptimal, DepthLayoutForGL, device.QueueFamily, Vk.QueueFamilyExternal);
 			barriers[2] = Barrier(CabColorImage, Vk.ImageAspectColor, Vk.AccessColorAttachmentWrite, 0, Vk.ImageLayoutColorAttachmentOptimal, ColorLayoutForGL, device.QueueFamily, Vk.QueueFamilyExternal);
 			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageLateFragmentTests, Vk.PipelineStageBottomOfPipe, 0, 0, null, 0, null, 3, barriers);
+		}
+
+		/// <summary>Records the barriers that make the images ready for a frame drawn wholly by Vulkan (what they held is discarded).</summary>
+		internal void AcquireWhole(IntPtr commandBuffer)
+		{
+			Vk.ImageMemoryBarrier* barriers = stackalloc Vk.ImageMemoryBarrier[3];
+			barriers[0] = Barrier(ColorImage, Vk.ImageAspectColor, 0, Vk.AccessColorAttachmentRead | Vk.AccessColorAttachmentWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutColorAttachmentOptimal, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
+			barriers[1] = Barrier(DepthImage, Vk.ImageAspectDepth, 0, Vk.AccessDepthStencilAttachmentRead | Vk.AccessDepthStencilAttachmentWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutDepthStencilAttachmentOptimal, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
+			barriers[2] = Barrier(CabDepthImage, Vk.ImageAspectDepth, 0, Vk.AccessDepthStencilAttachmentRead | Vk.AccessDepthStencilAttachmentWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutDepthStencilAttachmentOptimal, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTopOfPipe, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageEarlyFragmentTests, 0, 0, null, 0, null, 3, barriers);
+		}
+
+		/// <summary>A barrier on the frame's colour image alone.</summary>
+		internal Vk.ImageMemoryBarrier ColorBarrier(uint srcAccess, uint dstAccess, uint oldLayout, uint newLayout)
+		{
+			return Barrier(ColorImage, Vk.ImageAspectColor, srcAccess, dstAccess, oldLayout, newLayout, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
 		}
 
 		/// <summary>Records the barrier taking the finished frame from OpenGL, keeping what it holds.</summary>

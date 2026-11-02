@@ -146,7 +146,7 @@ namespace OpenBve.Graphics
 
 			// OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md), unless the debug views are on (not drawn by it):
 			// its shadows are drawn by Vulkan too, so upstream's OpenGL shadow pass is not needed then.
-			bool vulkanWorld = WorldLayer.Enabled && !OptionWireFrame && !OptionNormals;
+			bool vulkanWorld = WorldLayer.Enabled && (Vulkan.VulkanDevice.Full || !OptionWireFrame && !OptionNormals);
 			// OBNS: the faces first, as the shadow pass draws what the scene draws: the static batches rather than the faces they cover.
 			List<FaceState> opaqueFaces = null, alphaFaces = null, unsortedAlphaFaces = null, overlayOpaqueFaces = null, overlayAlphaFaces = null;
 			if (!vulkanWorld)

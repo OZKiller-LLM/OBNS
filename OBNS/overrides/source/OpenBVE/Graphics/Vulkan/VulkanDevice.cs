@@ -69,6 +69,12 @@ namespace OpenBve.Graphics.Vulkan
 		/// </summary>
 		internal static readonly bool PosixHandles = Environment.OSVersion.Platform == PlatformID.Unix;
 
+		/// <summary>
+		/// Whether Vulkan draws the whole game with OpenGL out of it (OBNS_VULKAN_FULL=1, OBNS/RENDERERS.md): no images or memory
+		/// shared, the frame presented through a swap chain.
+		/// </summary>
+		internal static readonly bool Full = Environment.GetEnvironmentVariable("OBNS_VULKAN_FULL") == "1" && GLStub.Available;
+
 		/// <summary>The handle type memory is exported as.</summary>
 		internal static uint MemoryHandleType => PosixHandles ? Vk.ExternalMemoryHandleTypeOpaqueFd : Vk.ExternalMemoryHandleTypeOpaqueWin32;
 
@@ -367,8 +373,8 @@ namespace OpenBve.Graphics.Vulkan
 				return "the Vulkan loader is version " + VersionText(loaderVersion) + "; 1.3 is needed";
 			}
 
-			string[] instanceExtensions = Core10 ? core10InstanceExtensions : new string[0];
-			HashSet<string> loaderExtensions = Core10 ? Vk.InstanceExtensions() : null;
+			string[] instanceExtensions = Core10 ? core10InstanceExtensions : Full ? new[] { "VK_KHR_surface", "VK_KHR_win32_surface" } : new string[0];
+			HashSet<string> loaderExtensions = instanceExtensions.Length > 0 ? Vk.InstanceExtensions() : null;
 			foreach (string extension in instanceExtensions)
 			{
 				if (!loaderExtensions.Contains(extension))
@@ -434,6 +440,25 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.Check(Vk.vkEnumeratePhysicalDevices(Instance, ref count, devices), "vkEnumeratePhysicalDevices");
 			List<string> seen = new List<string>();
 			uint sampledImagesPerStage = 0, sampledImagesPerSet = 0, resourcesPerStage = 0;
+			// With no OpenGL to be on the same GPU as: a discrete GPU if there is one, else the first that isn't the CPU.
+			int chosen = -1;
+			if (Full)
+			{
+				for (int i = 0; i < count; i++)
+				{
+					Vk.PhysicalDeviceProperties plain;
+					Vk.vkGetPhysicalDeviceProperties(devices[i], &plain);
+					if (plain.DeviceType != 4 && (chosen < 0 || plain.DeviceType == Vk.PhysicalDeviceTypeDiscreteGpu))
+					{
+						chosen = i;
+						if (plain.DeviceType == Vk.PhysicalDeviceTypeDiscreteGpu)
+						{
+							break;
+						}
+					}
+				}
+			}
+
 			for (int i = 0; i < count; i++)
 			{
 				Vk.PhysicalDeviceIDProperties id = new Vk.PhysicalDeviceIDProperties { SType = Vk.StructureTypePhysicalDeviceIdProperties };
@@ -456,6 +481,8 @@ namespace OpenBve.Graphics.Vulkan
 				{
 					same = id.DeviceUuid[b] == glDeviceUuid[b];
 				}
+
+				same |= i == chosen;
 
 				if (same)
 				{
@@ -495,8 +522,8 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			// Extensions.
-			string[] deviceExtensions = Core10 ? new string[requiredExtensions.Length + core10Extensions.Length] : requiredExtensions;
-			if (Core10)
+			string[] deviceExtensions = Full ? new[] { "VK_KHR_swapchain" } : Core10 ? new string[requiredExtensions.Length + core10Extensions.Length] : requiredExtensions;
+			if (Core10 && !Full)
 			{
 				requiredExtensions.CopyTo(deviceExtensions, 0);
 				core10Extensions.CopyTo(deviceExtensions, requiredExtensions.Length);
@@ -687,7 +714,11 @@ namespace OpenBve.Graphics.Vulkan
 
 			Vk.vkGetDeviceQueue(Device, QueueFamily, 0, out IntPtr queue);
 			Queue = queue;
-			if (PosixHandles)
+			if (Full)
+			{
+				// Nothing is shared: no handles to get.
+			}
+			else if (PosixHandles)
 			{
 				getMemoryFd = Vk.DeviceFunction<Vk.GetMemoryFdKHR>(Device, "vkGetMemoryFdKHR");
 				getSemaphoreFd = Vk.DeviceFunction<Vk.GetSemaphoreFdKHR>(Device, "vkGetSemaphoreFdKHR");
