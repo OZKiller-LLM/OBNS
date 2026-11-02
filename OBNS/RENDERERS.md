@@ -24,10 +24,11 @@ Windows, the native menu on macOS, the OpenGL host on Ubuntu) are separate and s
 
 ## How
 
-1. **One drawing interface for the 2D frame.** The primitives under the HUD, text, overlays, background and particles
-   (textured quad, coloured quad, cube, particle) go through an interface, with OpenGL as its first implementation. Upstream's
-   callers don't change: OBNS's copies of the primitives call it. Nothing should look different, and this step can be
-   compared frame by frame against 1.22.
+1. **One drawing interface for the 2D frame.** Rectangles, text, the loading screen's clear and the blend and alpha state go
+   through `IFrameDrawing` (`LibRender2/Frame`), with OpenGL as its first implementation. Upstream's callers don't change:
+   OBNS's copies of the primitives call it. Nothing should look different, and this step can be compared frame by frame
+   against 1.22. The background, particles, event cubes and motion blur are 3D or full-frame, not quads: they join the
+   world layer in step 3.
 2. **Textures without OpenGL.** Decoding and transparency are already separate from upload. HUD and animated textures go
    through the layer's own texture path.
 3. **Vulkan draws it all, into its own image.** It still presents through OpenGL at this step, so it can be compared with
@@ -47,4 +48,11 @@ Windows, the native menu on macOS, the OpenGL host on Ubuntu) are separate and s
 
 ## Status
 
-Step 1 not started.
+Step 1 done on Windows x64. Against the 1.22 release, M-Train on the Kwun Tong Line: the paused in-game menu is byte-identical
+under OpenGL and Vulkan; the Vulkan cab differs only in the countdown message. The other frames differ by a scatter of edge
+pixels that two runs of 1.22 also show. Load time 30.1 s against 28.8 s (three runs each, ranges overlap). The loading screen,
+Object Viewer and Route Viewer start and draw. Train Editor, Linux and macOS not run yet.
+
+Open before step 3: with OpenGL drawing the world (`OBNS_VULKAN=0`), this route shows white patches where Vulkan shows a blue
+signal, in 1.22 as well. So it isn't this work, but which one matches upstream isn't known: pristine upstream's window comes
+out black through `PrintWindow`, and it has no `OBNS_SNAPSHOT_EVERY`.
