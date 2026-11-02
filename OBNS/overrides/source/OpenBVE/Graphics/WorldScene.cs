@@ -119,8 +119,8 @@ namespace OpenBve.Graphics
 		/// <summary>Where each pass's commands start, and whether they must be drawn in order.</summary>
 		private readonly List<int> segmentStarts = new List<int>();
 		private readonly List<bool> segmentOrdered = new List<bool>();
-		/// <summary>The layers' frame records: the world's (0) and the cab's (1), chosen by the push constant.</summary>
-		protected readonly FrameData[] frameData = new FrameData[2];
+		/// <summary>The layers' frame records: the world's (0), the cab's (1) and the background's (2), chosen by the push constant.</summary>
+		protected readonly FrameData[] frameData = new FrameData[3];
 		protected BaseRenderer renderer;
 
 		/// <summary>A face to draw, as upstream's passes give it, with the alpha test in force for it.</summary>
@@ -130,6 +130,8 @@ namespace OpenBve.Graphics
 			public MeshFace Face;
 			public int Pass, AlphaFunction;
 			public float AlphaReference;
+			/// <summary>The background's: the scale of its view, and a sky's alpha (-1 for a background object's face).</summary>
+			public float SkyScale, SkyOpacity;
 			// Resolved by Prepare (main thread): the mesh, the face's indices, its textures' places (-1: none).
 			public WorldMesh Mesh;
 			public uint FirstIndex, IndexCount;
@@ -143,14 +145,14 @@ namespace OpenBve.Graphics
 		private float lightingAmount;
 
 		/// <summary>The layers: upstream's world layer, and its overlay (cab) layer, drawn into an image of its own.</summary>
-		internal const int WorldLayerIndex = 0, CabLayer = 1;
+		internal const int WorldLayerIndex = 0, CabLayer = 1, SkyLayer = 2;
 
 		/// <summary>A pass's state: its layer, blending, depth test and writes, and whether its faces are drawn in the order given.</summary>
 		private struct PassInfo
 		{
 			public int Layer;
 			public Blend Blend;
-			public bool DepthTest, DepthWrite, Ordered;
+			public bool DepthTest, DepthWrite, Ordered, DepthClamp;
 		}
 
 		private int currentLayer;
@@ -395,6 +397,65 @@ namespace OpenBve.Graphics
 			currentAlphaReference = alphaReference;
 		}
 
+		/// <summary>Whether the frame's background has fog (its own values: frameData[SkyLayer]).</summary>
+		private bool skyFog;
+
+		public void BeginSky()
+		{
+			currentLayer = SkyLayer;
+		}
+
+		public void EndSky()
+		{
+			currentLayer = WorldLayerIndex;
+		}
+
+		/// <summary>The background's frame record: the world's, with the fog the renderer has now, and no shadows.</summary>
+		private void SkyFrame()
+		{
+			FrameData data = frameData[WorldLayerIndex];
+			skyFog = renderer.Fog.Enabled;
+			StoreColor(renderer.Fog.Color, data.Light, 20);
+			data.FogStart = renderer.Fog.Start;
+			data.FogEnd = renderer.Fog.End;
+			data.FogDensity = renderer.Fog.Density;
+			data.FogIsLinear = renderer.Fog.IsLinear ? 1 : 0;
+			data.ShadowEnabled = 0;
+			frameData[SkyLayer] = data;
+		}
+
+		public void Sky(ObjectState state, float scale, float alpha)
+		{
+			SkyFrame();
+			// Opaque unless fading; no depth; alpha above 0; culled whatever the options say (upstream resets OpenGL's state for it).
+			passes.Add(new PassInfo { Layer = SkyLayer, Blend = alpha == 1.0f ? Blend.None : Blend.Normal, Ordered = true });
+			foreach (MeshFace face in state.Prototype.Mesh.Faces)
+			{
+				AddSkyItem(state, face, scale, alpha);
+			}
+		}
+
+		public void SkyFace(ObjectState state, MeshFace face)
+		{
+			SkyFrame();
+			if (passes.Count == 0 || passes[passes.Count - 1].Layer != SkyLayer || !passes[passes.Count - 1].DepthClamp)
+			{
+				passes.Add(new PassInfo { Layer = SkyLayer, Blend = Blend.Normal, Ordered = true, DepthClamp = true });
+			}
+
+			AddSkyItem(state, face, 1.0f, -1.0f);
+		}
+
+		private void AddSkyItem(ObjectState state, MeshFace face, float scale, float opacity)
+		{
+			if (itemCount == items.Length)
+			{
+				Array.Resize(ref items, items.Length * 2);
+			}
+
+			items[itemCount++] = new Item { State = state, Face = face, Pass = passes.Count - 1, AlphaFunction = AlphaGreater, AlphaReference = 0.0f, SkyScale = scale, SkyOpacity = opacity };
+		}
+
 		/// <summary>A face for the pass, drawn as upstream's RenderFace would draw it.</summary>
 		public void Face(ObjectState state, MeshFace face)
 		{
@@ -453,6 +514,12 @@ namespace OpenBve.Graphics
 				if (material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && BlendFactor(state) != 0)
 				{
 					item.NightTexture = TextureIndex(material.NighttimeTexture, wrap, worldMesh.NightSlots, slot);
+				}
+
+				// A sky whose texture isn't ready isn't drawn, as upstream.
+				if (item.SkyScale > 0.0f && item.SkyOpacity >= 0.0f && item.DayTexture < 0)
+				{
+					continue;
 				}
 
 				item.Mesh = worldMesh;
@@ -570,7 +637,7 @@ namespace OpenBve.Graphics
 			WorldMesh worldMesh = item.Mesh;
 			if (worldMesh == null)
 			{
-				if (item.State.Prototype.Mesh.Vertices.Length > 0)
+				if (item.State.Prototype.Mesh.Vertices.Length > 0 && item.SkyScale == 0.0f)
 				{
 					chunk.Skipped++;
 				}
@@ -584,7 +651,19 @@ namespace OpenBve.Graphics
 			PassInfo pass = passes[item.Pass];
 
 			// The object: its matrices, once per object as upstream sends them.
-			if (state != lastState || state.Prototype.Dynamic)
+			if (pass.Layer == SkyLayer)
+			{
+				if (state != lastState)
+				{
+					// At the camera, with no move of its own, as upstream draws backgrounds.
+					lastModelMatrix = Matrix4D.NoTransformation;
+					lastObject = AddObject(chunk, state, Matrix4D.Scale(item.SkyScale) * viewMatrix);
+					lastState = state;
+					lastDistance = 0.0f;
+					lastSphere = new CasterSphere { Radius = -1.0f };
+				}
+			}
+			else if (state != lastState || state.Prototype.Dynamic)
 			{
 				long objectStart = System.Diagnostics.Stopwatch.GetTimestamp();
 				lastModelMatrix = state.ModelMatrix * cameraTranslation;
@@ -608,7 +687,7 @@ namespace OpenBve.Graphics
 			}
 
 			ref MeshMaterial material = ref mesh.Materials[item.Face.Material];
-			bool cull = backFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0;
+			bool cull = item.SkyScale > 0.0f && item.SkyOpacity >= 0.0f || backFaceCulling && (item.Face.Flags & FaceFlags.Face2Mask) == 0;
 			OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
 
 			float distanceFactor = material.GlowAttenuationData != 0
@@ -622,7 +701,7 @@ namespace OpenBve.Graphics
 				Flags = (int)material.Flags,
 				Object = lastObject,
 				Sampler = (int)wrap & 3,
-				Fog = fogEnabled && pass.Layer == WorldLayerIndex ? 1 : 0,
+				Fog = pass.Layer == WorldLayerIndex ? (fogEnabled ? 1 : 0) : pass.Layer == SkyLayer && skyFog ? 1 : 0,
 				AlphaFunction = item.AlphaFunction,
 				AlphaReference = item.AlphaReference,
 				Shininess = 1.0f
@@ -665,6 +744,13 @@ namespace OpenBve.Graphics
 			}
 
 			draw.Opacity = Inv255 * material.Color.A * alphaFactor;
+			if (item.SkyScale > 0.0f && item.SkyOpacity >= 0.0f)
+			{
+				// A sky: upstream's reset brightness, and the fade's alpha.
+				draw.Brightness = 1.0f;
+				draw.Opacity = item.SkyOpacity;
+			}
+
 			// A shadow caster as upstream's shadow pass has it: a world face, not additive, its material and object casting.
 			int shadow = 0;
 			// (A material at half opacity or less leaves no depth in upstream's shader, whatever its texture.)
@@ -788,7 +874,7 @@ namespace OpenBve.Graphics
 			// Grouped passes cull in the pipeline; ordered ones draw both sides and discard OpenGL's front faces.
 			bool pipelineCull = cull && !pass.Ordered;
 			draw.CullFront = cull && pass.Ordered ? 1 : 0;
-			int pipelineKey = (int)blend | (pass.DepthWrite ? 4 : 0) | (pipelineCull ? 8 : 0) | (pass.DepthTest ? 0 : 16);
+			int pipelineKey = (int)blend | (pass.DepthWrite ? 4 : 0) | (pipelineCull ? 8 : 0) | (pass.DepthTest ? 0 : 16) | (pass.DepthClamp ? 32 : 0);
 			// Grouped by: nighttime draws after daytime ones (they blend over them), then pipeline, then (with pages) the
 			// texture's page (Direct3D 11: pages of one, the texture), then vertex and index blocks.
 			long page = TexturePage == 0 ? 0 : draw.Texture / TexturePage;
@@ -859,7 +945,16 @@ namespace OpenBve.Graphics
 					}
 				}
 			}
+
+			skyCommandEnd = 0;
+			while (skyCommandEnd < commandCount && passes[commands[skyCommandEnd].Pass].Layer == SkyLayer)
+			{
+				skyCommandEnd++;
+			}
 		}
+
+		/// <summary>Where the background's commands end among the merged ones: they come first (0 if none).</summary>
+		protected int skyCommandEnd;
 
 		/// <summary>Where the cab layer's commands start among the merged ones (commandCount if none).</summary>
 		protected int cabCommandStart;
@@ -873,7 +968,7 @@ namespace OpenBve.Graphics
 		}
 
 		/// <summary>Whether a layer has anything to draw.</summary>
-		internal bool Empty(int layer) => layer == WorldLayerIndex ? cabCommandStart == 0 : cabCommandStart == commandCount;
+		internal bool Empty(int layer) => layer == SkyLayer ? skyCommandEnd == 0 : layer == WorldLayerIndex ? cabCommandStart == skyCommandEnd : cabCommandStart == commandCount;
 
 		/// <summary>
 		/// The frame's draws in their order: grouped passes sorted by key, ordered ones kept as they are; and the shadow

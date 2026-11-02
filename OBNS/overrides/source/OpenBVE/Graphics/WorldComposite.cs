@@ -109,9 +109,15 @@ void main()
 		}
 
 		/// <summary>Lays the world image over the framebuffer and writes its depth. Leaves upstream's renderer to set its own state again.</summary>
-		internal void World(int colorTexture, int depthTexture)
+		internal void World(int colorTexture, int depthTexture, bool wholeFrame = false)
 		{
 			Bind(colorTexture, depthTexture);
+			if (wholeFrame)
+			{
+				// The image has the background too: nothing to blend with.
+				GL.Disable(EnableCap.Blend);
+			}
+
 			GL.Enable(EnableCap.DepthTest);
 			GL.DepthFunc(DepthFunction.Always);
 			GL.DepthMask(true);

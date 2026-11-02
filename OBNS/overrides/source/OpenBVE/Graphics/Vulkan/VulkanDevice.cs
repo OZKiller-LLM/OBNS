@@ -177,6 +177,9 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Each draw recorded as its own vkCmdDrawIndexed (the device lacks multiDrawIndirect or drawIndirectFirstInstance).</summary>
 		internal bool DirectDraws { get; private set; }
 
+		/// <summary>Whether the device can clamp depth rather than clip to it, for background objects.</summary>
+		internal bool DepthClamp { get; private set; }
+
 		/// <summary>
 		/// OpenGL and Vulkan are ordered by the CPU waiting for each (glFinish, the frame's fence), not by the semaphores they
 		/// share: see <see cref="OrderedByCpu"/>.
@@ -614,6 +617,9 @@ namespace OpenBve.Graphics.Vulkan
 			enable.Features[multiDrawIndirect] = indirect ? 1u : 0u;
 			enable.Features[drawIndirectFirstInstance] = indirect ? 1u : 0u;
 			enable.Features[samplerAnisotropy] = features.Features[samplerAnisotropy];
+			// Background objects are drawn with depth clamped, as upstream (depthClamp is 11).
+			DepthClamp = features.Features[11] != 0;
+			enable.Features[11] = DepthClamp ? 1u : 0u;
 			enable.Features[imageArrayDynamicIndexing] = Bindless ? 0u : 1u;
 
 			// A graphics queue.

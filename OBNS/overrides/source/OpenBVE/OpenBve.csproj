@@ -216,6 +216,7 @@
     <Compile Include="Graphics\WorldTextures.cs" />
     <Compile Include="Graphics\WorldHooks.cs" />
     <Compile Include="Graphics\WorldScene.cs" />
+    <Compile Include="Graphics\WorldSky.cs" />
     <Compile Include="Graphics\Vulkan\Vk.cs" />
     <Compile Include="Graphics\Vulkan\VulkanDevice.cs" />
     <Compile Include="Graphics\Vulkan\SharedTarget.cs" />

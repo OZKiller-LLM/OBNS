@@ -49,6 +49,18 @@ namespace OpenBve.Graphics
 		/// <summary>A pass of upstream's: its blending, alpha test, depth writes, whether its faces keep their order, and depth testing.</summary>
 		void Pass(WorldBlend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered, bool depthTest = true);
 
+		/// <summary>Starts the frame's background, which comes before the world's faces: the renderer's fog is the background's now.</summary>
+		void BeginSky();
+
+		/// <summary>A sky cylinder: its object, scale and alpha, in upstream's state for it.</summary>
+		void Sky(OpenBveApi.Objects.ObjectState state, float scale, float alpha);
+
+		/// <summary>A background object's face, in upstream's state for it.</summary>
+		void SkyFace(OpenBveApi.Objects.ObjectState state, MeshFace face);
+
+		/// <summary>The background is done: the passes given from now are the world's.</summary>
+		void EndSky();
+
 		/// <summary>The alpha test for the faces after, within the pass.</summary>
 		void SetAlphaFunction(int alphaFunction, float alphaReference);
 

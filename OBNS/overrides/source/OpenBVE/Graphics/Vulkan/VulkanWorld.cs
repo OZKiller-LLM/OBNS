@@ -44,6 +44,9 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Whether the world layer is drawn by Vulkan (this session, unless a frame has failed).</summary>
 		internal static bool Enabled => instance != null && !instance.failed;
 
+		/// <summary>Whether Vulkan draws the frame's background too (OBNS_VULKAN_SKY=1, OBNS/RENDERERS.md): the world image is then the whole frame so far.</summary>
+		internal bool DrawsSky { get; } = Environment.GetEnvironmentVariable("OBNS_VULKAN_SKY") == "1";
+
 		/// <summary>The renderer, once <see cref="Initialize"/> has made it.</summary>
 		internal static VulkanWorld Instance => instance;
 
@@ -814,6 +817,13 @@ namespace OpenBve.Graphics.Vulkan
 				StoreOp = Vk.AttachmentStoreOpStore,
 				ClearValue = tint ? new Vk.ClearValue { G = 0.25f, A = 0.25f } : new Vk.ClearValue()
 			};
+			if (DrawsSky)
+			{
+				// What OpenGL clears its frame to, under the background.
+				const float inv255 = 1.0f / 255.0f;
+				color.ClearValue = new Vk.ClearValue { R = Interface.CurrentOptions.ClearColor.R * inv255, G = Interface.CurrentOptions.ClearColor.G * inv255, B = Interface.CurrentOptions.ClearColor.B * inv255, A = 1.0f };
+			}
+
 			Vk.RenderingAttachmentInfo depth = new Vk.RenderingAttachmentInfo
 			{
 				SType = Vk.StructureTypeRenderingAttachmentInfo,
@@ -836,6 +846,11 @@ namespace OpenBve.Graphics.Vulkan
 			// The shadow maps first (cleared only, with shadows off), then the world layer that samples them.
 			Scene.RecordShadows(commandBuffer, slot);
 			BeginLayer(commandBuffer, &renderingInfo, Scene.WorldRenderPass, worldFramebuffer, color.ClearValue);
+			if (!Scene.Empty(VulkanScene.SkyLayer))
+			{
+				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.SkyLayer);
+			}
+
 			if (!Scene.Empty(VulkanScene.WorldLayerIndex))
 			{
 				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.WorldLayerIndex);
@@ -927,7 +942,7 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		/// <summary>Lays the world image over the framebuffer and writes its depth.</summary>
-		private void Composite() => composite.World(glColorTexture, glDepthTexture);
+		private void Composite() => composite.World(glColorTexture, glDepthTexture, DrawsSky);
 
 		/// <summary>The core Vulkan 1.0 tier's framebuffers of the world's and the cab's images (0 on the 1.2/1.3 path).</summary>
 		private ulong worldFramebuffer, cabFramebuffer;

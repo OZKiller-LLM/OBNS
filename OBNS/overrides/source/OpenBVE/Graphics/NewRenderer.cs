@@ -206,9 +206,11 @@ namespace OpenBve.Graphics
 			// the world layer.
 			List<FaceState> vulkanOverlayOpaque = null, vulkanOverlayAlpha = null;
 			SceneLaps.Lap(0);
+			// OBNS: and with OBNS_VULKAN_SKY=1 Vulkan draws the background too, before the world.
+			bool vulkanSky = vulkanWorld && Vulkan.VulkanWorld.Enabled && Vulkan.VulkanWorld.Instance.DrawsSky;
 			if (vulkanWorld)
 			{
-				StartVulkanWorld(out vulkanOverlayOpaque, out vulkanOverlayAlpha);
+				StartVulkanWorld(out vulkanOverlayOpaque, out vulkanOverlayAlpha, vulkanSky, TimeElapsed);
 			}
 
 			SceneLaps.Lap(1);
@@ -221,7 +223,11 @@ namespace OpenBve.Graphics
             GL.Disable(EnableCap.DepthTest);
 			DefaultShader.SetShadowEnabled(false);
 			long backgroundStart = System.Diagnostics.Stopwatch.GetTimestamp();
-			Program.CurrentRoute.UpdateBackground(TimeElapsed, Program.Renderer.CurrentInterface != InterfaceType.Normal);
+			if (!vulkanSky)
+			{
+				Program.CurrentRoute.UpdateBackground(TimeElapsed, Program.Renderer.CurrentInterface != InterfaceType.Normal);
+			}
+
 			long backgroundTicks = System.Diagnostics.Stopwatch.GetTimestamp() - backgroundStart;
 			GpuStats.Mark(GpuStats.Point.BackgroundDone);
 			DefaultShader.SetShadowEnabled(ShadowsEnabled);
@@ -715,7 +721,35 @@ namespace OpenBve.Graphics
 			scene.SetShadows(vulkanShadowCaster, (float)options.ShadowStrength, options.ShadowSmooth, filterRadius, (float)options.ShadowBias, normalBias);
 		}
 
-		private void StartVulkanWorld(out List<FaceState> overlayOpaqueFaces, out List<FaceState> overlayAlphaFaces)
+		/// <summary>The frame's background given to the layer: upstream's update, which also moves its fades on, with what it would draw sent to the layer.</summary>
+		private void GatherSky(IWorldScene scene, double timeElapsed)
+		{
+			bool enabled = Fog.Enabled, linear = Fog.IsLinear;
+			float start = Fog.Start, end = Fog.End, density = Fog.Density;
+			OpenBveApi.Colors.Color24 color = Fog.Color;
+			scene.BeginSky();
+			Background.ObnsSky = (data, alpha, scale) =>
+			{
+				Texture texture = data.Texture;
+				if (texture != null && Program.CurrentHost.LoadTexture(ref texture, OpenGlTextureWrapMode.RepeatClamp))
+				{
+					scene.Sky(WorldSky.For(data), scale, alpha);
+				}
+			};
+			Background.ObnsSkyFace = scene.SkyFace;
+			Program.CurrentRoute.UpdateBackground(timeElapsed, CurrentInterface != InterfaceType.Normal);
+			Background.ObnsSky = null;
+			Background.ObnsSkyFace = null;
+			scene.EndSky();
+			Fog.Enabled = enabled;
+			Fog.IsLinear = linear;
+			Fog.Start = start;
+			Fog.End = end;
+			Fog.Density = density;
+			Fog.Color = color;
+		}
+
+		private void StartVulkanWorld(out List<FaceState> overlayOpaqueFaces, out List<FaceState> overlayAlphaFaces, bool sky, double timeElapsed)
 		{
 			long gatherStart = System.Diagnostics.Stopwatch.GetTimestamp();
 
@@ -751,6 +785,11 @@ namespace OpenBve.Graphics
 			IWorldScene scene = WorldLayer.Instance.Scene;
 			scene.Begin(this);
 			SetVulkanShadows(scene);
+			if (sky)
+			{
+				GatherSky(scene, timeElapsed);
+			}
+
 			vulkanGathering = true;
 			try
 			{

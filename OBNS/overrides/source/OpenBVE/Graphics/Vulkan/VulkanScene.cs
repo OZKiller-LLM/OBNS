@@ -414,7 +414,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			Blend blend = (Blend)(key & 3);
-			bool depthWrite = (key & 4) != 0, cull = (key & 8) != 0, depthTest = (key & 16) == 0;
+			bool depthWrite = (key & 4) != 0, cull = (key & 8) != 0, depthTest = (key & 16) == 0, depthClamp = (key & 32) != 0 && device.DepthClamp;
 			IntPtr main = Marshal.StringToHGlobalAnsi("main");
 			try
 			{
@@ -453,6 +453,7 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.PipelineRasterizationStateCreateInfo rasterization = new Vk.PipelineRasterizationStateCreateInfo
 				{
 					SType = Vk.StructureTypePipelineRasterizationStateCreateInfo,
+					DepthClampEnable = depthClamp ? 1u : 0u,
 					PolygonMode = Vk.PolygonModeFill,
 					CullMode = cull ? Vk.CullModeFront : Vk.CullModeNone,
 					FrontFace = Vk.FrontFaceClockwise,
@@ -604,7 +605,7 @@ namespace OpenBve.Graphics.Vulkan
 			// Runs of the same pipeline and buffer blocks, each one indirect draw.
 			int calls = 0;
 			int boundPipeline = -1, boundPage = -1, boundVertexBlock = -1, boundIndexBlock = -1;
-			int run = layer == WorldLayerIndex ? 0 : cabCommandStart, end = layer == WorldLayerIndex ? cabCommandStart : commandCount;
+			int run = layer == SkyLayer ? 0 : layer == WorldLayerIndex ? skyCommandEnd : cabCommandStart, end = layer == SkyLayer ? skyCommandEnd : layer == WorldLayerIndex ? cabCommandStart : commandCount;
 			while (run < end)
 			{
 				long key = commands[run].Key & ~(1L << 62);
