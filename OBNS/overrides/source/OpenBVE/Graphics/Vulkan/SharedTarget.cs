@@ -78,6 +78,13 @@ namespace OpenBve.Graphics.Vulkan
 						out DepthImage, out depthMemory, out DepthView, out DepthHandle, out DepthSize, false);
 					CreateImage(DepthFormat, Vk.ImageUsageDepthStencilAttachment, Vk.ImageAspectDepth,
 						out CabDepthImage, out cabDepthMemory, out CabDepthView, out IntPtr _, out ulong _, false);
+					if (frame2D)
+					{
+						// frame2D: the last frame's image, for motion blur.
+						CreateImage(ColorFormat, Vk.ImageUsageSampled | Vk.ImageUsageTransferDst, Vk.ImageAspectColor,
+							out FrameImage, out frameMemory, out FrameView, out IntPtr _, out ulong _, false);
+					}
+
 					return;
 				}
 
@@ -216,6 +223,12 @@ namespace OpenBve.Graphics.Vulkan
 			barriers[1] = Barrier(DepthImage, Vk.ImageAspectDepth, 0, Vk.AccessDepthStencilAttachmentRead | Vk.AccessDepthStencilAttachmentWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutDepthStencilAttachmentOptimal, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
 			barriers[2] = Barrier(CabDepthImage, Vk.ImageAspectDepth, 0, Vk.AccessDepthStencilAttachmentRead | Vk.AccessDepthStencilAttachmentWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutDepthStencilAttachmentOptimal, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
 			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTopOfPipe, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageEarlyFragmentTests, 0, 0, null, 0, null, 3, barriers);
+		}
+
+		/// <summary>A barrier on the last frame's image, for motion blur.</summary>
+		internal Vk.ImageMemoryBarrier LastFrameBarrier(uint srcAccess, uint dstAccess, uint oldLayout, uint newLayout)
+		{
+			return Barrier(FrameImage, Vk.ImageAspectColor, srcAccess, dstAccess, oldLayout, newLayout, Vk.QueueFamilyIgnored, Vk.QueueFamilyIgnored);
 		}
 
 		/// <summary>A barrier on the frame's colour image alone.</summary>

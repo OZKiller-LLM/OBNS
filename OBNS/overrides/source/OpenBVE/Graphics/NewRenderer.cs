@@ -367,7 +367,7 @@ namespace OpenBve.Graphics
 			if (Interface.CurrentOptions.MotionBlur != MotionBlurMode.None)
 			{
 				DefaultShader.Deactivate();
-                MotionBlur.RenderFullscreen(Interface.CurrentOptions.MotionBlur, FrameRate, Math.Abs(Camera.CurrentSpeed));
+                MotionBlur.RenderFullscreen(Interface.CurrentOptions.MotionBlur, FrameRate, blurTestSpeed > 0.0 ? blurTestSpeed : Math.Abs(Camera.CurrentSpeed));
 			}
 
 			// particle sources
@@ -727,6 +727,9 @@ namespace OpenBve.Graphics
 			scene.SetShadows(vulkanShadowCaster, (float)options.ShadowStrength, options.ShadowSmooth, filterRadius, (float)options.ShadowBias, normalBias);
 		}
 
+		/// <summary>OBNS_BLUR_SPEED=s: motion blur as at that speed whatever the train does, for comparing the APIs' drawing of it.</summary>
+		private static readonly double blurTestSpeed = double.TryParse(Environment.GetEnvironmentVariable("OBNS_BLUR_SPEED"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double blurSpeed) ? blurSpeed : 0.0;
+
 		private static readonly bool particleTest = Environment.GetEnvironmentVariable("OBNS_PARTICLE_TEST") == "1";
 		private Texture particleTestTexture;
 
@@ -860,6 +863,10 @@ namespace OpenBve.Graphics
 			if (Vulkan.VulkanWorld.PresentsItself)
 			{
 				GatherParticles(timeElapsed);
+				if (Interface.CurrentOptions.MotionBlur != MotionBlurMode.None)
+				{
+					Vulkan.VulkanWorld.Instance.SetMotionBlur(FrameRate, blurTestSpeed > 0.0 ? blurTestSpeed : Math.Abs(Camera.CurrentSpeed));
+				}
 			}
 
 			vulkanGathering = true;

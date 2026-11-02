@@ -27,6 +27,7 @@
 using System;
 using System.Runtime.InteropServices;
 using LibRender2;
+using LibRender2.MotionBlurs;
 using LibRender2.Textures;
 using OpenBveApi.Interface;
 using OpenTK.Graphics;
@@ -306,9 +307,20 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			ReleaseTarget();
-			target = new SharedTarget(device, (uint)width, (uint)height, frameDrawing != null);
+			target = new SharedTarget(device, (uint)width, (uint)height, frameDrawing != null && (!VulkanDevice.Full || MotionBlurOn));
 			if (VulkanDevice.Full)
 			{
+				if (MotionBlurOn)
+				{
+					lastFrameValid = false;
+					if (lastFrameTexture == 0)
+					{
+						lastFrameTexture = Scene.Textures.ReserveIndex();
+					}
+
+					Scene.Textures.PublishView(lastFrameTexture, target.FrameView);
+				}
+
 				return;
 			}
 
@@ -940,6 +952,70 @@ namespace OpenBve.Graphics.Vulkan
 		private string snapshotFile;
 		private HostBuffer snapshotBuffer;
 
+		private static bool MotionBlurOn => Interface.CurrentOptions.MotionBlur != MotionBlurMode.None;
+
+		/// <summary>Motion blur's alpha for the frame being made (0: nothing to lay over), upstream's sum.</summary>
+		private float motionBlurAlpha;
+		private int lastFrameTexture;
+		private bool lastFrameValid;
+
+		/// <summary>Works out motion blur for the frame about to be made, from the frame rate and the camera's speed, as upstream does.</summary>
+		internal void SetMotionBlur(double frameRate, double speed)
+		{
+			double strength;
+			switch (Interface.CurrentOptions.MotionBlur)
+			{
+				case MotionBlurMode.Low: strength = 0.0025; break;
+				case MotionBlurMode.Medium: strength = 0.0040; break;
+				case MotionBlurMode.High: strength = 0.0064; break;
+				default: strength = 0.0040; break;
+			}
+
+			double denominator = strength * frameRate * Math.Sqrt(speed);
+			motionBlurAlpha = denominator > 0.001 ? (float)Math.Exp(-1.0 / denominator) : 0.0f;
+		}
+
+		/// <summary>Motion blur, between the world and the particles: the last frame laid over this one, and this one kept for the next. The world's rendering has ended.</summary>
+		private void RecordMotionBlur(IntPtr commandBuffer, int slot, Vk.RenderingAttachmentInfo* color)
+		{
+			Vk.MemoryBarrier written = new Vk.MemoryBarrier { SType = Vk.StructureTypeMemoryBarrier, SrcAccessMask = Vk.AccessColorAttachmentWrite, DstAccessMask = Vk.AccessColorAttachmentRead | Vk.AccessColorAttachmentWrite };
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput, Vk.PipelineStageColorAttachmentOutput, 0, 1, &written, 0, null, 0, null);
+			if (lastFrameValid && motionBlurAlpha > 0.0f)
+			{
+				uint loadOp = color->LoadOp;
+				color->LoadOp = Vk.AttachmentLoadOpLoad;
+				Vk.RenderingInfo over = new Vk.RenderingInfo
+				{
+					SType = Vk.StructureTypeRenderingInfo,
+					RenderArea = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = target.Width, Height = target.Height } },
+					LayerCount = 1,
+					ColorAttachmentCount = 1,
+					PColorAttachments = color
+				};
+				Vk.vkCmdBeginRendering(commandBuffer, &over);
+				frameDrawing.RecordLastFrame(commandBuffer, slot, target.Width, target.Height, lastFrameTexture, motionBlurAlpha);
+				Vk.vkCmdEndRendering(commandBuffer);
+				color->LoadOp = loadOp;
+			}
+
+			Vk.ImageMemoryBarrier* barriers = stackalloc Vk.ImageMemoryBarrier[2];
+			barriers[0] = target.ColorBarrier(Vk.AccessColorAttachmentWrite, Vk.AccessTransferRead, Vk.ImageLayoutColorAttachmentOptimal, Vk.ImageLayoutTransferSrcOptimal);
+			barriers[1] = target.LastFrameBarrier(lastFrameValid ? Vk.AccessShaderRead : 0, Vk.AccessTransferWrite, lastFrameValid ? Vk.ImageLayoutShaderReadOnlyOptimal : Vk.ImageLayoutUndefined, Vk.ImageLayoutTransferDstOptimal);
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageFragmentShader, Vk.PipelineStageTransfer, 0, 0, null, 0, null, 2, barriers);
+			Vk.ImageBlit blit = new Vk.ImageBlit
+			{
+				SrcSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, LayerCount = 1 },
+				SrcOffset1 = new Vk.Offset3D { X = (int)target.Width, Y = (int)target.Height, Z = 1 },
+				DstSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, LayerCount = 1 },
+				DstOffset1 = new Vk.Offset3D { X = (int)target.Width, Y = (int)target.Height, Z = 1 }
+			};
+			Vk.vkCmdBlitImage(commandBuffer, target.ColorImage, Vk.ImageLayoutTransferSrcOptimal, target.FrameImage, Vk.ImageLayoutTransferDstOptimal, 1, &blit, Vk.FilterNearest);
+			barriers[0] = target.ColorBarrier(Vk.AccessTransferRead, Vk.AccessColorAttachmentRead | Vk.AccessColorAttachmentWrite, Vk.ImageLayoutTransferSrcOptimal, Vk.ImageLayoutColorAttachmentOptimal);
+			barriers[1] = target.LastFrameBarrier(Vk.AccessTransferWrite, Vk.AccessShaderRead, Vk.ImageLayoutTransferDstOptimal, Vk.ImageLayoutShaderReadOnlyOptimal);
+			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageTransfer, Vk.PipelineStageColorAttachmentOutput | Vk.PipelineStageFragmentShader, 0, 0, null, 0, null, 2, barriers);
+			lastFrameValid = true;
+		}
+
 		/// <summary>The background, world and cab, in the frame's one image, as upstream draws them into its framebuffer.</summary>
 		private void RecordWhole(IntPtr commandBuffer, int slot)
 		{
@@ -962,7 +1038,7 @@ namespace OpenBve.Graphics.Vulkan
 				ImageView = target.DepthView,
 				ImageLayout = Vk.ImageLayoutDepthStencilAttachmentOptimal,
 				LoadOp = Vk.AttachmentLoadOpClear,
-				StoreOp = Vk.AttachmentStoreOpDontCare,
+				StoreOp = MotionBlurOn ? Vk.AttachmentStoreOpStore : Vk.AttachmentStoreOpDontCare,
 				ClearValue = new Vk.ClearValue { Depth = 1.0f }
 			};
 			Vk.RenderingInfo renderingInfo = new Vk.RenderingInfo
@@ -985,6 +1061,17 @@ namespace OpenBve.Graphics.Vulkan
 			if (!Scene.Empty(VulkanScene.WorldLayerIndex))
 			{
 				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.WorldLayerIndex);
+			}
+
+			if (MotionBlurOn)
+			{
+				// Motion blur comes before the particles, which test against the world's depth afterwards.
+				Vk.vkCmdEndRendering(commandBuffer);
+				RecordMotionBlur(commandBuffer, slot, &color);
+				color.LoadOp = Vk.AttachmentLoadOpLoad;
+				depth.LoadOp = Vk.AttachmentLoadOpLoad;
+				Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+				depth.LoadOp = Vk.AttachmentLoadOpClear;
 			}
 
 			frameDrawing.RecordParticles(commandBuffer, slot);

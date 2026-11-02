@@ -273,6 +273,26 @@ namespace OpenBve.Graphics.Vulkan
 			}
 		}
 
+		/// <summary>Points the array's element at an image made elsewhere (bindless only), in every frame's descriptor set.</summary>
+		internal void PublishView(int index, ulong view)
+		{
+			Vk.DescriptorImageInfo image = new Vk.DescriptorImageInfo { ImageView = view, ImageLayout = Vk.ImageLayoutShaderReadOnlyOptimal };
+			foreach (ulong set in descriptorSets)
+			{
+				Vk.WriteDescriptorSet write = new Vk.WriteDescriptorSet
+				{
+					SType = Vk.StructureTypeWriteDescriptorSet,
+					DstSet = set,
+					DstBinding = textureBinding,
+					DstArrayElement = (uint)index,
+					DescriptorCount = 1,
+					DescriptorType = Vk.DescriptorTypeSampledImage,
+					PImageInfo = &image
+				};
+				Vk.vkUpdateDescriptorSets(device.Device, 1, &write, 0, null);
+			}
+		}
+
 		/// <summary>Pages: its element white again before it is destroyed (every element of a bound set must be valid).</summary>
 		protected override void Unpublished(Entry entry) => pages?.Write(entry.Index, ((VulkanEntry)WhiteEntry).View);
 

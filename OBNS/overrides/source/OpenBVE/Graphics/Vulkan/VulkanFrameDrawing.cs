@@ -186,6 +186,21 @@ namespace OpenBve.Graphics.Vulkan
 			particles.Add(new Quad { Data = data, Blend = Blend.Normal });
 		}
 
+		/// <summary>Records the last frame's image laid over the whole frame, with the blur's alpha, as upstream draws it (its rows run as the frame's).</summary>
+		internal void RecordLastFrame(IntPtr commandBuffer, int slot, uint width, uint height, int texture, float alpha)
+		{
+			Vk.Viewport viewport = new Vk.Viewport { Width = width, Height = height, MaxDepth = 1.0f };
+			Vk.Rect2D scissor = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = width, Height = height } };
+			Vk.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+			Vk.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+			ulong set = scene.DescriptorSets[slot];
+			Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 0, 1, &set, 0, null);
+			Vk.vkCmdBindPipeline(commandBuffer, Vk.PipelineBindPointGraphics, Pipeline(Blend.Normal));
+			QuadData data = new QuadData { X = -1.0f, Y = -1.0f, Width = 2.0f, Height = 2.0f, UWidth = 1.0f, VHeight = 1.0f, R = 1.0f, G = 1.0f, B = 1.0f, A = alpha, Texture = texture };
+			Vk.vkCmdPushConstants(commandBuffer, pipelineLayout, Vk.ShaderStageVertex | Vk.ShaderStageFragment, 0, (uint)sizeof(QuadData), &data);
+			Vk.vkCmdDraw(commandBuffer, 6, 1, 0, 0);
+		}
+
 		/// <summary>Records the frame's particles, inside the world's rendering, tested against its depth.</summary>
 		internal void RecordParticles(IntPtr commandBuffer, int slot)
 		{
@@ -194,6 +209,10 @@ namespace OpenBve.Graphics.Vulkan
 				return;
 			}
 
+			Vk.Viewport viewport = new Vk.Viewport { Width = Program.Renderer.Screen.Width, Height = Program.Renderer.Screen.Height, MaxDepth = 1.0f };
+			Vk.Rect2D scissor = new Vk.Rect2D { Extent = new Vk.Extent2D { Width = (uint)Program.Renderer.Screen.Width, Height = (uint)Program.Renderer.Screen.Height } };
+			Vk.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+			Vk.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 			ulong set = scene.DescriptorSets[slot];
 			Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 0, 1, &set, 0, null);
 			Blend bound = (Blend)(-1);
