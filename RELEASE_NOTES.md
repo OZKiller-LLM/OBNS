@@ -15,7 +15,7 @@
 ### Windows
 
 - **Images that aren't 32-bit** decode about twice as fast, with the same pixels.
-- One train and route on a test PC: 42 s in 1.21, 22 s now.
+- One train and route on a test PC: 42 s in 1.21, about 24 s now, loaded a second time with the disk cache warm.
 
 ### Android, Ubuntu and macOS
 
