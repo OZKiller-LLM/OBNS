@@ -114,6 +114,11 @@ namespace OpenBve.Graphics.Vulkan
 
 			if (device == null)
 			{
+				if (VulkanDevice.Full)
+				{
+					throw new InvalidOperationException("Vulkan can't draw the game, and the window has no OpenGL to fall back on: " + reason);
+				}
+
 				Log("OBNS Vulkan world layer not used: " + reason + "; OpenGL draws it");
 				return;
 			}
@@ -134,6 +139,11 @@ namespace OpenBve.Graphics.Vulkan
 			catch (Exception ex)
 			{
 				world.Dispose();
+				if (VulkanDevice.Full)
+				{
+					throw new InvalidOperationException("Vulkan can't draw the game, and the window has no OpenGL to fall back on: " + ex.Message, ex);
+				}
+
 				Log("OBNS Vulkan world layer not used: " + ex.Message + "; OpenGL draws it");
 				return;
 			}
@@ -147,9 +157,7 @@ namespace OpenBve.Graphics.Vulkan
 
 			if (VulkanDevice.Full)
 			{
-				// Vulkan draws it all: OpenGL's functions do nothing from now.
-				GLStub.Install();
-				Log("OBNS Vulkan draws the whole game, with OpenGL's functions stubbed: " + device.Description);
+				Log("OBNS Vulkan draws the whole game: " + device.Description + "; " + NoGLContext.Describe(Program.Renderer.GameWindow.WindowInfo.Handle));
 			}
 			if (Environment.GetEnvironmentVariable("OBNS_VULKAN_DEBUG") == "1")
 			{

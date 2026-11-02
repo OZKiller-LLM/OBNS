@@ -73,7 +73,29 @@ namespace OpenBve.Graphics.Vulkan
 		/// Whether Vulkan draws the whole game with OpenGL out of it (OBNS_VULKAN_FULL=1, OBNS/RENDERERS.md): no images or memory
 		/// shared, the frame presented through a swap chain.
 		/// </summary>
-		internal static readonly bool Full = Environment.GetEnvironmentVariable("OBNS_VULKAN_FULL") == "1" && GLStub.Available;
+		internal static bool Full { get; private set; } = Environment.GetEnvironmentVariable("OBNS_VULKAN_FULL") == "1" && GLStub.Available;
+
+		/// <summary>
+		/// Before the window is made: whether a device can be had for drawing the whole game. The window has no OpenGL context if
+		/// so, so there is nothing to fall back on once it is made; if not, OpenGL draws, as usual.
+		/// </summary>
+		internal static void ProbeFull()
+		{
+			if (!Full)
+			{
+				return;
+			}
+
+			VulkanDevice device = TryCreate(null, false, out string reason);
+			if (device == null)
+			{
+				Full = false;
+				Program.FileSystem.AppendToLogFile("OBNS Vulkan can't draw the whole game: " + reason);
+				return;
+			}
+
+			device.Dispose();
+		}
 
 		/// <summary>The handle type memory is exported as.</summary>
 		internal static uint MemoryHandleType => PosixHandles ? Vk.ExternalMemoryHandleTypeOpaqueFd : Vk.ExternalMemoryHandleTypeOpaqueWin32;
@@ -202,6 +224,11 @@ namespace OpenBve.Graphics.Vulkan
 		/// </summary>
 		internal static VulkanDevice Create(byte[] glDeviceUuid, out string reason)
 		{
+			if (Full)
+			{
+				return TryCreate(glDeviceUuid, false, out reason);
+			}
+
 			string tier = Environment.GetEnvironmentVariable("OBNS_VULKAN_TIER");
 			string modernReason = null;
 			if (tier != "1.0")

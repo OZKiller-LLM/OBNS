@@ -56,9 +56,26 @@ namespace OpenBve
 		private bool startViewChosen;
 		private double RenderTimeElapsed;
 		private double RenderRealTimeElapsed;
+
+		/// <summary>OBNS: with Vulkan drawing the whole game (OBNS/RENDERERS.md), the window gets no OpenGL context.</summary>
+		static OpenBVEGame()
+		{
+			OpenBve.Graphics.Vulkan.VulkanDevice.ProbeFull();
+			if (OpenBve.Graphics.Vulkan.VulkanDevice.Full)
+			{
+				OpenBve.Graphics.NoGLContext.Install();
+			}
+		}
+
 		//We need to explicitly specify the default constructor
 		public OpenBVEGame(int width, int height, GraphicsMode currentGraphicsMode, GameWindowFlags @default): base(width, height, currentGraphicsMode, Translations.GetInterfaceString(HostApplication.OpenBve, new[] {"program","title"}), @default)
 		{
+			// OBNS: upstream's OpenGL calls do nothing from now.
+			if (OpenBve.Graphics.Vulkan.VulkanDevice.Full)
+			{
+				OpenBve.Graphics.GLStub.Install();
+			}
+
 			Program.FileSystem.AppendToLogFile("Creating game window with standard context.");
 			if (Program.CurrentHost.Platform == HostPlatform.AppleOSX && IntPtr.Size != 4)
 			{
@@ -78,6 +95,12 @@ namespace OpenBve
 
 		public OpenBVEGame(int width, int height, GraphicsMode currentGraphicsMode, GameWindowFlags @default, GraphicsContextFlags flags): base(width, height, currentGraphicsMode, Translations.GetInterfaceString(HostApplication.OpenBve, new[] {"program","title"}), @default, DisplayDevice.Default, 3,3, flags)
 		{
+			// OBNS: upstream's OpenGL calls do nothing from now.
+			if (OpenBve.Graphics.Vulkan.VulkanDevice.Full)
+			{
+				OpenBve.Graphics.GLStub.Install();
+			}
+
 			Program.FileSystem.AppendToLogFile("Creating game window with forwards-compatible context.");
 			if (Program.CurrentHost.Platform == HostPlatform.AppleOSX && IntPtr.Size != 4)
 			{

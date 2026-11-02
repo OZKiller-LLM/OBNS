@@ -224,6 +224,7 @@
     <Compile Include="Graphics\Vulkan\VulkanFrameDrawing.cs" />
     <Compile Include="Graphics\Vulkan\VulkanPresenter.cs" />
     <Compile Include="Graphics\GLStub.cs" />
+    <Compile Include="Graphics\NoGLContext.cs" />
     <Compile Include="Graphics\Vulkan\GpuMemory.cs" />
     <Compile Include="Graphics\Vulkan\SharedHeap.cs" />
     <Compile Include="Graphics\Vulkan\VulkanTextures.cs" />
