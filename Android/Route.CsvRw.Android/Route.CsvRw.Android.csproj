@@ -14,6 +14,9 @@
 
   <ItemGroup>
     <Compile Include="$(UpstreamSource)Plugins\Route.CsvRw\**\*.cs" LinkBase="Route.CsvRw" />
+    <!-- OBNS's copy, shared with the desktop build: route objects load one file at a time per worker. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Route.CsvRw\CsvRwRouteParser.ObjectLoader.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.CsvRw\CsvRwRouteParser.ObjectLoader.cs" Link="OBNS\CsvRwRouteParser.ObjectLoader.cs" />
     <Compile Remove="$(UpstreamSource)Plugins\Route.CsvRw\Properties\AssemblyInfo.cs" />
 
   </ItemGroup>

@@ -320,6 +320,12 @@ namespace Train.OpenBve
 				    return false;
 			    }
 		    }
+		    // OBNS: the cab's and exterior's models, on worker threads, for the parsers below.
+		    if (currentTrain.State != TrainState.Bogus)
+		    {
+			    TrainObjectPrefetch.Run(this, currentTrain.TrainFolder, encoding, currentTrain.IsPlayerTrain);
+		    }
+
 		    // add panel section
 		    if (currentTrain.IsPlayerTrain && bve5Vehicle != null && bve5Vehicle.Panel != null && File.Exists(bve5Vehicle.Panel))
 		    {
