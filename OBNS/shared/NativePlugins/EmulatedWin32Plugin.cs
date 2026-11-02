@@ -47,6 +47,9 @@ namespace OpenBve.NativePlugins
 	/// </remarks>
 	internal sealed class EmulatedWin32Plugin : PluginBase
 	{
+		/// <summary>Which of the layer's processors runs it, for the log.</summary>
+		private readonly string layer;
+
 		private readonly string pluginFile;
 		private readonly string rootFolder;
 		private readonly Encoding encoding;
@@ -67,6 +70,7 @@ namespace OpenBve.NativePlugins
 			this.rootFolder = rootFolder;
 			this.encoding = encoding;
 			PluginTitle = Path.GetFileName(pluginFile);
+			layer = AtsPlugin.IsX64(pluginFile) ? "x64" : "x86";
 			PluginValid = true;
 			PluginMessage = null;
 			Train = train;
@@ -86,7 +90,7 @@ namespace OpenBve.NativePlugins
 		{
 			try
 			{
-				plugin = AtsPlugin.Open(rootFolder, pluginFile, encoding, message => PluginLog.Info("x86 " + PluginTitle + ": " + message));
+				plugin = AtsPlugin.Open(rootFolder, pluginFile, encoding, message => PluginLog.Info(layer + " " + PluginTitle + ": " + message));
 				if (NativePluginBridge.TraceFolder != null)
 				{
 					// A recording that cannot be made is reported, and the plugin runs without it.
@@ -95,11 +99,11 @@ namespace OpenBve.NativePlugins
 					{
 						Directory.CreateDirectory(NativePluginBridge.TraceFolder);
 						plugin.Trace = new AtsTrace.Writer(File.Create(traceFile), encoding.CodePage);
-						PluginLog.Info("x86 " + PluginTitle + ": recording calls to " + traceFile);
+						PluginLog.Info(layer + " " + PluginTitle + ": recording calls to " + traceFile);
 					}
 					catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is NotSupportedException)
 					{
-						PluginLog.Warn("x86 " + PluginTitle + ": calls not recorded, " + traceFile + " could not be made: " + ex.Message);
+						PluginLog.Warn(layer + " " + PluginTitle + ": calls not recorded, " + traceFile + " could not be made: " + ex.Message);
 					}
 				}
 
@@ -119,7 +123,7 @@ namespace OpenBve.NativePlugins
 			catch (X86Exception ex)
 			{
 				LastException = ex;
-				PluginLog.Warn("x86 " + PluginTitle + " could not start: " + ex.Message);
+				PluginLog.Warn(layer + " " + PluginTitle + " could not start: " + ex.Message);
 				plugin = null;
 				return false;
 			}
@@ -256,13 +260,13 @@ namespace OpenBve.NativePlugins
 		protected override void SetBrake(int brakeNotch) => Guard(() => plugin.SetBrake(brakeNotch));
 		public override void KeyDown(VirtualKeys key)
 		{
-			PluginLog.Verbose("x86 " + PluginTitle + ": KeyDown " + key);
+			PluginLog.Verbose(layer + " " + PluginTitle + ": KeyDown " + key);
 			Guard(() => plugin.KeyDown((int)key));
 		}
 
 		public override void KeyUp(VirtualKeys key)
 		{
-			PluginLog.Verbose("x86 " + PluginTitle + ": KeyUp " + key);
+			PluginLog.Verbose(layer + " " + PluginTitle + ": KeyUp " + key);
 			Guard(() => plugin.KeyUp((int)key));
 		}
 		public override void HornBlow(HornTypes type) => Guard(() => plugin.HornBlow((int)type));
@@ -283,7 +287,7 @@ namespace OpenBve.NativePlugins
 		{
 			if (LastAspects.Length == 0 || signal[0].Aspect != LastAspects[0])
 			{
-				PluginLog.Verbose("x86 " + PluginTitle + ": SetSignal " + signal[0].Aspect);
+				PluginLog.Verbose(layer + " " + PluginTitle + ": SetSignal " + signal[0].Aspect);
 				Guard(() => plugin.SetSignal(signal[0].Aspect));
 			}
 		}
@@ -294,7 +298,7 @@ namespace OpenBve.NativePlugins
 			if (beaconsLogged < 200)
 			{
 				beaconsLogged++;
-				PluginLog.Verbose("x86 " + PluginTitle + ": beacon type " + beacon.Type + " optional " + beacon.Optional + " signal " + beacon.Signal.Aspect + " at " + beacon.Signal.Distance.ToString("0"));
+				PluginLog.Verbose(layer + " " + PluginTitle + ": beacon type " + beacon.Type + " optional " + beacon.Optional + " signal " + beacon.Signal.Aspect + " at " + beacon.Signal.Distance.ToString("0"));
 			}
 
 			Guard(() => plugin.SetBeaconData(beacon.Type, beacon.Signal.Aspect, (float)beacon.Signal.Distance, beacon.Optional));
@@ -329,7 +333,7 @@ namespace OpenBve.NativePlugins
 
 			if (changed != null)
 			{
-				PluginLog.Verbose("x86 " + PluginTitle + ": panel" + changed);
+				PluginLog.Verbose(layer + " " + PluginTitle + ": panel" + changed);
 			}
 		}
 
@@ -354,7 +358,7 @@ namespace OpenBve.NativePlugins
 		private void Fail(X86Exception ex)
 		{
 			LastException = ex;
-			PluginLog.Error("x86 " + PluginTitle + " stopped: " + ex.Message);
+			PluginLog.Error(layer + " " + PluginTitle + " stopped: " + ex.Message);
 			global::TrainManager.TrainManagerBase.currentHost.AddMessage(MessageType.Error, false, "The train plugin " + PluginTitle + " stopped: " + ex.Message);
 			plugin = null;
 		}

@@ -97,12 +97,12 @@ namespace OpenBve.NativePlugins
 				{
 					train.Plugin = emulated;
 					string modules = string.Join(", ", System.Linq.Enumerable.Select(emulated.Emulated.Process.Modules, m => m.Name));
-					summary = image.FileName + " → running in the x86 compatibility layer (" + modules + ")";
+					summary = image.FileName + " → running in the " + (image.Kind == NativePluginKind.NativeX64 ? "x64" : "x86") + " compatibility layer (" + modules + ")";
 					PluginLog.Info("train plugin: " + summary);
 					return true;
 				}
 
-				PluginLog.Warn("train plugin " + image.FileName + " could not run in the x86 compatibility layer" +
+				PluginLog.Warn("train plugin " + image.FileName + " could not run in the " + (image.Kind == NativePluginKind.NativeX64 ? "x64" : "x86") + " compatibility layer" +
 				              (emulated.LastException != null ? ": " + emulated.LastException.Message : string.Empty) + "; using a translation");
 			}
 
@@ -174,7 +174,7 @@ namespace OpenBve.NativePlugins
 			{
 			}
 
-			PluginLog.Info("x86 layer: ANSI code page " + (detected ?? Encoding.UTF8).CodePage + (detected != null ? " (from the train's text files)" : " (UTF-8; the train's text is ASCII or Unicode)"));
+			PluginLog.Info("Plugin layer: ANSI code page " + (detected ?? Encoding.UTF8).CodePage + (detected != null ? " (from the train's text files)" : " (UTF-8; the train's text is ASCII or Unicode)"));
 			return detected ?? Encoding.UTF8;
 		}
 
