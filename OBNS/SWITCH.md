@@ -177,8 +177,16 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 
 1. **Runtime:** the Android port's projects built for libnx with Mono full AOT (NroForge's toolchain as the starting point), a console
    with nothing drawn: load TML, log the time and memory. This alone answers whether the load fits in 3.2 GB.
-2. **Memory to fit:** compressed textures (ASTC or BC) with a cache on the SD card; no CPU copy kept after upload (shared memory counts
-   twice); meshes shared and trimmed; the managed heap's census from `OBNS_MEMSTATS` down.
+2. **Memory to fit**, first with the Android port's own measures for low-memory phones (the user, 2026-11-04: allowed if necessary):
+   - the **texture size limit** (`TextureSizeLimit.cs`): textures halved until neither side is over the limit; Android sets 1,024 px
+     on phones of 4.5 GB or less (the Switch's case) and 2,048 px up to 6.5 GB, and the options can change it;
+   - vertex copies released once uploaded (`VertexCopyReleaser.cs`), meshes shared (`MeshSharing.cs`), the transparency answers kept
+     on disk (`TextureClassifier.cs`), and the census of what the GPU holds (`TextureCensus.cs`: on a phone, TML's graphics were 2.6 of
+     the game's 3.4 GB, some textures uploaded once a wrap mode).
+
+   Then, if that isn't enough, what Android doesn't have: **GPU-compressed textures** (BC or ASTC, which the Switch's GPU reads
+   natively: 4 to 8 times smaller than RGBA8), made on first load and kept on the SD card. Then no CPU copy kept after upload (shared
+   memory counts twice), and the managed heap's census from `OBNS_MEMSTATS` down.
 3. **deko3d whole-game renderer:** the Vulkan alone path's structure, with texture pages of 32, shaders compiled by `uam` at build
    time, the 2D part and the HUD in the same pass (no OpenGL anywhere).
 4. **CPU to 33 ms in the worst frame, not the mean:** textures and meshes made off the frame's thread, the garbage collector kept from
