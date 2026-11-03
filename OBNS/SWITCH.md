@@ -38,7 +38,8 @@ What OBNS does with it (the user, 2026-11-04):
 - **On battery:** stock 1,020 MHz, loading too, unless the options' toggle ("1,785 MHz on battery", off by default) says otherwise.
   The 30 fps floor isn't promised at stock clocks.
 - Followed as it changes, at once, while loading or in play: docking or undocking, and the charger plugged in or pulled out, each
-  switches between the two (to 1,785 MHz on power; to stock on battery unless the toggle is on). libnx's `appletGetOperationMode`
+  switches between the two (to 1,785 MHz on power; to stock on battery). **The toggle overrides it:** on, the clock stays at 1,785 MHz
+  whatever the charger and dock do; off, the switching above decides. libnx's `appletGetOperationMode`
   and `psmGetChargerType`, with the applet's notifications *(verify)*. Set back to stock on leaving or losing focus, as RetroArch does.
 - Nothing above the stock maximum is offered: that is sys-clk's business, at the player's own risk.
 
