@@ -154,6 +154,21 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 - **In the menus, by the labels:** **A confirms, B cancels or goes back**, as Nintendo's own software has it (A on the right, B at the
   bottom), whatever the driving scheme's positions; the D-pad and left stick move, L and R change pages or tabs. This goes for the
   main menu, the in-game pause menu, the station list and every dialog.
+- **Keyboard and mouse stay supported** (the user, 2026-11-04): a USB keyboard and mouse in the dock's ports, or through a USB-C
+  adapter handheld, read through libnx's HID (keyboard and mouse states) *(verify)*. Upstream's own key bindings (`controls.cfg`, as on
+  the desktop and Android, `KeyboardInput.cs` mapping the console's key codes to upstream's names); the mouse as on the desktop (camera,
+  menu pointer, clicking the cab's controls; the mouse isn't touch, so it stays on docked).
+- **Upstream's train controllers stay supported** (the user, 2026-11-04), with the Switch's own as a priority:
+
+  | Upstream plugin | Controllers | On the Switch |
+  | --- | --- | --- |
+  | `ZuikiInput` | **the Switch's Densha de GO! controllers**: HORI's One Handle controller for Nintendo Switch (`0f0d:00c1`), the ZUIKI Mascon (`33dd:0001` to `0005`), the ZUIKI Mascon Pro (`33dd:0006`, with HID output) | Licensed for the Switch, so the console's own controller service should take them as wired pads; how the lever reaches a homebrew there (an axis, as on the PC, or buttons) is the first thing to check on the console *(verify)*. Failing that, read raw over USB as below |
+  | `DenshaDeGoInput` | PlayStation 1 and 2 controllers (Type II, Shinkansen, Ryojouhen, the TCPP and MTCP masters) through USB adapters or as USB devices (LibUsb) | Not licensed: raw USB through libnx's USB host service (`usbHs`), as the sys-con module does for other controllers *(verify)* |
+  | `KatoInput` | Kato's EC-1 | the same |
+  | `SanYingInput` | SanYing's controllers (USB joysticks) | the same |
+
+  The plugins' C# runs as it is, given a back end for what they call on the PC (OpenTK's joystick, HidSharp, LibUsb) over libnx's HID
+  and USB host services. Their settings dialogs are Windows Forms, so each needs a page in the console's menu instead.
 - **The HUD is Android's** (`DriverHud.cs`), without the touch controls by default.
 - **Touch controls** (`ControlOverlay.cs`'s buttons, and the cab's touch areas, `CabTouch.cs`): **off by default**; an options toggle
   turns them on in handheld mode. **Docked, they are off whatever the toggle says**: there is no touch screen in use.
