@@ -58,6 +58,13 @@ namespace LibRender2
 		/// </summary>
 		public static Action<OpenBveApi.Textures.Texture, OpenBveApi.Textures.Texture, byte[], bool> AnimatedFrame;
 
+		/// <summary>
+		/// Set while an API draws the whole game (no OpenGL to upload to): a still texture's decode, made by the texture
+		/// manager's load, is handed to that API (the handle, the decode), which lets its pixels go once it has its copy,
+		/// rather than being uploaded to the stubbed OpenGL, dropped and decoded again by the API.
+		/// </summary>
+		public static Action<OpenBveApi.Textures.Texture, OpenBveApi.Textures.Texture> AloneDecoded;
+
 		/// <summary>Called when a texture is about to be unloaded (its OpenGL textures deleted, its handle made again).</summary>
 		public static Action<OpenBveApi.Textures.Texture> TextureUnloading;
 

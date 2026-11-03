@@ -101,6 +101,76 @@ namespace OpenBve.Graphics
 			logTextures = Environment.GetEnvironmentVariable(switches + "_DEBUG") == "1";
 			allWhite = Environment.GetEnvironmentVariable(switches + "_WHITE") == "1";
 			noMipmaps = Environment.GetEnvironmentVariable(switches + "_NOMIPS") == "1";
+			if (WholeGame.Full)
+			{
+				handOver = HandOver;
+				LibRender2.ObnsSharing.AloneDecoded = handOver;
+			}
+		}
+
+		/// <summary>
+		/// Decodes upstream's texture load made (the HUD's, the panel's, the menus' textures, loaded before they are drawn), handed
+		/// over while this API draws the whole game, with the frame they came; taken by Prepare rather than decoded again.
+		/// </summary>
+		private readonly Action<Texture, Texture> handOver;
+
+		private readonly Dictionary<Texture, (Texture Decoded, long Frame)> handedOver = new Dictionary<Texture, (Texture, long)>();
+
+		private void HandOver(Texture handle, Texture decoded)
+		{
+			// Kept until Prepare takes it; one not taken (its texture made already, or not drawn) is let go after a while.
+			lock (handedOver)
+			{
+				handedOver[handle] = (decoded, frame);
+			}
+		}
+
+		private bool TakeHandedOver(Texture handle, out Texture decoded)
+		{
+			lock (handedOver)
+			{
+				if (handedOver.TryGetValue(handle, out (Texture Decoded, long Frame) item))
+				{
+					handedOver.Remove(handle);
+					decoded = item.Decoded;
+					return true;
+				}
+			}
+
+			decoded = null;
+			return false;
+		}
+
+		/// <summary>Lets go of decodes handed over but not drawn for a while (their pixels; decoded again if they're drawn later).</summary>
+		private void ReleaseStaleHandedOver()
+		{
+			List<KeyValuePair<Texture, (Texture Decoded, long Frame)>> stale = null;
+			lock (handedOver)
+			{
+				foreach (KeyValuePair<Texture, (Texture Decoded, long Frame)> item in handedOver)
+				{
+					if (frame - item.Value.Frame > DecodeKeptFrames)
+					{
+						(stale = stale ?? new List<KeyValuePair<Texture, (Texture, long)>>()).Add(item);
+					}
+				}
+
+				if (stale != null)
+				{
+					foreach (KeyValuePair<Texture, (Texture Decoded, long Frame)> item in stale)
+					{
+						handedOver.Remove(item.Key);
+					}
+				}
+			}
+
+			if (stale != null)
+			{
+				foreach (KeyValuePair<Texture, (Texture Decoded, long Frame)> item in stale)
+				{
+					Program.Renderer.TextureManager.ObnsReleaseDecoded(item.Key, item.Value.Decoded);
+				}
+			}
 		}
 
 		/// <summary>The frame being made.</summary>
@@ -254,7 +324,12 @@ namespace OpenBve.Graphics
 				long start = System.Diagnostics.Stopwatch.GetTimestamp();
 				Texture decoded;
 				bool haveDecode;
-				if (loadingAll)
+				if (TakeHandedOver(texture, out decoded))
+				{
+					// Upstream's load decoded it just now (alone).
+					haveDecode = decoded != null;
+				}
+				else if (loadingAll)
 				{
 					// Decoded ahead on a worker (PreloadTrain), or here.
 					if (decodedAhead.TryGetValue(texture, out decoded))
@@ -596,6 +671,7 @@ namespace OpenBve.Graphics
 		internal void FrameStarted(long frameNumber)
 		{
 			frame = frameNumber;
+			ReleaseStaleHandedOver();
 			for (int i = freed.Count - 1; i >= 0; i--)
 			{
 				Entry entry = freed[i];
@@ -883,6 +959,16 @@ namespace OpenBve.Graphics
 
 		public virtual void Dispose()
 		{
+			if (handOver != null && LibRender2.ObnsSharing.AloneDecoded == handOver)
+			{
+				LibRender2.ObnsSharing.AloneDecoded = null;
+			}
+
+			lock (handedOver)
+			{
+				handedOver.Clear();
+			}
+
 			foreach (Entry entry in entries.Values)
 			{
 				Destroy(entry);

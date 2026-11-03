@@ -838,6 +838,21 @@ namespace LibRender2.Textures
 				{
 					handle.MultipleFrames = true;
 				}
+				else if (ObnsSharing.AloneDecoded != null)
+				{
+					// OBNS: an API draws the whole game: what upstream reads of the handle is set, and the decode goes to that
+					// API (it lets the pixels go), with nothing uploaded to the stubbed OpenGL and nothing decoded twice.
+					if (texture.Width <= 0 || texture.Height <= 0 || texture.Bytes == null)
+					{
+						return false;
+					}
+
+					handle.Size = texture.Size;
+					handle.Transparency = texture.GetTransparencyType();
+					handle.OpenGlTextures[(int)wrap].Valid = true;
+					ObnsSharing.AloneDecoded(handle, texture);
+					return true;
+				}
 				//if (texture.BitsPerPixel == 32)
 				{
 					int[] names = new int[1];
