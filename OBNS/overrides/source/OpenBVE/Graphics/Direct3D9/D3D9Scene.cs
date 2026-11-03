@@ -121,6 +121,11 @@ namespace OpenBve.Graphics.Direct3D9
 			worldSource = source;
 			blendedShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "0", "SHADOWS", "0", "DEBUG_VIEW", debugView));
 			opaqueShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "1", "SHADOWS", "0", "DEBUG_VIEW", debugView));
+			if (Interface.CurrentOptions.ShadowResolution != OpenBveApi.Interface.ShadowMapResolution.Off)
+			{
+				// Made now rather than in the first frame with shadows (about 4 s on the Zhaoxin KX-7000).
+				EnsureShadowedShaders();
+			}
 			shadowVertexShader = D9.CreateVertexShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "ShadowVS", "vs_3_0", "OPAQUE_COVERAGE", "0"));
 			shadowPixelShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "ShadowPS", "ps_3_0", "OPAQUE_COVERAGE", "0"));
 
@@ -137,6 +142,19 @@ namespace OpenBve.Graphics.Direct3D9
 
 			elements[7] = new D9.VertexElement { Stream = 0xFF, Type = D9.DeclUnused };
 			declaration = D9.CreateVertexDeclaration(d, elements);
+		}
+
+		/// <summary>The pixel shaders with shadow sampling, made the first time they're needed.</summary>
+		private void EnsureShadowedShaders()
+		{
+			if (shadowedOpaqueShader != IntPtr.Zero)
+			{
+				return;
+			}
+
+			IntPtr d = device.Device;
+			shadowedBlendedShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(worldSource, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "0", "SHADOWS", "1", "DEBUG_VIEW", debugView));
+			shadowedOpaqueShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(worldSource, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "1", "SHADOWS", "1", "DEBUG_VIEW", debugView));
 		}
 
 		private static D9.VertexElement Element(string field, byte type, byte usage, byte usageIndex, int extraOffset)
@@ -352,10 +370,9 @@ namespace OpenBve.Graphics.Direct3D9
 				layerShadows = frame[45] != 0.0f;
 			}
 
-			if (layerShadows && shadowedOpaqueShader == IntPtr.Zero)
+			if (layerShadows)
 			{
-				shadowedBlendedShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(worldSource, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "0", "SHADOWS", "1", "DEBUG_VIEW", debugView));
-				shadowedOpaqueShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(worldSource, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "1", "SHADOWS", "1", "DEBUG_VIEW", debugView));
+				EnsureShadowedShaders();
 			}
 
 			SetConstant(RecordsSizeRegister, RecordsWidth, 1.0f / RecordsWidth, 1.0f / recordsHeight, 0);

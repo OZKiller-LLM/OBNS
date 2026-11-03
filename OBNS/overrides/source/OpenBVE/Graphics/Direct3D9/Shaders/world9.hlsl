@@ -115,7 +115,7 @@ float3 safeNormalize(float3 v)
 {
 	float l2 = dot(v, v);
 	if (l2 < 1e-10) return float3(0.0, 1.0, 0.0);
-	return v * rsqrt(l2);
+	return v * rsqrt(max(l2, 1e-10));
 }
 
 float3 transformVector(float3 v, float m)
@@ -318,7 +318,9 @@ float GetCascadeShadowFactor(float layerIndex, float4 posLightSpace, float bias,
 		return 1.0;
 	}
 
-	float3 projCoords = posLightSpace.xyz / posLightSpace.w;
+	// No 0 / 0 or infinity even where the compiler evaluates a path not taken (the unused fourth cascade's w is 0): the Lisuan
+	// 7G100 let such values into the colour.
+	float3 projCoords = posLightSpace.xyz / max(posLightSpace.w, 1e-6);
 	projCoords = projCoords * 0.5 + 0.5;
 	if (projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0 || projCoords.z < 0.0 || projCoords.z > 1.0)
 	{
@@ -327,7 +329,7 @@ float GetCascadeShadowFactor(float layerIndex, float4 posLightSpace, float bias,
 
 	float3 lightDir = lightPosition.xyz;
 	float nLen2 = dot(vNormal, vNormal);
-	float3 normal = nLen2 < 1e-10 ? lightDir : vNormal * rsqrt(nLen2);
+	float3 normal = nLen2 < 1e-10 ? lightDir : vNormal * rsqrt(max(nLen2, 1e-10));
 	float slope = clamp(1.0 - dot(normal, lightDir), 0.0, 1.0);
 	float slopeScale = clamp(normalBias, 0.0, 1.5);
 	float activeBias = bias * (1.0 + slope * slopeScale);
