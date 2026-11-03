@@ -37,7 +37,7 @@ namespace OpenBve.Graphics.Direct3D9
 		private static D3D9World instance;
 
 		/// <summary>Whether Direct3D 9 draws the whole game with OpenGL out of it (OBNS_D3D9_FULL=1, OBNS/RENDERERS.md).</summary>
-		internal static bool Full { get; private set; } = Environment.GetEnvironmentVariable("OBNS_D3D9_FULL") == "1" && GLStub.Available && !Vulkan.VulkanDevice.Full && !Direct3D11.D3D11World.Full && !Direct3D12.D3D12World.Full;
+		internal static bool Full { get; set; }  // chosen by WholeGame.Probe
 
 		/// <summary>Before the window is made: whether a device can be had for it. If not, OpenGL draws, as usual.</summary>
 		internal static void ProbeFull()

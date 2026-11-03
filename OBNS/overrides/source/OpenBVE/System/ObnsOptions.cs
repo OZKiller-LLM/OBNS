@@ -58,6 +58,26 @@ namespace OpenBve
 		private static RendererKind? defaultRenderer;
 		private static RendererKind? lastDrawn;
 		private static string lastNote;
+		private static bool openGLHudFallback;
+		private static bool lastHybrid;
+
+		/// <summary>
+		/// Whether OpenGL draws the HUD, menus and cab panel over the renderer's world, as before 1.3 (off: the renderer draws the
+		/// whole game alone, where it can).
+		/// </summary>
+		internal static bool OpenGLHudFallback
+		{
+			get
+			{
+				Load();
+				return openGLHudFallback;
+			}
+			set
+			{
+				Load();
+				openGLHudFallback = value;
+			}
+		}
 
 		/// <summary>The renderer in force (taking effect when a game starts): the one chosen in the options, else the default.</summary>
 		internal static RendererKind Renderer
@@ -139,16 +159,17 @@ namespace OpenBve
 			get
 			{
 				Load();
-				return lastDrawn == null ? null : "Last game: " + Name(lastDrawn.Value) + (string.IsNullOrEmpty(lastNote) ? "" : ". " + lastNote);
+				return lastDrawn == null ? null : "Last game: " + Name(lastDrawn.Value) + (lastHybrid ? ", with OpenGL's HUD" : "") + (string.IsNullOrEmpty(lastNote) ? "" : ". " + lastNote);
 			}
 		}
 
 		/// <summary>Keeps what is drawing the world now, and why if it isn't what was asked for, for the options.</summary>
-		internal static void SetLastDrawn(RendererKind drawn, string note)
+		internal static void SetLastDrawn(RendererKind drawn, string note, bool hybrid = false)
 		{
 			Load();
 			lastDrawn = drawn;
 			lastNote = note;
+			lastHybrid = hybrid && drawn != RendererKind.OpenGL;
 			Save();
 		}
 
@@ -217,6 +238,14 @@ namespace OpenBve
 					{
 						lastNote = raw;
 					}
+					else if (key == "lasthybrid")
+					{
+						lastHybrid = value == "true";
+					}
+					else if (key == "openglhudfallback")
+					{
+						openGLHudFallback = value == "true";
+					}
 				}
 
 				// Files from before "chosen": only Vulkan was the default, but for macOS's menu, which saved OpenGL unasked.
@@ -244,12 +273,22 @@ namespace OpenBve
 					builder.AppendLine("chosen = true");
 				}
 
+				if (openGLHudFallback)
+				{
+					builder.AppendLine("openglhudfallback = true");
+				}
+
 				if (lastDrawn != null)
 				{
 					builder.AppendLine("lastdrawn = " + Key(lastDrawn.Value));
 					if (!string.IsNullOrEmpty(lastNote))
 					{
 						builder.AppendLine("lastnote = " + lastNote);
+					}
+
+					if (lastHybrid)
+					{
+						builder.AppendLine("lasthybrid = true");
 					}
 				}
 

@@ -22,8 +22,9 @@
 //(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// OBNS: not an upstream file. OBNS's rows in the options (OBNS/VULKAN.md): the renderer, added below the display
-// group's own rows when the form loads (the groups below are moved down to make room), saved with the options.
+// OBNS: not an upstream file. OBNS's rows in the options (OBNS/VULKAN.md, OBNS/RENDERERS.md): the renderer and the OpenGL
+// HUD fallback, added below the display group's own rows when the form loads (the groups below are moved down to make
+// room), saved with the options.
 
 using System.Drawing;
 using System.Windows.Forms;
@@ -35,6 +36,7 @@ namespace OpenBve
 		private Label labelObnsRenderer;
 		private ComboBox comboboxObnsRenderer;
 		private Label labelObnsRendererDrawn;
+		private CheckBox checkboxObnsHudFallback;
 		private ObnsOptions.RendererKind obnsRendererShown;
 
 		/// <summary>The renderer each of the list's items chooses.</summary>
@@ -90,7 +92,7 @@ namespace OpenBve
 				int chosen = obnsRendererKinds.IndexOf(ObnsOptions.Shown);
 				comboboxObnsRenderer.SelectedIndex = chosen >= 0 ? chosen : 1;
 
-				tip.SetToolTip(comboboxObnsRenderer, "Vulkan or Direct3D draws the world (scenery and trains) where the graphics card can share it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
+				tip.SetToolTip(comboboxObnsRenderer, "Vulkan or Direct3D draws the whole game, with no OpenGL; where it can't, OpenGL draws. Takes effect when a game starts.");
 			}
 			else if (Program.CurrentHost.Platform == OpenBveApi.Hosts.HostPlatform.AppleOSX)
 			{
@@ -98,7 +100,7 @@ namespace OpenBve
 				if (Graphics.Metal.MetalDevice.AppleSilicon())
 				{
 					ObnsAddRenderer("Metal", ObnsOptions.RendererKind.Metal);
-					tip.SetToolTip(comboboxObnsRenderer, "Metal draws the world (scenery and trains), sharing it with OpenGL, which draws the rest; OpenGL draws everything otherwise. Takes effect when a game starts.");
+					tip.SetToolTip(comboboxObnsRenderer, "Metal draws the whole game, with no OpenGL; where it can't, OpenGL draws. Takes effect when a game starts.");
 				}
 				else
 				{
@@ -119,13 +121,31 @@ namespace OpenBve
 			// What was shown: only a change of it is a choice.
 			obnsRendererShown = obnsRendererKinds[comboboxObnsRenderer.SelectedIndex];
 
+			// The OpenGL HUD fallback, where the renderer can draw alone (64-bit Windows on x86-64, macOS on Apple silicon).
+			bool alone = Graphics.GLStub.Available || Graphics.GLStub.AvailableOnMac && Graphics.Metal.MetalDevice.AppleSilicon();
+			int fallbackHeight = 0;
+			if (alone)
+			{
+				checkboxObnsHudFallback = new CheckBox
+				{
+					Anchor = comboboxVSync.Anchor,
+					AutoEllipsis = true,
+					Checked = ObnsOptions.OpenGLHudFallback,
+					Location = new Point(comboboxVSync.Left, top + rowHeight),
+					Size = new Size(comboboxVSync.Width, rowHeight - 2),
+					Text = "OpenGL HUD fallback"
+				};
+				tip.SetToolTip(checkboxObnsHudFallback, "On: the renderer draws only the world (scenery and trains), and OpenGL draws the HUD, menus and cab panel over it, as before 1.3; for a computer where the renderer alone draws something wrong. Off: the renderer draws the whole game. Takes effect when a game starts.");
+				fallbackHeight = rowHeight;
+			}
+
 			// What drew the last game, and why if it isn't what was asked for, on a row below.
 			string drawn = ObnsOptions.LastDrawnText;
 			labelObnsRendererDrawn = new Label
 			{
 				Anchor = comboboxVSync.Anchor,
 				AutoEllipsis = true,
-				Location = new Point(labelVSync.Left, top + rowHeight),
+				Location = new Point(labelVSync.Left, top + rowHeight + fallbackHeight),
 				Size = new Size(comboboxVSync.Right - labelVSync.Left, statusHeight),
 				Text = drawn ?? "Last game: none yet",
 				TextAlign = ContentAlignment.TopLeft
@@ -134,17 +154,22 @@ namespace OpenBve
 
 			// Room for the rows: the group grows, and what is below it in the panel moves down.
 			int groupBottom = groupboxDisplayMode.Bottom;
-			groupboxDisplayMode.Height += rowHeight + statusHeight + 6;
+			groupboxDisplayMode.Height += rowHeight + fallbackHeight + statusHeight + 6;
 			foreach (Control control in groupboxDisplayMode.Parent.Controls)
 			{
 				if (control != groupboxDisplayMode && control.Top >= groupBottom)
 				{
-					control.Top += rowHeight + statusHeight + 6;
+					control.Top += rowHeight + fallbackHeight + statusHeight + 6;
 				}
 			}
 
 			groupboxDisplayMode.Controls.Add(labelObnsRenderer);
 			groupboxDisplayMode.Controls.Add(comboboxObnsRenderer);
+			if (checkboxObnsHudFallback != null)
+			{
+				groupboxDisplayMode.Controls.Add(checkboxObnsHudFallback);
+			}
+
 			groupboxDisplayMode.Controls.Add(labelObnsRendererDrawn);
 		}
 
@@ -163,6 +188,11 @@ namespace OpenBve
 				if (selected != obnsRendererShown)
 				{
 					ObnsOptions.Renderer = selected;
+				}
+
+				if (checkboxObnsHudFallback != null)
+				{
+					ObnsOptions.OpenGLHudFallback = checkboxObnsHudFallback.Checked;
 				}
 
 				ObnsOptions.Save();

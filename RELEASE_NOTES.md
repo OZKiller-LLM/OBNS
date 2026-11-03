@@ -2,6 +2,16 @@
 
 ## 1.3 (not released) — Renderers without OpenGL
 
+### Windows (x64) and macOS (Apple silicon)
+
+- **The renderer draws the whole game alone:** Vulkan, Direct3D 12, 11 or 9.0c, or Metal draws everything, the HUD and menus too, with
+  no OpenGL at all. It's on by default. It's faster where sharing images with OpenGL cost the most: the Lisuan 7G100, where every
+  renderer used to fall back to OpenGL, runs TML at 34 to 68 fps against OpenGL's 23, and a MacBook Neo runs it at 47 fps against 28.
+  Where the renderer chosen can't start, the next one is tried, then OpenGL.
+- **OpenGL HUD fallback** (Options, under Renderer; off by default): the renderer draws only the world and the cab and OpenGL the rest,
+  as in 1.2. For a computer where the renderer alone draws something wrong.
+- Known: Direct3D 9 with shadows on draws the scene too dark on the Lisuan 7G100.
+
 ### Windows, Ubuntu and macOS
 
 - **White scenery after a jump:** jumping to a station could leave much of the scenery white for the rest of the game, on every renderer except plain OpenGL. Textures whose decode had finished but which had gone out of view used up the places for new ones.

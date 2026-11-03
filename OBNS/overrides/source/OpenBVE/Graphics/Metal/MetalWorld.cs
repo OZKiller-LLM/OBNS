@@ -38,7 +38,7 @@ namespace OpenBve.Graphics.Metal
 		private static MetalWorld instance;
 
 		/// <summary>Whether Metal draws the whole game with OpenGL out of it (OBNS_METAL_FULL=1, OBNS/RENDERERS.md).</summary>
-		internal static bool Full { get; private set; } = Environment.GetEnvironmentVariable("OBNS_METAL_FULL") == "1" && GLStub.AvailableOnMac;
+		internal static bool Full { get; set; }  // chosen by WholeGame.Probe
 
 		/// <summary>Before the window is made: whether a device can be had for it. If not, OpenGL draws, as usual.</summary>
 		internal static void ProbeFull()

@@ -9,8 +9,16 @@ In 1.3 a chosen renderer draws the whole game frame, owns the swap chain and nee
 
 ## The game on one API alone
 
-`OBNS_VULKAN_FULL=1`, `OBNS_D3D12_FULL=1`, `OBNS_D3D11_FULL=1` or `OBNS_D3D9_FULL=1` on Windows x64; `OBNS_METAL_FULL=1` on Macs with
-Apple silicon. Off by default so far.
+On by default, on Windows x64 and on Macs with Apple silicon: the renderer the options choose (Vulkan on Windows and Metal on Apple
+silicon unless another is chosen; `GPU_SUPPORT.md`) draws the whole game. Where it can't have its device, it falls back as the hybrid
+does: Direct3D 12 to 11, Direct3D to Vulkan, then OpenGL; the options' "Last game" line says which drew and why.
+
+The options' **OpenGL HUD fallback** (off by default; `openglhudfallback` in `obns.cfg`) brings back 1.2's hybrid: the renderer draws
+the world and the cab, and OpenGL the HUD, menus and the rest over it. It's for a computer where the renderer alone draws something
+wrong, and the line then reads "with OpenGL's HUD". Linux and Intel Macs keep the hybrid, as this mode doesn't run there yet.
+
+For tests, a switch decides instead of the options (`WholeGame.Probe`): `OBNS_VULKAN_FULL=1`, `OBNS_D3D12_FULL=1`, `OBNS_D3D11_FULL=1`,
+`OBNS_D3D9_FULL=1` or `OBNS_METAL_FULL=1` that API alone; `OBNS_<API>=1` that API's hybrid; `OBNS_<API>=0` not that API.
 Everything below is on Vulkan unless it says otherwise, and is the same on Direct3D, with its own frame image and swap chain
 (`D3D11World`, `D3D12World`, `D3D9World`, each with its `FrameDrawing`). What is the same whichever API it is lives in `WholeFrame.cs`.
 
@@ -102,6 +110,26 @@ On the M1 Mac (macOS 26, Mono 6.14, SDL2), TML, exterior at the start, against t
 | Its fallback (`OBNS_METAL_STUB_REFUSE=1`) | OpenGL draws, with the Metal world layer, as usual |
 | The snapshots' difference | the hybrid's own snapshots are what differ (an outline and darker HUD boxes not on its screen); the screens agree |
 
+On the Chinese benchmark PC (Zhaoxin KX-7000, Lisuan 7G100; Windows), where every hybrid falls back to OpenGL (no shared images):
+
+| What | Result |
+| --- | --- |
+| Start | every API alone draws the whole game, with no OpenGL context; no crashes or bug checks |
+| TML exterior, snapshots every 3 s | OpenGL 22.8 fps (after about 110 s of warm-up); Direct3D 11 34.4, 12 34.3, 9 12.6; Vulkan 1.3 62 to 68 (28.5 before its snapshot fix); the core 1.0 tier 52.4. The alone modes settle within 10 to 30 s |
+| East Rail at the start | OpenGL 57 fps; Direct3D 11 98, 12 152, 9 33 to 41; Vulkan 122, the core 1.0 tier 118 |
+| OpenGL's warm-up | its texture uploads: 216,000 calls in 21.7 s, against about 0.1 s for the alone modes |
+| Pictures, shadows off | Direct3D 11, 12, Vulkan and Direct3D 9 within 0.2 levels of OpenGL |
+| Resizing, minimizing, menu, station list, jump | right in every mode |
+
+What it found, fixed: Direct3D 9's pixel shader took the compiler 40 s (2 minutes before the first frame, here too); Vulkan's snapshot
+read from uncached memory (half a second each, and key taps lost in those frames); Direct3D 11 drew while minimized; the Lisuan's
+Direct3D 9 gives zeros for the NORMAL vertex input (now TEXCOORD1), and lets a path's 0 / 0 that the shader computes but doesn't take
+into the colour (the picture black; shadow sampling is left out of the shaders while shadows are off).
+
+On the MacBook Neo (A18 Pro, 8 GB, macOS 26), TML exterior, snapshots on: Metal alone 47.1 fps against the hybrid's 28.1 with vertical sync
+on, 48.4 against 39.5 with it off; loading 86 to 95 s against 91 to 93 s; 2.9 GB private memory against 3.8 GB. The window captured agrees
+with the snapshots; the hybrid's own snapshots are what differ, as on the M1.
+
 ## Not done
 
 - **Event cubes and the rail path overlay:** debug views, not drawn in this mode. Nor are the wireframe and normals views.
@@ -114,8 +142,10 @@ On the M1 Mac (macOS 26, Mono 6.14, SDL2), TML, exterior at the start, against t
 - **Metal:** Intel Macs aren't offered.
 - **Metal's speed (on hold, the user's call, 2026-11-03):** the GPU's time per frame in the log, then frames in flight (the CPU and GPU
   each waits for the other now), encoding draws natively rather than call by call from Mono, memoryless depth and fewer passes, ASTC textures.
-- **The options:** no entry yet; it's the switch alone.
-- **The Lisuan:** not run there. It's what this is for: no shared images, and no OpenGL. Direct3D 11 alone is the one to try first.
+- **Direct3D 9 with shadows on, on the Lisuan 7G100:** parts of the scene ahead come out far too dark (up to about three quarters) where
+  OpenGL's shadows barely show. Not a release blocker (the user's call, 2026-11-04): Direct3D 9 is for older machines, and shadows are
+  off by default. A build with the shadow sampling's 0 / 0 removed at the source is waiting to be run there.
+- **Key taps shorter than a frame:** lost, as upstream's input polls once a frame. Only seen in tests, in frames stalled by snapshots.
 
 ## Rules
 

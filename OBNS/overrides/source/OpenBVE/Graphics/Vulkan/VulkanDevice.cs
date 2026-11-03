@@ -73,7 +73,7 @@ namespace OpenBve.Graphics.Vulkan
 		/// Whether Vulkan draws the whole game with OpenGL out of it (OBNS_VULKAN_FULL=1, OBNS/RENDERERS.md): no images or memory
 		/// shared, the frame presented through a swap chain.
 		/// </summary>
-		internal static bool Full { get; private set; } = Environment.GetEnvironmentVariable("OBNS_VULKAN_FULL") == "1" && GLStub.Available;
+		internal static bool Full { get; set; }  // chosen by WholeGame.Probe
 
 		/// <summary>
 		/// Before the window is made: whether a device can be had for drawing the whole game. The window has no OpenGL context if

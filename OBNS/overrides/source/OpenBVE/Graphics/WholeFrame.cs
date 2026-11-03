@@ -25,6 +25,7 @@
 // OBNS: not an upstream file. A whole game drawn by one API, with OpenGL out of it (OBNS/RENDERERS.md): what is the same whichever
 // API it is.
 
+using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using LibRender2.Frame;
@@ -89,14 +90,124 @@ namespace OpenBve.Graphics
 		/// <summary>Whether the API presents the game now (OpenGL's SwapBuffers must not be called).</summary>
 		internal static bool PresentsItself => Full && WorldLayer.Enabled;
 
-		/// <summary>Before the window is made: whether a device can be had, as the window then has no OpenGL to fall back on.</summary>
+		/// <summary>The API asked for that didn't draw alone, and why, for the options' "last game" line; null if none.</summary>
+		internal static string ProbeNote { get; private set; }
+
+		/// <summary>
+		/// Before the window is made: which API draws the whole game, and whether its device can be had, as the window then has no
+		/// OpenGL to fall back on. By default the renderer the options choose draws it alone; the options' OpenGL HUD fallback
+		/// keeps 1.2's hybrid (the API draws the world, OpenGL the rest). A switch decides instead: OBNS_&lt;API&gt;_FULL=1 that API
+		/// alone, and OBNS_&lt;API&gt;=1 (or =0) the hybrid (or not that API), as the tests have them.
+		/// </summary>
 		internal static void Probe()
 		{
-			Vulkan.VulkanDevice.ProbeFull();
-			Direct3D11.D3D11World.ProbeFull();
-			Direct3D12.D3D12World.ProbeFull();
-			Direct3D9.D3D9World.ProbeFull();
-			Metal.MetalWorld.ProbeFull();
+			string[] names = { "VULKAN", "D3D11", "D3D12", "D3D9", "METAL" };
+			bool switched = false, hybridSwitched = false;
+			foreach (string name in names)
+			{
+				switched |= Environment.GetEnvironmentVariable("OBNS_" + name + "_FULL") == "1";
+				hybridSwitched |= Environment.GetEnvironmentVariable("OBNS_" + name) == "1";
+			}
+
+			if (switched)
+			{
+				// As the switches always had it: the first in this order, where it can be.
+				Vulkan.VulkanDevice.Full = Switch("VULKAN") && GLStub.Available;
+				Direct3D11.D3D11World.Full = Switch("D3D11") && GLStub.Available && !Vulkan.VulkanDevice.Full;
+				Direct3D12.D3D12World.Full = Switch("D3D12") && GLStub.Available && !Vulkan.VulkanDevice.Full && !Direct3D11.D3D11World.Full;
+				Direct3D9.D3D9World.Full = Switch("D3D9") && GLStub.Available && !Vulkan.VulkanDevice.Full && !Direct3D11.D3D11World.Full && !Direct3D12.D3D12World.Full;
+				Metal.MetalWorld.Full = Switch("METAL") && GLStub.AvailableOnMac;
+				Vulkan.VulkanDevice.ProbeFull();
+				Direct3D11.D3D11World.ProbeFull();
+				Direct3D12.D3D12World.ProbeFull();
+				Direct3D9.D3D9World.ProbeFull();
+				Metal.MetalWorld.ProbeFull();
+				return;
+			}
+
+			ObnsOptions.RendererKind asked = ObnsOptions.Renderer;
+			if (hybridSwitched || ObnsOptions.OpenGLHudFallback || asked == ObnsOptions.RendererKind.OpenGL)
+			{
+				return;
+			}
+
+			// The one asked for, then as the hybrid falls back: Direct3D 12 to 11, Direct3D to Vulkan.
+			ObnsOptions.RendererKind[] order;
+			switch (asked)
+			{
+				case ObnsOptions.RendererKind.Direct3D12: order = new[] { asked, ObnsOptions.RendererKind.Direct3D11, ObnsOptions.RendererKind.Vulkan }; break;
+				case ObnsOptions.RendererKind.Direct3D11:
+				case ObnsOptions.RendererKind.Direct3D9: order = new[] { asked, ObnsOptions.RendererKind.Vulkan }; break;
+				default: order = new[] { asked }; break;
+			}
+
+			foreach (ObnsOptions.RendererKind kind in order)
+			{
+				if (TryAlone(kind))
+				{
+					if (kind != asked)
+					{
+						ProbeNote = Name(asked) + " can't draw the game alone here";
+					}
+
+					return;
+				}
+			}
+
+			if (GLStub.Available || GLStub.AvailableOnMac && asked == ObnsOptions.RendererKind.Metal)
+			{
+				ProbeNote = Name(asked) + " can't draw the game alone here";
+			}
+		}
+
+		private static bool Switch(string name) => Environment.GetEnvironmentVariable("OBNS_" + name + "_FULL") == "1";
+
+		/// <summary>An API drawing alone, where it can be and its device can be had (its switch OBNS_&lt;API&gt;=0 keeps it out).</summary>
+		private static bool TryAlone(ObnsOptions.RendererKind kind)
+		{
+			switch (kind)
+			{
+				case ObnsOptions.RendererKind.Vulkan:
+					if (!GLStub.Available || Environment.GetEnvironmentVariable("OBNS_VULKAN") == "0") return false;
+					Vulkan.VulkanDevice.Full = true;
+					Vulkan.VulkanDevice.ProbeFull();
+					return Vulkan.VulkanDevice.Full;
+				case ObnsOptions.RendererKind.Direct3D11:
+					if (!GLStub.Available || Environment.GetEnvironmentVariable("OBNS_D3D11") == "0") return false;
+					Direct3D11.D3D11World.Full = true;
+					Direct3D11.D3D11World.ProbeFull();
+					return Direct3D11.D3D11World.Full;
+				case ObnsOptions.RendererKind.Direct3D12:
+					if (!GLStub.Available || Environment.GetEnvironmentVariable("OBNS_D3D12") == "0") return false;
+					Direct3D12.D3D12World.Full = true;
+					Direct3D12.D3D12World.ProbeFull();
+					return Direct3D12.D3D12World.Full;
+				case ObnsOptions.RendererKind.Direct3D9:
+					if (!GLStub.Available || Environment.GetEnvironmentVariable("OBNS_D3D9") == "0") return false;
+					Direct3D9.D3D9World.Full = true;
+					Direct3D9.D3D9World.ProbeFull();
+					return Direct3D9.D3D9World.Full;
+				case ObnsOptions.RendererKind.Metal:
+					if (!GLStub.AvailableOnMac || Environment.GetEnvironmentVariable("OBNS_METAL") == "0") return false;
+					Metal.MetalWorld.Full = true;
+					Metal.MetalWorld.ProbeFull();
+					return Metal.MetalWorld.Full;
+				default:
+					return false;
+			}
+		}
+
+		private static string Name(ObnsOptions.RendererKind kind)
+		{
+			switch (kind)
+			{
+				case ObnsOptions.RendererKind.Vulkan: return "Vulkan";
+				case ObnsOptions.RendererKind.Direct3D9: return "Direct3D 9.0c";
+				case ObnsOptions.RendererKind.Direct3D11: return "Direct3D 11";
+				case ObnsOptions.RendererKind.Direct3D12: return "Direct3D 12";
+				case ObnsOptions.RendererKind.Metal: return "Metal";
+				default: return "OpenGL";
+			}
 		}
 
 		/// <summary>A frame's image saved as OpenGL's is: its rows (RGBA, or BGRA) run bottom to top, and it is opaque.</summary>

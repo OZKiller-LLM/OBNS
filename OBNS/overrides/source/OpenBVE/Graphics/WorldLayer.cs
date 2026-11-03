@@ -117,35 +117,31 @@ namespace OpenBve.Graphics
 		/// <summary>Makes the layer the options (or the switches) ask for, where it can share images with OpenGL; logs which, and why.</summary>
 		internal static void Initialize()
 		{
-			// Vulkan alone, with OpenGL out of it (OBNS_VULKAN_FULL=1): if it can't start, OpenGL draws, untouched.
-			if (Vulkan.VulkanDevice.Full)
+			// An API alone, with OpenGL out of it (WholeGame.Probe chose it: the options, or OBNS_<API>_FULL=1).
+			if (WholeGame.Full)
 			{
-				Vulkan.VulkanWorld.Initialize();
-				return;
-			}
+				if (Vulkan.VulkanDevice.Full)
+				{
+					Vulkan.VulkanWorld.Initialize();
+				}
+				else if (Direct3D11.D3D11World.Full)
+				{
+					Direct3D11.D3D11World.Initialize();
+				}
+				else if (Direct3D12.D3D12World.Full)
+				{
+					Direct3D12.D3D12World.Initialize();
+				}
+				else if (Direct3D9.D3D9World.Full)
+				{
+					Direct3D9.D3D9World.Initialize();
+				}
+				else
+				{
+					Metal.MetalWorld.Initialize();
+				}
 
-			// Or Direct3D 11 alone (OBNS_D3D11_FULL=1), or 12 (OBNS_D3D12_FULL=1), or 9 (OBNS_D3D9_FULL=1), or Metal (OBNS_METAL_FULL=1).
-			if (Direct3D11.D3D11World.Full)
-			{
-				Direct3D11.D3D11World.Initialize();
-				return;
-			}
-
-			if (Direct3D12.D3D12World.Full)
-			{
-				Direct3D12.D3D12World.Initialize();
-				return;
-			}
-
-			if (Direct3D9.D3D9World.Full)
-			{
-				Direct3D9.D3D9World.Initialize();
-				return;
-			}
-
-			if (Metal.MetalWorld.Full)
-			{
-				Metal.MetalWorld.Initialize();
+				ObnsOptions.SetLastDrawn(Drawn, Drawn != ObnsOptions.Renderer ? WholeGame.ProbeNote ?? firstReason : null);
 				return;
 			}
 
@@ -173,10 +169,13 @@ namespace OpenBve.Graphics
 				Vulkan.VulkanWorld.Initialize();
 			}
 
-			// The options show what drew the game, and why if it isn't what was asked for.
-			ObnsOptions.RendererKind drawn = Metal.MetalWorld.Enabled ? ObnsOptions.RendererKind.Metal : Direct3D9.D3D9World.Enabled ? ObnsOptions.RendererKind.Direct3D9 : Direct3D12.D3D12World.Enabled ? ObnsOptions.RendererKind.Direct3D12 : Direct3D11.D3D11World.Enabled ? ObnsOptions.RendererKind.Direct3D11 : Vulkan.VulkanWorld.Enabled ? ObnsOptions.RendererKind.Vulkan : ObnsOptions.RendererKind.OpenGL;
-			ObnsOptions.SetLastDrawn(drawn, drawn != ObnsOptions.Renderer ? firstReason : null);
+			// The options show what drew the game (here with OpenGL's HUD), and why if it isn't what was asked for.
+			ObnsOptions.RendererKind drawn = Drawn;
+			ObnsOptions.SetLastDrawn(drawn, drawn != ObnsOptions.Renderer ? firstReason ?? WholeGame.ProbeNote : WholeGame.ProbeNote, true);
 		}
+
+		/// <summary>The renderer drawing the world (or the whole game).</summary>
+		private static ObnsOptions.RendererKind Drawn => Metal.MetalWorld.Enabled ? ObnsOptions.RendererKind.Metal : Direct3D9.D3D9World.Enabled ? ObnsOptions.RendererKind.Direct3D9 : Direct3D12.D3D12World.Enabled ? ObnsOptions.RendererKind.Direct3D12 : Direct3D11.D3D11World.Enabled ? ObnsOptions.RendererKind.Direct3D11 : Vulkan.VulkanWorld.Enabled ? ObnsOptions.RendererKind.Vulkan : ObnsOptions.RendererKind.OpenGL;
 
 		/// <summary>The first reason given this game for a layer not being used: the one asked for comes first, and what is tried after has less to say.</summary>
 		private static string firstReason;
