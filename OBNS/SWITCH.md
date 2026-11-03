@@ -17,11 +17,30 @@ in its own folder under `/switch` on the SD card, run from hbmenu on custom firm
 | Screen | 1280x720 handheld (touch), up to 1920x1080 docked |
 | Storage | the SD card (FAT32 or exFAT). Read speed is that of a UHS-I card through the Switch's reader *(measure)*; TML's load takes 400 to 530 s on the Zhaoxin PC and 86 to 95 s on the MacBook Neo |
 
+### Clocks a homebrew can set
+
+The CPU can be raised from inside the program, as RetroArch has done since 2018: its own overclock and underclock settings, restored
+after docking or undocking and set back to the system's on losing focus. libnx has the clock service for it (`clkrst`, firmware 8.0.0
+and later; `pcv` before), which sys-clk also uses as a background module. Community figures *(verify on the console)*:
+
+| CPU / GPU | Erista (first model) | Mariko (later model, Lite, OLED) |
+| --- | --- | --- |
+| Stock in games | 1,020 MHz / 307 or 768 MHz | the same |
+| 1,785 MHz CPU | the stock maximum (Nintendo's own loading "boost" clock); the board's 18 W limit is reached here without undervolting | "moderate", for most games |
+| Higher | not without undervolting; the GPU's limit is 921 MHz; don't raise both at once on a first model | about 1,963 / 998 MHz called safe on good chips, 1,963 / 921 more generally; up to 2,397 / 1,305 unlockable, called unsafe |
+| On battery | over about 8 W for long periods is said to wear the battery | the same |
+
+What OBNS should do with it (proposed): **1,785 MHz while loading**, on every model (TML's load is long, and it is the clock the
+console's own games load at); in play, the clocks in an option (stock by default, 1,785 MHz as the raised one, nothing above the
+stock maximum offered), set back to stock on leaving or losing focus, as RetroArch does. Above 1,785 MHz is sys-clk's business, at
+the player's own risk.
+
 For scale, TML in 1.3 on the MacBook Neo (Metal alone): 2.9 GB private memory, a 1.4 GB managed heap at load, 2.23 M vertices and 7.66 M
 face vertices (about 375 MB), 7,900 to 8,000 draws a frame, and 12.5 ms of CPU a frame (train 3.4, render 8.5, world 0.7). An A57 at
 1 GHz is several times slower a core than the A18 Pro, and Mono's AOT code is slower than its JIT's *(estimate)*: the same work would
-take roughly 80 to 110 ms a frame, about 10 fps. **30 fps needs the CPU's work cut to about a third and spread over the 3 cores, and
-the memory cut by about a quarter**, before the GPU is the limit.
+take roughly 80 to 110 ms a frame at 1,020 MHz, about 10 fps, and 46 to 63 ms at 1,785 MHz. **30 fps needs the CPU's work cut to
+about a third at stock clocks, or by about half at 1,785 MHz, and spread over the 3 cores; and the memory cut by about a quarter**,
+before the GPU is the limit. Whether the 30 fps floor is to hold at stock clocks or at 1,785 MHz is the user's call.
 
 ## Software
 
@@ -112,7 +131,7 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
    time, the 2D part and the HUD in the same pass (no OpenGL anywhere).
 4. **CPU to 33 ms in the worst frame, not the mean:** textures and meshes made off the frame's thread, the garbage collector kept from
    long pauses (fewer allocations a frame), the ATS plugin layer's cost measured driving; fewer draws (static scenery merged by texture page, indirect draws, culling on the GPU), the work over 3 cores,
-   the hot loops checked under AOT. Loading under the CPU boost mode if homebrew can use it.
+   the hot loops checked under AOT. Loading at 1,785 MHz; the clocks option for play.
 5. **The console's ways:** input mapping, touch for the cab, docked and handheld resolution (720p rendering docked if needed), sleep and
    resume, the HOME button.
 
@@ -126,5 +145,8 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
   [applet and title mode](https://tabrnicus.github.io/Switch-CFW-Guide/guide/homebrews)
 - Hardware: [Digital Foundry's clocks, via GamesRadar](https://www.gamesradar.com/report-says-the-nintendo-switch-runs-slower-than-we-thought-but-its-not-all-bad-news),
   [Chips and Cheese on the GPU](https://chipsandcheese.com/p/nintendo-switchs-igpu-maxwell-nerfed-edition)
+- Clocks: [RetroArch's own overclocking (November 2018)](https://www.libretro.com/index.php/libretroretroarch-progress-reportupdate-november-2018/),
+  [libnx's clkrst service](https://github.com/switchbrew/libnx/pull/266/files), [sys-clk](https://github.com/retronx-team/sys-clk/),
+  [Horizon OC on Erista](https://horizon-oc.github.io/erista.html), [Switch OC Suite](https://gamebrew.org/wiki/Switch_OC_Suite)
 - Packages: [devkitPro's Switch packages](https://github.com/devkitPro/pacman-packages/tree/master/switch);
   [switch-mesa's OpenGL 4.3](https://devkitpro.org/viewtopic.php?p=16122)
