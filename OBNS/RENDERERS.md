@@ -74,6 +74,8 @@ The same machine and route for Direct3D alone, against each one's hybrid:
 | Resizing, minimizing, views, menu | no errors, pictures right | the same | the same |
 | Jump to a station | 0.1 to 0.3% white | the same | the same |
 | Motion blur | as the hybrid while moving, by eye and by sharpness | the same | the same |
+| No usable Direct3D (a copy of the build with DLLs lacking its functions) | OpenGL draws, as usual | the same | the same |
+| Ten minutes running | memory flat at 2.09 GB, 118 to 120 fps | memory flat, 2.3 to 3.3 GB between runs (the hybrid 2.6 to 2.7 GB); 120 fps in two later runs of 7 minutes | memory flat at 2.13 GB, 118 to 120 fps |
 
 Vulkan's frame cost in the same comparison: 2.92 to 3.57 ms against 2.89 to 3.44 ms. Particles in fog on Vulkan: 0 by more than 2.
 
@@ -87,7 +89,6 @@ native menu, with load time and frame rate within 1.22's own spread.
 - **The older Vulkan tiers:** this needs bindless textures and dynamic rendering, so not the core 1.0 tier.
 - **Full screen:** not run, as it changes the display mode.
 - **Metal:** the same frame and `IFrameDrawing` is still to do. `WorldSky`, the layers and `WholeFrameDrawing` are shared already.
-- **Direct3D's fallback:** the path for no device is written as Vulkan's, but hasn't been run, as this machine has all of them.
 - **The options:** no entry yet; it's the switch alone.
 - **The Lisuan:** not run there. It's what this is for: no shared images, and no OpenGL. Direct3D 11 alone is the one to try first.
 
