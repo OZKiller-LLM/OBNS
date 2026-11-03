@@ -99,6 +99,12 @@ namespace OpenBve.Graphics
 		/// </summary>
 		internal static string PrepareOnMac()
 		{
+			// OBNS_METAL_STUB_REFUSE=1: as if macOS refused, for testing the fall back to OpenGL.
+			if (Environment.GetEnvironmentVariable("OBNS_METAL_STUB_REFUSE") == "1")
+			{
+				return "OpenGL's stubs refused for testing (OBNS_METAL_STUB_REFUSE=1)";
+			}
+
 			const int readWrite = 3, readExecute = 5, privateAnonymous = 0x0002 | 0x1000;
 			byte[][] stubs = MakeStubsArm64(Marshal.StringToHGlobalAnsi(StubText));
 			int size = 0;
