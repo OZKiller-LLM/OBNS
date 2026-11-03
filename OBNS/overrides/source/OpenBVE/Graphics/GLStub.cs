@@ -56,8 +56,17 @@ namespace OpenBve.Graphics
 		[DllImport("/usr/lib/libSystem.dylib")]
 		private static extern void sys_icache_invalidate(IntPtr start, UIntPtr size);
 
+		[DllImport("libc", EntryPoint = "mmap", SetLastError = true)]
+		private static extern IntPtr LinuxMmap(IntPtr address, UIntPtr size, int protection, int flags, int file, long offset);
+
+		[DllImport("libc", EntryPoint = "mprotect", SetLastError = true)]
+		private static extern int LinuxMprotect(IntPtr address, UIntPtr size, int protection);
+
 		/// <summary>Whether the stubs can be used here: x64 Windows so far (the second and third arguments' registers are the system's).</summary>
 		internal static bool Available => Environment.Is64BitProcess && Environment.OSVersion.Platform == PlatformID.Win32NT && RuntimeInformation.ProcessArchitecture == Architecture.X64;
+
+		/// <summary>Whether the stubs for Vulkan can be used on Linux: x64 (System V's calling convention: the second argument in rsi, the third in rdx).</summary>
+		internal static bool AvailableOnLinux => RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && RuntimeInformation.ProcessArchitecture == Architecture.X64;
 
 		/// <summary>Whether the stubs for Metal can be used here: macOS on Apple silicon, the only GPUs its whole frame is for.</summary>
 		internal static bool AvailableOnMac => RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
@@ -155,6 +164,13 @@ namespace OpenBve.Graphics
 			byte[] thirdIsOne = { 0x41, 0xC7, 0x00, 0x01, 0x00, 0x00, 0x00, 0x31, 0xC0, 0xC3 }; // mov dword [r8],1; xor eax,eax; ret
 			// The only float upstream asks for is the anisotropic filtering limit, which the options are saved with: 16, as on any GPU now.
 			byte[] secondIs16 = { 0xC7, 0x02, 0x00, 0x00, 0x80, 0x41, 0x31, 0xC0, 0xC3 }; // mov dword [rdx],16.0f; xor eax,eax; ret
+			if (AvailableOnLinux)
+			{
+				// System V: the second argument in rsi, the third in rdx.
+				secondIsOne = new byte[] { 0xC7, 0x06, 0x01, 0x00, 0x00, 0x00, 0x31, 0xC0, 0xC3 }; // mov dword [rsi],1; xor eax,eax; ret
+				thirdIsOne = new byte[] { 0xC7, 0x02, 0x01, 0x00, 0x00, 0x00, 0x31, 0xC0, 0xC3 }; // mov dword [rdx],1; xor eax,eax; ret
+				secondIs16 = new byte[] { 0xC7, 0x06, 0x00, 0x00, 0x80, 0x41, 0x31, 0xC0, 0xC3 }; // mov dword [rsi],16.0f; xor eax,eax; ret
+			}
 			byte[] returnsText = new byte[13]; // mov rax,text; ret
 			returnsText[0] = 0x48;
 			returnsText[1] = 0xB8;
@@ -172,6 +188,29 @@ namespace OpenBve.Graphics
 			if (AvailableOnMac)
 			{
 				addresses = macStubs;
+			}
+			else if (AvailableOnLinux)
+			{
+				// Written to ordinary memory, which then becomes executable.
+				const int readWrite = 3, readExecute = 5, privateAnonymous = 0x02 | 0x20;
+				IntPtr memory = LinuxMmap(IntPtr.Zero, (UIntPtr)(uint)size, readWrite, privateAnonymous, -1, 0);
+				if (memory == (IntPtr)(-1))
+				{
+					throw new InvalidOperationException("no memory for OpenGL's stubs (error " + Marshal.GetLastWin32Error() + ")");
+				}
+
+				int offset = 0;
+				for (int i = 0; i < stubs.Length; i++)
+				{
+					addresses[i] = memory + offset;
+					Marshal.Copy(stubs[i], 0, addresses[i], stubs[i].Length);
+					offset += (stubs[i].Length + 15) & ~15;
+				}
+
+				if (LinuxMprotect(memory, (UIntPtr)(uint)size, readExecute) != 0)
+				{
+					throw new InvalidOperationException("OpenGL's stubs can't be made executable (error " + Marshal.GetLastWin32Error() + ")");
+				}
 			}
 			else
 			{

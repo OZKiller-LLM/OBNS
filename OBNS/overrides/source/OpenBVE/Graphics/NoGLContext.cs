@@ -55,6 +55,7 @@ namespace OpenBve.Graphics
 		[DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr window);
 		[DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr window, IntPtr dc);
 		[DllImport("gdi32.dll")] private static extern int GetPixelFormat(IntPtr dc);
+		[DllImport("libGL.so.1")] private static extern IntPtr glXGetCurrentContext();
 
 		/// <summary>What the system says of OpenGL in this window, for the log: no current context, and no pixel format.</summary>
 		internal static string Describe(IntPtr window)
@@ -62,6 +63,21 @@ namespace OpenBve.Graphics
 			if (GLStub.AvailableOnMac)
 			{
 				return "OpenGL context current: " + (Metal.Mtl.CGLGetCurrentContext() != IntPtr.Zero ? "yes" : "none");
+			}
+
+			if (GLStub.AvailableOnLinux)
+			{
+				string current;
+				try
+				{
+					current = glXGetCurrentContext() != IntPtr.Zero ? "yes" : "none";
+				}
+				catch (Exception ex) when (ex is DllNotFoundException || ex is EntryPointNotFoundException)
+				{
+					current = "none (no GLX)";
+				}
+
+				return "OpenGL context current: " + current;
 			}
 
 			IntPtr dc = GetDC(window);

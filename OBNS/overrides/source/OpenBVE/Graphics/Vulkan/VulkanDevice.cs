@@ -396,7 +396,9 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			// Drawing the whole game: the window's surface, and on the 1.0 tier the device's properties as the KHR extension has them.
-			string[] instanceExtensions = Full ? Core10 ? new[] { "VK_KHR_surface", "VK_KHR_win32_surface", "VK_KHR_get_physical_device_properties2" } : new[] { "VK_KHR_surface", "VK_KHR_win32_surface" } : Core10 ? core10InstanceExtensions : new string[0];
+			// The window's surface is Win32's on Windows and X11's on Linux (OpenTK's window, or SDL2's on X11).
+			string surfaceExtension = GLStub.AvailableOnLinux ? "VK_KHR_xlib_surface" : "VK_KHR_win32_surface";
+			string[] instanceExtensions = Full ? Core10 ? new[] { "VK_KHR_surface", surfaceExtension, "VK_KHR_get_physical_device_properties2" } : new[] { "VK_KHR_surface", surfaceExtension } : Core10 ? core10InstanceExtensions : new string[0];
 			HashSet<string> loaderExtensions = instanceExtensions.Length > 0 ? Vk.InstanceExtensions() : null;
 			foreach (string extension in instanceExtensions)
 			{

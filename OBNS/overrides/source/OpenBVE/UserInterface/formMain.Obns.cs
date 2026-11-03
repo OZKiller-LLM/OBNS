@@ -121,8 +121,8 @@ namespace OpenBve
 			// What was shown: only a change of it is a choice.
 			obnsRendererShown = obnsRendererKinds[comboboxObnsRenderer.SelectedIndex];
 
-			// The OpenGL HUD fallback, where the renderer can draw alone (64-bit Windows on x86-64, macOS on Apple silicon).
-			bool alone = Graphics.GLStub.Available || Graphics.GLStub.AvailableOnMac && Graphics.Metal.MetalDevice.AppleSilicon();
+			// The OpenGL HUD fallback, where the renderer can draw alone (64-bit Windows on x86-64, macOS on Apple silicon, Linux on x86-64).
+			bool alone = Graphics.GLStub.Available || Graphics.GLStub.AvailableOnMac && Graphics.Metal.MetalDevice.AppleSilicon() || Graphics.GLStub.AvailableOnLinux;
 			int fallbackHeight = 0;
 			if (alone)
 			{

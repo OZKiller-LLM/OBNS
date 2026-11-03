@@ -112,7 +112,7 @@ namespace OpenBve.Graphics
 			if (switched)
 			{
 				// As the switches always had it: the first in this order, where it can be.
-				Vulkan.VulkanDevice.Full = Switch("VULKAN") && GLStub.Available;
+				Vulkan.VulkanDevice.Full = Switch("VULKAN") && (GLStub.Available || GLStub.AvailableOnLinux);
 				Direct3D11.D3D11World.Full = Switch("D3D11") && GLStub.Available && !Vulkan.VulkanDevice.Full;
 				Direct3D12.D3D12World.Full = Switch("D3D12") && GLStub.Available && !Vulkan.VulkanDevice.Full && !Direct3D11.D3D11World.Full;
 				Direct3D9.D3D9World.Full = Switch("D3D9") && GLStub.Available && !Vulkan.VulkanDevice.Full && !Direct3D11.D3D11World.Full && !Direct3D12.D3D12World.Full;
@@ -127,6 +127,12 @@ namespace OpenBve.Graphics
 
 			ObnsOptions.RendererKind asked = ObnsOptions.Renderer;
 			if (hybridSwitched || ObnsOptions.OpenGLHudFallback || asked == ObnsOptions.RendererKind.OpenGL)
+			{
+				return;
+			}
+
+			// Linux: Vulkan alone when it's chosen in the options (the default keeps the hybrid until more of Linux's GPUs are run).
+			if (GLStub.AvailableOnLinux && !ObnsOptions.Chosen)
 			{
 				return;
 			}
@@ -154,7 +160,7 @@ namespace OpenBve.Graphics
 				}
 			}
 
-			if (GLStub.Available || GLStub.AvailableOnMac && asked == ObnsOptions.RendererKind.Metal)
+			if (GLStub.Available || GLStub.AvailableOnMac && asked == ObnsOptions.RendererKind.Metal || GLStub.AvailableOnLinux && asked == ObnsOptions.RendererKind.Vulkan)
 			{
 				ProbeNote = Name(asked) + " can't draw the game alone here";
 			}
@@ -168,7 +174,7 @@ namespace OpenBve.Graphics
 			switch (kind)
 			{
 				case ObnsOptions.RendererKind.Vulkan:
-					if (!GLStub.Available || Environment.GetEnvironmentVariable("OBNS_VULKAN") == "0") return false;
+					if (!(GLStub.Available || GLStub.AvailableOnLinux) || Environment.GetEnvironmentVariable("OBNS_VULKAN") == "0") return false;
 					Vulkan.VulkanDevice.Full = true;
 					Vulkan.VulkanDevice.ProbeFull();
 					return Vulkan.VulkanDevice.Full;

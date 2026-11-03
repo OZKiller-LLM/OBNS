@@ -89,7 +89,20 @@ namespace OpenBve.Graphics.Vulkan
 			public int* PResults;
 		}
 
+		internal const uint StructureTypeXlibSurfaceCreateInfoKHR = 1000004000;
+
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct XlibSurfaceCreateInfoKHR
+		{
+			public uint SType;
+			public void* PNext;
+			public uint Flags;
+			public IntPtr Dpy;
+			public ulong Window;
+		}
+
 		[DllImport(Library)] internal static extern int vkCreateWin32SurfaceKHR(IntPtr instance, Win32SurfaceCreateInfoKHR* createInfo, void* allocator, out ulong surface);
+		[DllImport(Library)] internal static extern int vkCreateXlibSurfaceKHR(IntPtr instance, XlibSurfaceCreateInfoKHR* createInfo, void* allocator, out ulong surface);
 		[DllImport(Library)] internal static extern void vkDestroySurfaceKHR(IntPtr instance, ulong surface, void* allocator);
 		[DllImport(Library)] internal static extern int vkGetPhysicalDeviceSurfaceSupportKHR(IntPtr physicalDevice, uint queueFamily, ulong surface, out uint supported);
 		[DllImport(Library)] internal static extern int vkGetPhysicalDeviceSurfaceCapabilitiesKHR(IntPtr physicalDevice, ulong surface, out SurfaceCapabilitiesKHR capabilities);
@@ -135,19 +148,76 @@ namespace OpenBve.Graphics.Vulkan
 		{
 			this.device = device;
 			this.vsync = vsync;
-			Vk.Win32SurfaceCreateInfoKHR info = new Vk.Win32SurfaceCreateInfoKHR
+			if (GLStub.AvailableOnLinux)
 			{
-				SType = Vk.StructureTypeWin32SurfaceCreateInfoKHR,
-				Hinstance = Vk.GetModuleHandle(IntPtr.Zero),
-				Hwnd = window
-			};
-			Vk.Check(Vk.vkCreateWin32SurfaceKHR(device.Instance, &info, null, out surface), "vkCreateWin32SurfaceKHR");
+				X11Window(out IntPtr display, out ulong x11Window);
+				Vk.XlibSurfaceCreateInfoKHR xlib = new Vk.XlibSurfaceCreateInfoKHR
+				{
+					SType = Vk.StructureTypeXlibSurfaceCreateInfoKHR,
+					Dpy = display,
+					Window = x11Window
+				};
+				Vk.Check(Vk.vkCreateXlibSurfaceKHR(device.Instance, &xlib, null, out surface), "vkCreateXlibSurfaceKHR");
+			}
+			else
+			{
+				Vk.Win32SurfaceCreateInfoKHR info = new Vk.Win32SurfaceCreateInfoKHR
+				{
+					SType = Vk.StructureTypeWin32SurfaceCreateInfoKHR,
+					Hinstance = Vk.GetModuleHandle(IntPtr.Zero),
+					Hwnd = window
+				};
+				Vk.Check(Vk.vkCreateWin32SurfaceKHR(device.Instance, &info, null, out surface), "vkCreateWin32SurfaceKHR");
+			}
+
 			Vk.Check(Vk.vkGetPhysicalDeviceSurfaceSupportKHR(device.PhysicalDevice, device.QueueFamily, surface, out uint supported), "vkGetPhysicalDeviceSurfaceSupportKHR");
 			if (supported == 0)
 			{
 				throw new InvalidOperationException("the device's graphics queue cannot present to the window");
 			}
 
+			ChooseFormat();
+		}
+
+		[DllImport("libSDL2-2.0.so.0", EntryPoint = "SDL_GetVersion")] private static extern void SdlGetVersion(byte* version);
+		[DllImport("libSDL2-2.0.so.0", EntryPoint = "SDL_GetWindowWMInfo")] private static extern int SdlGetWindowWMInfo(IntPtr window, byte* info);
+
+		/// <summary>
+		/// The game window's X display and window on Linux: OpenTK's own window (X11WindowInfo has both), or SDL2's (preferNativeBackend =
+		/// false), which says what it is made of; under Wayland, SDL2's window is still X11's unless SDL_VIDEODRIVER=wayland.
+		/// </summary>
+		private static void X11Window(out IntPtr display, out ulong x11Window)
+		{
+			OpenTK.Platform.IWindowInfo info = Program.Renderer.GameWindow.WindowInfo;
+			System.Reflection.PropertyInfo displayProperty = info.GetType().GetProperty("Display", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+			if (displayProperty != null && displayProperty.PropertyType == typeof(IntPtr))
+			{
+				display = (IntPtr)displayProperty.GetValue(info);
+				x11Window = (ulong)info.Handle.ToInt64();
+				return;
+			}
+
+			// SDL_SysWMinfo: its version (3 bytes), its subsystem at 4, and the union at 8: on X11 the Display, then the Window.
+			const int subsystemX11 = 2;
+			byte* wm = stackalloc byte[256];
+			for (int i = 0; i < 256; i++)
+			{
+				wm[i] = 0;
+			}
+
+			SdlGetVersion(wm);
+			if (SdlGetWindowWMInfo(info.Handle, wm) == 0 || *(int*)(wm + 4) != subsystemX11)
+			{
+				throw new InvalidOperationException("the window isn't an X11 one (subsystem " + *(int*)(wm + 4) + "); Vulkan alone draws to X11 windows (XWayland included)");
+			}
+
+			display = *(IntPtr*)(wm + 8);
+			x11Window = *(ulong*)(wm + 16);
+		}
+
+		/// <summary>The surface's format: plain values, as OpenGL's framebuffer has them.</summary>
+		private void ChooseFormat()
+		{
 			uint count = 0;
 			Vk.Check(Vk.vkGetPhysicalDeviceSurfaceFormatsKHR(device.PhysicalDevice, surface, ref count, null), "vkGetPhysicalDeviceSurfaceFormatsKHR");
 			Vk.SurfaceFormatKHR* formats = stackalloc Vk.SurfaceFormatKHR[(int)Math.Max(count, 1)];
