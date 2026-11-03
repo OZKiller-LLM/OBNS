@@ -448,6 +448,16 @@ namespace OpenBve {
 				} else {
 					arguments = FileSystem.RestartArguments + RestartArguments;
 				}
+				// OBNS: the settings folder the program was given (/filesystem=) is kept on the way back to the main menu. Upstream dropped
+				// it, so a portable or test copy went on with the user's own settings from then on.
+				foreach (string argument in args)
+				{
+					if (argument.StartsWith("/filesystem=", StringComparison.OrdinalIgnoreCase) && arguments.IndexOf("/filesystem=", StringComparison.OrdinalIgnoreCase) < 0)
+					{
+						// Quoted for spaces; a closing backslash would escape the quote.
+						arguments = "\"" + argument.TrimEnd('\\') + "\"" + (arguments.Length != 0 ? " " + arguments : "");
+					}
+				}
 				try {
 					Process.Start(System.IO.File.Exists(FileSystem.RestartProcess) ? FileSystem.RestartProcess : Application.ExecutablePath, arguments);
 					if (CurrentHost.MonoRuntime)

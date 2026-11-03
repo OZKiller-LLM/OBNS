@@ -97,14 +97,21 @@ On the M1 Mac (macOS 26, Mono 6.14, SDL2), TML, exterior at the start, against t
 | The game's snapshots | 0.43 to 0.69% by more than 2: a 1-pixel outline at the top left, the HUD's boxes at the bottom, a near advert's moiré. Not in the window captures, so most likely in how the snapshot is taken; to be looked at |
 | Colours | the same by eye and by mean (42.5/47.6/51.4 against 42.5/47.6/51.3) |
 | In-game menu, resizing, minimizing, cab view | right |
+| From the native main menu | starts and draws right |
+| Five minutes of driving from Tuen Mun | 38.4 fps moving against 29.3, nothing missing; memory about 3.7 to 3.9 GB against 3.8 to 4.5 GB |
+| Its fallback (`OBNS_METAL_STUB_REFUSE=1`) | OpenGL draws, with the Metal world layer, as usual |
+| The snapshots' difference | the hybrid's own snapshots are what differ (an outline and darker HUD boxes not on its screen); the screens agree |
 
 ## Not done
 
 - **Event cubes and the rail path overlay:** debug views, not drawn in this mode. Nor are the wireframe and normals views.
 - **Linux:** `GLStub`'s machine code is for Windows' calling convention, and the surface is Win32's.
-- **The older Vulkan tiers:** this needs bindless textures and dynamic rendering, so not the core 1.0 tier.
+- **Broadwell:** the core Vulkan 1.0 tier draws the whole game too (render passes, texture pages, the shaders built for Vulkan 1.0), but it
+  has only been run here, forced (`OBNS_VULKAN_TIER=1.0`, and `OBNS_VULKAN_PAGED=16` for pages to be switched): the frames match the
+  1.3 path's but for single pixels of the world, the frame cost is the same, and the validation layer reports nothing. Broadwell's
+  GPUs are on Linux, which this mode doesn't run on yet.
 - **Full screen:** not run, as it changes the display mode.
-- **Metal:** not run with the native main menu first, nor driving, nor its fallback (a refused `mprotect`); Intel Macs aren't offered.
+- **Metal:** Intel Macs aren't offered.
 - **Metal's speed (on hold, the user's call, 2026-11-03):** the GPU's time per frame in the log, then frames in flight (the CPU and GPU
   each waits for the other now), encoding draws natively rather than call by call from Mono, memoryless depth and fewer passes, ASTC textures.
 - **The options:** no entry yet; it's the switch alone.
