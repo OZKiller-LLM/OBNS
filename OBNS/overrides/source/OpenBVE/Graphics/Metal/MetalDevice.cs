@@ -138,7 +138,8 @@ namespace OpenBve.Graphics.Metal
 			}
 
 			Mtl.LoadFrameworks();
-			if (Mtl.CGLGetCurrentContext() == IntPtr.Zero)
+			// With Metal drawing the whole game there is no OpenGL to share with.
+			if (!MetalWorld.Full && Mtl.CGLGetCurrentContext() == IntPtr.Zero)
 			{
 				return "OpenGL's context is not a CGL one";
 			}

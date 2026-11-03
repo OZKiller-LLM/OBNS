@@ -124,7 +124,7 @@ namespace OpenBve.Graphics
 				return;
 			}
 
-			// Or Direct3D 11 alone (OBNS_D3D11_FULL=1), or 12 (OBNS_D3D12_FULL=1), or 9 (OBNS_D3D9_FULL=1).
+			// Or Direct3D 11 alone (OBNS_D3D11_FULL=1), or 12 (OBNS_D3D12_FULL=1), or 9 (OBNS_D3D9_FULL=1), or Metal (OBNS_METAL_FULL=1).
 			if (Direct3D11.D3D11World.Full)
 			{
 				Direct3D11.D3D11World.Initialize();
@@ -140,6 +140,12 @@ namespace OpenBve.Graphics
 			if (Direct3D9.D3D9World.Full)
 			{
 				Direct3D9.D3D9World.Initialize();
+				return;
+			}
+
+			if (Metal.MetalWorld.Full)
+			{
+				Metal.MetalWorld.Initialize();
 				return;
 			}
 

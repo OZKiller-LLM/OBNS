@@ -48,6 +48,10 @@ namespace OpenBve.Graphics.Metal
 		[DllImport(Objc)] internal static extern IntPtr objc_autoreleasePoolPush();
 		[DllImport(Objc)] internal static extern void objc_autoreleasePoolPop(IntPtr pool);
 		[DllImport(LibSystem)] private static extern IntPtr dlopen(string path, int mode);
+		[DllImport(LibSystem)] private static extern IntPtr dlsym(IntPtr handle, string name);
+
+		/// <summary>A function of a library the process has loaded already (SDL2, which OpenTK loads by its own name for it); none if none has it.</summary>
+		internal static IntPtr LoadedFunction(string name) => dlsym((IntPtr)(-2), name);
 
 		internal static IntPtr Class(string name)
 		{
@@ -67,6 +71,7 @@ namespace OpenBve.Graphics.Metal
 		{
 			dlopen("/System/Library/Frameworks/Foundation.framework/Foundation", 1);
 			dlopen(MetalFramework, 1);
+			dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", 1);
 		}
 
 		// objc_msgSend, by argument list: Id* return an object (or a pointer), Void* nothing.
@@ -99,6 +104,9 @@ namespace OpenBve.Graphics.Metal
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, ClearColor color);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, Viewport viewport);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, Region region, ulong level, void* bytes, ulong bytesPerRow);
+		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, ulong a, ulong b, ulong c);
+		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, Size size);
+		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, void* bytes, ulong bytesPerRow, Region region, ulong level);
 		[DllImport(Objc, EntryPoint = "objc_msgSend")] internal static extern void Void(IntPtr receiver, IntPtr selector, ulong primitive, ulong indexCount, ulong indexType, IntPtr indexBuffer, ulong indexOffset, ulong instances, long baseVertex, ulong baseInstance);
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -111,6 +119,12 @@ namespace OpenBve.Graphics.Metal
 		internal struct Viewport
 		{
 			public double X, Y, Width, Height, Near, Far;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct Size
+		{
+			public double Width, Height;
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -185,12 +199,12 @@ namespace OpenBve.Graphics.Metal
 		internal const ulong ResourceShared = 0, ResourceManaged = 1 << 4, ResourcePrivate = 2 << 4;
 		internal const ulong TextureType2DArray = 3;
 		// MTLLoadAction, MTLStoreAction, MTLPrimitiveType, MTLIndexType, MTLCullMode
-		internal const ulong LoadDontCare = 0, LoadClear = 2, StoreDontCare = 0, StoreStore = 1;
+		internal const ulong LoadDontCare = 0, LoadLoad = 1, LoadClear = 2, StoreDontCare = 0, StoreStore = 1;
 		internal const ulong PrimitiveTriangle = 3, IndexUInt32 = 1;
 		internal const ulong CullNone = 0, CullFront = 1;
 		// MTLCompareFunction, MTLBlendFactor, MTLBlendOperation, MTLColorWriteMask
 		internal const ulong CompareLess = 1, CompareLessEqual = 3, CompareAlways = 7;
-		internal const ulong BlendZero = 0, BlendOne = 1, BlendSourceAlpha = 4, BlendOneMinusSourceAlpha = 5, BlendAdd = 0;
+		internal const ulong BlendZero = 0, BlendOne = 1, BlendOneMinusSourceColor = 3, BlendSourceAlpha = 4, BlendOneMinusSourceAlpha = 5, BlendAdd = 0;
 		internal const ulong WriteNone = 0, WriteRed = 8, WriteAll = 15;
 		// MTLSamplerMinMagFilter, MTLSamplerMipFilter, MTLSamplerAddressMode
 		internal const ulong FilterNearest = 0, FilterLinear = 1, MipNone = 0, MipNearest = 1, MipLinear = 2, AddressClampToEdge = 0, AddressRepeat = 2;

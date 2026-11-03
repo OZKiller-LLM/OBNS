@@ -66,7 +66,8 @@ namespace OpenBve.Graphics.Metal
 			selSetViewport = Mtl.Sel("setViewport:"), selSetVertexBuffer = Mtl.Sel("setVertexBuffer:offset:atIndex:"), selSetFragmentBuffer = Mtl.Sel("setFragmentBuffer:offset:atIndex:"),
 			selSetVertexBytes = Mtl.Sel("setVertexBytes:length:atIndex:"), selSetFragmentBytes = Mtl.Sel("setFragmentBytes:length:atIndex:"),
 			selSetFragmentTexture = Mtl.Sel("setFragmentTexture:atIndex:"), selSetFragmentSampler = Mtl.Sel("setFragmentSamplerState:atIndex:"),
-			selDrawIndexed = Mtl.Sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:");
+			selDrawIndexed = Mtl.Sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:"),
+			selSetDepthClipMode = Mtl.Sel("setDepthClipMode:");
 
 		// The buffers' indices (world.metal): the vertices (stage in), the layer's constants, the records.
 		private const ulong VertexBufferIndex = 0, LayerIndex = 1, FramesIndex = 2, ObjectsIndex = 3, DrawsIndex = 4, MatricesIndex = 5;
@@ -288,6 +289,12 @@ namespace OpenBve.Graphics.Metal
 
 			return state;
 		}
+
+		/// <summary>The sampler of an OpenGL wrap mode.</summary>
+		internal IntPtr Sampler(int wrap) => samplers[wrap & 3];
+
+		/// <summary>A particle's depth state: tested, and written or not.</summary>
+		internal IntPtr ParticleDepthState(bool depthWrite) => DepthState(depthWrite ? 4 : 0);
 
 		/// <summary>The samplers, filtering as upstream's options say (as the other layers').</summary>
 		private void CreateSamplers(InterpolationMode interpolation, int anisotropy)
@@ -519,7 +526,7 @@ namespace OpenBve.Graphics.Metal
 		/// <summary>Draws a layer's draws with an encoder of its pass (the world's with its depth as a colour, the cab's not).</summary>
 		internal void Draw(IntPtr encoder, int layer, uint width, uint height)
 		{
-			int start = layer == WorldLayerIndex ? 0 : cabCommandStart, end = layer == WorldLayerIndex ? cabCommandStart : commandCount;
+			int start = layer == SkyLayer ? 0 : layer == WorldLayerIndex ? skyCommandEnd : cabCommandStart, end = layer == SkyLayer ? skyCommandEnd : layer == WorldLayerIndex ? cabCommandStart : commandCount;
 			if (layer == WorldLayerIndex)
 			{
 				LastStateChanges = 0;
@@ -540,7 +547,13 @@ namespace OpenBve.Graphics.Metal
 				if (pipelineKey != boundPipeline)
 				{
 					// Upstream culls OpenGL's front faces; drawn upside down, those are clockwise, Metal's front faces by default.
-					Mtl.Void(encoder, selSetPipeline, pipelines[(pipelineKey & 7) | (layer << 3)]);
+					// Drawing the whole game, every layer has its colour target only, as the cab's has; and a background's depth is clamped.
+					Mtl.Void(encoder, selSetPipeline, pipelines[(pipelineKey & 7) | ((MetalWorld.Full ? CabLayer : layer) << 3)]);
+					if (MetalWorld.Full)
+					{
+						Mtl.Void(encoder, selSetDepthClipMode, (pipelineKey & 32) != 0 ? 1UL : 0UL);
+					}
+
 					Mtl.Void(encoder, selSetDepthStencilState, DepthState(pipelineKey));
 					Mtl.Void(encoder, selSetCullMode, (pipelineKey & 8) != 0 ? Mtl.CullFront : Mtl.CullNone);
 					boundPipeline = pipelineKey;

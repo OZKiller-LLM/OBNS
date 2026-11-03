@@ -33,9 +33,31 @@ using TrainManager.Trains;
 
 namespace OpenBve.Graphics.Metal
 {
-	internal sealed class MetalWorld : IWorldLayer, IDisposable
+	internal sealed unsafe class MetalWorld : IWorldLayer, IWholeFrameLayer, IDisposable
 	{
 		private static MetalWorld instance;
+
+		/// <summary>Whether Metal draws the whole game with OpenGL out of it (OBNS_METAL_FULL=1, OBNS/RENDERERS.md).</summary>
+		internal static bool Full { get; private set; } = Environment.GetEnvironmentVariable("OBNS_METAL_FULL") == "1" && GLStub.AvailableOnMac;
+
+		/// <summary>Before the window is made: whether a device can be had for it. If not, OpenGL draws, as usual.</summary>
+		internal static void ProbeFull()
+		{
+			if (!Full)
+			{
+				return;
+			}
+
+			MetalDevice device = MetalDevice.Create(out string reason);
+			if (device == null)
+			{
+				Full = false;
+				Program.FileSystem.AppendToLogFile("OBNS Metal can't draw the whole game: " + reason);
+				return;
+			}
+
+			device.Dispose();
+		}
 
 		internal static bool Enabled => instance != null && !instance.failed;
 
@@ -51,7 +73,12 @@ namespace OpenBve.Graphics.Metal
 				selSetClearColor = Mtl.Sel("setClearColor:"), selSetClearDepth = Mtl.Sel("setClearDepth:"),
 				selRenderEncoder = Mtl.Sel("renderCommandEncoderWithDescriptor:"), selEndEncoding = Mtl.Sel("endEncoding"),
 				selTexture2D = Mtl.Sel("texture2DDescriptorWithPixelFormat:width:height:mipmapped:"), selSetUsage = Mtl.Sel("setUsage:"),
-				selSetStorageMode = Mtl.Sel("setStorageMode:"), selNewTexture = Mtl.Sel("newTextureWithDescriptor:");
+				selSetStorageMode = Mtl.Sel("setStorageMode:"), selNewTexture = Mtl.Sel("newTextureWithDescriptor:"),
+				selLayer = Mtl.Sel("layer"), selSetLayer = Mtl.Sel("setLayer:"), selSetWantsLayer = Mtl.Sel("setWantsLayer:"), selContentView = Mtl.Sel("contentView"),
+				selSetDevice = Mtl.Sel("setDevice:"), selSetPixelFormat = Mtl.Sel("setPixelFormat:"), selSetDrawableSize = Mtl.Sel("setDrawableSize:"),
+				selSetDisplaySync = Mtl.Sel("setDisplaySyncEnabled:"), selNextDrawable = Mtl.Sel("nextDrawable"), selTexture = Mtl.Sel("texture"),
+				selPresentDrawable = Mtl.Sel("presentDrawable:"), selBlitEncoder = Mtl.Sel("blitCommandEncoder"), selCopyTexture = Mtl.Sel("copyFromTexture:toTexture:"),
+				selGetBytes = Mtl.Sel("getBytes:bytesPerRow:fromRegion:mipmapLevel:");
 		}
 
 		private readonly MetalDevice device;
@@ -113,7 +140,7 @@ namespace OpenBve.Graphics.Metal
 		internal static void Initialize()
 		{
 			string forced = Environment.GetEnvironmentVariable("OBNS_METAL");
-			if (instance != null || forced == "0" || forced != "1" && ObnsOptions.Renderer != ObnsOptions.RendererKind.Metal)
+			if (instance != null || !Full && (forced == "0" || forced != "1" && ObnsOptions.Renderer != ObnsOptions.RendererKind.Metal))
 			{
 				return;
 			}
@@ -125,10 +152,15 @@ namespace OpenBve.Graphics.Metal
 			}
 
 			MetalDevice device = MetalDevice.Create(out string reason);
-			string test = device?.SelfTest();
+			string test = Full ? null : device?.SelfTest();
 			if (device == null || test != null)
 			{
 				device?.Dispose();
+				if (Full)
+				{
+					throw new InvalidOperationException("Metal can't draw the game, and the window has no OpenGL to fall back on: " + (reason ?? test));
+				}
+
 				Log("OBNS Metal world layer not used: " + (reason ?? test) + "; OpenGL draws it");
 				return;
 			}
@@ -136,21 +168,370 @@ namespace OpenBve.Graphics.Metal
 			MetalWorld world = new MetalWorld(device);
 			try
 			{
-				world.composite = new WorldComposite(true);
+				if (!Full)
+				{
+					world.composite = new WorldComposite(true);
+				}
+
 				world.Meshes = new MetalMeshes(device);
 				world.Textures = new MetalTextures(device);
 				world.scene = new MetalScene(device, world.Meshes, world.Textures);
 				WorldHooks.Install("Metal", "OBNS_METAL", world.Meshes, world.Textures);
+				if (Full)
+				{
+					world.frameDrawing = new MetalFrameDrawing(device, world.scene, world.Textures, Program.Renderer.Frame);
+					Program.Renderer.Frame = world.frameDrawing;
+					world.MakeLayer();
+				}
 			}
 			catch (Exception ex)
 			{
 				world.Dispose();
+				if (Full)
+				{
+					throw new InvalidOperationException("Metal can't draw the game, and the window has no OpenGL to fall back on: " + ex.Message, ex);
+				}
+
 				Log("OBNS Metal world layer not used: " + ex.Message + "; OpenGL draws it");
 				return;
 			}
 
 			instance = world;
 			Log("OBNS Metal world layer on: " + device.Description + (device.Managed ? ", managed memory" : "") + " (the world and cab layers, with shadows; shaders and pipelines made in " + world.scene.MadeIn.ToString("0") + " ms)");
+			if (Full)
+			{
+				Log("OBNS Metal draws the whole game: " + device.Description + "; " + NoGLContext.Describe(IntPtr.Zero));
+			}
+		}
+
+		// --- the whole game drawn by Metal (OBNS/RENDERERS.md): one command buffer a frame, from the start of the frame until it is shown ---
+
+		[System.Runtime.InteropServices.UnmanagedFunctionPointer(System.Runtime.InteropServices.CallingConvention.Cdecl)]
+		private delegate void GetVersion(byte* version);
+
+		[System.Runtime.InteropServices.UnmanagedFunctionPointer(System.Runtime.InteropServices.CallingConvention.Cdecl)]
+		private delegate int GetWindowInfo(IntPtr window, byte* info);
+
+		private MetalFrameDrawing frameDrawing;
+		private IntPtr metalLayer, commands, colorTexture, depthBuffer, cabDepthBuffer, lastFrame;
+		private uint layerWidth, layerHeight;
+		private bool layerSync, layerSyncSet, worldDrawn, lastFrameValid;
+		private float motionBlurAlpha;
+		private string snapshotFile;
+
+		public WholeFrameDrawing FrameDrawing => frameDrawing;
+
+		public void RequestSnapshot(string file)
+		{
+			snapshotFile = file;
+		}
+
+		public void SetMotionBlur(double frameRate, double speed)
+		{
+			motionBlurAlpha = WholeGame.MotionBlurAlpha(Interface.CurrentOptions.MotionBlur, frameRate, speed);
+		}
+
+		private static bool MotionBlurOn => Interface.CurrentOptions.MotionBlur != LibRender2.MotionBlurs.MotionBlurMode.None;
+
+		/// <summary>The game window's NSWindow: OpenTK's window on Apple silicon is SDL2's, which says what it is made of.</summary>
+		private static IntPtr NativeWindow()
+		{
+			IntPtr window = Program.Renderer.GameWindow.WindowInfo.Handle;
+			IntPtr getVersion = Mtl.LoadedFunction("SDL_GetVersion"), getInfo = Mtl.LoadedFunction("SDL_GetWindowWMInfo");
+			if (getVersion == IntPtr.Zero || getInfo == IntPtr.Zero)
+			{
+				throw new InvalidOperationException("the window isn't SDL2's: use preferNativeBackend = false");
+			}
+
+			// SDL_SysWMinfo: its version (3 bytes), its subsystem at 4, and the union at 8, whose first member on Cocoa is the NSWindow.
+			byte* info = stackalloc byte[256];
+			for (int i = 0; i < 256; i++)
+			{
+				info[i] = 0;
+			}
+
+			((GetVersion)System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer(getVersion, typeof(GetVersion)))(info);
+			const int subsystemCocoa = 4;
+			if (((GetWindowInfo)System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer(getInfo, typeof(GetWindowInfo)))(window, info) == 0 || *(int*)(info + 4) != subsystemCocoa)
+			{
+				throw new InvalidOperationException("SDL2 can't say what the window is made of");
+			}
+
+			return *(IntPtr*)(info + 8);
+		}
+
+		/// <summary>A CAMetalLayer in place of what the window's view draws.</summary>
+		private void MakeLayer()
+		{
+			IntPtr pool = Mtl.objc_autoreleasePoolPush();
+			try
+			{
+				IntPtr view = Mtl.Id(NativeWindow(), S.selContentView);
+				metalLayer = Mtl.Retain(Mtl.Id(Mtl.Class("CAMetalLayer"), S.selLayer));
+				Mtl.Void(metalLayer, S.selSetDevice, device.Device);
+				Mtl.Void(metalLayer, S.selSetPixelFormat, Mtl.PixelBGRA8Unorm);
+				Mtl.Void(view, S.selSetLayer, metalLayer);
+				Mtl.Void(view, S.selSetWantsLayer, (byte)1);
+			}
+			finally
+			{
+				Mtl.objc_autoreleasePoolPop(pool);
+			}
+		}
+
+		private IntPtr ColorImage()
+		{
+			IntPtr desc = Mtl.Id(Mtl.Class("MTLTextureDescriptor"), S.selTexture2D, Mtl.PixelBGRA8Unorm, (ulong)width, (ulong)height, (byte)0);
+			Mtl.Void(desc, S.selSetUsage, Mtl.UsageRenderTarget | Mtl.UsageShaderRead);
+			Mtl.Void(desc, S.selSetStorageMode, Mtl.StorageShared);
+			return Mtl.Id(device.Device, S.selNewTexture, desc);
+		}
+
+		/// <summary>The images for the whole frame: its colour, which is read for showing it (and in memory the CPU sees, for snapshots), and the two depths.</summary>
+		private void EnsureWholeTarget(int newWidth, int newHeight)
+		{
+			if (colorTexture != IntPtr.Zero && width == newWidth && height == newHeight)
+			{
+				return;
+			}
+
+			ReleaseWholeTarget();
+			width = (uint)Math.Max(1, newWidth);
+			height = (uint)Math.Max(1, newHeight);
+			colorTexture = ColorImage();
+			if (MotionBlurOn)
+			{
+				lastFrame = ColorImage();
+				lastFrameValid = false;
+			}
+
+			depthBuffer = DepthBuffer();
+			cabDepthBuffer = DepthBuffer();
+		}
+
+		private void ReleaseWholeTarget()
+		{
+			foreach (IntPtr image in new[] { colorTexture, lastFrame, depthBuffer, cabDepthBuffer })
+			{
+				Mtl.Release(image);
+			}
+
+			colorTexture = lastFrame = depthBuffer = cabDepthBuffer = IntPtr.Zero;
+		}
+
+		/// <summary>The frame's command buffer begun: what the frames before let go of freed.</summary>
+		private void OpenFrame()
+		{
+			if (commands != IntPtr.Zero)
+			{
+				// A frame not shown: its drawing is finished with all the same.
+				SendFrame(IntPtr.Zero);
+			}
+
+			frameNumber++;
+			Textures.FrameStarted(frameNumber);
+			Meshes.FrameStarted(frameNumber);
+			commands = Mtl.Retain(Mtl.Id(device.Queue, S.selCommandBuffer));
+		}
+
+		/// <summary>The frame sent, and waited for: Metal draws nothing between frames, when textures and records are written.</summary>
+		private void SendFrame(IntPtr drawable)
+		{
+			if (drawable != IntPtr.Zero)
+			{
+				Mtl.Void(commands, S.selPresentDrawable, drawable);
+			}
+
+			Mtl.Void(commands, S.selCommit);
+			long start = System.Diagnostics.Stopwatch.GetTimestamp();
+			string error = MetalDevice.Wait(commands);
+			LastJoinTicks = System.Diagnostics.Stopwatch.GetTimestamp() - start;
+			Mtl.Release(commands);
+			commands = IntPtr.Zero;
+			if (error != null)
+			{
+				throw new InvalidOperationException("a Metal frame failed: " + error);
+			}
+		}
+
+		private static Mtl.ClearColor ClearValue()
+		{
+			const double inv255 = 1.0 / 255.0;
+			return new Mtl.ClearColor { R = Interface.CurrentOptions.ClearColor.R * inv255, G = Interface.CurrentOptions.ClearColor.G * inv255, B = Interface.CurrentOptions.ClearColor.B * inv255, A = 1.0 };
+		}
+
+		/// <summary>A pass on the frame's image: its colour loaded or cleared, with a depth buffer or none.</summary>
+		private IntPtr BeginPass(ulong colorLoad, IntPtr depth, ulong depthLoad)
+		{
+			IntPtr pass = Mtl.Id(Mtl.Class("MTLRenderPassDescriptor"), S.selRenderPassDescriptor);
+			IntPtr attachment = ColorAttachment(pass, 0, colorTexture, ClearValue());
+			Mtl.Void(attachment, S.selSetLoadAction, colorLoad);
+			if (depth != IntPtr.Zero)
+			{
+				DepthAttachment(pass, depth);
+				IntPtr depthAttachment = Mtl.Id(pass, S.selDepthAttachment);
+				Mtl.Void(depthAttachment, S.selSetLoadAction, depthLoad);
+				Mtl.Void(depthAttachment, S.selSetStoreAction, Mtl.StoreStore);
+			}
+
+			return Mtl.Id(commands, S.selRenderEncoder, pass);
+		}
+
+		/// <summary>The background, world, motion blur, particles and cab, in the frame's one image, as upstream draws them into its framebuffer.</summary>
+		private void DrawWhole()
+		{
+			IntPtr encoder = BeginPass(Mtl.LoadClear, depthBuffer, Mtl.LoadClear);
+			scene.Draw(encoder, WorldScene.SkyLayer, width, height);
+			scene.Draw(encoder, WorldScene.WorldLayerIndex, width, height);
+			Mtl.Void(encoder, S.selEndEncoding);
+			if (MotionBlurOn)
+			{
+				if (lastFrameValid && motionBlurAlpha > 0.0f)
+				{
+					encoder = BeginPass(Mtl.LoadLoad, IntPtr.Zero, 0);
+					frameDrawing.DrawImage(encoder, lastFrame, width, height, motionBlurAlpha, true, false);
+					Mtl.Void(encoder, S.selEndEncoding);
+				}
+
+				IntPtr blit = Mtl.Id(commands, S.selBlitEncoder);
+				Mtl.Void(blit, S.selCopyTexture, colorTexture, lastFrame);
+				Mtl.Void(blit, S.selEndEncoding);
+				lastFrameValid = true;
+			}
+
+			if (frameDrawing.HasParticles)
+			{
+				encoder = BeginPass(Mtl.LoadLoad, depthBuffer, Mtl.LoadLoad);
+				frameDrawing.RecordParticles(encoder, width, height);
+				Mtl.Void(encoder, S.selEndEncoding);
+			}
+
+			encoder = BeginPass(Mtl.LoadLoad, cabDepthBuffer, Mtl.LoadClear);
+			scene.Draw(encoder, WorldScene.CabLayer, width, height);
+			Mtl.Void(encoder, S.selEndEncoding);
+			worldDrawn = true;
+		}
+
+		/// <summary>The frame's command buffer begun, and what is under the 2D part encoded into it.</summary>
+		private void StartWhole()
+		{
+			IntPtr pool = Mtl.objc_autoreleasePoolPush();
+			try
+			{
+				// OpenGL's viewport is a stub's.
+				EnsureWholeTarget(Program.Renderer.Screen.Width, Program.Renderer.Screen.Height);
+				scene.Prepare();
+				OpenFrame();
+				Textures.Send();
+				cabStarted = scene.HasCab;
+				scene.BuildRecords();
+				scene.Upload();
+				scene.EncodeShadows(commands);
+				DrawWhole();
+			}
+			catch (Exception ex)
+			{
+				Fail(ex);
+			}
+			finally
+			{
+				Mtl.objc_autoreleasePoolPop(pool);
+			}
+		}
+
+		public void Present()
+		{
+			int screenWidth = Program.Renderer.Screen.Width, screenHeight = Program.Renderer.Screen.Height;
+			bool show = !Program.Renderer.Screen.Minimized && screenWidth > 0 && screenHeight > 0;
+			IntPtr pool = Mtl.objc_autoreleasePoolPush();
+			try
+			{
+				if (commands == IntPtr.Zero)
+				{
+					if (!show)
+					{
+						frameDrawing.Presented();
+						return;
+					}
+
+					EnsureWholeTarget(screenWidth, screenHeight);
+					OpenFrame();
+				}
+
+				IntPtr drawable = IntPtr.Zero;
+				if (show)
+				{
+					Textures.Send();
+					IntPtr encoder = BeginPass(worldDrawn ? Mtl.LoadLoad : Mtl.LoadClear, IntPtr.Zero, 0);
+					frameDrawing.Record(encoder, width, height);
+					Mtl.Void(encoder, S.selEndEncoding);
+					System.Drawing.Size client = Program.Renderer.GameWindow.ClientSize;
+					UpdateLayer((uint)Math.Max(1, client.Width), (uint)Math.Max(1, client.Height));
+					drawable = Mtl.Id(metalLayer, S.selNextDrawable);
+					if (drawable != IntPtr.Zero)
+					{
+						IntPtr pass = Mtl.Id(Mtl.Class("MTLRenderPassDescriptor"), S.selRenderPassDescriptor);
+						IntPtr attachment = ColorAttachment(pass, 0, Mtl.Id(drawable, S.selTexture), new Mtl.ClearColor());
+						Mtl.Void(attachment, S.selSetLoadAction, Mtl.LoadDontCare);
+						encoder = Mtl.Id(commands, S.selRenderEncoder, pass);
+						// Row 0 of the frame's image is the bottom of the screen; a drawable's is the top.
+						frameDrawing.DrawImage(encoder, colorTexture, layerWidth, layerHeight, 1.0f, false, true);
+						Mtl.Void(encoder, S.selEndEncoding);
+					}
+				}
+
+				SendFrame(drawable);
+				if (show && snapshotFile != null)
+				{
+					SaveSnapshot(snapshotFile);
+					snapshotFile = null;
+				}
+			}
+			catch (Exception ex)
+			{
+				Fail(ex);
+			}
+			finally
+			{
+				Mtl.objc_autoreleasePoolPop(pool);
+			}
+
+			frameDrawing.Presented();
+			worldDrawn = false;
+		}
+
+		private void UpdateLayer(uint newWidth, uint newHeight)
+		{
+			if (layerWidth != newWidth || layerHeight != newHeight)
+			{
+				Mtl.Void(metalLayer, S.selSetDrawableSize, new Mtl.Size { Width = newWidth, Height = newHeight });
+				layerWidth = newWidth;
+				layerHeight = newHeight;
+			}
+
+			bool sync = Interface.CurrentOptions.VerticalSynchronization;
+			if (!layerSyncSet || layerSync != sync)
+			{
+				Mtl.Void(metalLayer, S.selSetDisplaySync, (byte)(sync ? 1 : 0));
+				layerSync = sync;
+				layerSyncSet = true;
+			}
+		}
+
+		/// <summary>The frame's image saved as OpenGL's is.</summary>
+		private void SaveSnapshot(string file)
+		{
+			int w = (int)width, h = (int)height;
+			IntPtr pixels = System.Runtime.InteropServices.Marshal.AllocHGlobal(w * h * 4);
+			try
+			{
+				Mtl.Void(colorTexture, S.selGetBytes, (void*)pixels, (ulong)w * 4, new Mtl.Region { Width = (ulong)w, Height = (ulong)h, Depth = 1 }, 0UL);
+				WholeGame.SaveImage((byte*)pixels, w * 4, w, h, file, true);
+			}
+			finally
+			{
+				System.Runtime.InteropServices.Marshal.FreeHGlobal(pixels);
+			}
 		}
 
 		public IWorldScene Scene => scene;
@@ -228,6 +609,12 @@ namespace OpenBve.Graphics.Metal
 				return;
 			}
 
+			if (Full)
+			{
+				StartWhole();
+				return;
+			}
+
 			IntPtr pool = Mtl.objc_autoreleasePoolPush();
 			try
 			{
@@ -296,7 +683,7 @@ namespace OpenBve.Graphics.Metal
 		/// <summary>Waits for Metal's frame, and lays the world over OpenGL's.</summary>
 		public void Finish()
 		{
-			if (failed || pending == IntPtr.Zero)
+			if (failed || pending == IntPtr.Zero || Full)
 			{
 				return;
 			}
@@ -317,7 +704,7 @@ namespace OpenBve.Graphics.Metal
 
 		public void CompositeCab()
 		{
-			if (!failed && DrawsCab && sets[current] != null)
+			if (!failed && DrawsCab && sets[current] != null && !Full)
 			{
 				composite.Cab(sets[current].Cab.GLTexture, sets[current].Depth.GLTexture);
 			}
@@ -325,12 +712,23 @@ namespace OpenBve.Graphics.Metal
 
 		private void Fail(Exception ex)
 		{
+			if (Full)
+			{
+				throw new InvalidOperationException("Metal stopped drawing the game, and the window has no OpenGL to fall back on: " + ex.Message, ex);
+			}
+
 			failed = true;
 			Log("OBNS Metal world layer stopped, OpenGL draws it from now: " + ex);
 		}
 
 		private void ReleaseTargets()
 		{
+			ReleaseWholeTarget();
+			if (Full)
+			{
+				return;
+			}
+
 			if (pending != IntPtr.Zero)
 			{
 				MetalDevice.Wait(pending);
@@ -348,7 +746,7 @@ namespace OpenBve.Graphics.Metal
 		}
 
 		/// <summary>The renderer as it is drawing, for the debug overlay.</summary>
-		internal static string RendererName => "Metal world layer (" + instance.device.Description + "), OpenGL for the rest";
+		internal static string RendererName => Full ? "Metal alone (" + instance.device.Description + ")" : "Metal world layer (" + instance.device.Description + "), OpenGL for the rest";
 
 		/// <summary>The layer's state for the frame statistics.</summary>
 		internal static string Summary
@@ -370,6 +768,8 @@ namespace OpenBve.Graphics.Metal
 		public void Dispose()
 		{
 			ReleaseTargets();
+			frameDrawing?.Dispose();
+			Mtl.Release(metalLayer);
 			composite?.Dispose();
 			composite = null;
 			scene?.Dispose();

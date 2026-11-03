@@ -54,8 +54,8 @@ namespace OpenBve.Graphics
 	/// <summary>Whether one API draws the whole game, and which.</summary>
 	internal static class WholeGame
 	{
-		/// <summary>Whether it does: asked for (OBNS_VULKAN_FULL=1, OBNS_D3D11_FULL=1, OBNS_D3D12_FULL=1, OBNS_D3D9_FULL=1), and a device can be had.</summary>
-		internal static bool Full => Vulkan.VulkanDevice.Full || Direct3D11.D3D11World.Full || Direct3D12.D3D12World.Full || Direct3D9.D3D9World.Full;
+		/// <summary>Whether it does: asked for (OBNS_VULKAN_FULL=1, OBNS_D3D11_FULL=1, OBNS_D3D12_FULL=1, OBNS_D3D9_FULL=1, OBNS_METAL_FULL=1), and a device can be had.</summary>
+		internal static bool Full => Vulkan.VulkanDevice.Full || Direct3D11.D3D11World.Full || Direct3D12.D3D12World.Full || Direct3D9.D3D9World.Full || Metal.MetalWorld.Full;
 
 		/// <summary>The API's layer.</summary>
 		internal static IWholeFrameLayer Layer
@@ -77,7 +77,12 @@ namespace OpenBve.Graphics
 					return Direct3D12.D3D12World.Instance;
 				}
 
-				return Direct3D9.D3D9World.Instance;
+				if (Direct3D9.D3D9World.Full)
+				{
+					return Direct3D9.D3D9World.Instance;
+				}
+
+				return Metal.MetalWorld.Instance;
 			}
 		}
 
@@ -91,6 +96,7 @@ namespace OpenBve.Graphics
 			Direct3D11.D3D11World.ProbeFull();
 			Direct3D12.D3D12World.ProbeFull();
 			Direct3D9.D3D9World.ProbeFull();
+			Metal.MetalWorld.ProbeFull();
 		}
 
 		/// <summary>A frame's image saved as OpenGL's is: its rows (RGBA, or BGRA) run bottom to top, and it is opaque.</summary>

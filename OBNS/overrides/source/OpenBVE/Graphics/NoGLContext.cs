@@ -59,6 +59,11 @@ namespace OpenBve.Graphics
 		/// <summary>What the system says of OpenGL in this window, for the log: no current context, and no pixel format.</summary>
 		internal static string Describe(IntPtr window)
 		{
+			if (GLStub.AvailableOnMac)
+			{
+				return "OpenGL context current: " + (Metal.Mtl.CGLGetCurrentContext() != IntPtr.Zero ? "yes" : "none");
+			}
+
 			IntPtr dc = GetDC(window);
 			int pixelFormat = GetPixelFormat(dc);
 			ReleaseDC(window, dc);

@@ -47,8 +47,71 @@ namespace OpenBve.Graphics
 		[DllImport("kernel32.dll", SetLastError = true)]
 		private static extern bool VirtualProtect(IntPtr address, UIntPtr size, uint protect, out uint old);
 
+		[DllImport("/usr/lib/libSystem.dylib", SetLastError = true)]
+		private static extern IntPtr mmap(IntPtr address, UIntPtr size, int protection, int flags, int file, long offset);
+
+		[DllImport("/usr/lib/libSystem.dylib")]
+		private static extern void pthread_jit_write_protect_np(int enabled);
+
+		[DllImport("/usr/lib/libSystem.dylib")]
+		private static extern void sys_icache_invalidate(IntPtr start, UIntPtr size);
+
 		/// <summary>Whether the stubs can be used here: x64 Windows so far (the second and third arguments' registers are the system's).</summary>
 		internal static bool Available => Environment.Is64BitProcess && Environment.OSVersion.Platform == PlatformID.Win32NT && RuntimeInformation.ProcessArchitecture == Architecture.X64;
+
+		/// <summary>Whether the stubs for Metal can be used here: macOS on Apple silicon, the only GPUs its whole frame is for.</summary>
+		internal static bool AvailableOnMac => RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
+		/// <summary>ARM64 instructions as bytes.</summary>
+		private static byte[] Arm64(params uint[] instructions)
+		{
+			byte[] code = new byte[instructions.Length * 4];
+			System.Buffer.BlockCopy(instructions, 0, code, 0, code.Length);
+			return code;
+		}
+
+		private static byte[][] MakeStubsArm64(IntPtr text)
+		{
+			const uint ret = 0xD65F03C0, zero = 0xD2800000; // mov x0,#0
+			long address = text.ToInt64();
+			return new[]
+			{
+				Arm64(zero, ret), // nothing
+				Arm64(0xD2800020, ret), // mov x0,#1
+				Arm64(0xD2919AA0, ret), // mov x0,#GL_FRAMEBUFFER_COMPLETE
+				Arm64(0x52800022, 0xB9000022, zero, ret), // mov w2,#1; str w2,[x1]
+				Arm64(0x52800023, 0xB9000043, zero, ret), // mov w3,#1; str w3,[x2]
+				Arm64(0xD2800000u | (uint)(address & 0xFFFF) << 5, 0xF2A00000u | (uint)(address >> 16 & 0xFFFF) << 5, 0xF2C00000u | (uint)(address >> 32 & 0xFFFF) << 5, 0xF2E00000u | (uint)(address >> 48 & 0xFFFF) << 5, ret), // the text's address in x0
+				Arm64(0x52A83002, 0xB9000022, zero, ret) // mov w2,#16.0f; str w2,[x1]
+			};
+		}
+
+		/// <summary>Executable memory on macOS holding the stubs: written with the thread's protection of such memory lifted.</summary>
+		private static IntPtr WriteStubsOnMac(byte[][] stubs, int size, IntPtr[] addresses)
+		{
+			const int readWriteExecute = 7, privateAnonymousJit = 0x0002 | 0x1000 | 0x0800;
+			IntPtr memory = mmap(IntPtr.Zero, (UIntPtr)(uint)size, readWriteExecute, privateAnonymousJit, -1, 0);
+			if (memory == (IntPtr)(-1))
+			{
+				throw new InvalidOperationException("no executable memory for OpenGL's stubs (error " + Marshal.GetLastWin32Error() + ")");
+			}
+
+			// Everything the writing calls is made ready first: the runtime's compiling sets the protection back.
+			pthread_jit_write_protect_np(1);
+			Marshal.Copy(stubs[0], 0, Marshal.AllocHGlobal(stubs[0].Length), stubs[0].Length);
+			pthread_jit_write_protect_np(0);
+			int offset = 0;
+			for (int i = 0; i < stubs.Length; i++)
+			{
+				addresses[i] = memory + offset;
+				Marshal.Copy(stubs[i], 0, addresses[i], stubs[i].Length);
+				offset += (stubs[i].Length + 15) & ~15;
+			}
+
+			pthread_jit_write_protect_np(1);
+			sys_icache_invalidate(memory, (UIntPtr)(uint)size);
+			return memory;
+		}
 
 		/// <summary>Points OpenGL's functions at the stubs. Upstream's calls do nothing from now.</summary>
 		internal static void Install()
@@ -74,30 +137,37 @@ namespace OpenBve.Graphics
 			BitConverter.GetBytes(text.ToInt64()).CopyTo(returnsText, 2);
 			returnsText[10] = 0xC3;
 
-			byte[][] stubs = { nothing, one, framebufferComplete, secondIsOne, thirdIsOne, returnsText, secondIs16 };
+			byte[][] stubs = AvailableOnMac ? MakeStubsArm64(text) : new[] { nothing, one, framebufferComplete, secondIsOne, thirdIsOne, returnsText, secondIs16 };
 			int size = 0;
 			foreach (byte[] stub in stubs)
 			{
 				size += (stub.Length + 15) & ~15;
 			}
 
-			const uint commitReserve = 0x3000, readWrite = 0x04, executeRead = 0x20;
-			IntPtr memory = VirtualAlloc(IntPtr.Zero, (UIntPtr)(uint)size, commitReserve, readWrite);
-			if (memory == IntPtr.Zero)
-			{
-				throw new InvalidOperationException("no memory for OpenGL's stubs");
-			}
-
 			IntPtr[] addresses = new IntPtr[stubs.Length];
-			int offset = 0;
-			for (int i = 0; i < stubs.Length; i++)
+			if (AvailableOnMac)
 			{
-				addresses[i] = memory + offset;
-				Marshal.Copy(stubs[i], 0, addresses[i], stubs[i].Length);
-				offset += (stubs[i].Length + 15) & ~15;
+				WriteStubsOnMac(stubs, size, addresses);
 			}
+			else
+			{
+				const uint commitReserve = 0x3000, readWrite = 0x04, executeRead = 0x20;
+				IntPtr memory = VirtualAlloc(IntPtr.Zero, (UIntPtr)(uint)size, commitReserve, readWrite);
+				if (memory == IntPtr.Zero)
+				{
+					throw new InvalidOperationException("no memory for OpenGL's stubs");
+				}
 
-			VirtualProtect(memory, (UIntPtr)(uint)size, executeRead, out uint _);
+				int offset = 0;
+				for (int i = 0; i < stubs.Length; i++)
+				{
+					addresses[i] = memory + offset;
+					Marshal.Copy(stubs[i], 0, addresses[i], stubs[i].Length);
+					offset += (stubs[i].Length + 15) & ~15;
+				}
+
+				VirtualProtect(memory, (UIntPtr)(uint)size, executeRead, out uint _);
+			}
 
 			Dictionary<string, IntPtr> special = new Dictionary<string, IntPtr>
 			{
