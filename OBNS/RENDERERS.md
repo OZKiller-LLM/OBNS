@@ -9,7 +9,8 @@ In 1.3 a chosen renderer draws the whole game frame, owns the swap chain and nee
 
 ## The game on one API alone
 
-`OBNS_VULKAN_FULL=1`, `OBNS_D3D12_FULL=1`, `OBNS_D3D11_FULL=1` or `OBNS_D3D9_FULL=1`. Windows x64, off by default so far. Metal isn't done.
+`OBNS_VULKAN_FULL=1`, `OBNS_D3D12_FULL=1`, `OBNS_D3D11_FULL=1` or `OBNS_D3D9_FULL=1` on Windows x64; `OBNS_METAL_FULL=1` on Macs with
+Apple silicon. Off by default so far.
 Everything below is on Vulkan unless it says otherwise, and is the same on Direct3D, with its own frame image and swap chain
 (`D3D11World`, `D3D12World`, `D3D9World`, each with its `FrameDrawing`). What is the same whichever API it is lives in `WholeFrame.cs`.
 
@@ -37,6 +38,10 @@ Everything below is on Vulkan unless it says otherwise, and is the same on Direc
 - **Particles.** Square to the view, so each is one rectangle at one depth, tested against the world's. The world's fog is on for them as it is
   in upstream, taken at each one's middle.
 - **Direct3D 9.** Shader model 3: six plain vertices a quad, and no depth clamp, so a background's depth is set in the vertex shader.
+- **Metal.** A `CAMetalLayer` in place of what the window's view draws; the window is SDL2's on Apple silicon, so its `NSWindow` comes from
+  `SDL_GetWindowWMInfo`. `GLStub` has ARM64 stubs, written to ordinary memory that is then made executable: memory made for a JIT
+  would need the thread's protection lifted while writing, which stops the runtime's own compiled code too (the first build crashed so).
+  SDL2 still loads the OpenGL framework for its window, but no context is made. One frame at a time, as the world layer is.
 
 ## Tested
 
@@ -82,13 +87,24 @@ Vulkan's frame cost in the same comparison: 2.92 to 3.57 ms against 2.89 to 3.44
 Step 1 on the M1 Mac (OpenGL drawing the 2D part, under OpenGL and Metal) matches 1.22 in the world, HUD, loading screen, in-game menu and
 native menu, with load time and frame rate within 1.22's own spread.
 
+On the M1 Mac (macOS 26, Mono 6.14, SDL2), TML, exterior at the start, against the Metal world layer of the same build (numbers only):
+
+| What | Result |
+| --- | --- |
+| Start | no OpenGL context; no errors in five runs; loading 68 to 85 s against 77 to 84 s |
+| Frame rate, snapshots on in both | 37.0 fps against 24.5 fps with vertical sync on; 33.2 against 27.1 fps with it off (one run each) |
+| The window, captured | 0.05% of pixels by more than 2 levels, within the two modes' own run-to-run spread |
+| The game's snapshots | 0.43 to 0.69% by more than 2: a 1-pixel outline at the top left, the HUD's boxes at the bottom, a near advert's moiré. Not in the window captures, so most likely in how the snapshot is taken; to be looked at |
+| Colours | the same by eye and by mean (42.5/47.6/51.4 against 42.5/47.6/51.3) |
+| In-game menu, resizing, minimizing, cab view | right |
+
 ## Not done
 
 - **Event cubes and the rail path overlay:** debug views, not drawn in this mode. Nor are the wireframe and normals views.
 - **Linux:** `GLStub`'s machine code is for Windows' calling convention, and the surface is Win32's.
 - **The older Vulkan tiers:** this needs bindless textures and dynamic rendering, so not the core 1.0 tier.
 - **Full screen:** not run, as it changes the display mode.
-- **Metal:** the same frame and `IFrameDrawing` is still to do. `WorldSky`, the layers and `WholeFrameDrawing` are shared already.
+- **Metal:** not run with the native main menu first, nor driving, nor its fallback (a refused `mprotect`); Intel Macs aren't offered.
 - **The options:** no entry yet; it's the switch alone.
 - **The Lisuan:** not run there. It's what this is for: no shared images, and no OpenGL. Direct3D 11 alone is the one to try first.
 
