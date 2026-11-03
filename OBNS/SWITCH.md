@@ -30,17 +30,23 @@ and later; `pcv` before), which sys-clk also uses as a background module. Commun
 | Higher | not without undervolting; the GPU's limit is 921 MHz; don't raise both at once on a first model | about 1,963 / 998 MHz called safe on good chips, 1,963 / 921 more generally; up to 2,397 / 1,305 unlockable, called unsafe |
 | On battery | over about 8 W for long periods is said to wear the battery | the same |
 
-What OBNS does with it (the user chose 1,785 MHz, 2026-11-04): **1,785 MHz while loading and in play**, on every model (the stock
-maximum, and the clock the console's own games load at), as the target the 30 fps floor is measured at; an option to go back to stock
-clocks (for battery); set back to stock on leaving or losing focus, as RetroArch does. Nothing above the stock maximum is offered:
-that is sys-clk's business, at the player's own risk.
+What OBNS does with it (the user, 2026-11-04):
+
+- **On power** (docked, or handheld with the charger in): **1,785 MHz while loading and in play**, on every model (the stock maximum,
+  and the clock the console's own games load at). The 30 fps floor is measured here.
+- **On battery:** stock 1,020 MHz, loading too, unless the options' toggle ("1,785 MHz on battery", off by default) says otherwise.
+  The 30 fps floor isn't promised at stock clocks.
+- Followed as it changes: docking, undocking, the charger in or out (libnx's `appletGetOperationMode` and `psmGetChargerType`
+  *(verify)*); set back to stock on leaving or losing focus, as RetroArch does.
+- Nothing above the stock maximum is offered: that is sys-clk's business, at the player's own risk.
 
 For scale, TML in 1.3 on the MacBook Neo (Metal alone): 2.9 GB private memory, a 1.4 GB managed heap at load, 2.23 M vertices and 7.66 M
 face vertices (about 375 MB), 7,900 to 8,000 draws a frame, and 12.5 ms of CPU a frame (train 3.4, render 8.5, world 0.7). An A57 at
 1 GHz is several times slower a core than the A18 Pro, and Mono's AOT code is slower than its JIT's *(estimate)*: the same work would
 take roughly 80 to 110 ms a frame at 1,020 MHz, about 10 fps, and 46 to 63 ms at 1,785 MHz. **30 fps needs the CPU's work cut to
 about a third at stock clocks, or by about half at 1,785 MHz, and spread over the 3 cores; and the memory cut by about a quarter**,
-before the GPU is the limit. **The 30 fps floor is to hold at 1,785 MHz** (the user, 2026-11-04): the CPU's work cut by about half.
+before the GPU is the limit. **The 30 fps floor is to hold at 1,785 MHz** (the user, 2026-11-04; on power, and on battery with the
+toggle on): the CPU's work cut by about half.
 
 ## Software
 
@@ -131,7 +137,7 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
    time, the 2D part and the HUD in the same pass (no OpenGL anywhere).
 4. **CPU to 33 ms in the worst frame, not the mean:** textures and meshes made off the frame's thread, the garbage collector kept from
    long pauses (fewer allocations a frame), the ATS plugin layer's cost measured driving; fewer draws (static scenery merged by texture page, indirect draws, culling on the GPU), the work over 3 cores,
-   the hot loops checked under AOT. 1,785 MHz for loading and play, stock as an option.
+   the hot loops checked under AOT. 1,785 MHz on power; stock on battery unless the toggle is on.
 5. **The console's ways:** input mapping, touch for the cab, docked and handheld resolution (720p rendering docked if needed), sleep and
    resume, the HOME button.
 
