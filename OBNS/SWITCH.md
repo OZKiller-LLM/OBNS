@@ -151,6 +151,9 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 
   Joy-Cons held together, the Pro Controller and the handheld's own Joy-Cons are one pad; a single Joy-Con held sideways has too few
   buttons for the whole scheme *(decide later)*. Remapping as on Android, kept in the settings folder.
+- **In the menus, by the labels:** **A confirms, B cancels or goes back**, as Nintendo's own software has it (A on the right, B at the
+  bottom), whatever the driving scheme's positions; the D-pad and left stick move, L and R change pages or tabs. This goes for the
+  main menu, the in-game pause menu, the station list and every dialog.
 - **The HUD is Android's** (`DriverHud.cs`), without the touch controls by default.
 - **Touch controls** (`ControlOverlay.cs`'s buttons, and the cab's touch areas, `CabTouch.cs`): **off by default**; an options toggle
   turns them on in handheld mode. **Docked, they are off whatever the toggle says**: there is no touch screen in use.
