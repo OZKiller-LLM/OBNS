@@ -7,6 +7,10 @@
 - **White scenery after a jump:** jumping to a station could leave much of the scenery white for the rest of the game, on every renderer except plain OpenGL. Textures whose decode had finished but which had gone out of view used up the places for new ones.
 - **Back to the main menu with your own settings folder:** a copy started with `/filesystem=` (a portable or test copy) went back to the user's own settings after "Exit to main menu", as upstream's restart leaves that out. It's kept now.
 
+### macOS
+
+- **No wait for the microphone at start:** the game opened the microphone as it started, so on a Mac where it hadn't been allowed yet, it waited on macOS's question before any window opened. It's opened when a route first plays a microphone sound now.
+
 ### Windows
 
 - **OGG sounds** load. The 1.2, 1.21 and 1.22 zips shipped a version of NAudio.Core that the OGG plugin can't use.
