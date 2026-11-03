@@ -32,7 +32,8 @@ and later; `pcv` before), which sys-clk also uses as a background module. Commun
 
 What OBNS does with it (the user, 2026-11-04):
 
-- **On power** (docked, or handheld with the charger in): **1,785 MHz while loading and in play**, on every model (the stock maximum,
+- **On power** (docked, or handheld with the charger in): **1,785 MHz set automatically from launch, while loading and in play**, with
+  no option needed, on every model (the stock maximum,
   and the clock the console's own games load at). The 30 fps floor is measured here.
 - **On battery:** stock 1,020 MHz, loading too, unless the options' toggle ("1,785 MHz on battery", off by default) says otherwise.
   The 30 fps floor isn't promised at stock clocks.
