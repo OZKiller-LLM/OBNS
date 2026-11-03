@@ -141,8 +141,12 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 4. **CPU to 33 ms in the worst frame, not the mean:** textures and meshes made off the frame's thread, the garbage collector kept from
    long pauses (fewer allocations a frame), the ATS plugin layer's cost measured driving; fewer draws (static scenery merged by texture page, indirect draws, culling on the GPU), the work over 3 cores,
    the hot loops checked under AOT. 1,785 MHz on power; stock on battery unless the toggle is on.
-5. **The console's ways:** input mapping, touch for the cab, docked and handheld resolution (720p rendering docked if needed), sleep and
-   resume, the HOME button.
+5. **The console's ways:** input mapping, touch for the cab, sleep and resume, the HOME button. Resolution (the user, 2026-11-04):
+   **1280x720 in handheld mode** (all three models' screens: 6.2" LCD, 7.0" OLED, 5.5" Lite), **up to 1920x1080 docked**, switched as
+   the console is docked or undocked; 720p rendering scaled up stays possible docked if 1080p can't hold the 30 fps floor.
+6. **The menu, redesigned for the console:** laid out at 1280x720 and scaled to 1080p docked; every part reachable with buttons alone
+   (no touch docked), touch as well in handheld; text readable on the Lite's 5.5" screen (about 18 to 20 px at 720p at least), touch
+   targets of 60 to 80 px, about 5% kept clear of the edges for TVs.
 
 ## Sources
 
