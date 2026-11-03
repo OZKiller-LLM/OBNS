@@ -6,6 +6,8 @@ count, not the mean), as a homebrew `.nro`
 in its own folder under `/switch` on the SD card, run from hbmenu on custom firmware (Atmosphère), drawn by deko3d. Figures marked
 *(verify)* are from secondary sources or are estimates, and need checking on the console.
 
+**Switch 2** (the user, 2026-11-04): not before it has stable custom firmware; then it's considered, with enhanced performance.
+
 ## The machine
 
 | What | Switch 1 (Tegra X1, "Erista" and "Mariko" alike at stock clocks) |
