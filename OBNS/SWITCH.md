@@ -1,6 +1,8 @@
 # Nintendo Switch 1 homebrew (OBNS 1.31N): research ahead of the work
 
-Written 2026-11-04, before any code. The goal set by the user: TML's exterior view at 30 fps on a Switch 1 (4 GB), as a homebrew `.nro`
+Written 2026-11-04, before any code. The goal set by the user: TML's exterior view at a **stable 30 fps** on a Switch 1 (4 GB), as a
+floor: more is fine, below it preferably never, so every frame within 33.3 ms (the worst frames and the garbage collector's pauses
+count, not the mean), as a homebrew `.nro`
 in its own folder under `/switch` on the SD card, run from hbmenu on custom firmware (Atmosphère), drawn by deko3d. Figures marked
 *(verify)* are from secondary sources or are estimates, and need checking on the console.
 
@@ -43,8 +45,14 @@ those projects, not from the desktop build.
 What follows from it:
 
 - **Plugins.** Upstream loads its route, object, sound and texture plugins by reflection. Under full AOT they must be in the build (they
-  are, as on Android). Trains' native Windows ATS plugins can't run (as on Android); .NET train plugins added by a player would need
-  the interpreter, at its speed.
+  are, as on Android). .NET train plugins added by a player would need Mono's interpreter, at its speed.
+- **Trains' Windows ATS plugins** run as on Android, Linux and macOS: in the x86 and x64 compatibility layer (`shared/OpenBve.X86`, an
+  interpreter with a PE loader and the Windows and C runtime calls plugins make) through the plugin bridge (`shared/NativePlugins`),
+  with the managed stand-ins when a plugin can't start. It is plain C#: no code made at run time, no P/Invoke, no reflection emit, and
+  its 4 GB address space is pages made as they're touched, so full AOT takes it as it is. Measured here (2026-11-04, .NET 10 on the
+  PC, the layer's own test, standing at a station): TML's SP1900 DetailManager with kcrwr_seltrac, DGo and DGoN loaded, 1,745
+  instructions and 0.19 to 0.33 ms a frame; the KCR's TBL set, 0.17 ms. Most of that is the calls' overhead, not the instructions.
+  At several times slower on an A57 under AOT *(estimate)* that is about 2 to 4 ms of the 33 ms; to be measured driving, on the console.
 - **Native libraries** are linked into the NRO; every P/Invoke target must be known at build time.
 - **System.Drawing** (libgdiplus) is not there: images through the Android port's decoders or a portlib (libpng, libjpeg-turbo), text
   through FreeType (and HarfBuzz) or the console's own shared fonts (`pl` service: Nintendo's Latin, Chinese, Korean and symbol fonts)
@@ -102,7 +110,8 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
    twice); meshes shared and trimmed; the managed heap's census from `OBNS_MEMSTATS` down.
 3. **deko3d whole-game renderer:** the Vulkan alone path's structure, with texture pages of 32, shaders compiled by `uam` at build
    time, the 2D part and the HUD in the same pass (no OpenGL anywhere).
-4. **CPU to 33 ms:** fewer draws (static scenery merged by texture page, indirect draws, culling on the GPU), the work over 3 cores,
+4. **CPU to 33 ms in the worst frame, not the mean:** textures and meshes made off the frame's thread, the garbage collector kept from
+   long pauses (fewer allocations a frame), the ATS plugin layer's cost measured driving; fewer draws (static scenery merged by texture page, indirect draws, culling on the GPU), the work over 3 cores,
    the hot loops checked under AOT. Loading under the CPU boost mode if homebrew can use it.
 5. **The console's ways:** input mapping, touch for the cab, docked and handheld resolution (720p rendering docked if needed), sleep and
    resume, the HOME button.
