@@ -15,7 +15,8 @@ does: Direct3D 12 to 11, Direct3D to Vulkan, then OpenGL; the options' "Last gam
 
 The options' **OpenGL HUD fallback** (off by default; `openglhudfallback` in `obns.cfg`) brings back 1.2's hybrid: the renderer draws
 the world and the cab, and OpenGL the HUD, menus and the rest over it. It's for a computer where the renderer alone draws something
-wrong, and the line then reads "with OpenGL's HUD". Linux and Intel Macs keep the hybrid, as this mode doesn't run there yet.
+wrong, and the line then reads "with OpenGL's HUD". On Linux (x86-64) Vulkan draws alone the same way, by default where Vulkan is
+the default (`GPU_SUPPORT.md`: OpenGL on Broadwell's age and older without a discrete GPU). Intel Macs keep the hybrid.
 
 For tests, a switch decides instead of the options (`WholeGame.Probe`): `OBNS_VULKAN_FULL=1`, `OBNS_D3D12_FULL=1`, `OBNS_D3D11_FULL=1`,
 `OBNS_D3D9_FULL=1` or `OBNS_METAL_FULL=1` that API alone; `OBNS_<API>=1` that API's hybrid; `OBNS_<API>=0` not that API.
@@ -164,8 +165,9 @@ menu under Renderer, saved, kept and removed as on Windows; back to the main men
 
 ## Not done
 
-- **Linux:** Vulkan alone runs on x86-64 when Vulkan is chosen in the options (System V stubs, an X11 surface); run on Broadwell's core 1.0
-  tier only. The default there keeps the hybrid until more of Linux's GPUs are run.
+- **Linux:** Vulkan alone on x86-64 (System V stubs, an X11 surface, XWayland included), the default where Vulkan is (the user, 2026-11-04:
+  the Broadwell MacBook Pro is the odd one out). Run on Broadwell's core 1.0 tier only so far: right, at about 20 fps against OpenGL's 59 there,
+  where OpenGL stays the default. Not run on a newer Linux GPU yet.
 - **Metal and the debug views:** built (its triangle fill mode, the same objects), not run on a Mac yet.
 - **Broadwell:** the core Vulkan 1.0 tier draws the whole game too (render passes, texture pages, the shaders built for Vulkan 1.0), but it
   has only been run here, forced (`OBNS_VULKAN_TIER=1.0`, and `OBNS_VULKAN_PAGED=16` for pages to be switched): the frames match the

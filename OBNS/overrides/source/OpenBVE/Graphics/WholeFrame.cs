@@ -131,12 +131,6 @@ namespace OpenBve.Graphics
 				return;
 			}
 
-			// Linux: Vulkan alone when it's chosen in the options (the default keeps the hybrid until more of Linux's GPUs are run).
-			if (GLStub.AvailableOnLinux && !ObnsOptions.Chosen)
-			{
-				return;
-			}
-
 			// The one asked for, then as the hybrid falls back: Direct3D 12 to 11, Direct3D to Vulkan.
 			ObnsOptions.RendererKind[] order;
 			switch (asked)

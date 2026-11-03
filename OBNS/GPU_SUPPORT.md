@@ -9,7 +9,7 @@ A GPU can have Vulkan or Direct3D and still end up on OpenGL because that path i
 
 From 1.3, on Windows x64 and Apple silicon, the renderer draws the whole game alone by default and needs neither OpenGL nor
 the shared path (`RENDERERS.md`); the options' OpenGL HUD fallback brings back the world layer. The interop columns below
-then matter only to the fallback and to Linux.
+then matter only to the fallback. On Linux (x86-64) Vulkan draws alone too, where Vulkan is the default below.
 
 ## How the default is decided
 
