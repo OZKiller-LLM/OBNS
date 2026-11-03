@@ -142,7 +142,8 @@ float3 applyChain(float3 pos, float4 chain, float base, float count)
 struct VertexIn
 {
 	float3 position : POSITION;
-	float3 normal : NORMAL;
+	// A texture coordinate's usage: the Lisuan 7G100's Direct3D 9 gave the shader zeros for NORMAL's.
+	float3 normal : TEXCOORD1;
 	float2 uv : TEXCOORD0;
 	float4 color : COLOR0;
 	float4 chain0 : BLENDINDICES0;
@@ -311,6 +312,11 @@ float SampleCompare(float2 uv, float2 quarter, float depth)
 
 float GetCascadeShadowFactor(float layerIndex, float4 posLightSpace, float bias, float normalBias, float3 vNormal, float2 fragCoord)
 {
+	if (posLightSpace.w <= 0.0)
+	{
+		return 1.0;
+	}
+
 	float3 projCoords = posLightSpace.xyz / posLightSpace.w;
 	projCoords = projCoords * 0.5 + 0.5;
 	if (projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0 || projCoords.z < 0.0 || projCoords.z > 1.0)
@@ -459,7 +465,14 @@ PixelOut PS(Varyings input, float2 fragCoord : VPOS, float face : VFACE)
 		if (finalColor.a <= alphaTest.z) discard;
 	}
 
-	float shadow = CalculateShadowFactor(input, fragCoord);
+	// A branch, not flattened: with shadows off the light-space positions are 0, and the Lisuan 7G100 let the unused path's 0 / 0
+	// into the colour (a black picture).
+	float shadow = 1.0;
+	[branch]
+	if (frameFlags.y != 0.0 && shadowParams.x > 0.0)
+	{
+		shadow = CalculateShadowFactor(input, fragCoord);
+	}
 	if (!unlit)
 	{
 		finalColor.rgb *= input.lightResult.rgb * shadow;

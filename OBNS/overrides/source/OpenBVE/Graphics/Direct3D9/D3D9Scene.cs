@@ -118,7 +118,7 @@ namespace OpenBve.Graphics.Direct3D9
 			// LibRender2's vertex, as upstream's VAOs have it; the matrix chain's three integers read as four bytes each.
 			D9.VertexElement* elements = stackalloc D9.VertexElement[8];
 			elements[0] = Element(nameof(LibRenderVertex.Position), D9.DeclFloat3, D9.UsagePosition, 0, 0);
-			elements[1] = Element(nameof(LibRenderVertex.Normal), D9.DeclFloat3, D9.UsageNormal, 0, 0);
+			elements[1] = Element(nameof(LibRenderVertex.Normal), D9.DeclFloat3, D9.UsageTexCoord, 1, 0);
 			elements[2] = Element(nameof(LibRenderVertex.UV), D9.DeclFloat2, D9.UsageTexCoord, 0, 0);
 			elements[3] = Element(nameof(LibRenderVertex.Color), D9.DeclFloat4, D9.UsageColor, 0, 0);
 			for (int i = 0; i < 3; i++)
