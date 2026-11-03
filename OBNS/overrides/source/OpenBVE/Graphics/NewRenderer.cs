@@ -859,6 +859,13 @@ namespace OpenBve.Graphics
 				unsortedAlphaFaces = VisibleObjects.AlphaFaces.ToList();
 			}
 
+			// The normals view turned off: its meshes let go.
+			if (!OptionNormals && debugNormals != null)
+			{
+				debugNormals.Release();
+				debugNormals = null;
+			}
+
 			// Drawing alone, the normals view's objects, taken before the static batcher takes their faces out of the lists.
 			List<ObjectState> normalObjects = WholeGame.Full && OptionNormals ? DebugNormals.Objects(opaqueFaces, alphaFaces) : null;
 			batcher = batcher ?? new StaticBatcher(this);
@@ -947,7 +954,7 @@ namespace OpenBve.Graphics
 				if (normalObjects != null)
 				{
 					debugNormals = debugNormals ?? new DebugNormals();
-					debugNormals.Gather(scene, normalObjects);
+					debugNormals.Gather(scene, normalObjects, Camera.AbsolutePosition);
 				}
 
 				GatherVulkanCab(scene, overlayOpaqueFaces, overlayAlphaFaces);
@@ -1045,7 +1052,7 @@ namespace OpenBve.Graphics
 				if (WholeGame.Full && OptionNormals)
 				{
 					debugNormals = debugNormals ?? new DebugNormals();
-					debugNormals.Gather(scene, DebugNormals.Objects(overlayOpaqueFaces, overlayAlphaFaces));
+					debugNormals.Gather(scene, DebugNormals.Objects(overlayOpaqueFaces, overlayAlphaFaces), null);
 				}
 			}
 			else
