@@ -92,6 +92,25 @@ The same machine and route for Direct3D alone, against each one's hybrid:
 
 Vulkan's frame cost in the same comparison: 2.92 to 3.57 ms against 2.89 to 3.44 ms. Particles in fog on Vulkan: 0 by more than 2.
 
+TML on the same machine (2026-11-04, build of 2dbe470), exterior, 150 s, vertical sync on at 120 Hz, no snapshots (numbers only):
+
+| Mode | Load | fps a 10 s window, after the first | Worst frame | Private memory |
+| --- | --- | --- | --- | --- |
+| Vulkan alone (the default) | 53 s (the first, cold) | 109 to 120 | 22 to 46 ms | 2.70 GB |
+| Vulkan's core 1.0 tier alone | 40 s | 116 to 120 | 21 to 54 ms | 2.76 GB |
+| Direct3D 12 alone | 41 s | 109 to 119 | 22 to 62 ms | 2.57 GB |
+| Direct3D 11 alone | 39 s | 94 to 120 | 19 to 60 ms | 2.47 GB |
+| Direct3D 9 alone | 44 s | 60 to 95 | 25 to 175 ms | 2.44 GB |
+| Vulkan's hybrid (the OpenGL HUD fallback) | 47 s | 98 to 119 | 21 to 119 ms | 2.86 GB |
+| OpenGL | 48 s | 60 to 71 | 27 to 88 ms | 2.91 GB |
+
+The modes but Direct3D 9 are held at the refresh rate. Full screen at the display's own mode (1920x1080, 32-bit): every alone mode
+starts, its frames are 1920x1080, 107 to 117 fps, and the display is as it was after each.
+
+The options (2026-11-04): the "OpenGL HUD fallback" checkbox ticked in the main menu's window is saved on closing it, read back ticked
+on the next start, and unticking it removes it; with each setting and switch, what draws is as `WholeGame.Probe` says (eight cases), and
+Direct3D 12 refused falls to Direct3D 11 alone with "Direct3D 12 can't draw the game alone here" on the last game's line.
+
 Step 1 on the M1 Mac (OpenGL drawing the 2D part, under OpenGL and Metal) matches 1.22 in the world, HUD, loading screen, in-game menu and
 native menu, with load time and frame rate within 1.22's own spread.
 
@@ -126,9 +145,17 @@ read from uncached memory (half a second each, and key taps lost in those frames
 Direct3D 9 gives zeros for the NORMAL vertex input (now TEXCOORD1), and lets a path's 0 / 0 that the shader computes but doesn't take
 into the colour (the picture black; shadow sampling is left out of the shaders while shadows are off).
 
-On the MacBook Neo (A18 Pro, 8 GB, macOS 26), TML exterior, snapshots on: Metal alone 47.1 fps against the hybrid's 28.1 with vertical sync
-on, 48.4 against 39.5 with it off; loading 86 to 95 s against 91 to 93 s; 2.9 GB private memory against 3.8 GB. The window captured agrees
-with the snapshots; the hybrid's own snapshots are what differ, as on the M1.
+With Vulkan alone the default there (no switches): East Rail 130 to 141 fps, TML 62 to 70 fps (loading 376 s); the OpenGL HUD fallback on
+the Lisuan draws with OpenGL (no shared images), 57 to 58 fps, and the last game's line says why.
+
+On the MacBook Neo (A18 Pro, 8 GB, macOS 26, on mains power), TML exterior, vertical sync on, snapshots on: Metal alone by default 43.4 to
+44.2 fps against the hybrid's 27.5; loading 90 to 96 s; 2.9 GB private memory against 3.8 GB. A frame of 0.8 to 1.2 s about every 30 s
+(the garbage collector or memory pressure on 8 GB, most likely; not on the M1). Captured by process, the window always shows what the
+snapshots do; the loading screen seen once after loading (an earlier run, the window covered) didn't recur.
+
+On the M1 (16 GB), the same build by default: Metal alone, 69 s to load, about 42 fps against the hybrid's 30; the checkbox in the native
+menu under Renderer, saved, kept and removed as on Windows; back to the main menu and quitting clean; the window against the hybrid's
+0.03% of pixels by more than 2, the HUD identical.
 
 ## Not done
 
@@ -138,7 +165,6 @@ with the snapshots; the hybrid's own snapshots are what differ, as on the M1.
   has only been run here, forced (`OBNS_VULKAN_TIER=1.0`, and `OBNS_VULKAN_PAGED=16` for pages to be switched): the frames match the
   1.3 path's but for single pixels of the world, the frame cost is the same, and the validation layer reports nothing. Broadwell's
   GPUs are on Linux, which this mode doesn't run on yet.
-- **Full screen:** not run, as it changes the display mode.
 - **Metal:** Intel Macs aren't offered.
 - **Metal's speed (on hold, the user's call, 2026-11-03):** the GPU's time per frame in the log, then frames in flight (the CPU and GPU
   each waits for the other now), encoding draws natively rather than call by call from Mono, memoryless depth and fewer passes, ASTC textures.
