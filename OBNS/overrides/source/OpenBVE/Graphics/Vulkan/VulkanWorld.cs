@@ -1294,7 +1294,7 @@ namespace OpenBve.Graphics.Vulkan
 				if (snapshotBuffer == null || snapshotBuffer.Size < bytes)
 				{
 					snapshotBuffer?.Dispose();
-					snapshotBuffer = new HostBuffer(device, bytes, Vk.BufferUsageTransferDst);
+					snapshotBuffer = new HostBuffer(device, bytes, Vk.BufferUsageTransferDst, true);
 				}
 
 				Vk.BufferImageCopy copy = new Vk.BufferImageCopy

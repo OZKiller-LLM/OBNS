@@ -93,7 +93,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal const uint ImageAspectColor = 0x1, ImageAspectDepth = 0x2;
 
 		// Memory properties.
-		internal const uint MemoryPropertyDeviceLocal = 0x1, MemoryPropertyHostVisible = 0x2, MemoryPropertyHostCoherent = 0x4;
+		internal const uint MemoryPropertyDeviceLocal = 0x1, MemoryPropertyHostVisible = 0x2, MemoryPropertyHostCoherent = 0x4, MemoryPropertyHostCached = 0x8;
 
 		// External handles.
 		internal const uint ExternalMemoryHandleTypeOpaqueWin32 = 0x2;

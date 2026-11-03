@@ -786,6 +786,21 @@ namespace OpenBve.Graphics.Vulkan
 			return names;
 		}
 
+		/// <summary>Whether a memory type allowed by a resource's type bits has all the properties asked for.</summary>
+		internal bool HasMemoryType(uint typeBits, uint properties)
+		{
+			Vk.PhysicalDeviceMemoryProperties memory = memoryProperties;
+			for (uint i = 0; i < memory.MemoryTypeCount; i++)
+			{
+				if ((typeBits & (1u << (int)i)) != 0 && (memory.MemoryTypes[2 * i] & properties) == properties)
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		/// <summary>A memory type allowed by a resource's type bits with all the properties asked for.</summary>
 		internal uint MemoryType(uint typeBits, uint properties)
 		{

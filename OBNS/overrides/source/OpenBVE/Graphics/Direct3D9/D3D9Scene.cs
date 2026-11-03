@@ -107,8 +107,11 @@ namespace OpenBve.Graphics.Direct3D9
 
 			IntPtr d = device.Device;
 			vertexShader = D9.CreateVertexShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "VS", "vs_3_0", "OPAQUE_COVERAGE", "0"));
-			blendedShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "0"));
-			opaqueShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "1"));
+			// A test's view (OBNS_D3D9_VIEW): normal, light or texture instead of the picture.
+			string view = (Environment.GetEnvironmentVariable("OBNS_D3D9_VIEW") ?? "").Trim().ToLowerInvariant();
+			string debugView = view == "normal" ? "1" : view == "light" ? "2" : view == "texture" ? "3" : "0";
+			blendedShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "0", "DEBUG_VIEW", debugView));
+			opaqueShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "1", "DEBUG_VIEW", debugView));
 			shadowVertexShader = D9.CreateVertexShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "ShadowVS", "vs_3_0", "OPAQUE_COVERAGE", "0"));
 			shadowPixelShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "ShadowPS", "ps_3_0", "OPAQUE_COVERAGE", "0"));
 

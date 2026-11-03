@@ -54,7 +54,8 @@
 // texels of one float texture (records), read in both stages by the draw's index, which each draw sets; the vertices'
 // matrix chains are read as bytes; the cascades' shadow maps are the quarters of one R32F atlas, compared by hand with the
 // 2x2 filtering Direct3D 11's comparison sampler gives. Compiled at start by d3dcompiler_47.dll: VS, PS with
-// OPAQUE_COVERAGE 1 or 0, ShadowVS, ShadowPS.
+// OPAQUE_COVERAGE 1 or 0, ShadowVS, ShadowPS. DEBUG_VIEW (OBNS_D3D9_VIEW) 1 draws the normals as colours, 2 the vertices'
+// lighting, 3 the faces' colours unlit, 0 the picture.
 
 // --- the frame (c0-c36; its integers as floats), the records' texture, the layer ---
 
@@ -354,55 +355,59 @@ float GetCascadeShadowFactor(float layerIndex, float4 posLightSpace, float bias,
 	return shadow * 0.25;
 }
 
+/// A cascade's component of a float4 (0 x, 1 y, 2 z, 3 w).
+float Pick(float4 v, float idx)
+{
+	return idx < 0.5 ? v.x : idx < 1.5 ? v.y : idx < 2.5 ? v.z : v.w;
+}
+
+// The cascade's values are picked first and sampled by one copy of GetCascadeShadowFactor: a copy a cascade (and another for
+// the blend into the next) made the pixel shader take the compiler about 40 s.
 float SampleCascadeByIndex(float idx, Varyings input, float2 fragCoord)
 {
-	float3 n = input.normalDepth.xyz;
-	if (idx == 0.0) return GetCascadeShadowFactor(0.0, input.posLightSpace0, shadowBias.x, shadowNormalBias.x, n, fragCoord);
-	if (idx == 1.0) return GetCascadeShadowFactor(1.0, input.posLightSpace1, shadowBias.y, shadowNormalBias.y, n, fragCoord);
-	if (idx == 2.0) return GetCascadeShadowFactor(2.0, input.posLightSpace2, shadowBias.z, shadowNormalBias.z, n, fragCoord);
-	if (idx == 3.0) return GetCascadeShadowFactor(3.0, input.posLightSpace3, shadowBias.w, shadowNormalBias.w, n, fragCoord);
-	return 1.0;
+	float4 posLightSpace = idx < 0.5 ? input.posLightSpace0 : idx < 1.5 ? input.posLightSpace1 : idx < 2.5 ? input.posLightSpace2 : input.posLightSpace3;
+	return GetCascadeShadowFactor(idx, posLightSpace, Pick(shadowBias, idx), Pick(shadowNormalBias, idx), input.normalDepth.xyz, fragCoord);
 }
 
 float CalculateShadowFactor(Varyings input, float2 fragCoord)
 {
 	if (frameFlags.y == 0.0 || shadowParams.x <= 0.0) return 1.0;
 	float vViewDepth = abs(input.viewPos.z);
-	float shadow = 1.0;
 	float cascadeCount = frameFlags.z;
-	float4 splits = shadowSplit;
-	[loop]
-	for (int i = 0; i < 4; i++)
+	// The first cascade (of those in use) the depth is within, as upstream's loop; none, no shadow.
+	float i = 4.0;
+	[unroll]
+	for (int c = 3; c >= 0; c--)
 	{
-		if (i >= cascadeCount)
+		if (c < cascadeCount && vViewDepth < Pick(shadowSplit, c))
 		{
-			break;
+			i = c;
 		}
+	}
 
-		float splitDist = i == 0 ? splits.x : i == 1 ? splits.y : i == 2 ? splits.z : splits.w;
-		float blendRange = clamp(splitDist * SHADOW_BLEND_FRACTION, SHADOW_MIN_BLEND, SHADOW_MAX_BLEND);
-		if (vViewDepth < splitDist)
+	if (i > 3.5)
+	{
+		return 1.0;
+	}
+
+	float splitDist = Pick(shadowSplit, i);
+	float blendRange = clamp(splitDist * SHADOW_BLEND_FRACTION, SHADOW_MIN_BLEND, SHADOW_MAX_BLEND);
+	float shadow = SampleCascadeByIndex(i, input, fragCoord);
+	if (i < cascadeCount - 1)
+	{
+		float blendStart = splitDist - blendRange;
+		if (vViewDepth > blendStart)
 		{
-			shadow = SampleCascadeByIndex(i, input, fragCoord);
-			if (i < cascadeCount - 1)
-			{
-				float blendStart = splitDist - blendRange;
-				if (vViewDepth > blendStart)
-				{
-					float nextShadow = SampleCascadeByIndex(i + 1, input, fragCoord);
-					shadow = lerp(shadow, nextShadow, smoothstep(blendStart, splitDist, vViewDepth));
-				}
-			}
-			else
-			{
-				float fadeStart = splitDist - blendRange * 2.0;
-				if (vViewDepth > fadeStart)
-				{
-					shadow = lerp(shadow, 1.0, smoothstep(fadeStart, splitDist, vViewDepth));
-				}
-			}
-
-			break;
+			float nextShadow = SampleCascadeByIndex(i + 1.0, input, fragCoord);
+			shadow = lerp(shadow, nextShadow, smoothstep(blendStart, splitDist, vViewDepth));
+		}
+	}
+	else
+	{
+		float fadeStart = splitDist - blendRange * 2.0;
+		if (vViewDepth > fadeStart)
+		{
+			shadow = lerp(shadow, 1.0, smoothstep(fadeStart, splitDist, vViewDepth));
 		}
 	}
 
@@ -481,6 +486,13 @@ PixelOut PS(Varyings input, float2 fragCoord : VPOS, float face : VFACE)
 
 	PixelOut output;
 	output.color = float4(lerp(fogColor.rgb, finalColor.rgb, fogFactor), OPAQUE_COVERAGE ? 1.0 : finalColor.a);
+#if DEBUG_VIEW == 1
+	output.color.rgb = input.normalDepth.xyz * 0.5 + 0.5;
+#elif DEBUG_VIEW == 2
+	output.color.rgb = input.lightResult.rgb;
+#elif DEBUG_VIEW == 3
+	output.color.rgb = input.color.rgb * texel.rgb;
+#endif
 	// The depth as a colour, for the composite (its target is bound only for draws that write depth); alpha 1, so blending keeps it.
 	float depth = input.normalDepth.w / input.uvDraw.w;
 	output.depth = float4(depth, depth, depth, 1.0);

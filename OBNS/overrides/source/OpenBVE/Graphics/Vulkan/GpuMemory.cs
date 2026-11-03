@@ -160,7 +160,7 @@ namespace OpenBve.Graphics.Vulkan
 		}
 	}
 
-	/// <summary>A host-visible, coherent buffer, mapped while it lives.</summary>
+	/// <summary>A host-visible, coherent buffer, mapped while it lives; one read back by the CPU in cached memory where there is some.</summary>
 	internal sealed unsafe class HostBuffer : IDisposable
 	{
 		private readonly VulkanDevice device;
@@ -169,7 +169,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal readonly byte* Data;
 		internal readonly ulong Size;
 
-		internal HostBuffer(VulkanDevice device, ulong size, uint usage)
+		internal HostBuffer(VulkanDevice device, ulong size, uint usage, bool readBack = false)
 		{
 			this.device = device;
 			Size = size;
@@ -180,7 +180,10 @@ namespace OpenBve.Graphics.Vulkan
 			{
 				SType = Vk.StructureTypeMemoryAllocateInfo,
 				AllocationSize = requirements.Size,
-				MemoryTypeIndex = device.MemoryType(requirements.MemoryTypeBits, Vk.MemoryPropertyHostVisible | Vk.MemoryPropertyHostCoherent)
+				// Uncached (write-combined) memory is read by the CPU a great deal slower: a snapshot took about half a second so.
+				MemoryTypeIndex = readBack && device.HasMemoryType(requirements.MemoryTypeBits, Vk.MemoryPropertyHostVisible | Vk.MemoryPropertyHostCoherent | Vk.MemoryPropertyHostCached)
+					? device.MemoryType(requirements.MemoryTypeBits, Vk.MemoryPropertyHostVisible | Vk.MemoryPropertyHostCoherent | Vk.MemoryPropertyHostCached)
+					: device.MemoryType(requirements.MemoryTypeBits, Vk.MemoryPropertyHostVisible | Vk.MemoryPropertyHostCoherent)
 			};
 			Vk.Check(Vk.vkAllocateMemory(device.Device, &allocateInfo, null, out memory), "vkAllocateMemory (host, " + (size >> 20) + " MB)");
 			Vk.Check(Vk.vkBindBufferMemory(device.Device, Buffer, memory, 0), "vkBindBufferMemory");
