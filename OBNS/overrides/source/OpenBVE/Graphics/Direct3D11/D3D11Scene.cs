@@ -504,7 +504,7 @@ namespace OpenBve.Graphics.Direct3D11
 			Dx.PSSetShader(context, blend == Blend.None ? opaqueShader : blendedShader);
 			Dx.OMSetBlendState(context, BlendState(blend, depthWrite));
 			Dx.OMSetDepthStencilState(context, DepthState(depthTest, depthWrite));
-			Dx.RSSetState(context, RasterState(cull, (key & 32) != 0));
+			Dx.RSSetState(context, RasterState(cull, (key & 32) != 0, (key & 64) != 0));
 		}
 
 		/// <summary>The sampler for an OpenGL wrap mode.</summary>
@@ -561,15 +561,16 @@ namespace OpenBve.Graphics.Direct3D11
 		}
 
 		/// <summary>Upstream culls OpenGL's front faces; drawn upside down, those are clockwise, Direct3D's front faces by default.</summary>
-		internal IntPtr RasterState(bool cull, bool depthClamp = false)
+		internal IntPtr RasterState(bool cull, bool depthClamp = false, bool lines = false)
 		{
-			int key = (cull ? 1 : 0) | (depthClamp ? 2 : 0);
+			// Lines: the wireframe view.
+			int key = (cull ? 1 : 0) | (depthClamp ? 2 : 0) | (lines ? 4 : 0);
 			if (rasterStates.TryGetValue(key, out IntPtr state))
 			{
 				return state;
 			}
 
-			Dx.RasterizerDesc desc = new Dx.RasterizerDesc { FillMode = Dx.FillSolid, CullMode = cull ? Dx.CullFront : Dx.CullNone, DepthClipEnable = depthClamp ? 0 : 1 };
+			Dx.RasterizerDesc desc = new Dx.RasterizerDesc { FillMode = lines ? Dx.FillWireframe : Dx.FillSolid, CullMode = cull ? Dx.CullFront : Dx.CullNone, DepthClipEnable = depthClamp ? 0 : 1 };
 			state = Dx.CreateRasterizerState(device.Device, desc);
 			rasterStates[key] = state;
 			return state;

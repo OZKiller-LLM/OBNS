@@ -245,7 +245,7 @@ namespace OpenBve.Graphics.Direct3D12
 		private static readonly string[] semantics = { "POSITION", "NORMAL", "TEXCOORD", "COLOR", "BLENDINDICES", "DRAW" };
 
 		/// <summary>A pipeline object from a description with LibRender2's vertex and the instance stream as its input.</summary>
-		private IntPtr MakePipeline(D12.GraphicsPipelineStateDesc desc, bool depthClamp = false)
+		private IntPtr MakePipeline(D12.GraphicsPipelineStateDesc desc, bool depthClamp = false, bool lines = false)
 		{
 			IntPtr[] names = new IntPtr[semantics.Length];
 			try
@@ -268,7 +268,7 @@ namespace OpenBve.Graphics.Direct3D12
 				desc.PrimitiveTopologyType = D12.TopologyTypeTriangle;
 				desc.SampleMask = 0xFFFFFFFF;
 				desc.SampleCount = 1;
-				desc.FillMode = Dx.FillSolid;
+				desc.FillMode = lines ? Dx.FillWireframe : Dx.FillSolid;
 				desc.DepthClipEnable = depthClamp ? 0 : 1;
 				desc.StencilReadMask = desc.StencilWriteMask = 0xFF;
 				D12.StencilOpDesc keep = new D12.StencilOpDesc { StencilFailOp = Dx.StencilOpKeep, StencilDepthFailOp = Dx.StencilOpKeep, StencilPassOp = Dx.StencilOpKeep, StencilFunc = Dx.ComparisonAlways };
@@ -295,13 +295,14 @@ namespace OpenBve.Graphics.Direct3D12
 		private static D12.RenderTargetBlendDesc Opaque(byte writeMask) => new D12.RenderTargetBlendDesc { SrcBlend = Dx.BlendOne, DestBlend = Dx.BlendZero, BlendOp = Dx.BlendOpAdd, SrcBlendAlpha = Dx.BlendOne, DestBlendAlpha = Dx.BlendZero, BlendOpAlpha = Dx.BlendOpAdd, LogicOp = D12.LogicNoop, RenderTargetWriteMask = writeMask };
 
 		/// <summary>
-		/// The pipeline of a key: blending (2 bits), depth writes (4), culling (8), no depth test (16); the world layer's draws
-		/// into its colour and its depth as a colour, the cab's into its colour only. Colours blend as upstream's, alpha
-		/// accumulating coverage for the composite; the depth target is written only with depth writes.
+		/// The pipeline of a key: blending (2 bits), depth writes (4), culling (8), no depth test (16), depth clamp (32), lines
+		/// (64, the wireframe view); the world layer's draws into its colour and its depth as a colour, the cab's into its colour
+		/// only. Colours blend as upstream's, alpha accumulating coverage for the composite; the depth target is written only
+		/// with depth writes.
 		/// </summary>
 		private IntPtr Pipeline(int key, int layer)
 		{
-			int full = key | (layer << 6);
+			int full = key | (layer << 7);
 			if (pipelines.TryGetValue(full, out IntPtr pipeline))
 			{
 				return pipeline;
@@ -353,7 +354,7 @@ namespace OpenBve.Graphics.Direct3D12
 			{
 				desc.VS = Code(vertexCode, vs);
 				desc.PS = Code(pixelCode, ps);
-				pipeline = MakePipeline(desc, (key & 32) != 0);
+				pipeline = MakePipeline(desc, (key & 32) != 0, (key & 64) != 0);
 			}
 
 			pipelines[full] = pipeline;
@@ -665,7 +666,7 @@ namespace OpenBve.Graphics.Direct3D12
 				int pipelineKey = (int)((key >> 48) & 0x3FFF);
 				if (pipelineKey != boundPipeline)
 				{
-					D12.SetPipelineState(list, Pipeline(pipelineKey & 63, D3D12World.Full ? WorldLayerIndex : layer));
+					D12.SetPipelineState(list, Pipeline(pipelineKey & 127, D3D12World.Full ? WorldLayerIndex : layer));
 					boundPipeline = pipelineKey;
 					changes++;
 				}

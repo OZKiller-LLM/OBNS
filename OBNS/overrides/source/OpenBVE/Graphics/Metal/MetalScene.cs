@@ -62,7 +62,7 @@ namespace OpenBve.Graphics.Metal
 			selRenderPassDescriptor = Mtl.Sel("renderPassDescriptor"), selDepthAttachment = Mtl.Sel("depthAttachment"), selSetTexture = Mtl.Sel("setTexture:"),
 			selSetSlice = Mtl.Sel("setSlice:"), selSetLoadAction = Mtl.Sel("setLoadAction:"), selSetStoreAction = Mtl.Sel("setStoreAction:"),
 			selSetClearDepth = Mtl.Sel("setClearDepth:"), selRenderEncoder = Mtl.Sel("renderCommandEncoderWithDescriptor:"), selEndEncoding = Mtl.Sel("endEncoding"),
-			selSetPipeline = Mtl.Sel("setRenderPipelineState:"), selSetDepthStencilState = Mtl.Sel("setDepthStencilState:"), selSetCullMode = Mtl.Sel("setCullMode:"),
+			selSetPipeline = Mtl.Sel("setRenderPipelineState:"), selSetDepthStencilState = Mtl.Sel("setDepthStencilState:"), selSetCullMode = Mtl.Sel("setCullMode:"), selSetTriangleFillMode = Mtl.Sel("setTriangleFillMode:"),
 			selSetViewport = Mtl.Sel("setViewport:"), selSetVertexBuffer = Mtl.Sel("setVertexBuffer:offset:atIndex:"), selSetFragmentBuffer = Mtl.Sel("setFragmentBuffer:offset:atIndex:"),
 			selSetVertexBytes = Mtl.Sel("setVertexBytes:length:atIndex:"), selSetFragmentBytes = Mtl.Sel("setFragmentBytes:length:atIndex:"),
 			selSetFragmentTexture = Mtl.Sel("setFragmentTexture:atIndex:"), selSetFragmentSampler = Mtl.Sel("setFragmentSamplerState:atIndex:"),
@@ -556,6 +556,8 @@ namespace OpenBve.Graphics.Metal
 
 					Mtl.Void(encoder, selSetDepthStencilState, DepthState(pipelineKey));
 					Mtl.Void(encoder, selSetCullMode, (pipelineKey & 8) != 0 ? Mtl.CullFront : Mtl.CullNone);
+					// Lines (64): the wireframe view (MTLTriangleFillModeLines).
+					Mtl.Void(encoder, selSetTriangleFillMode, (pipelineKey & 64) != 0 ? 1UL : 0UL);
 					boundPipeline = pipelineKey;
 					changes++;
 				}

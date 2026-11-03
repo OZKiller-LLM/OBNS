@@ -37,7 +37,7 @@ namespace OpenBve.Graphics.Direct3D11
 		// D3D11_BLEND, D3D11_BLEND_OP, D3D11_COMPARISON_FUNC, D3D11_STENCIL_OP, D3D11_CULL_MODE, D3D11_FILL_MODE
 		internal const uint BlendZero = 1, BlendOne = 2, BlendSrcAlpha = 5, BlendInvSrcAlpha = 6, BlendOpAdd = 1;
 		internal const uint ComparisonLess = 2, ComparisonLessEqual = 4, ComparisonAlways = 8, StencilOpKeep = 1;
-		internal const uint CullNone = 1, CullFront = 2, FillSolid = 3;
+		internal const uint CullNone = 1, CullFront = 2, FillWireframe = 2, FillSolid = 3;
 
 		// D3D11_FILTER, D3D11_TEXTURE_ADDRESS_MODE
 		internal const uint FilterPoint = 0x0, FilterMinPointMagMipLinear = 0x5, FilterLinear = 0x15, FilterAnisotropic = 0x55;

@@ -34,8 +34,13 @@ Everything below is on Vulkan unless it says otherwise, and is the same on Direc
   otherwise runs as it is, which keeps this small and lets an upstream update come in as before.
 - **Falling back.** Whether a device can be had is checked before the window is made (`WholeGame.Probe`). If not, OpenGL draws as usual.
   There is no falling back once the window is made, as it has no OpenGL: a frame that fails stops the game with the reason.
-- **Textures.** Through `WorldTextures`, as the world's are. Upstream's texture loading still runs, with its uploads stubbed, so a texture
-  used in 2D is decoded twice. That's the next thing to trim.
+- **Textures.** Through `WorldTextures`, as the world's are. Upstream's texture loading still runs for what it reads of a texture (its size,
+  its transparency); its decode is handed to the API (`ObnsSharing.AloneDecoded`) rather than uploaded to the stubbed OpenGL, so a texture
+  used in 2D is decoded once, as in the hybrid (East Rail: 4,387 decodes 10 s in, against 4,398 to 4,400 before).
+- **The debug views.** The wireframe view is a pipeline bit (64, lines) every API honours: Vulkan's line polygon mode (the device's
+  fillModeNonSolid), Direct3D 11's and 12's wireframe fill, Direct3D 9's fill mode, Metal's triangle fill mode; the world and the cab as lines,
+  the background filled, as upstream's. The event markers are cube objects of the world (`EventMarkers`), depth-tested; the normals view is
+  a mesh of each object's normals drawn in a lines pass (`DebugNormals`). `OBNS_DEBUG_VIEW=normals,wireframe,events` turns them on for tests.
 - **Touch areas.** Picked from their faces, with no framebuffer to read (`Touch.Pick`). `OBNS_TOUCH_CHECK=1` compares it with OpenGL's
   framebuffer in the hybrid mode.
 - **The sky.** A third layer in `WorldScene` (`SkyLayer`, `WorldSky`), so the other APIs can use it too. `OBNS_VULKAN_SKY=1` turns it on in the
@@ -159,8 +164,9 @@ menu under Renderer, saved, kept and removed as on Windows; back to the main men
 
 ## Not done
 
-- **Event cubes and the rail path overlay:** debug views, not drawn in this mode. Nor are the wireframe and normals views.
-- **Linux:** `GLStub`'s machine code is for Windows' calling convention, and the surface is Win32's.
+- **Linux:** Vulkan alone runs on x86-64 when Vulkan is chosen in the options (System V stubs, an X11 surface); run on Broadwell's core 1.0
+  tier only. The default there keeps the hybrid until more of Linux's GPUs are run.
+- **Metal and the debug views:** built (its triangle fill mode, the same objects), not run on a Mac yet.
 - **Broadwell:** the core Vulkan 1.0 tier draws the whole game too (render passes, texture pages, the shaders built for Vulkan 1.0), but it
   has only been run here, forced (`OBNS_VULKAN_TIER=1.0`, and `OBNS_VULKAN_PAGED=16` for pages to be switched): the frames match the
   1.3 path's but for single pixels of the world, the frame cost is the same, and the validation layer reports nothing. Broadwell's

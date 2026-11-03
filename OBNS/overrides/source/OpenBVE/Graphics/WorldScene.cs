@@ -147,12 +147,18 @@ namespace OpenBve.Graphics
 		/// <summary>The layers: upstream's world layer, and its overlay (cab) layer, drawn into an image of its own.</summary>
 		internal const int WorldLayerIndex = 0, CabLayer = 1, SkyLayer = 2;
 
+		/// <summary>
+		/// Upstream's wireframe view, drawing alone: the world's and the cab's faces drawn as lines (pipeline key 64), the background
+		/// filled, as upstream's polygon mode is set for the faces alone. Set each frame by the renderer.
+		/// </summary>
+		internal static bool Wireframe;
+
 		/// <summary>A pass's state: its layer, blending, depth test and writes, and whether its faces are drawn in the order given.</summary>
 		private struct PassInfo
 		{
 			public int Layer;
 			public Blend Blend;
-			public bool DepthTest, DepthWrite, Ordered, DepthClamp;
+			public bool DepthTest, DepthWrite, Ordered, DepthClamp, Lines;
 		}
 
 		private int currentLayer;
@@ -381,11 +387,12 @@ namespace OpenBve.Graphics
 
 		/// <summary>
 		/// Starts a pass with upstream's state for it: blending, the alpha function, depth writes, and whether its faces
-		/// must be drawn in the order given (blended faces), or may be grouped (the rest).
+		/// must be drawn in the order given (blended faces), or may be grouped (the rest); lines, the faces drawn as lines (the
+		/// normals view, drawing alone).
 		/// </summary>
-		public void Pass(Blend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered, bool depthTest = true)
+		public void Pass(Blend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered, bool depthTest = true, bool lines = false)
 		{
-			passes.Add(new PassInfo { Layer = currentLayer, Blend = blend, DepthTest = depthTest, DepthWrite = depthWrite, Ordered = ordered });
+			passes.Add(new PassInfo { Layer = currentLayer, Blend = blend, DepthTest = depthTest, DepthWrite = depthWrite, Ordered = ordered, Lines = lines });
 			currentAlphaFunction = alphaFunction;
 			currentAlphaReference = alphaReference;
 		}
@@ -874,7 +881,7 @@ namespace OpenBve.Graphics
 			// Grouped passes cull in the pipeline; ordered ones draw both sides and discard OpenGL's front faces.
 			bool pipelineCull = cull && !pass.Ordered;
 			draw.CullFront = cull && pass.Ordered ? 1 : 0;
-			int pipelineKey = (int)blend | (pass.DepthWrite ? 4 : 0) | (pipelineCull ? 8 : 0) | (pass.DepthTest ? 0 : 16) | (pass.DepthClamp ? 32 : 0);
+			int pipelineKey = (int)blend | (pass.DepthWrite ? 4 : 0) | (pipelineCull ? 8 : 0) | (pass.DepthTest ? 0 : 16) | (pass.DepthClamp ? 32 : 0) | (Wireframe && pass.Layer != SkyLayer || pass.Lines ? 64 : 0);
 			// Grouped by: nighttime draws after daytime ones (they blend over them), then pipeline, then (with pages) the
 			// texture's page (Direct3D 11: pages of one, the texture), then vertex and index blocks.
 			long page = TexturePage == 0 ? 0 : draw.Texture / TexturePage;

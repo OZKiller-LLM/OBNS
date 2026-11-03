@@ -208,6 +208,9 @@ namespace OpenBve.Graphics.Vulkan
 		/// <summary>Whether the device can clamp depth rather than clip to it, for background objects.</summary>
 		internal bool DepthClamp { get; private set; }
 
+		/// <summary>Whether faces can be drawn as lines (the wireframe view).</summary>
+		internal bool FillModeNonSolid { get; private set; }
+
 		/// <summary>
 		/// OpenGL and Vulkan are ordered by the CPU waiting for each (glFinish, the frame's fence), not by the semaphores they
 		/// share: see <see cref="OrderedByCpu"/>.
@@ -672,6 +675,9 @@ namespace OpenBve.Graphics.Vulkan
 			// Background objects are drawn with depth clamped, as upstream (depthClamp is 11).
 			DepthClamp = features.Features[11] != 0;
 			enable.Features[11] = DepthClamp ? 1u : 0u;
+			// fillModeNonSolid (13): the wireframe view, drawing alone.
+			FillModeNonSolid = features.Features[13] != 0;
+			enable.Features[13] = FillModeNonSolid ? 1u : 0u;
 			enable.Features[imageArrayDynamicIndexing] = Bindless ? 0u : 1u;
 
 			// A graphics queue.

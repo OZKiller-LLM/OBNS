@@ -415,6 +415,8 @@ namespace OpenBve.Graphics.Vulkan
 
 			Blend blend = (Blend)(key & 3);
 			bool depthWrite = (key & 4) != 0, cull = (key & 8) != 0, depthTest = (key & 16) == 0, depthClamp = (key & 32) != 0 && device.DepthClamp;
+			// Lines (64): the wireframe view, where the device can.
+			bool lines = (key & 64) != 0 && device.FillModeNonSolid;
 			IntPtr main = Marshal.StringToHGlobalAnsi("main");
 			try
 			{
@@ -454,7 +456,7 @@ namespace OpenBve.Graphics.Vulkan
 				{
 					SType = Vk.StructureTypePipelineRasterizationStateCreateInfo,
 					DepthClampEnable = depthClamp ? 1u : 0u,
-					PolygonMode = Vk.PolygonModeFill,
+					PolygonMode = lines ? Vk.PolygonModeLine : Vk.PolygonModeFill,
 					CullMode = cull ? Vk.CullModeFront : Vk.CullModeNone,
 					FrontFace = Vk.FrontFaceClockwise,
 					LineWidth = 1.0f

@@ -60,6 +60,8 @@ namespace OpenBve.Graphics.Direct3D9
 		internal const uint BlendZero = 1, BlendOne = 2, BlendInvSrcColor = 4, BlendSrcAlpha = 5, BlendInvSrcAlpha = 6, BlendOpAdd = 1;
 		internal const uint CompareLess = 2, CompareLessEqual = 4, CompareAlways = 8;
 		internal const uint CullNone = 1, CullClockwise = 2;
+		// D3DRS_FILLMODE, D3DFILLMODE
+		internal const uint StateFillMode = 8, FillWireframe = 2, FillSolid = 3;
 
 		// D3DSAMPLERSTATETYPE, D3DTEXTUREFILTERTYPE, D3DTEXTUREADDRESS; the first vertex texture sampler
 		internal const uint SamplerAddressU = 1, SamplerAddressV = 2, SamplerMagFilter = 5, SamplerMinFilter = 6, SamplerMipFilter = 7, SamplerMaxAnisotropy = 10;

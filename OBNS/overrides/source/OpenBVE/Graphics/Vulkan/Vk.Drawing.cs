@@ -93,7 +93,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal const uint PipelineBindPointGraphics = 0;
 		internal const uint PrimitiveTopologyTriangleList = 3;
 		internal const uint AccessColorAttachmentRead = 0x80;
-		internal const uint PolygonModeFill = 0;
+		internal const uint PolygonModeFill = 0, PolygonModeLine = 1;
 		internal const uint CullModeNone = 0, CullModeFront = 1, CullModeBack = 2;
 		internal const uint FrontFaceCounterClockwise = 0, FrontFaceClockwise = 1;
 		internal const uint CompareOpLess = 1, CompareOpLessOrEqual = 3, CompareOpAlways = 7;

@@ -415,6 +415,7 @@ namespace OpenBve.Graphics.Direct3D9
 			D9.SetRenderTarget(d, 0, shadowSurface);
 			D9.SetRenderTarget(d, 1, IntPtr.Zero);
 			D9.SetDepthStencilSurface(d, shadowDepth);
+			D9.SetRenderState(d, D9.StateFillMode, D9.FillSolid);
 			D9.Clear(d, D9.ClearTarget | D9.ClearZBuffer, 0xFFFFFFFF, 1.0f);
 			if (shadowCascades == 0 || shadowCount == 0)
 			{
@@ -531,7 +532,7 @@ namespace OpenBve.Graphics.Direct3D9
 				int pipelineKey = (int)((command.Key >> 48) & 0x3FFF);
 				if (pipelineKey != boundPipeline)
 				{
-					SetPipeline(pipelineKey & 31);
+					SetPipeline(pipelineKey & (31 | 64));
 					Blend blend = (Blend)(pipelineKey & 3);
 					// The depth as a colour, written where depth is: bound for those draws (blended ones where R32F can be blended).
 					bool bind = depthTarget != IntPtr.Zero && layer == WorldLayerIndex && (pipelineKey & 4) != 0 && (blend == Blend.None || device.FloatBlending);
@@ -587,6 +588,8 @@ namespace OpenBve.Graphics.Direct3D9
 			D9.SetRenderState(d, D9.StateZFunc, D9.CompareLessEqual);
 			// Upstream culls OpenGL's front faces; drawn upside down, those are clockwise.
 			D9.SetRenderState(d, D9.StateCullMode, cull ? D9.CullClockwise : D9.CullNone);
+			// Lines (64): the wireframe view.
+			D9.SetRenderState(d, D9.StateFillMode, (key & 64) != 0 ? D9.FillWireframe : D9.FillSolid);
 		}
 
 		/// <summary>Shadow casters drawn in the last frame (per cascade), for the log.</summary>

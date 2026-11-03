@@ -47,7 +47,7 @@ namespace OpenBve.Graphics
 		void BeginCab(Matrix4D projection, Matrix4D view, bool lit, Vector3 lightPosition);
 
 		/// <summary>A pass of upstream's: its blending, alpha test, depth writes, whether its faces keep their order, and depth testing.</summary>
-		void Pass(WorldBlend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered, bool depthTest = true);
+		void Pass(WorldBlend blend, int alphaFunction, float alphaReference, bool depthWrite, bool ordered, bool depthTest = true, bool lines = false);
 
 		/// <summary>Starts the frame's background, which comes before the world's faces: the renderer's fog is the background's now.</summary>
 		void BeginSky();

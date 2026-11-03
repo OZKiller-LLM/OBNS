@@ -226,6 +226,8 @@
     <Compile Include="Graphics\GLStub.cs" />
     <Compile Include="Graphics\NoGLContext.cs" />
     <Compile Include="Graphics\WholeFrame.cs" />
+    <Compile Include="Graphics\EventMarkers.cs" />
+    <Compile Include="Graphics\DebugNormals.cs" />
     <Compile Include="Graphics\Direct3D11\D3D11FrameDrawing.cs" />
     <Compile Include="Graphics\Direct3D12\D3D12FrameDrawing.cs" />
     <Compile Include="Graphics\Direct3D9\D3D9FrameDrawing.cs" />

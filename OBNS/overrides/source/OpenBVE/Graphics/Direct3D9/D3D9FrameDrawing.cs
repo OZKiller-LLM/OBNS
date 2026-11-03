@@ -96,6 +96,7 @@ namespace OpenBve.Graphics.Direct3D9
 			offset[2] = offset[3] = 0.0f;
 			D9.SetVertexConstants(d, 0, offset, 1);
 			D9.SetRenderState(d, D9.StateCullMode, D9.CullNone);
+			D9.SetRenderState(d, D9.StateFillMode, D9.FillSolid);
 			D9.SetRenderState(d, D9.StateZEnable, depthTest ? 1u : 0u);
 			D9.SetRenderState(d, D9.StateZWriteEnable, depthWrite ? 1u : 0u);
 			D9.SetRenderState(d, D9.StateZFunc, D9.CompareLessEqual);

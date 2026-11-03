@@ -146,7 +146,17 @@ namespace OpenBve.Graphics
 
 			// OBNS: the world layer drawn by Vulkan (OBNS/VULKAN.md), unless the debug views are on (not drawn by it):
 			// its shadows are drawn by Vulkan too, so upstream's OpenGL shadow pass is not needed then.
+			if (obnsDebugView != null)
+			{
+				OptionNormals |= obnsDebugView.Contains("normals");
+				OptionWireFrame |= obnsDebugView.Contains("wireframe");
+				Interface.CurrentOptions.ShowEvents |= obnsDebugView.Contains("events");
+				obnsDebugView = null;
+			}
+
 			bool vulkanWorld = WorldLayer.Enabled && (WholeGame.Full || !OptionWireFrame && !OptionNormals);
+			// Drawing alone, the wireframe view is the APIs' (WorldScene.Wireframe).
+			WorldScene.Wireframe = WholeGame.Full && OptionWireFrame;
 			// OBNS: the faces first, as the shadow pass draws what the scene draws: the static batches rather than the faces they cover.
 			List<FaceState> opaqueFaces = null, alphaFaces = null, unsortedAlphaFaces = null, overlayOpaqueFaces = null, overlayAlphaFaces = null;
 			if (!vulkanWorld)
@@ -849,6 +859,8 @@ namespace OpenBve.Graphics
 				unsortedAlphaFaces = VisibleObjects.AlphaFaces.ToList();
 			}
 
+			// Drawing alone, the normals view's objects, taken before the static batcher takes their faces out of the lists.
+			List<ObjectState> normalObjects = WholeGame.Full && OptionNormals ? DebugNormals.Objects(opaqueFaces, alphaFaces) : null;
 			batcher = batcher ?? new StaticBatcher(this);
 			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
 
@@ -877,6 +889,13 @@ namespace OpenBve.Graphics
 				foreach (FaceState face in opaqueFaces)
 				{
 					scene.Face(face.Object, face.Face);
+				}
+
+				// Drawing alone, upstream's event markers are objects of the world (EventMarkers): its cubes draw through OpenGL.
+				if (WholeGame.Full && Interface.CurrentOptions.ShowEvents)
+				{
+					eventMarkers = eventMarkers ?? new EventMarkers();
+					eventMarkers.Gather(scene, this);
 				}
 
 				batcher.DrawOpaque();
@@ -924,6 +943,13 @@ namespace OpenBve.Graphics
 					}
 				}
 
+				// Drawing alone, upstream's normals view: the world's normals as lines (DebugNormals).
+				if (normalObjects != null)
+				{
+					debugNormals = debugNormals ?? new DebugNormals();
+					debugNormals.Gather(scene, normalObjects);
+				}
+
 				GatherVulkanCab(scene, overlayOpaqueFaces, overlayAlphaFaces);
 			}
 			finally
@@ -938,6 +964,15 @@ namespace OpenBve.Graphics
 		}
 
 		private static readonly bool noVulkanCab = Environment.GetEnvironmentVariable("OBNS_VULKAN_NOCAB") == "1";
+
+		/// <summary>OBNS: the event markers, drawing alone.</summary>
+		private EventMarkers eventMarkers;
+
+		/// <summary>OBNS: the normals view, drawing alone.</summary>
+		private DebugNormals debugNormals;
+
+		/// <summary>OBNS: OBNS_DEBUG_VIEW=normals,wireframe,events turns those views on at the first frame (for tests).</summary>
+		private static string obnsDebugView = Environment.GetEnvironmentVariable("OBNS_DEBUG_VIEW");
 
 		/// <summary>
 		/// OBNS: gives the Vulkan world layer the overlay (cab) layer's faces, in the passes upstream draws them in (in
@@ -1004,6 +1039,13 @@ namespace OpenBve.Graphics
 
 						scene.Face(face.Object, face.Face);
 					}
+				}
+
+				// Drawing alone, the 3D cab's normals as the world's.
+				if (WholeGame.Full && OptionNormals)
+				{
+					debugNormals = debugNormals ?? new DebugNormals();
+					debugNormals.Gather(scene, DebugNormals.Objects(overlayOpaqueFaces, overlayAlphaFaces));
 				}
 			}
 			else
