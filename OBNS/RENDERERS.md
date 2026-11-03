@@ -105,6 +105,8 @@ On the M1 Mac (macOS 26, Mono 6.14, SDL2), TML, exterior at the start, against t
 - **The older Vulkan tiers:** this needs bindless textures and dynamic rendering, so not the core 1.0 tier.
 - **Full screen:** not run, as it changes the display mode.
 - **Metal:** not run with the native main menu first, nor driving, nor its fallback (a refused `mprotect`); Intel Macs aren't offered.
+- **Metal's speed (on hold, the user's call, 2026-11-03):** the GPU's time per frame in the log, then frames in flight (the CPU and GPU
+  each waits for the other now), encoding draws natively rather than call by call from Mono, memoryless depth and fewer passes, ASTC textures.
 - **The options:** no entry yet; it's the switch alone.
 - **The Lisuan:** not run there. It's what this is for: no shared images, and no OpenGL. Direct3D 11 alone is the one to try first.
 
