@@ -132,6 +132,29 @@ sdmc:/switch/OBNS/LegacyContent/ routes and trains, or a path chosen in the opti
 hbloader maps the NRO into memory, so the NRO is kept to code, with the content beside it. Started from hbmenu with title takeover; the
 program should say so and stop if it finds itself in applet mode's 386 MiB.
 
+## Controls and HUD (the user, 2026-11-04: as the Android branch)
+
+- **The controller scheme is Android's** (`Android/OpenBve.Android/ControlBindings.cs`, its built-in layout and `pad.cfg` for
+  changes), kept by the buttons' **positions**, as Nintendo's labels are the other way round from the standard pad's Android names:
+
+  | Android (standard pad) | Switch | Command |
+  | --- | --- | --- |
+  | RT / RB | ZR / R | power up (and one-handle power) / power down (and neutral) |
+  | LT / LB | ZL / L | brake up (and one-handle brake) / brake down (and neutral) |
+  | A (bottom) | B (bottom) | ATS confirm (security S) |
+  | B (right) | A (right) | horn |
+  | X (left) | Y (left) | left doors |
+  | Y (top) | X (top) | right doors |
+  | Start / Select | + / − | pause / timetable |
+  | D-pad up / down | D-pad up / down | reverser forward / backward |
+  | D-pad left / right | D-pad left / right | previous / next camera point |
+
+  Joy-Cons held together, the Pro Controller and the handheld's own Joy-Cons are one pad; a single Joy-Con held sideways has too few
+  buttons for the whole scheme *(decide later)*. Remapping as on Android, kept in the settings folder.
+- **The HUD is Android's** (`DriverHud.cs`), without the touch controls by default.
+- **Touch controls** (`ControlOverlay.cs`'s buttons, and the cab's touch areas, `CabTouch.cs`): **off by default**; an options toggle
+  turns them on in handheld mode. **Docked, they are off whatever the toggle says**: there is no touch screen in use.
+
 ## The work, in order (a proposal)
 
 1. **Runtime:** the Android port's projects built for libnx with Mono full AOT (NroForge's toolchain as the starting point), a console
@@ -143,10 +166,10 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 4. **CPU to 33 ms in the worst frame, not the mean:** textures and meshes made off the frame's thread, the garbage collector kept from
    long pauses (fewer allocations a frame), the ATS plugin layer's cost measured driving; fewer draws (static scenery merged by texture page, indirect draws, culling on the GPU), the work over 3 cores,
    the hot loops checked under AOT. 1,785 MHz on power; stock on battery unless the toggle is on.
-5. **The console's ways:** input mapping, touch for the cab, sleep and resume, the HOME button. Resolution (the user, 2026-11-04):
+5. **The console's ways:** the controls and HUD above, sleep and resume, the HOME button. Resolution (the user, 2026-11-04):
    **1280x720 in handheld mode** (all three models' screens: 6.2" LCD, 7.0" OLED, 5.5" Lite), **up to 1920x1080 docked**, switched as
    the console is docked or undocked; 720p rendering scaled up stays possible docked if 1080p can't hold the 30 fps floor.
-6. **The menu, redesigned for the console:** laid out at 1280x720 and scaled to 1080p docked; every part reachable with buttons alone
+6. **The menu, redesigned for the console** (the user's instructions to come): laid out at 1280x720 and scaled to 1080p docked; every part reachable with buttons alone
    (no touch docked), touch as well in handheld; text readable on the Lite's 5.5" screen (about 18 to 20 px at 720p at least), touch
    targets of 60 to 80 px, about 5% kept clear of the edges for TVs.
 
