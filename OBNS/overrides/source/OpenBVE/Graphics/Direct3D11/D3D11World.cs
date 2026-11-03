@@ -488,6 +488,13 @@ namespace OpenBve.Graphics.Direct3D11
 				cabStarted = scene.HasCab;
 				scene.BuildRecords();
 				scene.Upload();
+				if (Full && Program.Renderer.Screen.Minimized)
+				{
+					// Nothing is shown, and frames never presented were left to the driver: each took about half a second on the Lisuan 7G100.
+					Dx.Flush(device.Context);
+					return;
+				}
+
 				scene.DrawShadows();
 				if (Full)
 				{
