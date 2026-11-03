@@ -65,12 +65,13 @@ No .NET runtime is official for homebrew. Two community routes, both on Mono:
   TLS doesn't. Full AOT was made to work but needed trimming (branches out of range otherwise); a hello world was 60 MB, half of it ICU.
   The author calls it an experiment.
 - **NroForge** (BennettNotFound, MIT): builds a .NET 9 program into an NRO with **Mono LLVM full AOT**, libnx 4.12, SDL3 and Mesa's NVK
-  (Vulkan through `libdrm_nouveau`), in a devkitA64 container. Needs title takeover. New and untested beyond its first app.
+  (Vulkan through `libdrm_nouveau`), in a devkitA64 container. Needs title takeover. New and untested beyond its first app. Its
+  runtime toolchain is what's of use; its Mesa and NVK are left out (the renderer is deko3d alone).
 
 So: **Mono full AOT**, with the interpreter as the fallback for code not known at build time, as Xamarin does on iOS. The Android
 port is already the right shape for it: .NET for Android is Mono, ARM64, AOT-compiled (`RunAOTCompilation`), with OpenTK, OpenAL and most
 of System.Drawing replaced (`Android/OpenBve.GLES`, `OpenBve.OpenAL`, `OpenBve.Compat`, the `*.Android` projects). 1.31N starts from
-those projects, not from the desktop build.
+those projects, not from the desktop build; their GLES and Vulkan renderers stay on Android.
 
 What follows from it:
 
@@ -107,8 +108,10 @@ pacman group. NVN itself is only in Nintendo's licensed SDK, so homebrew can't u
 | Other | compute queues, indirect draws, tiled cache control, multisampling | GPU-driven culling and indirect draws to cut the CPU's 7,900 draws |
 | Errors | a GPU fault puts the queue in an error state; the OS may end the process seconds later | Needs the validation the Vulkan path got here, done on PC first where possible |
 
-A fallback exists: Mesa's nouveau on the Switch (`switch-mesa`) gives OpenGL 4.3 core and OpenGL ES 2 and 3 through EGL. The Android
-port's GLES renderer could run on it first, as the baseline and as the fallback; it is slow and old, so not the 30 fps path.
+**A pure deko3d renderer** (the user, 2026-11-04): deko3d draws everything (the world, the cab, the HUD, the menus, the loading
+screen), with no OpenGL anywhere and no fallback to it. Mesa's nouveau on the Switch (`switch-mesa`, OpenGL 4.3 and ES 3 through
+EGL) is not used and not linked, which also keeps its code and memory out of the 3.2 GB; upstream's OpenGL calls are stubbed as in
+1.3's alone modes.
 
 ### The rest
 
@@ -187,8 +190,8 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
    Then, if that isn't enough, what Android doesn't have: **GPU-compressed textures** (BC or ASTC, which the Switch's GPU reads
    natively: 4 to 8 times smaller than RGBA8), made on first load and kept on the SD card. Then no CPU copy kept after upload (shared
    memory counts twice), and the managed heap's census from `OBNS_MEMSTATS` down.
-3. **deko3d whole-game renderer:** the Vulkan alone path's structure, with texture pages of 32, shaders compiled by `uam` at build
-   time, the 2D part and the HUD in the same pass (no OpenGL anywhere).
+3. **The pure deko3d renderer:** the Vulkan alone path's structure, with texture pages of 32, shaders compiled by `uam` at build
+   time, the 2D part, the HUD and the menus drawn by it too; no OpenGL, Mesa or fallback.
 4. **CPU to 33 ms in the worst frame, not the mean:** textures and meshes made off the frame's thread, the garbage collector kept from
    long pauses (fewer allocations a frame), the ATS plugin layer's cost measured driving; fewer draws (static scenery merged by texture page, indirect draws, culling on the GPU), the work over 3 cores,
    the hot loops checked under AOT. 1,785 MHz on power; stock on battery unless the toggle is on.
