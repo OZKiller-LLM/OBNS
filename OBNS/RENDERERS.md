@@ -166,8 +166,9 @@ menu under Renderer, saved, kept and removed as on Windows; back to the main men
 ## Not done
 
 - **Linux:** Vulkan alone on x86-64 (System V stubs, an X11 surface, XWayland included), the default where Vulkan is (the user, 2026-11-04:
-  the Broadwell MacBook Pro is the odd one out). Run on Broadwell's core 1.0 tier only so far: right, at about 20 fps against OpenGL's 59 there,
-  where OpenGL stays the default. Not run on a newer Linux GPU yet.
+  the Broadwell MacBook Pro is the odd one out). Run on Broadwell's core 1.0 tier only so far: right, at about 20 fps against OpenGL's 59 there
+  at 960x600, where OpenGL stays the default; at 640x400, 31 to 35 fps against the Vulkan hybrid's 23 (1.22's and 1.3's alike). That hybrid
+  draws Broadwell's sky black, in 1.22 too; Vulkan alone draws it right. Not run on a newer Linux GPU yet.
 - **Metal and the debug views:** built (its triangle fill mode, the same objects), not run on a Mac yet.
 - **Broadwell:** the core Vulkan 1.0 tier draws the whole game too (render passes, texture pages, the shaders built for Vulkan 1.0), but it
   has only been run here, forced (`OBNS_VULKAN_TIER=1.0`, and `OBNS_VULKAN_PAGED=16` for pages to be switched): the frames match the
