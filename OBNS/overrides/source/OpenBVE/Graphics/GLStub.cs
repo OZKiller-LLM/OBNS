@@ -50,8 +50,8 @@ namespace OpenBve.Graphics
 		[DllImport("/usr/lib/libSystem.dylib", SetLastError = true)]
 		private static extern IntPtr mmap(IntPtr address, UIntPtr size, int protection, int flags, int file, long offset);
 
-		[DllImport("/usr/lib/libSystem.dylib")]
-		private static extern void pthread_jit_write_protect_np(int enabled);
+		[DllImport("/usr/lib/libSystem.dylib", SetLastError = true)]
+		private static extern int mprotect(IntPtr address, UIntPtr size, int protection);
 
 		[DllImport("/usr/lib/libSystem.dylib")]
 		private static extern void sys_icache_invalidate(IntPtr start, UIntPtr size);
@@ -61,6 +61,9 @@ namespace OpenBve.Graphics
 
 		/// <summary>Whether the stubs for Metal can be used here: macOS on Apple silicon, the only GPUs its whole frame is for.</summary>
 		internal static bool AvailableOnMac => RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
+		/// <summary>What upstream reads as OpenGL's version and extensions.</summary>
+		private const string StubText = "4.6.0 GL_EXT_texture_filter_anisotropic";
 
 		/// <summary>ARM64 instructions as bytes.</summary>
 		private static byte[] Arm64(params uint[] instructions)
@@ -86,20 +89,31 @@ namespace OpenBve.Graphics
 			};
 		}
 
-		/// <summary>Executable memory on macOS holding the stubs: written with the thread's protection of such memory lifted.</summary>
-		private static IntPtr WriteStubsOnMac(byte[][] stubs, int size, IntPtr[] addresses)
+		/// <summary>The stubs' addresses on macOS, once made.</summary>
+		private static IntPtr[] macStubs;
+
+		/// <summary>
+		/// Makes the stubs on macOS, before the window is made so that OpenGL can still draw if it can't be done; null, or what went wrong.
+		/// They are written to ordinary memory which then becomes executable. Memory made for a JIT would need the thread's protection of it
+		/// lifted while writing, which stops the runtime's own compiled code running, this code among it.
+		/// </summary>
+		internal static string PrepareOnMac()
 		{
-			const int readWriteExecute = 7, privateAnonymousJit = 0x0002 | 0x1000 | 0x0800;
-			IntPtr memory = mmap(IntPtr.Zero, (UIntPtr)(uint)size, readWriteExecute, privateAnonymousJit, -1, 0);
-			if (memory == (IntPtr)(-1))
+			const int readWrite = 3, readExecute = 5, privateAnonymous = 0x0002 | 0x1000;
+			byte[][] stubs = MakeStubsArm64(Marshal.StringToHGlobalAnsi(StubText));
+			int size = 0;
+			foreach (byte[] stub in stubs)
 			{
-				throw new InvalidOperationException("no executable memory for OpenGL's stubs (error " + Marshal.GetLastWin32Error() + ")");
+				size += (stub.Length + 15) & ~15;
 			}
 
-			// Everything the writing calls is made ready first: the runtime's compiling sets the protection back.
-			pthread_jit_write_protect_np(1);
-			Marshal.Copy(stubs[0], 0, Marshal.AllocHGlobal(stubs[0].Length), stubs[0].Length);
-			pthread_jit_write_protect_np(0);
+			IntPtr memory = mmap(IntPtr.Zero, (UIntPtr)(uint)size, readWrite, privateAnonymous, -1, 0);
+			if (memory == (IntPtr)(-1))
+			{
+				return "no memory for OpenGL's stubs (error " + Marshal.GetLastWin32Error() + ")";
+			}
+
+			IntPtr[] addresses = new IntPtr[stubs.Length];
 			int offset = 0;
 			for (int i = 0; i < stubs.Length; i++)
 			{
@@ -108,9 +122,14 @@ namespace OpenBve.Graphics
 				offset += (stubs[i].Length + 15) & ~15;
 			}
 
-			pthread_jit_write_protect_np(1);
+			if (mprotect(memory, (UIntPtr)(uint)size, readExecute) != 0)
+			{
+				return "OpenGL's stubs can't be made executable (error " + Marshal.GetLastWin32Error() + ")";
+			}
+
 			sys_icache_invalidate(memory, (UIntPtr)(uint)size);
-			return memory;
+			macStubs = addresses;
+			return null;
 		}
 
 		/// <summary>Points OpenGL's functions at the stubs. Upstream's calls do nothing from now.</summary>
@@ -121,8 +140,7 @@ namespace OpenBve.Graphics
 			byte[] names = (byte[])typeof(GL).GetField("EntryPointNames", flags).GetValue(null);
 			int[] offsets = (int[])typeof(GL).GetField("EntryPointNameOffsets", flags).GetValue(null);
 
-			// What upstream reads as OpenGL's version and extensions.
-			IntPtr text = Marshal.StringToHGlobalAnsi("4.6.0 GL_EXT_texture_filter_anisotropic");
+			IntPtr text = Marshal.StringToHGlobalAnsi(StubText);
 
 			byte[] nothing = { 0x31, 0xC0, 0xC3 }; // xor eax,eax; ret
 			byte[] one = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }; // mov eax,1; ret
@@ -137,7 +155,7 @@ namespace OpenBve.Graphics
 			BitConverter.GetBytes(text.ToInt64()).CopyTo(returnsText, 2);
 			returnsText[10] = 0xC3;
 
-			byte[][] stubs = AvailableOnMac ? MakeStubsArm64(text) : new[] { nothing, one, framebufferComplete, secondIsOne, thirdIsOne, returnsText, secondIs16 };
+			byte[][] stubs = { nothing, one, framebufferComplete, secondIsOne, thirdIsOne, returnsText, secondIs16 };
 			int size = 0;
 			foreach (byte[] stub in stubs)
 			{
@@ -147,7 +165,7 @@ namespace OpenBve.Graphics
 			IntPtr[] addresses = new IntPtr[stubs.Length];
 			if (AvailableOnMac)
 			{
-				WriteStubsOnMac(stubs, size, addresses);
+				addresses = macStubs;
 			}
 			else
 			{

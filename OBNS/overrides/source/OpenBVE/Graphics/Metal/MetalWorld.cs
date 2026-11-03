@@ -49,14 +49,17 @@ namespace OpenBve.Graphics.Metal
 			}
 
 			MetalDevice device = MetalDevice.Create(out string reason);
-			if (device == null)
+			if (device != null)
+			{
+				device.Dispose();
+				reason = GLStub.PrepareOnMac();
+			}
+
+			if (reason != null)
 			{
 				Full = false;
 				Program.FileSystem.AppendToLogFile("OBNS Metal can't draw the whole game: " + reason);
-				return;
 			}
-
-			device.Dispose();
 		}
 
 		internal static bool Enabled => instance != null && !instance.failed;
