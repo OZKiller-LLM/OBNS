@@ -180,16 +180,20 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 
 1. **Runtime:** the Android port's projects built for libnx with Mono full AOT (NroForge's toolchain as the starting point), a console
    with nothing drawn: load TML, log the time and memory. This alone answers whether the load fits in 3.2 GB.
-2. **Memory to fit**, first with the Android port's own measures for low-memory phones (the user, 2026-11-04: allowed if necessary):
+2. **Memory to fit: every measure below is on by default** (the user, 2026-11-04: "we need to squeeze its performance as much as
+   possible"); the options can turn the texture size limit and compression off for a lighter route. The Android port's measures:
    - the **texture size limit** (`TextureSizeLimit.cs`): textures halved until neither side is over the limit; Android sets 1,024 px
      on phones of 4.5 GB or less (the Switch's case) and 2,048 px up to 6.5 GB, and the options can change it;
    - vertex copies released once uploaded (`VertexCopyReleaser.cs`), meshes shared (`MeshSharing.cs`), the transparency answers kept
      on disk (`TextureClassifier.cs`), and the census of what the GPU holds (`TextureCensus.cs`: on a phone, TML's graphics were 2.6 of
      the game's 3.4 GB, some textures uploaded once a wrap mode).
 
-   Then, if that isn't enough, what Android doesn't have: **GPU-compressed textures** (BC or ASTC, which the Switch's GPU reads
-   natively: 4 to 8 times smaller than RGBA8), made on first load and kept on the SD card. Then no CPU copy kept after upload (shared
-   memory counts twice), and the managed heap's census from `OBNS_MEMSTATS` down.
+   And, beyond Android's, also on by default: **GPU-compressed textures**, which the Switch's GPU reads natively, 4 to 8 times smaller
+   than RGBA8 and lighter on its 25.6 GB/s of bandwidth too. BC1 for opaque textures and BC3 for those with alpha, made on first load
+   by a fast encoder (ASTC packs better but is slow to encode on an A57, so only from a PC tool, if at all) and kept on the SD card
+   beside the transparency answers, so later loads read them as they are. **No CPU copy of a texture kept after upload** (shared memory
+   counts twice). The managed heap trimmed from `OBNS_MEMSTATS`'s census down. The cost: textures at most 1,024 px and slightly
+   blockier from BC; a first load of a route longer than later ones.
 3. **The pure deko3d renderer:** the Vulkan alone path's structure, with texture pages of 32, shaders compiled by `uam` at build
    time, the 2D part, the HUD and the menus drawn by it too; no OpenGL, Mesa or fallback.
 4. **CPU to 33 ms in the worst frame, not the mean:** textures and meshes made off the frame's thread, the garbage collector kept from
