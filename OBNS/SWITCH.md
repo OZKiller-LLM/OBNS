@@ -37,8 +37,9 @@ What OBNS does with it (the user, 2026-11-04):
   and the clock the console's own games load at). The 30 fps floor is measured here.
 - **On battery:** stock 1,020 MHz, loading too, unless the options' toggle ("1,785 MHz on battery", off by default) says otherwise.
   The 30 fps floor isn't promised at stock clocks.
-- Followed as it changes: docking, undocking, the charger in or out (libnx's `appletGetOperationMode` and `psmGetChargerType`
-  *(verify)*); set back to stock on leaving or losing focus, as RetroArch does.
+- Followed as it changes, at once, while loading or in play: docking or undocking, and the charger plugged in or pulled out, each
+  switches between the two (to 1,785 MHz on power; to stock on battery unless the toggle is on). libnx's `appletGetOperationMode`
+  and `psmGetChargerType`, with the applet's notifications *(verify)*. Set back to stock on leaving or losing focus, as RetroArch does.
 - Nothing above the stock maximum is offered: that is sys-clk's business, at the player's own risk.
 
 For scale, TML in 1.3 on the MacBook Neo (Metal alone): 2.9 GB private memory, a 1.4 GB managed heap at load, 2.23 M vertices and 7.66 M
