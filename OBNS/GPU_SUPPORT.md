@@ -3,9 +3,13 @@
 What each GPU family can run on Windows, Linux and macOS, and the renderer it should start on. This is the basis for
 the defaults in `ObnsOptions.cs` and `VulkanDevice.cs`; the code doesn't read this file. Compiled 2026-10-31.
 
-Every desktop renderer here is a world layer: OpenGL always draws the rest of the frame (`VULKAN.md`, `DIRECT3D.md`,
+Up to 1.22 every desktop renderer here is a world layer: OpenGL always draws the rest of the frame (`VULKAN.md`, `DIRECT3D.md`,
 `METAL.md`). So a GPU needs OpenGL 3.3, the version the game asks for, and a working path to share images with OpenGL.
 A GPU can have Vulkan or Direct3D and still end up on OpenGL because that path is missing.
+
+From 1.3, on Windows x64 and Apple silicon, the renderer draws the whole game alone by default and needs neither OpenGL nor
+the shared path (`RENDERERS.md`); the options' OpenGL HUD fallback brings back the world layer. The interop columns below
+then matter only to the fallback and to Linux.
 
 ## How the default is decided
 
@@ -40,10 +44,16 @@ need `WGL_NV_DX_interop2`. Both are checked at start.
 | AMD GCN 1 to 3 (HD 7000, R7, R9; driver frozen at 22.6.1) | 11_1 to 12_0 | yes | yes | yes, version not confirmed | Vulkan | assumed |
 | AMD Polaris, Vega, RDNA | 12_0 to 12_2 | yes | yes | yes | Vulkan | assumed |
 | Qualcomm Adreno X (ARM64) | 12_1 or newer | yes | only through Microsoft's Compatibility Pack | 1.3 or newer | OpenGL | assumed |
-| Lisuan LX 7G100 | 12_1 | yes | 4.6, through Mesa 22.0.4 | 1.3 | OpenGL, by fallback | measured |
+| Lisuan LX 7G100 | 12_1 | yes | 4.6, through Mesa 22.0.4 | 1.3 | **Vulkan alone** (1.3; before it, OpenGL by fallback) | measured, decided (2026-11-04) |
 
 Measured on the RTX 2060 SUPER (Tuen Ma Line, exterior view, shadows 2048), frame time: Vulkan 14.6 ms, Direct3D 12
 15.7 ms, Direct3D 11 16.8 ms, Direct3D 9 27.4 ms, OpenGL 29 to 37 ms.
+
+On the Lisuan in 1.3 (2026-11-03 and 04, 1920x1080, vsync off), each API alone, with no OpenGL: Tuen Ma Line exterior, Vulkan
+62 to 70 fps, Direct3D 11 and 12 about 34, Direct3D 9 12.6, OpenGL 22.8; East Rail Line, Vulkan 130 to 141 fps, Direct3D 12 about
+152, Direct3D 11 about 98, OpenGL about 57. Vulkan alone is its default (the user, 2026-11-04): about twice Direct3D's rate on the
+heavy route, within about a tenth of Direct3D 12's on the light one. Direct3D 9 with shadows on draws the scene too dark there (a
+known issue).
 
 Measured on the Lisuan LX 7G100 with a Zhaoxin KX-7000 (2026-11-01; 12 GB, 32 GB RAM, Windows 11, 1920x1080, vsync off,
 `OBNS/bench/bench.ps1`). All 14 runs drew with OpenGL, with no crashes or display driver events. Its OpenGL has no
