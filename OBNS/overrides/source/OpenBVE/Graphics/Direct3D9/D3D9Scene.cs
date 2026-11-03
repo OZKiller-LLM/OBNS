@@ -58,6 +58,14 @@ namespace OpenBve.Graphics.Direct3D9
 
 		private IntPtr vertexShader, blendedShader, opaqueShader, shadowVertexShader, shadowPixelShader, declaration;
 
+		// The pixel shaders with shadow sampling (SHADOWS 1), made when a layer first has shadows on: the Lisuan 7G100 drew the
+		// picture black with the sampling in the shader, even with shadows off and the sampling branched round.
+		private IntPtr shadowedBlendedShader, shadowedOpaqueShader;
+		private string worldSource, debugView;
+
+		/// <summary>Whether the layer being drawn has shadows on (its pixel shaders those with the sampling).</summary>
+		private bool layerShadows;
+
 		/// <summary>The records' texture (dynamic: written whole each frame), its rows, and the texels written into it.</summary>
 		private IntPtr records;
 		private int recordsHeight;
@@ -107,11 +115,12 @@ namespace OpenBve.Graphics.Direct3D9
 
 			IntPtr d = device.Device;
 			vertexShader = D9.CreateVertexShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "VS", "vs_3_0", "OPAQUE_COVERAGE", "0"));
-			// A test's view (OBNS_D3D9_VIEW): normal, light or texture instead of the picture.
+			// A test's view (OBNS_D3D9_VIEW): normal, light, texture, unfogged, factors or fog instead of the picture.
 			string view = (Environment.GetEnvironmentVariable("OBNS_D3D9_VIEW") ?? "").Trim().ToLowerInvariant();
-			string debugView = view == "normal" ? "1" : view == "light" ? "2" : view == "texture" ? "3" : "0";
-			blendedShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "0", "DEBUG_VIEW", debugView));
-			opaqueShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "1", "DEBUG_VIEW", debugView));
+			debugView = view == "normal" ? "1" : view == "light" ? "2" : view == "texture" ? "3" : view == "unfogged" ? "4" : view == "factors" ? "5" : view == "fog" ? "6" : "0";
+			worldSource = source;
+			blendedShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "0", "SHADOWS", "0", "DEBUG_VIEW", debugView));
+			opaqueShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "1", "SHADOWS", "0", "DEBUG_VIEW", debugView));
 			shadowVertexShader = D9.CreateVertexShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "ShadowVS", "vs_3_0", "OPAQUE_COVERAGE", "0"));
 			shadowPixelShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(source, "world9.hlsl", "ShadowPS", "ps_3_0", "OPAQUE_COVERAGE", "0"));
 
@@ -340,6 +349,13 @@ namespace OpenBve.Graphics.Direct3D9
 			{
 				D9.SetVertexConstants(d, 0, frame, FrameRegisters);
 				D9.SetPixelConstants(d, 0, frame, FrameRegisters);
+				layerShadows = frame[45] != 0.0f;
+			}
+
+			if (layerShadows && shadowedOpaqueShader == IntPtr.Zero)
+			{
+				shadowedBlendedShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(worldSource, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "0", "SHADOWS", "1", "DEBUG_VIEW", debugView));
+				shadowedOpaqueShader = D9.CreatePixelShader(d, Direct3D11.Dx.Compile(worldSource, "world9.hlsl", "PS", "ps_3_0", "OPAQUE_COVERAGE", "1", "SHADOWS", "1", "DEBUG_VIEW", debugView));
 			}
 
 			SetConstant(RecordsSizeRegister, RecordsWidth, 1.0f / RecordsWidth, 1.0f / recordsHeight, 0);
@@ -534,7 +550,7 @@ namespace OpenBve.Graphics.Direct3D9
 			IntPtr d = device.Device;
 			Blend blend = (Blend)(key & 3);
 			bool depthWrite = (key & 4) != 0, cull = (key & 8) != 0, depthTest = (key & 16) == 0;
-			D9.SetPixelShader(d, blend == Blend.None ? opaqueShader : blendedShader);
+			D9.SetPixelShader(d, layerShadows ? (blend == Blend.None ? shadowedOpaqueShader : shadowedBlendedShader) : blend == Blend.None ? opaqueShader : blendedShader);
 			// Colours blend as upstream's, alpha accumulating coverage for the composite.
 			D9.SetRenderState(d, D9.StateAlphaBlendEnable, blend == Blend.None ? 0u : 1u);
 			if (blend != Blend.None)
@@ -571,12 +587,12 @@ namespace OpenBve.Graphics.Direct3D9
 		public override void Dispose()
 		{
 			ReleaseShadowMaps();
-			foreach (IntPtr com in new[] { vertexShader, blendedShader, opaqueShader, shadowVertexShader, shadowPixelShader, declaration, records })
+			foreach (IntPtr com in new[] { vertexShader, blendedShader, opaqueShader, shadowedBlendedShader, shadowedOpaqueShader, shadowVertexShader, shadowPixelShader, declaration, records })
 			{
 				D9.Release(com);
 			}
 
-			vertexShader = blendedShader = opaqueShader = shadowVertexShader = shadowPixelShader = declaration = records = IntPtr.Zero;
+			vertexShader = blendedShader = opaqueShader = shadowedBlendedShader = shadowedOpaqueShader = shadowVertexShader = shadowPixelShader = declaration = records = IntPtr.Zero;
 		}
 	}
 }

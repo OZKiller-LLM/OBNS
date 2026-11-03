@@ -54,8 +54,9 @@
 // texels of one float texture (records), read in both stages by the draw's index, which each draw sets; the vertices'
 // matrix chains are read as bytes; the cascades' shadow maps are the quarters of one R32F atlas, compared by hand with the
 // 2x2 filtering Direct3D 11's comparison sampler gives. Compiled at start by d3dcompiler_47.dll: VS, PS with
-// OPAQUE_COVERAGE 1 or 0, ShadowVS, ShadowPS. DEBUG_VIEW (OBNS_D3D9_VIEW) 1 draws the normals as colours, 2 the vertices'
-// lighting, 3 the faces' colours unlit, 0 the picture.
+// OPAQUE_COVERAGE 1 or 0 and SHADOWS 1 or 0, ShadowVS, ShadowPS. DEBUG_VIEW (OBNS_D3D9_VIEW) 1 draws the normals as colours,
+// 2 the vertices' lighting, 3 the faces' colours unlit, 4 the picture before fog, 5 (fog factor, shadow factor, brightness),
+// 6 the fog's colour, 0 the picture.
 
 // --- the frame (c0-c36; its integers as floats), the records' texture, the layer ---
 
@@ -467,12 +468,15 @@ PixelOut PS(Varyings input, float2 fragCoord : VPOS, float face : VFACE)
 
 	// A branch, not flattened: with shadows off the light-space positions are 0, and the Lisuan 7G100 let the unused path's 0 / 0
 	// into the colour (a black picture).
+	// With shadows off (SHADOWS 0) the sampling isn't in the shader at all.
 	float shadow = 1.0;
+#if SHADOWS
 	[branch]
 	if (frameFlags.y != 0.0 && shadowParams.x > 0.0)
 	{
 		shadow = CalculateShadowFactor(input, fragCoord);
 	}
+#endif
 	if (!unlit)
 	{
 		finalColor.rgb *= input.lightResult.rgb * shadow;
@@ -505,6 +509,12 @@ PixelOut PS(Varyings input, float2 fragCoord : VPOS, float face : VFACE)
 	output.color.rgb = input.lightResult.rgb;
 #elif DEBUG_VIEW == 3
 	output.color.rgb = input.color.rgb * texel.rgb;
+#elif DEBUG_VIEW == 4
+	output.color.rgb = finalColor.rgb;
+#elif DEBUG_VIEW == 5
+	output.color.rgb = float3(fogFactor, shadow, drawInfo.y);
+#elif DEBUG_VIEW == 6
+	output.color.rgb = fogColor.rgb;
 #endif
 	// The depth as a colour, for the composite (its target is bound only for draws that write depth); alpha 1, so blending keeps it.
 	float depth = input.normalDepth.w / input.uvDraw.w;
