@@ -2,14 +2,10 @@
 
 ## 1.3 (not released) — Renderers without OpenGL
 
-### All desktop systems
-
-- **Back to the main menu with your own settings folder:** a copy started with `/filesystem=` (a portable or test copy) went back to
-  the user's own settings after "Exit to main menu", as upstream's restart leaves that out. It's kept now.
-
 ### Windows, Ubuntu and macOS
 
 - **White scenery after a jump:** jumping to a station could leave much of the scenery white for the rest of the game, on every renderer except plain OpenGL. Textures whose decode had finished but which had gone out of view used up the places for new ones.
+- **Back to the main menu with your own settings folder:** a copy started with `/filesystem=` (a portable or test copy) went back to the user's own settings after "Exit to main menu", as upstream's restart leaves that out. It's kept now.
 
 ### Windows
 
