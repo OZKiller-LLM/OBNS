@@ -86,7 +86,7 @@ namespace OpenBve.Graphics.Vulkan
 				return;
 			}
 
-			VulkanDevice device = TryCreate(null, false, out string reason);
+			VulkanDevice device = Create(null, out string reason);
 			if (device == null)
 			{
 				Full = false;
@@ -224,11 +224,6 @@ namespace OpenBve.Graphics.Vulkan
 		/// </summary>
 		internal static VulkanDevice Create(byte[] glDeviceUuid, out string reason)
 		{
-			if (Full)
-			{
-				return TryCreate(glDeviceUuid, false, out reason);
-			}
-
 			string tier = Environment.GetEnvironmentVariable("OBNS_VULKAN_TIER");
 			string modernReason = null;
 			if (tier != "1.0")
@@ -400,7 +395,8 @@ namespace OpenBve.Graphics.Vulkan
 				return "the Vulkan loader is version " + VersionText(loaderVersion) + "; 1.3 is needed";
 			}
 
-			string[] instanceExtensions = Core10 ? core10InstanceExtensions : Full ? new[] { "VK_KHR_surface", "VK_KHR_win32_surface" } : new string[0];
+			// Drawing the whole game: the window's surface, and on the 1.0 tier the device's properties as the KHR extension has them.
+			string[] instanceExtensions = Full ? Core10 ? new[] { "VK_KHR_surface", "VK_KHR_win32_surface", "VK_KHR_get_physical_device_properties2" } : new[] { "VK_KHR_surface", "VK_KHR_win32_surface" } : Core10 ? core10InstanceExtensions : new string[0];
 			HashSet<string> loaderExtensions = instanceExtensions.Length > 0 ? Vk.InstanceExtensions() : null;
 			foreach (string extension in instanceExtensions)
 			{

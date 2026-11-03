@@ -273,9 +273,15 @@ namespace OpenBve.Graphics.Vulkan
 			}
 		}
 
-		/// <summary>Points the array's element at an image made elsewhere (bindless only), in every frame's descriptor set.</summary>
+		/// <summary>Points the array's element (or the page's) at an image made elsewhere, in every frame's descriptor set.</summary>
 		internal void PublishView(int index, ulong view)
 		{
+			if (pages != null)
+			{
+				pages.Write(index, view);
+				return;
+			}
+
 			Vk.DescriptorImageInfo image = new Vk.DescriptorImageInfo { ImageView = view, ImageLayout = Vk.ImageLayoutShaderReadOnlyOptimal };
 			foreach (ulong set in descriptorSets)
 			{

@@ -660,6 +660,9 @@ namespace OpenBve.Graphics.Vulkan
 			boundPage = page;
 		}
 
+		/// <summary>The pages of textures, where the device has no descriptor indexing (else null).</summary>
+		internal VulkanTexturePages Pages => pages;
+
 		/// <summary>With pages, the slot's pages take the texture writes made since (its last frame done, before recording).</summary>
 		internal void TakeTextureWrites(int slot) => pages?.Take(slot);
 

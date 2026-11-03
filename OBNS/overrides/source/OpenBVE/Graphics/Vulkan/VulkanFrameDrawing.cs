@@ -44,25 +44,37 @@ namespace OpenBve.Graphics.Vulkan
 		private readonly ulong[] particlePipelines = new ulong[2];
 		private readonly ulong vertexModule, fragmentModule, pipelineLayout;
 
+		/// <summary>On the core Vulkan 1.0 tier, render passes the pipelines are made for (any of the same attachments' formats will do): colour alone, and with depth.</summary>
+		private readonly ulong colorPass, depthPass;
+
+		/// <summary>The pages of textures, where the device has no descriptor indexing (else null): the quad's page is bound as set 1.</summary>
+		private readonly VulkanTexturePages pages;
+
 		protected override WorldTextures Textures => scene.Textures;
 
-		internal VulkanFrameDrawing(VulkanDevice device, VulkanScene scene, IFrameDrawing openGl) : base(openGl)
+		internal VulkanFrameDrawing(VulkanDevice device, VulkanScene scene, IFrameDrawing openGl, ulong colorPass = 0, ulong depthPass = 0) : base(openGl)
 		{
 			this.device = device;
 			this.scene = scene;
-			ulong setLayout = scene.SetLayout;
+			this.colorPass = colorPass;
+			this.depthPass = depthPass;
+			pages = scene.Pages;
+			ulong* setLayouts = stackalloc ulong[2];
+			setLayouts[0] = scene.SetLayout;
+			setLayouts[1] = pages?.Layout ?? 0;
 			Vk.PushConstantRange push = new Vk.PushConstantRange { StageFlags = Vk.ShaderStageVertex | Vk.ShaderStageFragment, Size = (uint)sizeof(QuadData) };
 			Vk.PipelineLayoutCreateInfo layoutInfo = new Vk.PipelineLayoutCreateInfo
 			{
 				SType = Vk.StructureTypePipelineLayoutCreateInfo,
-				SetLayoutCount = 1,
-				PSetLayouts = &setLayout,
+				SetLayoutCount = pages == null ? 1u : 2u,
+				PSetLayouts = setLayouts,
 				PushConstantRangeCount = 1,
 				PPushConstantRanges = &push
 			};
 			Vk.Check(Vk.vkCreatePipelineLayout(device.Device, &layoutInfo, null, out pipelineLayout), "vkCreatePipelineLayout");
-			vertexModule = scene.ShaderModule("frame2d.vert.spv");
-			fragmentModule = scene.ShaderModule("frame2d.frag.spv");
+			// The shaders built for Vulkan 1.0 with pages (they run on the 1.2/1.3 path too, where it has pages).
+			vertexModule = scene.ShaderModule(pages == null ? "frame2d.vert.spv" : "frame2d.vk10.vert.spv");
+			fragmentModule = scene.ShaderModule(pages == null ? "frame2d.frag.spv" : "frame2d.vk10.frag.spv");
 		}
 
 		/// <summary>The frame's 2D part starts, if this frame's images are ready for it.</summary>
@@ -106,6 +118,8 @@ namespace OpenBve.Graphics.Vulkan
 			ulong set = scene.DescriptorSets[slot];
 			Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 0, 1, &set, 0, null);
 			Vk.vkCmdBindPipeline(commandBuffer, Vk.PipelineBindPointGraphics, Pipeline(Blend.Normal));
+			int boundPage = -1;
+			BindPage(commandBuffer, slot, texture, ref boundPage);
 			QuadData data = new QuadData { X = -1.0f, Y = -1.0f, Width = 2.0f, Height = 2.0f, UWidth = 1.0f, VHeight = 1.0f, R = 1.0f, G = 1.0f, B = 1.0f, A = alpha, Texture = texture };
 			Vk.vkCmdPushConstants(commandBuffer, pipelineLayout, Vk.ShaderStageVertex | Vk.ShaderStageFragment, 0, (uint)sizeof(QuadData), &data);
 			Vk.vkCmdDraw(commandBuffer, 6, 1, 0, 0);
@@ -126,8 +140,10 @@ namespace OpenBve.Graphics.Vulkan
 			ulong set = scene.DescriptorSets[slot];
 			Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 0, 1, &set, 0, null);
 			Blend bound = (Blend)(-1);
+			int boundPage = -1;
 			foreach (Quad quad in particles)
 			{
+				BindPage(commandBuffer, slot, quad.Data.Texture, ref boundPage);
 				if (quad.Blend != bound)
 				{
 					bound = quad.Blend;
@@ -156,8 +172,10 @@ namespace OpenBve.Graphics.Vulkan
 			ulong set = scene.DescriptorSets[slot];
 			Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 0, 1, &set, 0, null);
 			Blend bound = (Blend)(-1);
+			int boundPage = -1;
 			foreach (Quad quad in quads)
 			{
+				BindPage(commandBuffer, slot, quad.Data.Texture, ref boundPage);
 				if (quad.Blend != bound)
 				{
 					bound = quad.Blend;
@@ -168,6 +186,20 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.vkCmdPushConstants(commandBuffer, pipelineLayout, Vk.ShaderStageVertex | Vk.ShaderStageFragment, 0, (uint)sizeof(QuadData), &data);
 				Vk.vkCmdDraw(commandBuffer, 6, 1, 0, 0);
 			}
+		}
+
+		/// <summary>With pages, binds a texture's page (set 1) for the frame slot, if it is not bound already.</summary>
+		private void BindPage(IntPtr commandBuffer, int slot, int texture, ref int boundPage)
+		{
+			int page = texture / Math.Max(1, pages?.PageSize ?? 1);
+			if (pages == null || page == boundPage)
+			{
+				return;
+			}
+
+			ulong set = pages.Set(page, slot);
+			Vk.vkCmdBindDescriptorSets(commandBuffer, Vk.PipelineBindPointGraphics, pipelineLayout, 1, 1, &set, 0, null);
+			boundPage = page;
 		}
 
 		private ulong Pipeline(Blend blend)
@@ -187,7 +219,11 @@ namespace OpenBve.Graphics.Vulkan
 			{
 				Vk.PipelineShaderStageCreateInfo* stages = stackalloc Vk.PipelineShaderStageCreateInfo[2];
 				stages[0] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageVertexBit, Module = vertexModule, PName = (byte*)main };
-				stages[1] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageFragmentBit, Module = fragmentModule, PName = (byte*)main };
+				// With pages, their size (constant 0).
+				int pageSize = pages?.PageSize ?? 0;
+				Vk.SpecializationMapEntry pageEntry = new Vk.SpecializationMapEntry { ConstantID = 0, Offset = 0, Size = (UIntPtr)4 };
+				Vk.SpecializationInfo pageSpecialization = new Vk.SpecializationInfo { MapEntryCount = 1, PMapEntries = &pageEntry, DataSize = (UIntPtr)4, PData = &pageSize };
+				stages[1] = new Vk.PipelineShaderStageCreateInfo { SType = Vk.StructureTypePipelineShaderStageCreateInfo, Stage = Vk.ShaderStageFragmentBit, Module = fragmentModule, PName = (byte*)main, PSpecializationInfo = pages == null ? null : &pageSpecialization };
 				Vk.PipelineVertexInputStateCreateInfo vertexInput = new Vk.PipelineVertexInputStateCreateInfo { SType = Vk.StructureTypePipelineVertexInputStateCreateInfo };
 				// Upstream draws a strip of six with culling on, which leaves each half of a rectangle covered once: as a list here.
 				Vk.PipelineInputAssemblyStateCreateInfo inputAssembly = new Vk.PipelineInputAssemblyStateCreateInfo { SType = Vk.StructureTypePipelineInputAssemblyStateCreateInfo, Topology = Vk.PrimitiveTopologyTriangleList };
@@ -240,7 +276,9 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.GraphicsPipelineCreateInfo info = new Vk.GraphicsPipelineCreateInfo
 				{
 					SType = Vk.StructureTypeGraphicsPipelineCreateInfo,
-					PNext = &rendering,
+					// The core Vulkan 1.0 tier: a render pass in place of dynamic rendering.
+					PNext = device.Core10 ? null : &rendering,
+					RenderPass = device.Core10 ? withDepth ? depthPass : colorPass : 0,
 					StageCount = 2,
 					PStages = stages,
 					PVertexInputState = &vertexInput,

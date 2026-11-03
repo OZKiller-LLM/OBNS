@@ -176,6 +176,38 @@ namespace OpenBve.Graphics.Vulkan
 			return renderPass;
 		}
 
+		/// <summary>
+		/// A render pass of one subpass for the whole game's frame: a colour attachment and a depth one or none, each loaded or cleared
+		/// as asked, kept in the layouts the frame's barriers set.
+		/// </summary>
+		internal static ulong CreateRenderPass(IntPtr device, uint colorFormat, uint depthFormat, uint colorLoad, uint depthLoad, uint depthStore)
+		{
+			AttachmentDescription* attachments = stackalloc AttachmentDescription[2];
+			attachments[0] = new AttachmentDescription
+			{
+				Format = colorFormat, Samples = 1, LoadOp = colorLoad, StoreOp = AttachmentStoreOpStore,
+				StencilLoadOp = AttachmentLoadOpDontCare, StencilStoreOp = AttachmentStoreOpDontCare,
+				InitialLayout = ImageLayoutColorAttachmentOptimal, FinalLayout = ImageLayoutColorAttachmentOptimal
+			};
+			attachments[1] = new AttachmentDescription
+			{
+				Format = depthFormat, Samples = 1, LoadOp = depthLoad, StoreOp = depthStore,
+				StencilLoadOp = AttachmentLoadOpDontCare, StencilStoreOp = AttachmentStoreOpDontCare,
+				InitialLayout = ImageLayoutDepthStencilAttachmentOptimal, FinalLayout = ImageLayoutDepthStencilAttachmentOptimal
+			};
+			AttachmentReference color = new AttachmentReference { Attachment = 0, Layout = ImageLayoutColorAttachmentOptimal };
+			AttachmentReference depth = new AttachmentReference { Attachment = 1, Layout = ImageLayoutDepthStencilAttachmentOptimal };
+			SubpassDescription subpass = new SubpassDescription
+			{
+				ColorAttachmentCount = 1,
+				PColorAttachments = &color,
+				PDepthStencilAttachment = depthFormat != 0 ? &depth : null
+			};
+			RenderPassCreateInfo info = new RenderPassCreateInfo { SType = StructureTypeRenderPassCreateInfo, AttachmentCount = depthFormat != 0 ? 2u : 1u, PAttachments = attachments, SubpassCount = 1, PSubpasses = &subpass };
+			Check(vkCreateRenderPass(device, &info, null, out ulong renderPass), "vkCreateRenderPass");
+			return renderPass;
+		}
+
 		/// <summary>A framebuffer of a render pass: its attachments' views, at a size.</summary>
 		internal static ulong CreateFramebuffer(IntPtr device, ulong renderPass, ulong colorView, ulong depthView, uint width, uint height)
 		{
@@ -186,7 +218,11 @@ namespace OpenBve.Graphics.Vulkan
 				views[count++] = colorView;
 			}
 
-			views[count++] = depthView;
+			if (depthView != 0)
+			{
+				views[count++] = depthView;
+			}
+
 			FramebufferCreateInfo info = new FramebufferCreateInfo { SType = StructureTypeFramebufferCreateInfo, RenderPass = renderPass, AttachmentCount = count, PAttachments = views, Width = width, Height = height, Layers = 1 };
 			Check(vkCreateFramebuffer(device, &info, null, out ulong framebuffer), "vkCreateFramebuffer");
 			return framebuffer;

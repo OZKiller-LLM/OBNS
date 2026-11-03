@@ -373,12 +373,15 @@ namespace OpenBve.Graphics.Vulkan
 		private int glFrameMemory, glFrameTexture, glFrameDoneSemaphore, glFrameVulkanDoneSemaphore, glFrameFramebuffer;
 		private readonly IntPtr[] frameCommandBuffers = new IntPtr[FramesInFlight];
 		private readonly ulong[] frameFences = new ulong[FramesInFlight];
+
+		/// <summary>The 2D part's last submission using each frame slot's descriptor sets (0: none).</summary>
+		private readonly ulong[] slotFrameFences = new ulong[FramesInFlight];
 		private int frameSlot;
 
 		/// <summary>Has Vulkan draw the 2D part of each frame it draws the world of, where it can (OBNS_VULKAN_2D=1).</summary>
 		private void StartFrameDrawing()
 		{
-			if (device.Core10 || !device.Bindless)
+			if (!VulkanDevice.Full && (device.Core10 || !device.Bindless))
 			{
 				Log("OBNS Vulkan 2D drawing not used: it needs bindless textures and dynamic rendering so far");
 				return;
@@ -398,7 +401,9 @@ namespace OpenBve.Graphics.Vulkan
 					Vk.Check(Vk.vkCreateFence(device.Device, &fenceInfo, null, out frameFences[i]), "vkCreateFence");
 				}
 
-				frameDrawing = new VulkanFrameDrawing(device, Scene, Program.Renderer.Frame);
+				frameDrawing = device.Core10
+					? new VulkanFrameDrawing(device, Scene, Program.Renderer.Frame, WholePass(false, Vk.AttachmentLoadOpLoad, 0, 0), WholePass(true, Vk.AttachmentLoadOpLoad, Vk.AttachmentLoadOpLoad, Vk.AttachmentStoreOpStore))
+					: new VulkanFrameDrawing(device, Scene, Program.Renderer.Frame);
 				Program.Renderer.Frame = frameDrawing;
 				Log("OBNS Vulkan draws the 2D part of the frame (OBNS_VULKAN_2D=1)");
 			}
@@ -648,6 +653,13 @@ namespace OpenBve.Graphics.Vulkan
 			ulong fence = fences[startedSlot];
 			Vk.Check(Vk.vkWaitForFences(device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
 			Vk.Check(Vk.vkResetFences(device.Device, 1, &fence), "vkResetFences");
+			// Drawing the whole game, the 2D part of a frame is a submission of its own using the slot's sets: done with too.
+			ulong frameFence = slotFrameFences[startedSlot];
+			if (frameFence != 0)
+			{
+				Vk.Check(Vk.vkWaitForFences(device.Device, 1, &frameFence, 1, ulong.MaxValue), "vkWaitForFences");
+			}
+
 			// Pages of textures (no descriptor indexing): the slot's sets are free to take the writes made since.
 			Scene.TakeTextureWrites(startedSlot);
 			if (stamped[startedSlot])
@@ -991,9 +1003,9 @@ namespace OpenBve.Graphics.Vulkan
 					ColorAttachmentCount = 1,
 					PColorAttachments = color
 				};
-				Vk.vkCmdBeginRendering(commandBuffer, &over);
+				BeginWhole(commandBuffer, &over);
 				frameDrawing.RecordLastFrame(commandBuffer, slot, target.Width, target.Height, lastFrameTexture, motionBlurAlpha);
-				Vk.vkCmdEndRendering(commandBuffer);
+				EndWhole(commandBuffer);
 				color->LoadOp = loadOp;
 			}
 
@@ -1051,7 +1063,7 @@ namespace OpenBve.Graphics.Vulkan
 			};
 			Scene.Upload(slot);
 			Scene.RecordShadows(commandBuffer, slot);
-			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			BeginWhole(commandBuffer, &renderingInfo);
 			if (!Scene.Empty(VulkanScene.SkyLayer))
 			{
 				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.SkyLayer);
@@ -1065,30 +1077,112 @@ namespace OpenBve.Graphics.Vulkan
 			if (MotionBlurOn)
 			{
 				// Motion blur comes before the particles, which test against the world's depth afterwards.
-				Vk.vkCmdEndRendering(commandBuffer);
+				EndWhole(commandBuffer);
 				RecordMotionBlur(commandBuffer, slot, &color);
 				color.LoadOp = Vk.AttachmentLoadOpLoad;
 				depth.LoadOp = Vk.AttachmentLoadOpLoad;
-				Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+				BeginWhole(commandBuffer, &renderingInfo);
 				depth.LoadOp = Vk.AttachmentLoadOpClear;
 			}
 
 			frameDrawing.RecordParticles(commandBuffer, slot);
-			Vk.vkCmdEndRendering(commandBuffer);
+			EndWhole(commandBuffer);
 
 			// The cab over it, its depth its own, as upstream clears the depth for it.
 			color.LoadOp = Vk.AttachmentLoadOpLoad;
 			depth.ImageView = target.CabDepthView;
 			Vk.MemoryBarrier written = new Vk.MemoryBarrier { SType = Vk.StructureTypeMemoryBarrier, SrcAccessMask = Vk.AccessColorAttachmentWrite, DstAccessMask = Vk.AccessColorAttachmentRead | Vk.AccessColorAttachmentWrite };
 			Vk.vkCmdPipelineBarrier(commandBuffer, Vk.PipelineStageColorAttachmentOutput, Vk.PipelineStageColorAttachmentOutput, 0, 1, &written, 0, null, 0, null);
-			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			BeginWhole(commandBuffer, &renderingInfo);
 			if (!Scene.Empty(VulkanScene.CabLayer))
 			{
 				Scene.Draw(commandBuffer, slot, target.Width, target.Height, VulkanScene.CabLayer);
 			}
 
-			Vk.vkCmdEndRendering(commandBuffer);
+			EndWhole(commandBuffer);
 			Vk.Check(Vk.vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
+		}
+
+		// --- on the core Vulkan 1.0 tier, the whole frame's renderings as render passes ---
+
+		private readonly System.Collections.Generic.Dictionary<int, ulong> wholePasses = new System.Collections.Generic.Dictionary<int, ulong>();
+		private readonly System.Collections.Generic.List<ulong[]> wholeFramebuffers = new System.Collections.Generic.List<ulong[]>();
+
+		/// <summary>A render pass of the frame's image (and a depth, or none), loaded or cleared as asked; made the first time.</summary>
+		private ulong WholePass(bool withDepth, uint colorLoad, uint depthLoad, uint depthStore)
+		{
+			int key = (withDepth ? 1 : 0) | (int)colorLoad << 1 | (int)depthLoad << 4 | (int)depthStore << 7;
+			if (!wholePasses.TryGetValue(key, out ulong pass))
+			{
+				pass = Vk.CreateRenderPass(device.Device, SharedTarget.ColorFormat, withDepth ? SharedTarget.DepthFormat : 0, colorLoad, depthLoad, depthStore);
+				wholePasses[key] = pass;
+			}
+
+			return pass;
+		}
+
+		/// <summary>A framebuffer of the views (any of the passes with their formats can use it); made the first time.</summary>
+		private ulong WholeFramebuffer(ulong pass, ulong colorView, ulong depthView)
+		{
+			foreach (ulong[] entry in wholeFramebuffers)
+			{
+				if (entry[0] == colorView && entry[1] == depthView)
+				{
+					return entry[2];
+				}
+			}
+
+			ulong framebuffer = Vk.CreateFramebuffer(device.Device, pass, colorView, depthView, target.Width, target.Height);
+			wholeFramebuffers.Add(new[] { colorView, depthView, framebuffer });
+			return framebuffer;
+		}
+
+		/// <summary>Begins one of the whole frame's renderings: dynamic rendering, or on the 1.0 tier the render pass its attachments describe.</summary>
+		private void BeginWhole(IntPtr commandBuffer, Vk.RenderingInfo* info)
+		{
+			if (!device.Core10)
+			{
+				Vk.vkCmdBeginRendering(commandBuffer, info);
+				return;
+			}
+
+			Vk.RenderingAttachmentInfo* color = info->PColorAttachments, depth = info->PDepthAttachment;
+			ulong pass = WholePass(depth != null, color->LoadOp, depth != null ? depth->LoadOp : 0, depth != null ? depth->StoreOp : 0);
+			Vk.ClearValue* clears = stackalloc Vk.ClearValue[2];
+			clears[0] = color->ClearValue;
+			clears[1] = depth != null ? depth->ClearValue : new Vk.ClearValue();
+			Vk.RenderPassBeginInfo begin = new Vk.RenderPassBeginInfo
+			{
+				SType = Vk.StructureTypeRenderPassBeginInfo,
+				RenderPass = pass,
+				Framebuffer = WholeFramebuffer(pass, color->ImageView, depth != null ? depth->ImageView : 0),
+				RenderArea = info->RenderArea,
+				ClearValueCount = depth != null ? 2u : 1u,
+				PClearValues = clears
+			};
+			Vk.vkCmdBeginRenderPass(commandBuffer, &begin, Vk.SubpassContentsInline);
+		}
+
+		private void EndWhole(IntPtr commandBuffer)
+		{
+			if (device.Core10)
+			{
+				Vk.vkCmdEndRenderPass(commandBuffer);
+			}
+			else
+			{
+				Vk.vkCmdEndRendering(commandBuffer);
+			}
+		}
+
+		private void ReleaseWholeFramebuffers()
+		{
+			foreach (ulong[] entry in wholeFramebuffers)
+			{
+				Vk.vkDestroyFramebuffer(device.Device, entry[2], null);
+			}
+
+			wholeFramebuffers.Clear();
 		}
 
 		private static Vk.ClearValue ClearColor()
@@ -1129,6 +1223,20 @@ namespace OpenBve.Graphics.Vulkan
 				return;
 			}
 
+			if (!worldDrawn && Scene.Pages != null)
+			{
+				// Pages of textures, with no world frame taking their writes (the menus, loading): the sets the 2D part uses take
+				// them, once no frame that may use those sets still runs.
+				ulong worldFence = fences[startedSlot];
+				Vk.Check(Vk.vkWaitForFences(device.Device, 1, &worldFence, 1, ulong.MaxValue), "vkWaitForFences");
+				fixed (ulong* all = frameFences)
+				{
+					Vk.Check(Vk.vkWaitForFences(device.Device, FramesInFlight, all, 1, ulong.MaxValue), "vkWaitForFences");
+				}
+
+				Scene.TakeTextureWrites(startedSlot);
+			}
+
 			int slot = frameSlot;
 			frameSlot = (frameSlot + 1) % FramesInFlight;
 			ulong fence = frameFences[slot];
@@ -1158,9 +1266,9 @@ namespace OpenBve.Graphics.Vulkan
 				ColorAttachmentCount = 1,
 				PColorAttachments = &color
 			};
-			Vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+			BeginWhole(commandBuffer, &renderingInfo);
 			frameDrawing.Record(commandBuffer, startedSlot, target.Width, target.Height);
-			Vk.vkCmdEndRendering(commandBuffer);
+			EndWhole(commandBuffer);
 
 			Vk.ImageMemoryBarrier* barriers = stackalloc Vk.ImageMemoryBarrier[2];
 			barriers[0] = target.ColorBarrier(Vk.AccessColorAttachmentWrite, Vk.AccessTransferRead, Vk.ImageLayoutColorAttachmentOptimal, Vk.ImageLayoutTransferSrcOptimal);
@@ -1234,6 +1342,8 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.Check(Vk.vkQueueSubmit(device.Queue, 1, &submit, fence), "vkQueueSubmit");
 			}
 
+			// What the world frame that next has this slot waits for, besides its own fence.
+			slotFrameFences[startedSlot] = fence;
 			presenter.Present();
 			if (snapshot != null)
 			{
@@ -1364,6 +1474,7 @@ namespace OpenBve.Graphics.Vulkan
 
 			// (SharedTarget waits for the device too: the framebuffers are not in use.)
 			Vk.vkDeviceWaitIdle(device.Device);
+			ReleaseWholeFramebuffers();
 			if (worldFramebuffer != 0) Vk.vkDestroyFramebuffer(device.Device, worldFramebuffer, null);
 			if (cabFramebuffer != 0) Vk.vkDestroyFramebuffer(device.Device, cabFramebuffer, null);
 			worldFramebuffer = cabFramebuffer = 0;
@@ -1395,6 +1506,12 @@ namespace OpenBve.Graphics.Vulkan
 			presenter?.Dispose();
 			snapshotBuffer?.Dispose();
 			frameDrawing?.Dispose();
+			foreach (ulong pass in wholePasses.Values)
+			{
+				Vk.vkDestroyRenderPass(device.Device, pass, null);
+			}
+
+			wholePasses.Clear();
 			for (int i = 0; i < FramesInFlight; i++)
 			{
 				if (frameFences[i] != 0)
