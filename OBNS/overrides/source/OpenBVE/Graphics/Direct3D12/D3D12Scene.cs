@@ -64,10 +64,23 @@ namespace OpenBve.Graphics.Direct3D12
 		private readonly uint samplerSize;
 
 		/// <summary>The records' buffers per frame in flight (frames, objects, draws, matrices): upload memory, mapped.</summary>
-		private readonly IntPtr[,] recordBuffers = new IntPtr[FramesInFlight, 4];
-		private readonly byte*[,] recordData = new byte*[FramesInFlight, 4];
-		private readonly long[,] recordSizes = new long[FramesInFlight, 4];
-		private readonly ulong[] recordAddresses = new ulong[4];
+		// The records (frame, objects, draws, matrices), then the shadow casters' instance list (each one's draw record, in
+		// shadowCommands' order).
+		private readonly IntPtr[,] recordBuffers = new IntPtr[FramesInFlight, 5];
+		private readonly byte*[,] recordData = new byte*[FramesInFlight, 5];
+		private readonly long[,] recordSizes = new long[FramesInFlight, 5];
+		private readonly ulong[] recordAddresses = new ulong[5];
+		private uint[] casterRecords = new uint[1024];
+
+		/// <summary>
+		/// Whether the copies of a face among the shadow casters (an object placed again and again) are drawn as one, with an
+		/// instance each (OBNS_SHADOW_INSTANCES=0: a draw each, as before). Adreno X spends about 2.3 µs on a draw however
+		/// small (ARM64/README.md).
+		/// </summary>
+		private static readonly bool InstanceShadows = Environment.GetEnvironmentVariable("OBNS_SHADOW_INSTANCES") != "0";
+
+		/// <summary>Draw calls of the shadow pass in the last frame, for the log.</summary>
+		internal int LastShadowCalls { get; private set; }
 
 		// The shadow pass: the maps (one array, a layer per cascade; written as depth, read through a comparison sampler),
 		// their depth views, and whether they are readable (else being written).
@@ -481,6 +494,21 @@ namespace OpenBve.Graphics.Direct3D12
 				}
 			}
 
+			if (casterRecords.Length < shadowCount)
+			{
+				casterRecords = new uint[shadowCount + shadowCount / 2];
+			}
+
+			for (int i = 0; i < shadowCount; i++)
+			{
+				casterRecords[i] = (uint)shadowCommands[i].Draw;
+			}
+
+			fixed (uint* data = casterRecords)
+			{
+				Write(slot, 4, data, shadowCount, 4);
+			}
+
 			EnsureInstances(drawCount, frameNumber);
 		}
 
@@ -583,9 +611,12 @@ namespace OpenBve.Graphics.Direct3D12
 				}
 			}
 
+			int calls = 0;
 			if (shadowCascades > 0 && shadowCount > 0)
 			{
 				D12.SetViewport(list, (uint)shadowResolution, (uint)shadowResolution);
+				// The instance stream is the casters' list: a draw's instances are its run of copies there.
+				D12.IASetVertexBuffer(list, 1, new D12.VertexBufferView { BufferLocation = recordAddresses[4], SizeInBytes = (uint)shadowCount * 4, StrideInBytes = 4 });
 				for (int cascade = 0; cascade < Math.Min(shadowCascades, shadowLayers); cascade++)
 				{
 					UIntPtr view = ShadowView(cascade);
@@ -605,10 +636,27 @@ namespace OpenBve.Graphics.Direct3D12
 						}
 
 						BindFace(list, texture, sampler, vertexBlock, indexBlock, ref boundTexture, ref boundSampler, ref boundVertexBlock, ref boundIndexBlock);
-						D12.DrawIndexedInstanced(list, command.IndexCount, 1, command.FirstIndex, command.VertexBase, (uint)command.Draw);
+						int copies = 1;
+						if (InstanceShadows)
+						{
+							bool depthOnly = command.Shadow >= 3;
+							while (i + copies < end && SameFace(ref command, ref shadowCommands[i + copies]) && (depthOnly || draws[shadowCommands[i + copies].Draw].Texture == texture && (draws[shadowCommands[i + copies].Draw].Sampler & 3) == sampler))
+							{
+								copies++;
+							}
+						}
+
+						D12.DrawIndexedInstanced(list, command.IndexCount, (uint)copies, command.FirstIndex, command.VertexBase, (uint)i);
+						i += copies - 1;
+						calls++;
 					}
 				}
+
+				// The world's draws: the instance stream 0, 1, 2, ... again.
+				D12.IASetVertexBuffer(list, 1, new D12.VertexBufferView { BufferLocation = instanceAddress, SizeInBytes = (uint)instanceCount * 4, StrideInBytes = 4 });
 			}
+
+			LastShadowCalls = calls;
 
 			barrier[0] = D12.Transition(shadowMap, D12.StateDepthWrite, D12.StatePixelShaderResource);
 			D12.ResourceBarriers(list, barrier, 1);
@@ -708,7 +756,7 @@ namespace OpenBve.Graphics.Direct3D12
 
 			for (int slot = 0; slot < FramesInFlight; slot++)
 			{
-				for (int which = 0; which < 4; which++)
+				for (int which = 0; which < 5; which++)
 				{
 					D12.Release(recordBuffers[slot, which]);
 					recordBuffers[slot, which] = IntPtr.Zero;

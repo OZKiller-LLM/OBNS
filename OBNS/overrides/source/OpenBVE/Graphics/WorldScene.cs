@@ -1066,7 +1066,8 @@ namespace OpenBve.Graphics
 					}
 				}
 
-				Array.Sort(casterCommands, 0, casters, KeyComparer.Instance);
+				// The copies of a face (an object placed again and again) side by side, so an API may draw them as one.
+				Array.Sort(casterCommands, 0, casters, CasterComparer.Instance);
 			}
 
 			for (int cascade = 0; cascade < 4; cascade++)
@@ -1141,6 +1142,30 @@ namespace OpenBve.Graphics
 			internal static readonly KeyComparer Instance = new KeyComparer();
 			public int Compare(DrawCommand x, DrawCommand y) => x.Key.CompareTo(y.Key);
 		}
+
+		/// <summary>The shadow casters' order: by key, then face (vertices, indices), the copies of one face together.</summary>
+		private sealed class CasterComparer : IComparer<DrawCommand>
+		{
+			internal static readonly CasterComparer Instance = new CasterComparer();
+			public int Compare(DrawCommand x, DrawCommand y)
+			{
+				int order = x.Key.CompareTo(y.Key);
+				if (order == 0)
+				{
+					order = x.VertexBase.CompareTo(y.VertexBase);
+				}
+
+				if (order == 0)
+				{
+					order = x.FirstIndex.CompareTo(y.FirstIndex);
+				}
+
+				return order == 0 ? x.IndexCount.CompareTo(y.IndexCount) : order;
+			}
+		}
+
+		/// <summary>Whether two draws are copies of one face (the same key, vertices and indices), to draw as one with instances.</summary>
+		protected static bool SameFace(ref DrawCommand x, ref DrawCommand y) => x.Key == y.Key && x.VertexBase == y.VertexBase && x.FirstIndex == y.FirstIndex && x.IndexCount == y.IndexCount;
 
 		/// <summary>Time making object records (matrices, on all threads) since the statistics were last taken, for the log.</summary>
 		internal long ObjectTicks;
