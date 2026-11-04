@@ -285,9 +285,11 @@ namespace OpenBve
 				StringBuilder builder = new StringBuilder();
 				builder.AppendLine("; OBNS options (OpenBVE's are in options.cfg)");
 				Load();
-				builder.AppendLine("renderer = " + Key(renderer));
+				// The renderer only when chosen: else the computer's default is used, which isn't always Vulkan (Direct3D 12 on ARM64),
+				// and a "renderer = vulkan" beside it read as a choice.
 				if (chosen)
 				{
+					builder.AppendLine("renderer = " + Key(renderer));
 					builder.AppendLine("chosen = true");
 				}
 
