@@ -1,6 +1,6 @@
 # OpenBVE for Android — release notes
 
-## 1.3 (not released) — Renderers without OpenGL
+## 1.3 (desktop 1.14.1.2-OBNS; Android unchanged, 1.14.1.2-android.6) — Renderers without OpenGL
 
 ### Windows (x64), macOS (Apple silicon) and Linux (x86-64)
 
@@ -11,6 +11,7 @@
   renderer (older Intel GPUs without a discrete one stay on OpenGL).
 - **OpenGL HUD fallback** (Options, under Renderer; off by default): the renderer draws only the world and the cab and OpenGL the rest,
   as in 1.2. For a computer where the renderer alone draws something wrong.
+- **The debug views** (wireframe, event markers, normals) draw with the renderer alone too.
 - Known: Direct3D 9 with shadows on draws the scene too dark on the Lisuan 7G100.
 
 ### Windows, Ubuntu and macOS
