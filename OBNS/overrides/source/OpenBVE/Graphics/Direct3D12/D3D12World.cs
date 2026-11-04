@@ -213,7 +213,10 @@ namespace OpenBve.Graphics.Direct3D12
 
 		// --- the whole game drawn by Direct3D 12 (OBNS/RENDERERS.md): one list a frame, from the start of the frame until it is shown ---
 
-		private const int ExtraColor = 1, ExtraLastFrame = 2, BackBuffers = 3;
+		private const int ExtraColor = 1, ExtraLastFrame = 2, BackBuffers = 4;
+
+		/// <summary>For tests, the swap chain's buffers (OBNS_D3D12_BUFFERS, 2 to 4; 0: the default).</summary>
+		private static readonly int TestBuffers = int.TryParse(Environment.GetEnvironmentVariable("OBNS_D3D12_BUFFERS"), out int buffers) && buffers >= 2 && buffers <= BackBuffers ? buffers : 0;
 
 		private D3D12FrameDrawing frameDrawing;
 		private IntPtr window, swapChain, lastFrame, readback;
@@ -488,7 +491,7 @@ namespace OpenBve.Graphics.Direct3D12
 					const uint noAltEnter = 2, flipDiscard = 4;
 					swapFlags = Dx.TearingAllowed(factory) ? Dx.SwapChainAllowTearing : 0;
 					// Without tearing, two would hold the game to the display's rate even with vertical sync off.
-					backBufferCount = swapFlags != 0 ? 2 : BackBuffers;
+					backBufferCount = TestBuffers != 0 ? TestBuffers : swapFlags != 0 ? 2 : 3;
 					Dx.SwapChainDesc desc = new Dx.SwapChainDesc
 					{
 						Width = newWidth,

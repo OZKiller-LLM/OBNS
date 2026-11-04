@@ -112,10 +112,13 @@ KqAts64.dll is a Debug build and stopped on `ucrtbased`; the layer now maps the 
 1. **Direct3D 12 alone is the default on Windows on ARM64** (decided from TML without vsync, 131f: Direct3D 12 75.7 fps,
    Vulkan 51.9, Direct3D 11 44.6; `OBNS/GPU_SUPPORT.md`). To check on the laptop: a fresh settings folder starts on it.
 2. **Direct3D 12's 120 fps on light routes**, twice the display's rate, while Direct3D 11 and Vulkan pass 140.
-3. **NVDA running with the game:** Tolk and NVDA's ARM64 client load (`dependencies/`), and find no screen reader on
-   the laptop.
+3. **NVDA's speech heard** by a person: the game finds NVDA (below), but no one was listening. Parked by the user
+   (2026-11-05).
 
-Done: sound heard on the laptop by the user (131h); Tolk built for ARM64 and NVDA's ARM64 client added (131i).
+Done: sound heard on the laptop by the user (131h); Tolk built for ARM64 and NVDA's ARM64 client added (131i). NVDA
+2026.3 (an x64 program, emulated) installed on the laptop: with it running, the native game logs "Supported screen
+reader driver NVDA initialised." (131m, Keisei), so the ARM64 Tolk.dll and nvdaControllerClient64.dll reach it; the
+pause menu's speech went through with no error.
 
 ATS braking, with the built-in ATS (131m, natively; the same as x64): the openBVE E217 with Train.dat's ATS-S and
 ATS-P and no plugin, on BVE6 Uchibo (3793F's map), held at full power by the test driver (`OBNS_DRIVE_LOG=1`,
