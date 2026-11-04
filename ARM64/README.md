@@ -84,9 +84,12 @@ KqAts64.dll is a Debug build and stopped on `ucrtbased`; the layer now maps the 
 
 ## To do
 
-1. **The native build on the laptop:** each renderer; the x64 plugins in the layer; sound heard.
-2. **The GPU list's default for Adreno X** from those numbers.
-3. **Screen readers:** Tolk for ARM64, if the user wants it (LGPL, built from source like OpenAL Soft).
+1. **Direct3D 12 alone is the default on Windows on ARM64** (decided from TML without vsync, 131f: Direct3D 12 75.7 fps,
+   Vulkan 51.9, Direct3D 11 44.6; `OBNS/GPU_SUPPORT.md`). To check on the laptop: a fresh settings folder starts on it.
+2. **Direct3D 12's 120 fps on light routes**, twice the display's rate, while Direct3D 11 and Vulkan pass 140.
+3. **Sound heard** by a person: OpenAL Soft opens a device, but no one has listened yet.
+4. **ATS braking** on a red signal or overspeed, through the proxy and the layer.
+5. **Screen readers:** Tolk for ARM64, if the user wants it (LGPL, built from source like OpenAL Soft).
 
 ## Snapdragon tuning (after the native build's first numbers)
 

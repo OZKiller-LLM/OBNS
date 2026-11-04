@@ -43,7 +43,7 @@ need `WGL_NV_DX_interop2`. Both are checked at start.
 | AMD TeraScale (HD 5000, 6000) | none | 11_0 | yes | none | OpenGL | documented |
 | AMD GCN 1 to 3 (HD 7000, R7, R9; driver frozen at 22.6.1) | 11_1 to 12_0 | yes | yes | yes, version not confirmed | Vulkan | assumed |
 | AMD Polaris, Vega, RDNA | 12_0 to 12_2 | yes | yes | yes | Vulkan | assumed |
-| Qualcomm Adreno X (ARM64) | 12_1 or newer | yes | only through Microsoft's Compatibility Pack | 1.3 or newer | OpenGL | assumed |
+| Qualcomm Adreno X (ARM64) | 12_1 or newer | yes | only through Microsoft's Compatibility Pack | 1.3 (Qualcomm's own ARM64 driver) | **Direct3D 12 alone** (1.31; any Windows on ARM64) | measured on an X1-45, 2026-11-04 |
 | Lisuan LX 7G100 | 12_1 | yes | 4.6, through Mesa 22.0.4 | 1.3 | **Vulkan alone** (1.3; before it, OpenGL by fallback) | measured, decided (2026-11-04) |
 
 Measured on the RTX 2060 SUPER (Tuen Ma Line, exterior view, shadows 2048), frame time: Vulkan 14.6 ms, Direct3D 12
@@ -83,8 +83,11 @@ start. Its Vulkan device does offer `VK_KHR_external_memory_win32`, so the missi
 
 - **GPUs without Vulkan:** Direct3D 11 may beat OpenGL on them, but needs measuring before it could become the default.
   Reports on Intel's `WGL_NV_DX_interop2` are mixed, and some are old.
-- **Adreno:** one user reports the Compatibility Pack replacing the native Vulkan driver with a layer over Direct3D 12.
-  With no native OpenGL, the sharing path is unlikely to work. No such machine has been tested.
+- **Adreno:** measured in 1.31 on a Snapdragon X1-26-100 (Adreno X1-45, driver 31.0.152.0, 1920x1200), the program native
+  ARM64 (`ARM64/README.md`). Tuen Ma Line exterior, vsync off, each API alone: Direct3D 12 75.7 fps, Vulkan 51.9, Direct3D 11
+  44.6. Vulkan is Qualcomm's own driver there, not the Compatibility Pack's layer, though the loader loads that too. Direct3D
+  12 alone is the default on Windows on ARM64 (decided from these figures). On a light route (Uchibo) Direct3D 12 stayed at
+  exactly 120 fps, twice the display's rate, while Direct3D 11 and Vulkan passed 140: still to explain.
 
 ## Linux
 

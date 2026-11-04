@@ -107,7 +107,8 @@ namespace OpenBve
 
 		/// <summary>
 		/// The default (OBNS/GPU_SUPPORT.md): Metal on Apple silicon, else OpenGL on macOS; on Linux OpenGL on GPUs of Broadwell's
-		/// age or older with no discrete GPU, else Vulkan; Vulkan on Windows.
+		/// age or older with no discrete GPU, else Vulkan; on Windows Vulkan, but Direct3D 12 on ARM64 (Qualcomm's Adreno: TML at
+		/// 75.7 fps against Vulkan's 51.9 on an X1-45, ARM64/README.md).
 		/// </summary>
 		private static RendererKind DefaultRenderer
 		{
@@ -124,12 +125,29 @@ namespace OpenBve
 							defaultRenderer = Graphics.Vulkan.VulkanDevice.OldIntegratedGpuAlone() ? RendererKind.OpenGL : RendererKind.Vulkan;
 							break;
 						default:
-							defaultRenderer = RendererKind.Vulkan;
+							defaultRenderer = WindowsOnArm64() ? RendererKind.Direct3D12 : RendererKind.Vulkan;
 							break;
 					}
 				}
 
 				return defaultRenderer.Value;
+			}
+		}
+
+		[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+		private static extern bool IsWow64Process2(IntPtr process, out ushort processMachine, out ushort nativeMachine);
+
+		/// <summary>Whether this is an ARM64 Windows machine, whether the program runs natively or as x64 under emulation.</summary>
+		private static bool WindowsOnArm64()
+		{
+			try
+			{
+				return Environment.OSVersion.Platform == PlatformID.Win32NT && IsWow64Process2(System.Diagnostics.Process.GetCurrentProcess().Handle, out ushort _, out ushort native) && native == 0xAA64;
+			}
+			catch (EntryPointNotFoundException)
+			{
+				// Windows before 10 (1709): no ARM64.
+				return false;
 			}
 		}
 
