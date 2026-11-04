@@ -314,7 +314,7 @@ namespace TrainManager.Trains
 			}
 
 			// OBNS: a 64-bit plugin (BVE5's Ats64, BVE6's), in the 64-bit program on Windows, is loaded directly.
-			if (IntPtr.Size == 8 && TrainManagerBase.currentHost.Platform == HostPlatform.MicrosoftWindows && Win64Plugin.CheckHeader(pluginFile))
+			if (IntPtr.Size == 8 && TrainManagerBase.currentHost.Platform == HostPlatform.MicrosoftWindows && !OnWindowsArm64 && Win64Plugin.CheckHeader(pluginFile))
 			{
 				Plugin = new Win64Plugin(AnsiSafePluginPath(pluginFile), this);
 				if (Plugin.Load(GetVehicleSpecs(), mode))
@@ -431,7 +431,21 @@ namespace TrainManager.Trains
 
 			if (Environment.GetEnvironmentVariable("OBNS_X86_PLUGINS") != "1")
 			{
-				return false;
+				// On Windows ARM64, run natively, an x64 plugin can't be loaded into the program (only an ARM64EC one could): the
+				// layer runs it. An x86 plugin keeps the plugin proxy, which Windows runs under its x86 emulation.
+				if (!OnWindowsArm64)
+				{
+					return false;
+				}
+
+				try
+				{
+					return Win64Plugin.CheckHeader(pluginFile);
+				}
+				catch (Exception)
+				{
+					return false;
+				}
 			}
 
 			try
@@ -443,6 +457,9 @@ namespace TrainManager.Trains
 				return false;
 			}
 		}
+
+		/// <summary>OBNS: Windows on ARM64, the program run natively (.NET Framework 4.8.1), not under x64 emulation.</summary>
+		private static bool OnWindowsArm64 => TrainManagerBase.currentHost.Platform == HostPlatform.MicrosoftWindows && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64;
 
 		/// <summary>
 		/// OBNS: a path to a Win32 plugin that the plugin can read back in the system's ANSI code page.

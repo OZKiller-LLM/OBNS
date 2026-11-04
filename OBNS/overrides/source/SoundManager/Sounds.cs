@@ -112,7 +112,8 @@ namespace SoundManager
 				string path = Path.GetDirectoryName(Assembly.GetEntryAssembly()?.Location);
 				if (path != null)
 				{
-					path = Path.Combine(path, IntPtr.Size == 4 ? "x86" : "x64");
+					// OBNS: an ARM64 process can't load x64 DLLs: Windows on ARM64, run natively, has its own folder.
+					path = Path.Combine(path, IntPtr.Size == 4 ? "x86" : System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "arm64" : "x64");
 					bool ok = SetDllDirectory(path);
 					if (!ok) throw new System.ComponentModel.Win32Exception();
 				}

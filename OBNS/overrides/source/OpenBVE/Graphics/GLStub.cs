@@ -47,6 +47,12 @@ namespace OpenBve.Graphics
 		[DllImport("kernel32.dll", SetLastError = true)]
 		private static extern bool VirtualProtect(IntPtr address, UIntPtr size, uint protect, out uint old);
 
+		[DllImport("kernel32.dll")]
+		private static extern bool FlushInstructionCache(IntPtr process, IntPtr address, UIntPtr size);
+
+		[DllImport("kernel32.dll")]
+		private static extern IntPtr GetCurrentProcess();
+
 		[DllImport("/usr/lib/libSystem.dylib", SetLastError = true)]
 		private static extern IntPtr mmap(IntPtr address, UIntPtr size, int protection, int flags, int file, long offset);
 
@@ -62,8 +68,11 @@ namespace OpenBve.Graphics
 		[DllImport("libc", EntryPoint = "mprotect", SetLastError = true)]
 		private static extern int LinuxMprotect(IntPtr address, UIntPtr size, int protection);
 
-		/// <summary>Whether the stubs can be used here: x64 Windows so far (the second and third arguments' registers are the system's).</summary>
-		internal static bool Available => Environment.Is64BitProcess && Environment.OSVersion.Platform == PlatformID.Win32NT && RuntimeInformation.ProcessArchitecture == Architecture.X64;
+		/// <summary>Whether the stubs can be used here: 64-bit Windows, x64 or ARM64 (the second and third arguments' registers are the system's).</summary>
+		internal static bool Available => Environment.Is64BitProcess && Environment.OSVersion.Platform == PlatformID.Win32NT && (RuntimeInformation.ProcessArchitecture == Architecture.X64 || OnWindowsArm64);
+
+		/// <summary>Windows on ARM64, run natively (.NET Framework 4.8.1); under x64 emulation the process is x64 and takes the x64 stubs.</summary>
+		private static bool OnWindowsArm64 => Environment.OSVersion.Platform == PlatformID.Win32NT && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
 
 		/// <summary>Whether the stubs for Vulkan can be used on Linux: x64 (System V's calling convention: the second argument in rsi, the third in rdx).</summary>
 		internal static bool AvailableOnLinux => RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && RuntimeInformation.ProcessArchitecture == Architecture.X64;
@@ -177,7 +186,7 @@ namespace OpenBve.Graphics
 			BitConverter.GetBytes(text.ToInt64()).CopyTo(returnsText, 2);
 			returnsText[10] = 0xC3;
 
-			byte[][] stubs = { nothing, one, framebufferComplete, secondIsOne, thirdIsOne, returnsText, secondIs16 };
+			byte[][] stubs = OnWindowsArm64 ? MakeStubsArm64(text) : new[] { nothing, one, framebufferComplete, secondIsOne, thirdIsOne, returnsText, secondIs16 };
 			int size = 0;
 			foreach (byte[] stub in stubs)
 			{
@@ -230,6 +239,8 @@ namespace OpenBve.Graphics
 				}
 
 				VirtualProtect(memory, (UIntPtr)(uint)size, executeRead, out uint _);
+				// ARM64's instruction cache isn't kept in step with what was written as data.
+				FlushInstructionCache(GetCurrentProcess(), memory, (UIntPtr)(uint)size);
 			}
 
 			Dictionary<string, IntPtr> special = new Dictionary<string, IntPtr>
