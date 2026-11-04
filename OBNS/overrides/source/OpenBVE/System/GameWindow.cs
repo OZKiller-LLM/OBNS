@@ -1617,15 +1617,31 @@ namespace OpenBve
 	/// against the limits, and each handle as the driver set it, as the safety system holds it and as it acts. Shows when
 	/// an ATS (built in or a plugin) brakes. With OBNS_DRIVE_TEST=power as well, from 20 s of game time the driver closes
 	/// the doors, sets the reverser forward, releases the brakes and holds full power, as the keys would (posted keys are
-	/// unreliable in tests), so an ATS's overspeed and signal checks can be seen. Stopped by the safety system for 3 s, it
-	/// resets it as a driver would: reverser neutral, no power, the emergency brake, then the reset keys (B1, A1).
+	/// unreliable in tests), so an ATS's overspeed and signal checks can be seen; the power is eased one notch for a second
+	/// every 20 s, so an EB device stays quiet. Stopped by the safety system for 3 s, it
+	/// resets it as a driver would: reverser neutral, no power, the emergency or full service brake in turn, then the safety
+	/// keys (S, A1, A2, B1, B2) held for a second.
 	/// </summary>
 	internal static class DriveLog
 	{
 		private static readonly bool enabled = Environment.GetEnvironmentVariable("OBNS_DRIVE_LOG") == "1";
 		private static readonly bool fullPower = Environment.GetEnvironmentVariable("OBNS_DRIVE_TEST") == "power";
-		private static double last = double.MinValue, first = double.NaN, resetAt = double.NaN;
-		private static int held;
+		private static double last = double.MinValue, first = double.NaN, resetAt = double.NaN, releaseAt = double.NaN;
+		private static int held, resets;
+		/// <summary>The safety system's keys pressed to reset it (a plugin's own reset is one of them).</summary>
+		private static readonly VirtualKeys[] resetKeys = { VirtualKeys.S, VirtualKeys.A1, VirtualKeys.A2, VirtualKeys.B1, VirtualKeys.B2 };
+
+		/// <summary>The next signal's aspect (its number: 0 is red) and how far ahead it is.</summary>
+		private static string NextSignal(TrainBase train)
+		{
+			RouteManager2.SignalManager.Section next = Program.CurrentRoute.NextSection(train.FrontCarTrackPosition);
+			if (next == null || next.CurrentAspect < 0 || next.CurrentAspect >= next.Aspects.Length)
+			{
+				return "none";
+			}
+
+			return string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0} in {1:0} m", next.Aspects[next.CurrentAspect].Number, next.TrackPosition - train.FrontCarTrackPosition);
+		}
 
 		/// <summary>The built-in ATS's lamps (OpenBveAts): ATS-S 256 to 258, ATS-P 259 to 264, as "lamps 256=1 ..." where lit.</summary>
 		private static string Lamps(TrainBase train)
@@ -1670,12 +1686,25 @@ namespace OpenBve
 
 			if (fullPower && now - first >= 20.0 && !double.IsNaN(resetAt))
 			{
-				if (now >= resetAt)
+				// The keys held for a second, as a driver's press: a plugin may look at them only in its next Elapse.
+				if (double.IsNaN(releaseAt) && now >= resetAt)
 				{
-					train.Plugin?.KeyDown(VirtualKeys.B1);
-					train.Plugin?.KeyDown(VirtualKeys.A1);
-					resetAt = double.NaN;
-					Program.FileSystem.AppendToLogFile("OBNS drive test: the reset keys (B1, A1) pressed", false);
+					foreach (VirtualKeys key in resetKeys)
+					{
+						train.Plugin?.KeyDown(key);
+					}
+
+					releaseAt = now + 1.0;
+					Program.FileSystem.AppendToLogFile("OBNS drive test: the reset keys (S, A1, A2, B1, B2) held", false);
+				}
+				else if (!double.IsNaN(releaseAt) && now >= releaseAt)
+				{
+					foreach (VirtualKeys key in resetKeys)
+					{
+						train.Plugin?.KeyUp(key);
+					}
+
+					resetAt = releaseAt = double.NaN;
 				}
 			}
 			else if (fullPower && now - first >= 20.0)
@@ -1687,9 +1716,19 @@ namespace OpenBve
 					held = 0;
 					train.Handles.Power.ApplyState(0, false);
 					train.Handles.Reverser.ApplyState(global::TrainManager.Handles.ReverserPosition.Neutral);
-					train.Handles.EmergencyBrake.Apply();
+					// Every other time the full service brake instead of the emergency brake: resets want one or the other.
+					bool emergency = resets++ % 2 == 0;
+					if (emergency)
+					{
+						train.Handles.EmergencyBrake.Apply();
+					}
+					else
+					{
+						train.Handles.Brake.ApplyState(train.Handles.Brake.MaximumNotch, false);
+					}
+
 					resetAt = now + 2.0;
-					Program.FileSystem.AppendToLogFile("OBNS drive test: stopped by the safety system; resetting it", false);
+					Program.FileSystem.AppendToLogFile("OBNS drive test: stopped by the safety system; resetting it with the " + (emergency ? "emergency" : "full service") + " brake", false);
 				}
 			}
 
@@ -1707,15 +1746,18 @@ namespace OpenBve
 				}
 
 				train.Handles.Brake.ApplyState(0, false);
-				train.Handles.Power.ApplyState(train.Handles.Power.MaximumDriverNotch, false);
+				// Full power, one notch less for a second every 20 s: a handle moved, as a driver keeps an EB device (the
+				// alarm after a minute without one) quiet, so its brake isn't taken for an ATS's.
+				int notch = train.Handles.Power.MaximumDriverNotch;
+				train.Handles.Power.ApplyState((int)(now - first) % 20 == 0 && notch > 1 ? notch - 1 : notch, false);
 			}
 			string Limit(double v) => double.IsInfinity(v) || v > 1000.0 ? "none" : (v * 3.6).ToString("0");
 			Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-				"OBNS drive: {0:0.0} m, {1:0.0} km/h (limits: route {2}, signal {3}), reverser {13}/{14}, doors {15}, power {4}/{5}, brake {6}/{7}/{8}, emergency {9}/{10}/{11}, safety system {12}{16}",
+				"OBNS drive: {0:0.0} m, {1:0.0} km/h (limits: route {2}, signal {3}; next signal {17}), reverser {13}/{14}, doors {15}, power {4}/{5}, brake {6}/{7}/{8}, emergency {9}/{10}/{11}, safety system {12}{16}",
 				train.FrontCarTrackPosition, train.CurrentSpeed * 3.6, Limit(train.CurrentRouteLimit), Limit(train.CurrentSectionLimit),
 				train.Handles.Power.Driver, train.Handles.Power.Actual, train.Handles.Brake.Driver, train.Handles.Brake.Safety, train.Handles.Brake.Actual,
 				train.Handles.EmergencyBrake.Driver, train.Handles.EmergencyBrake.Safety, train.Handles.EmergencyBrake.Actual,
-				train.Plugin == null ? "none" : train.Plugin.PluginTitle, (int)train.Handles.Reverser.Driver, (int)train.Handles.Reverser.Actual, train.GetDoorsState(true, true), Lamps(train)), false);
+				train.Plugin == null ? "none" : train.Plugin.PluginTitle, (int)train.Handles.Reverser.Driver, (int)train.Handles.Reverser.Actual, train.GetDoorsState(true, true), Lamps(train), NextSignal(train)), false);
 		}
 	}
 }
