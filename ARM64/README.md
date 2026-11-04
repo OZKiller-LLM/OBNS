@@ -70,6 +70,10 @@ world pass (15 ms of a 19 ms frame), not vsync; 2,952 MB of process memory. For 
 Metal 43 fps, the MacBook Neo's 44, the Lisuan's Vulkan 62 to 70. The heavier TMLDN 20144 with the SP1900: loading
 106 s, 40 to 45 fps, 7,944 draws, 5.3 GB of process memory, the texture and vertex pools 90% full.
 
+East Rail (131f, the same settings; 東鐵線南行 羅湖→金鐘, M-Train A195-222(DN)): loading 29 s; 44 fps steady, worst frames
+23 to 30 ms; 5,320 draws, again held by the world pass (19 ms of 21); 3,453 MB of process memory, the texture pool 92%
+full. Its plugin is .NET and runs in the program itself, natively.
+
 Vulkan's pipeline cache (131e, Keisei): 8 pipelines in 197 ms on the first start, 2 ms on the next; the first long frame
 497 ms, then 317 ms. About 177 ms of that frame is outside the timed parts in both runs (likely the JIT compiling the
 first frame's code, slower on ARM64), and "Vulkan start" (52 ms) and "touch and overlays" (43 ms) don't change.
