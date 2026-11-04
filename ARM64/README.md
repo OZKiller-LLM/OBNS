@@ -112,11 +112,19 @@ KqAts64.dll is a Debug build and stopped on `ucrtbased`; the layer now maps the 
 1. **Direct3D 12 alone is the default on Windows on ARM64** (decided from TML without vsync, 131f: Direct3D 12 75.7 fps,
    Vulkan 51.9, Direct3D 11 44.6; `OBNS/GPU_SUPPORT.md`). To check on the laptop: a fresh settings folder starts on it.
 2. **Direct3D 12's 120 fps on light routes**, twice the display's rate, while Direct3D 11 and Vulkan pass 140.
-3. **ATS braking** on a red signal or overspeed, through the proxy and the layer.
-4. **NVDA running with the game:** Tolk and NVDA's ARM64 client load (`dependencies/`), and find no screen reader on
+3. **NVDA running with the game:** Tolk and NVDA's ARM64 client load (`dependencies/`), and find no screen reader on
    the laptop.
 
 Done: sound heard on the laptop by the user (131h); Tolk built for ARM64 and NVDA's ARM64 client added (131i).
+
+ATS braking, with the built-in ATS (131m, natively; the same as x64): the openBVE E217 with Train.dat's ATS-S and
+ATS-P and no plugin, on BVE6 Uchibo (3793F's map), held at full power by the test driver (`OBNS_DRIVE_LOG=1`,
+`OBNS_DRIVE_TEST=power`). OpenBveAts.dll runs in the process as ARM64, no proxy. ATS-P stops the train at red signals
+(the starting signal at 4.8 km/h; a pattern brake from 76 km/h to a stop at 4,105 m). ATS-S's emergency brake came
+three times at 100 to 109 km/h, 66 s after each start: the EB device (no handle moved for 60 s). Overspeed against the
+route's limits isn't checked: 80.9 km/h through a 45 limit (+36) with nothing. The built-in ATS-P reads only the
+signal beacons (3 and 4), not this route's speed-check beacons (6, 12) or BVE5 speed limits. The plugin ATS through
+the proxy and the layer (the E217's own DetailManager chain) is still to be driven this way.
 
 ## Snapdragon tuning (after the native build's first numbers)
 
