@@ -146,7 +146,7 @@ namespace SoundManager
 			OpenAlDevice = Alc.OpenDevice(null);
 			string deviceName = Alc.GetString(OpenAlDevice, AlcGetString.DefaultDeviceSpecifier);
 			// OBNS: for the log; upstream says nothing of the device sound goes to.
-			DeviceName = OpenAlDevice == IntPtr.Zero ? null : deviceName;
+			DeviceName = OpenAlDevice == IntPtr.Zero ? null : Alc.GetString(OpenAlDevice, AlcGetString.DeviceSpecifier);
 			if ((Environment.OSVersion.Platform == PlatformID.Win32S | Environment.OSVersion.Platform == PlatformID.Win32Windows | Environment.OSVersion.Platform == PlatformID.Win32NT) && deviceName == "Generic Software")
 			{
 				/*

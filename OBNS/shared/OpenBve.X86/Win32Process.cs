@@ -670,7 +670,8 @@ namespace OpenBve.X86
 		{
 			string name = Path.GetFileNameWithoutExtension(dll).ToLowerInvariant();
 			// The API-set and debug/versioned runtime names all resolve to the same functions.
-			if (name.StartsWith("api-ms-win-crt", StringComparison.Ordinal) || name.StartsWith("msvcr", StringComparison.Ordinal) || name == "ucrtbase" || name.StartsWith("vcruntime", StringComparison.Ordinal))
+			// ucrtbased and vcruntime140d: a plugin built as Debug (mackoy's KqAts64.dll).
+			if (name.StartsWith("api-ms-win-crt", StringComparison.Ordinal) || name.StartsWith("msvcr", StringComparison.Ordinal) || name == "ucrtbase" || name == "ucrtbased" || name.StartsWith("vcruntime", StringComparison.Ordinal))
 			{
 				return "msvcrt";
 			}

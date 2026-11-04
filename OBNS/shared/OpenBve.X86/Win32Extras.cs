@@ -132,6 +132,15 @@ namespace OpenBve.X86
 			Export("winmm", "joyGetPosEx", 8, c => 167);
 			Export("winmm", "joyGetNumDevs", 0, c => 0);
 
+			// --- The Debug runtime's own functions (ucrtbased, vcruntime140d), for a plugin built as Debug ---
+			// A failed check's report: nothing is shown, and the plugin carries on (0: don't break into a debugger).
+			Export(m, "_CrtDbgReport", 0, c => 0);
+			Export(m, "_CrtDbgReportW", 0, c => 0);
+			// The runtime's own module look-ups, used for its debug checks: none found, which it handles.
+			Export(m, "__vcrt_GetModuleFileNameW", 0, c => 0);
+			Export(m, "__vcrt_GetModuleHandleW", 0, c => 0);
+			Export(m, "__vcrt_LoadLibraryExW", 0, c => 0);
+
 			// --- Visual Studio 2015+ runtime start-up and shut-down (UCRT, vcruntime140) ---
 			Export(m, "_initialize_onexit_table", 0, c => { Memory.Fill(c.Arg(0), 0, 3 * PtrSize); onexitTables[c.Arg(0)] = new List<uint>(); return 0; });
 			Export(m, "_register_onexit_function", 0, c =>
