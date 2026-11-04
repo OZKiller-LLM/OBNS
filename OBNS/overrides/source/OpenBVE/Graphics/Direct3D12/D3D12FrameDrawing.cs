@@ -242,9 +242,13 @@ namespace OpenBve.Graphics.Direct3D12
 			D12.SetViewport(list, width, height);
 		}
 
+		/// <summary>The 2D quads (HUD, menus, panel) the last frame drew, for the frame statistics.</summary>
+		internal int LastQuads { get; private set; }
+
 		/// <summary>Draws the frame's quads into the target set (no depth), runs of the same texture and blending together.</summary>
 		internal void Record(IntPtr list, uint width, uint height)
 		{
+			LastQuads = quads.Count;
 			if (quads.Count == 0)
 			{
 				return;

@@ -811,6 +811,7 @@ namespace OpenBve.Graphics.Direct3D12
 				return "on (Direct3D 12: " + scene.LastDraws + " draws (" + scene.LastCabDraws + " of them the cab's), " + scene.LastStateChanges + " pipeline and texture changes, " + scene.LastShadowCasters + " shadow casters a cascade; " +
 				       (uploaded >> 20) + " MB uploaded; " + instance.Textures.Describe() + "; " + instance.Meshes.Describe() +
 				       (scene.SkippedFaces > 0 ? "; " + scene.SkippedFaces + " faces without a copy" : "") +
+				       (Full && instance.frameDrawing != null ? "; " + instance.frameDrawing.LastQuads + " 2D quads" : "") +
 				       (instance.gpuTimes?.Take() is string gpu ? "; " + gpu : "") + ")";
 			}
 		}
