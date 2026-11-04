@@ -59,6 +59,14 @@ Soft for ARM64 loaded, loading 8.5 s, the first 10 s 55 fps with a worst frame o
 then 60 fps, and 785 MB of process memory against 908 MB emulated. Two x64-only libraries stopped the first native
 builds: PI Engineering's PIEHid64Net (the RailDriver, left out on ARM64) and Tolk (screen readers: none on ARM64 yet).
 
+Vulkan's pipeline cache (131e, Keisei): 8 pipelines in 197 ms on the first start, 2 ms on the next; the first long frame
+497 ms, then 317 ms. About 177 ms of that frame is outside the timed parts in both runs (likely the JIT compiling the
+first frame's code, slower on ARM64), and "Vulkan start" (52 ms) and "touch and overlays" (43 ms) don't change.
+
+Plugins (131d): Ats32 runs through the proxy under x86 emulation on both trains, and the E217's six-DLL x64 chain runs in
+the plugin layer (`OBNS_ATS64=1`) with its TIMS monitor live and no measurable frame cost against the proxy. Keisei's
+KqAts64.dll is a Debug build and stopped on `ucrtbased`; the layer now maps the Debug runtime (131f).
+
 ## To do
 
 1. **The native build on the laptop:** each renderer; the x64 plugins in the layer; sound heard.
@@ -79,5 +87,6 @@ builds: PI Engineering's PIEHid64Net (the RailDriver, left out on ARM64) and Tol
   process only, never the system's.
 - **Shaders.** Cache compiled pipelines between runs (Direct3D 12 pipeline libraries, a Vulkan pipeline cache), since
   Qualcomm's compiler is slower on first use.
-- **The start.** The long first frames (0.5 to 0.9 s on every renderer) are likely pipeline and texture creation; to be
-  measured natively first.
+- **The start.** The pipeline cache took 180 ms off the first frame. Most of what's left is untimed and probably the JIT:
+  native images (NGen) would remove it, but installing them needs administrator rights, so only as an installer's
+  optional step, the user's call.
