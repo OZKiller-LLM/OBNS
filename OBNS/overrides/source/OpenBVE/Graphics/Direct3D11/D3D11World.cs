@@ -358,6 +358,7 @@ namespace OpenBve.Graphics.Direct3D11
 
 					// Full screen is the window's business, as with OpenGL.
 					Dx.MakeWindowAssociation(factory, window, noAltEnter);
+					Log("OBNS Direct3D 11 swap chain: " + desc.BufferCount + " buffers, " + (desc.SwapEffect == 0 ? "the old way of swapping" : swapFlags != 0 ? "tearing allowed" : "no tearing (frames paced by the compositor)"));
 				}
 				finally
 				{

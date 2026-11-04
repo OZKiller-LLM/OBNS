@@ -507,6 +507,8 @@ namespace OpenBve.Graphics.Direct3D12
 					swapChain = D12.SwapChain3(made);
 					// Full screen is the window's business, as with OpenGL.
 					Dx.MakeWindowAssociation(factory, window, noAltEnter);
+					// Whether frames can pass the display's rate with vertical sync off (on a Snapdragon X Direct3D 12 held at twice it).
+					Log("OBNS Direct3D 12 swap chain: " + backBufferCount + " buffers, " + (swapFlags != 0 ? "tearing allowed" : "no tearing (frames paced by the compositor)"));
 				}
 				finally
 				{
