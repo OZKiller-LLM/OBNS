@@ -1,0 +1,65 @@
+# Windows on ARM64 (OBNS 1.31)
+
+This folder is the Windows on ARM64 build, as `Android/` is the Android port's: what only that build needs. 1.31 makes
+the Windows program run natively on ARM64 Windows (Snapdragon X), and tunes it for Snapdragon's Oryon CPU and Adreno X
+GPU. It starts from 1.3, so the whole game is drawn by Direct3D or Vulkan; OpenGL on these laptops is only Microsoft's
+OpenGL Compatibility Pack (OpenGL over Direct3D 12), so the alone modes matter most here.
+
+## Why a build of its own
+
+The x64 program is AnyCPU for .NET Framework 4.8. On a Snapdragon X1-26-100 laptop with 4.8.1 installed, Windows still
+ran it as x64 under emulation (`xtajit64se.dll` loaded, machine 0x8664), and changing only the config's
+`supportedRuntime` to 4.8.1 didn't change that: the program itself has to target 4.8.1. So the ARM64 build's
+`OpenBve.exe` targets 4.8.1 and is built for ARM64 only, and can't fall back to emulation. It needs Windows 11 (4.8.1
+is there from 22H2).
+
+## The folder
+
+| File | What it is |
+| --- | --- |
+| `build-arm64.ps1` | Builds it: OBNS's desktop build (`OBNS/build-desktop.ps1`) in its own folder, `ARM64/build`, then the ARM64 DLLs beside the program. `-Package` zips it as `OpenBVE-<release>-OBNS-win-arm64.zip`, without the x64 DLLs and 32-bit copies. |
+| `prepare-mirror.ps1` | The ARM64 build's changes to its own mirror of upstream: `OpenBve.exe` for 4.8.1 and ARM64, no 32-bit copies (LBAHeader), OBNS/shared by its full path. Upstream's files and the x64 build are untouched. |
+| `dependencies/` | Native DLLs built for ARM64: OpenAL Soft (`dependencies/README.md` has its source and licence). |
+
+The libraries and plugins stay AnyCPU for 4.8, which a 4.8.1 ARM64 process loads natively. Win32PluginProxy stays x86,
+run by Windows' x86 emulation.
+
+## In OBNS's shared code
+
+| Part | Change |
+| --- | --- |
+| OpenGL stubs (`GLStub`) | The ARM64 stubs, as on Apple silicon, in Windows memory (VirtualAlloc, VirtualProtect, FlushInstructionCache). The alone modes and the options' checkbox are possible on ARM64 Windows. |
+| Sound (`SoundManager/Sounds.cs`) | OpenAL Soft is looked for in `arm64\` in an ARM64 process (`x64\` and `x86\` as before). |
+| Train plugins | An x64 plugin (BVE5's Ats64, BVE6) runs in the x86/x64 layer shared with the Android port, as on Linux and macOS: an ARM64 process can't load an x64 DLL. An x86 plugin keeps upstream's plugin proxy. |
+| Log | "OBNS process:" says the process's architecture and whether Windows emulates it. |
+
+## Results so far (Snapdragon X1-26-100, Adreno X1-45, driver 31.0.152.0)
+
+Run as x64 under emulation (the x64 package), mackoy's Keisei (BVE5), exterior view: every renderer alone, and OpenGL
+through the Compatibility Pack, keeps 60 fps (the display's rate) after one or two long frames at the start, 534 draws,
+and draws correctly. Vulkan is Qualcomm's own driver (an ARM64X build serving x64 processes too), not Dozen. Direct3D 9
+goes through Direct3D 9 on 12. Both trains' x86 plugins load through the proxy.
+
+## To do
+
+1. **OpenAL Soft for ARM64**, being built on the laptop (`dependencies/README.md`).
+2. **The native build on the laptop:** that it runs as ARM64, with and without OpenAL; each renderer; the x64 plugins in
+   the layer; loading and the first frames against the emulated runs.
+3. **The GPU list's default for Adreno X** from those numbers.
+
+## Snapdragon tuning (after the native build's first numbers)
+
+- **Unified memory.** Adreno X shares the system's LPDDR5X. Where Direct3D 12 reports cache-coherent UMA, or Vulkan
+  has memory that is both device-local and host-visible, write vertices, indices and textures straight into it and skip
+  the staging copy.
+- **A tile-based GPU.** Adreno X can draw in tiles, so what is loaded from and stored to memory costs the most: depth
+  discarded at the end of a frame (`DiscardResource`, `DiscardView`, Vulkan's `DONT_CARE`), clears instead of loads, and
+  as few render target changes as possible (shadow map, world, 2D).
+- **Bandwidth.** BC1/BC3 compressed textures, as planned for low-memory Android and the Switch, as an option here.
+- **CPU.** Oryon cores are all equal, with no SMT: loading and the parallel updates use one thread a core (8 to 12).
+- **Power.** Keep the game's own process out of Windows' power throttling (EcoQoS) while driving: a setting for this
+  process only, never the system's.
+- **Shaders.** Cache compiled pipelines between runs (Direct3D 12 pipeline libraries, a Vulkan pipeline cache), since
+  Qualcomm's compiler is slower on first use.
+- **The start.** The long first frames (0.5 to 0.9 s on every renderer) are likely pipeline and texture creation; to be
+  measured natively first.

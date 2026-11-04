@@ -26,18 +26,32 @@
 .PARAMETER Package
     Also zips the program (without debug symbols) into OBNS/build/dist/, named after the release in
     OBNS's AssemblyInfo.tt: OpenBVE-<release>-OBNS-win-x64.zip.
+
+.PARAMETER BuildFolder
+    Where the mirror, the build and the package go; OBNS/build by default. Another platform's build
+    (ARM64/build-arm64.ps1) keeps its own, so the two builds don't undo each other.
+
+.PARAMETER PrepareMirror
+    A script run with -Mirror <the mirror> after OBNS's files are laid over it and before the build: another
+    platform's changes to the mirror's project files (ARM64/prepare-mirror.ps1).
+
+.PARAMETER NoThirtyTwoBit
+    Leaves out upstream's 32-bit copies (OpenBve-32.exe, RouteViewer-32.exe), for a program that isn't AnyCPU.
 #>
 param(
     [ValidateSet('Release', 'Debug')]
     [string]$Configuration = 'Release',
     [switch]$Clean,
-    [switch]$Package
+    [switch]$Package,
+    [string]$BuildFolder,
+    [string]$PrepareMirror,
+    [switch]$NoThirtyTwoBit
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $upstream = Join-Path $root 'OpenBVE'
-$build = Join-Path $PSScriptRoot 'build'
+$build = if ($BuildFolder) { $BuildFolder } else { Join-Path $PSScriptRoot 'build' }
 $mirror = Join-Path $build 'upstream'
 $overrides = Join-Path $PSScriptRoot 'overrides'
 
@@ -62,6 +76,10 @@ if (Test-Path $overrides) {
     Write-Host "Laying $count OBNS file(s) over the mirror"
     robocopy $overrides $mirror /E /IS /IT /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "Laying OBNS's files over the mirror failed (robocopy $LASTEXITCODE)" }
+}
+
+if ($PrepareMirror) {
+    & $PrepareMirror -Mirror $mirror
 }
 
 # 2b. The in-window main menu's copies of upstream's forms (OBNS/GLFORMS.md), outside the mirror so that an unchanged
@@ -133,10 +151,12 @@ if ($LASTEXITCODE -ne 0) { throw "The build failed ($LASTEXITCODE)" }
 # whichever finished last, and on Windows the plugins wanting the other version can't load. Always the newer: OBNS's
 # app.config redirects the older references to it.
 Copy-Item (Join-Path $mirror 'packages\NAudio.Core.2.3.0\lib\netstandard2.0\NAudio.Core.dll') (Join-Path $output 'NAudio.Core.dll') -Force
-Push-Location $output
-try { & (Join-Path $output 'DevTools\LBAHeader.exe') (Join-Path $output 'OpenBve.exe') } finally { Pop-Location }
-foreach ($copy in 'OpenBve-32.exe', 'RouteViewer-32.exe') {
-    if ((Get-Item (Join-Path $output $copy)).Length -eq 0) { throw "$copy was not written" }
+if (-not $NoThirtyTwoBit) {
+    Push-Location $output
+    try { & (Join-Path $output 'DevTools\LBAHeader.exe') (Join-Path $output 'OpenBve.exe') } finally { Pop-Location }
+    foreach ($copy in 'OpenBve-32.exe', 'RouteViewer-32.exe') {
+        if ((Get-Item (Join-Path $output $copy)).Length -eq 0) { throw "$copy was not written" }
+    }
 }
 
 # The input device plugins for the OpenGL and native menus, against the program just built (OBNS/GLFORMS.md).

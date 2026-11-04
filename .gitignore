@@ -23,3 +23,5 @@ dist/
 
 # The OBNS desktop build mirror (OBNS/build-desktop.ps1)
 /OBNS/build/
+# The ARM64 build's mirror (ARM64/build-arm64.ps1)
+/ARM64/build/

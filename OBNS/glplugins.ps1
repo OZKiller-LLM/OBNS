@@ -13,6 +13,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $plugins = 'DefaultDisplayPlugin', 'DenshaDeGoInput', 'KatoInput', 'SanYingInput', 'ZuikiInput'
+# The program's .NET Framework: 4.8, or 4.8.1 for Windows on ARM64 (ARM64/prepare-mirror.ps1), which a plugin for 4.8 can't reference.
+$framework = if ([System.IO.File]::ReadAllText((Join-Path $Program 'OpenBve.exe.config')).Contains('Version=v4.8.1')) { 'net481' } else { 'net48' }
 $target = Join-Path $Program 'Data\InputDevicePlugins.GL'
 New-Item -ItemType Directory -Force $target | Out-Null
 
@@ -63,7 +65,7 @@ foreach ($plugin in $plugins) {
     $csproj = @"
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
+    <TargetFramework>$framework</TargetFramework>
     <AssemblyName>$plugin</AssemblyName>
     <RootNamespace>$rootNamespace</RootNamespace>
     <LangVersion>12</LangVersion>
