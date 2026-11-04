@@ -332,6 +332,10 @@ namespace OpenBve.X86
 			Export(m, "_wsplitpath_s", 0, c => SplitPath(Memory.ReadWString(c.Arg(0)), true, c, true));
 			Export(m, "_splitpath", 0, c => SplitPath(Memory.ReadCString(c.Arg(0), AnsiEncoding), false, c, false));
 			Export(m, "_wsplitpath", 0, c => SplitPath(Memory.ReadWString(c.Arg(0)), true, c, false));
+			Export(m, "_makepath_s", 0, c => MakePath(false, c, true));
+			Export(m, "_wmakepath_s", 0, c => MakePath(true, c, true));
+			Export(m, "_makepath", 0, c => MakePath(false, c, false));
+			Export(m, "_wmakepath", 0, c => MakePath(true, c, false));
 
 			// --- the bounds-checked string functions (sizes in characters; errors returned, the target emptied) ---
 			Export(m, "strcpy_s", 0, c => SecureCopy(c.Arg(0), c.Arg(1), c.Arg(2), uint.MaxValue, false, 1, false));
@@ -862,6 +866,58 @@ namespace OpenBve.X86
 				}
 			}
 
+			return 0;
+		}
+
+		/// <summary>
+		/// _makepath(_s) and the wide forms, SplitPath's reverse: the drive (a colon added if missing), the folder (a backslash
+		/// added if it ends without one), the name and the extension (a dot added if missing), any of them null or empty. The _s
+		/// forms take (path, size in characters, drive, dir, fname, ext) and return 0 or an errno (the path emptied then); the
+		/// others take (path, drive, dir, fname, ext).
+		/// </summary>
+		private uint MakePath(bool wide, Cpu c, bool sized)
+		{
+			uint target = c.Arg(0), size = sized ? c.Arg(1) : uint.MaxValue;
+			int first = sized ? 2 : 1;
+			if (target == 0 || size == 0)
+			{
+				SetErrno(ErrnoInvalid);
+				return ErrnoInvalid;
+			}
+
+			string[] parts = new string[4];
+			for (int i = 0; i < 4; i++)
+			{
+				uint address = c.Arg(first + i);
+				parts[i] = address == 0 ? "" : (wide ? Memory.ReadWString(address) : Memory.ReadCString(address, AnsiEncoding)) ?? "";
+			}
+
+			string path = "";
+			if (parts[0].Length > 0)
+			{
+				path += parts[0].EndsWith(":", StringComparison.Ordinal) ? parts[0] : parts[0] + ":";
+			}
+
+			if (parts[1].Length > 0)
+			{
+				path += parts[1].EndsWith("\\", StringComparison.Ordinal) || parts[1].EndsWith("/", StringComparison.Ordinal) ? parts[1] : parts[1] + "\\";
+			}
+
+			path += parts[2];
+			if (parts[3].Length > 0)
+			{
+				path += parts[3].StartsWith(".", StringComparison.Ordinal) ? parts[3] : "." + parts[3];
+			}
+
+			int length = wide ? path.Length : AnsiEncoding.GetByteCount(path);
+			if ((uint)length >= size)
+			{
+				if (wide) Memory.Write16(target, 0); else Memory.Write8(target, 0);
+				SetErrno(ErrnoRange);
+				return ErrnoRange;
+			}
+
+			if (wide) Memory.WriteWString(target, path); else Memory.WriteCString(target, path, AnsiEncoding);
 			return 0;
 		}
 
