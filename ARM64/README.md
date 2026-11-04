@@ -74,6 +74,11 @@ East Rail (131f, the same settings; 東鐵線南行 羅湖→金鐘, M-Train A19
 23 to 30 ms; 5,320 draws, again held by the world pass (19 ms of 21); 3,453 MB of process memory, the texture pool 92%
 full. Its plugin is .NET and runs in the program itself, natively.
 
+Direct3D 12's GPU time per part (131i, TML 20040, exterior, 960x600, vsync off): shadows off, 74.4 fps, the world 13.07
+ms of 13.29; the depths discarded or not, no difference (74.4 against 74.9 fps). Shadows High (3 cascades of 2048):
+33.7 fps, shadows 19.78 ms, the world 9.43, 29.47 a frame. The swap chain allows tearing, so the 120 fps on light routes
+is something else.
+
 Vulkan's pipeline cache (131e, Keisei): 8 pipelines in 197 ms on the first start, 2 ms on the next; the first long frame
 497 ms, then 317 ms. About 177 ms of that frame is outside the timed parts in both runs (likely the JIT compiling the
 first frame's code, slower on ARM64), and "Vulkan start" (52 ms) and "touch and overlays" (43 ms) don't change.
