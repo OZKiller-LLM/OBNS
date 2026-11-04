@@ -771,7 +771,123 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.PhysicalDeviceMemoryProperties memory;
 			Vk.vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &memory);
 			memoryProperties = memory;
+			CreatePipelineCache();
 			return null;
+		}
+
+		/// <summary>
+		/// The pipeline cache, read from the settings folder and saved there again when the device goes: pipelines are made the
+		/// first time they are drawn, and a slow shader compiler (Qualcomm's, on Windows on ARM64) made the first frames long.
+		/// 0 if it couldn't be made, as before.
+		/// </summary>
+		internal ulong PipelineCache { get; private set; }
+
+		/// <summary>The pipelines made (VulkanScene, VulkanFrameDrawing) and how long that took, for the log.</summary>
+		internal int PipelinesMade;
+		internal double PipelineMilliseconds;
+
+		private int pipelineCacheRead;
+
+		/// <summary>Makes a graphics pipeline through the cache, timed for the log.</summary>
+		internal ulong MakePipeline(Vk.GraphicsPipelineCreateInfo* info, string what)
+		{
+			long start = System.Diagnostics.Stopwatch.GetTimestamp();
+			ulong pipeline;
+			Vk.Check(Vk.vkCreateGraphicsPipelines(Device, PipelineCache, 1, info, null, &pipeline), what);
+			PipelineMilliseconds += (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+			PipelinesMade++;
+			return pipeline;
+		}
+
+		private static string PipelineCacheFile => System.IO.Path.Combine(Program.FileSystem.SettingsFolder, "obns-vulkan-pipelines.bin");
+
+		private void CreatePipelineCache()
+		{
+			byte[] data = null;
+			try
+			{
+				if (System.IO.File.Exists(PipelineCacheFile))
+				{
+					data = System.IO.File.ReadAllBytes(PipelineCacheFile);
+				}
+			}
+			catch (Exception)
+			{
+				data = null;
+			}
+
+			// Only what this device and driver wrote: the header's vendor, device and cache UUID as the device has them now (some
+			// drivers don't check a cache from another device or driver version themselves).
+			if (data != null)
+			{
+				Vk.PhysicalDeviceProperties properties;
+				Vk.vkGetPhysicalDeviceProperties(PhysicalDevice, &properties);
+				bool same = data.Length >= 32 && BitConverter.ToUInt32(data, 0) >= 32 && BitConverter.ToUInt32(data, 4) == 1 && BitConverter.ToUInt32(data, 8) == properties.VendorID && BitConverter.ToUInt32(data, 12) == properties.DeviceID;
+				for (int i = 0; same && i < 16; i++)
+				{
+					same = data[16 + i] == properties.PipelineCacheUuid[i];
+				}
+
+				if (!same)
+				{
+					data = null;
+				}
+			}
+
+			fixed (byte* initial = data)
+			{
+				Vk.PipelineCacheCreateInfo info = new Vk.PipelineCacheCreateInfo { SType = Vk.StructureTypePipelineCacheCreateInfo, InitialDataSize = (UIntPtr)(data?.Length ?? 0), PInitialData = initial };
+				PipelineCache = Vk.vkCreatePipelineCache(Device, &info, null, out ulong cache) == 0 ? cache : 0;
+			}
+
+			pipelineCacheRead = PipelineCache != 0 ? data?.Length ?? 0 : 0;
+		}
+
+		/// <summary>The pipelines made when the cache was last saved.</summary>
+		private int pipelinesSaved;
+
+		/// <summary>
+		/// Saves the pipeline cache to the settings folder if pipelines were made since it was last saved. Called now and then
+		/// while drawing (VulkanWorld), as the game may end without the device being let go; a device made only to probe makes
+		/// none, and so never replaces the file with an empty cache.
+		/// </summary>
+		internal void SavePipelineCache()
+		{
+			if (PipelineCache == 0 || PipelinesMade == pipelinesSaved)
+			{
+				return;
+			}
+
+			pipelinesSaved = PipelinesMade;
+			UIntPtr size = UIntPtr.Zero;
+			int saved = 0;
+			try
+			{
+				if (Vk.vkGetPipelineCacheData(Device, PipelineCache, &size, null) == 0 && size != UIntPtr.Zero)
+				{
+					byte[] data = new byte[(int)size];
+					fixed (byte* bytes = data)
+					{
+						if (Vk.vkGetPipelineCacheData(Device, PipelineCache, &size, bytes) != 0)
+						{
+							size = UIntPtr.Zero;
+						}
+					}
+
+					if (size != UIntPtr.Zero)
+					{
+						Array.Resize(ref data, (int)size);
+						System.IO.File.WriteAllBytes(PipelineCacheFile, data);
+						saved = data.Length;
+					}
+				}
+			}
+			catch (Exception)
+			{
+				saved = 0;
+			}
+
+			Program.FileSystem?.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture, "OBNS Vulkan pipelines: {0} made in {1:0} ms; the cache read {2:N0} bytes and saved {3:N0}", PipelinesMade, PipelineMilliseconds, pipelineCacheRead, saved));
 		}
 
 		private static HashSet<string> DeviceExtensions(IntPtr physicalDevice)
@@ -832,6 +948,13 @@ namespace OpenBve.Graphics.Vulkan
 			if (Device != IntPtr.Zero)
 			{
 				Vk.vkDeviceWaitIdle(Device);
+				SavePipelineCache();
+				if (PipelineCache != 0)
+				{
+					Vk.vkDestroyPipelineCache(Device, PipelineCache, null);
+					PipelineCache = 0;
+				}
+
 				Vk.vkDestroyDevice(Device, null);
 				Device = IntPtr.Zero;
 			}

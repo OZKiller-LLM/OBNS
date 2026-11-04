@@ -37,6 +37,7 @@ namespace OpenBve.Graphics.Vulkan
 		internal const uint StructureTypeMappedMemoryRange = 6;
 		internal const uint StructureTypeBufferCreateInfo = 12;
 		internal const uint StructureTypeShaderModuleCreateInfo = 16;
+		internal const uint StructureTypePipelineCacheCreateInfo = 17;
 		internal const uint StructureTypePipelineShaderStageCreateInfo = 18;
 		internal const uint StructureTypePipelineVertexInputStateCreateInfo = 19;
 		internal const uint StructureTypePipelineInputAssemblyStateCreateInfo = 20;
@@ -358,6 +359,16 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
+		internal struct PipelineCacheCreateInfo
+		{
+			public uint SType;
+			public void* PNext;
+			public uint Flags;
+			public UIntPtr InitialDataSize;
+			public void* PInitialData;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
 		internal struct ShaderModuleCreateInfo
 		{
 			public uint SType;
@@ -614,6 +625,9 @@ namespace OpenBve.Graphics.Vulkan
 		[DllImport(Library)] internal static extern void vkDestroyShaderModule(IntPtr device, ulong module, void* allocator);
 		[DllImport(Library)] internal static extern int vkCreateGraphicsPipelines(IntPtr device, ulong cache, uint count, GraphicsPipelineCreateInfo* createInfos, void* allocator, ulong* pipelines);
 		[DllImport(Library)] internal static extern void vkDestroyPipeline(IntPtr device, ulong pipeline, void* allocator);
+		[DllImport(Library)] internal static extern int vkCreatePipelineCache(IntPtr device, PipelineCacheCreateInfo* createInfo, void* allocator, out ulong cache);
+		[DllImport(Library)] internal static extern int vkGetPipelineCacheData(IntPtr device, ulong cache, UIntPtr* size, void* data);
+		[DllImport(Library)] internal static extern void vkDestroyPipelineCache(IntPtr device, ulong cache, void* allocator);
 
 		[DllImport(Library)] internal static extern void vkCmdCopyBuffer(IntPtr commandBuffer, ulong src, ulong dst, uint regionCount, BufferCopy* regions);
 		[DllImport(Library)] internal static extern void vkCmdCopyBufferToImage(IntPtr commandBuffer, ulong src, ulong dst, uint dstLayout, uint regionCount, BufferImageCopy* regions);

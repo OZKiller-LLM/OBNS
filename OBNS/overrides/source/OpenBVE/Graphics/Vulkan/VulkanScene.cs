@@ -365,7 +365,7 @@ namespace OpenBve.Graphics.Vulkan
 					RenderPass = Shadows.RenderPass,
 					BasePipelineIndex = -1
 				};
-				Vk.Check(Vk.vkCreateGraphicsPipelines(device.Device, 0, 1, &info, null, &pipeline), "vkCreateGraphicsPipelines (shadows)");
+				pipeline = device.MakePipeline(&info, "vkCreateGraphicsPipelines (shadows)");
 			}
 			finally
 			{
@@ -521,7 +521,7 @@ namespace OpenBve.Graphics.Vulkan
 					RenderPass = WorldRenderPass,
 					BasePipelineIndex = -1
 				};
-				Vk.Check(Vk.vkCreateGraphicsPipelines(device.Device, 0, 1, &info, null, &pipeline), "vkCreateGraphicsPipelines");
+				pipeline = device.MakePipeline(&info, "vkCreateGraphicsPipelines");
 			}
 			finally
 			{

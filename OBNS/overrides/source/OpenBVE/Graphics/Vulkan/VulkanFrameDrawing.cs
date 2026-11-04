@@ -292,9 +292,7 @@ namespace OpenBve.Graphics.Vulkan
 					Layout = pipelineLayout,
 					BasePipelineIndex = -1
 				};
-				ulong pipeline;
-				Vk.Check(Vk.vkCreateGraphicsPipelines(device.Device, 0, 1, &info, null, &pipeline), "vkCreateGraphicsPipelines (2D)");
-				return pipeline;
+				return device.MakePipeline(&info, "vkCreateGraphicsPipelines (2D)");
 			}
 			finally
 			{

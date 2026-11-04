@@ -1,6 +1,7 @@
 ﻿// OBNS: a copy of upstream's source/OpenBVE/System/MainLoop.cs (OpenBVE 1.14.1.2), laid over the desktop build's
-// mirror (OBNS/build-desktop.ps1): a screen reader library that can't be loaded (Tolk has no ARM64 build) means none.
-// On an upstream update: copy the file again and reapply the part marked OBNS.
+// mirror (OBNS/build-desktop.ps1): a screen reader library that can't be loaded (Tolk has no ARM64 build) means none,
+// and the log names the sound device.
+// On an upstream update: copy the file again and reapply the parts marked OBNS.
 using System;
 using System.ComponentModel;
 using System.Globalization;
@@ -51,6 +52,8 @@ namespace OpenBve
 			Program.FileSystem.AppendToLogFile("Backend: " + (Interface.CurrentOptions.PreferNativeBackend ? "Native" : "SDL2"));
 			Program.FileSystem.AppendToLogFile("User Interface Size: " + Interface.CurrentOptions.UserInterfaceFolder);
 			Program.FileSystem.AppendToLogFile("User Interface Scale Factor: " + Interface.CurrentOptions.UserInterfaceScaleFactor);
+			// OBNS: which device sound goes to (on Windows ARM64, the build's own OpenAL Soft: ARM64/dependencies).
+			Program.FileSystem.AppendToLogFile("OBNS sound: " + (Program.Sounds.DeviceName != null ? "OpenAL device " + Program.Sounds.DeviceName : "no OpenAL device"));
 			if (Program.CurrentHost.Platform == HostPlatform.MicrosoftWindows)
 			{
 				// OBNS: Tolk.dll that can't be loaded (none for ARM64: the process's folder has only x86 and x64 copies) is no

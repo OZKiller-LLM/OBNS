@@ -98,6 +98,9 @@ namespace SoundManager
 			SoundLoaderThread = new Thread(SoundThread);
 		}
 
+		/// <summary>OBNS: the OpenAL device opened by Initialize, or null if none was.</summary>
+		public string DeviceName { get; private set; }
+
 		/// <summary>Initializes audio.</summary>
 		/// <returns>Whether initializing audio was successful.</returns>
 		/// <remarks>A call to DeInitialize should be made when closing the program to release any held resources</remarks>
@@ -142,6 +145,8 @@ namespace SoundManager
 			OuterRadiusFactorSpeed = 0.0;
 			OpenAlDevice = Alc.OpenDevice(null);
 			string deviceName = Alc.GetString(OpenAlDevice, AlcGetString.DefaultDeviceSpecifier);
+			// OBNS: for the log; upstream says nothing of the device sound goes to.
+			DeviceName = OpenAlDevice == IntPtr.Zero ? null : deviceName;
 			if ((Environment.OSVersion.Platform == PlatformID.Win32S | Environment.OSVersion.Platform == PlatformID.Win32Windows | Environment.OSVersion.Platform == PlatformID.Win32NT) && deviceName == "Generic Software")
 			{
 				/*

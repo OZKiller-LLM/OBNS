@@ -599,6 +599,11 @@ namespace OpenBve.Graphics.Vulkan
 			frameNumber++;
 			Scene.Textures.FrameStarted(frameNumber);
 			Scene.Meshes.FrameStarted(frameNumber);
+			// The pipelines made so far, kept for the next start (VulkanDevice.PipelineCache), every 600 frames.
+			if (frameNumber % 600 == 0)
+			{
+				device.SavePipelineCache();
+			}
 
 			// Uploads first, on the same queue (their pixels written on every core).
 			uploader.Submit(false, true);
