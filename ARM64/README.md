@@ -64,6 +64,12 @@ Without vsync (131e, Uchibo 3793F, 1,337 draws, the clean windows): Direct3D 11 
 the wait for the frame two back, not drawing: a pace to twice the display's rate, still to explain), Direct3D 9 108.9.
 Uchibo is too light to choose the default; TML decides.
 
+TML (131f, native, Vulkan alone, vsync on, exterior, the benchmark's TMLDN 20040 and HK-MTR-1141A-8cars, cache warm):
+loading 39 s; 51.9 fps (45 once more scenery comes into view), worst frames 20 to 43 ms; 5,178 draws; held by the GPU's
+world pass (15 ms of a 19 ms frame), not vsync; 2,952 MB of process memory. For comparison on the same scene: the M1's
+Metal 43 fps, the MacBook Neo's 44, the Lisuan's Vulkan 62 to 70. The heavier TMLDN 20144 with the SP1900: loading
+106 s, 40 to 45 fps, 7,944 draws, 5.3 GB of process memory, the texture and vertex pools 90% full.
+
 Vulkan's pipeline cache (131e, Keisei): 8 pipelines in 197 ms on the first start, 2 ms on the next; the first long frame
 497 ms, then 317 ms. About 177 ms of that frame is outside the timed parts in both runs (likely the JIT compiling the
 first frame's code, slower on ARM64), and "Vulkan start" (52 ms) and "touch and overlays" (43 ms) don't change.
