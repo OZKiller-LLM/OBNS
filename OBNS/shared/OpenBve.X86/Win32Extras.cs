@@ -136,6 +136,8 @@ namespace OpenBve.X86
 			// A failed check's report: nothing is shown, and the plugin carries on (0: don't break into a debugger).
 			Export(m, "_CrtDbgReport", 0, c => 0);
 			Export(m, "_CrtDbgReportW", 0, c => 0);
+			// _free_dbg(block, type): free, the block's type aside.
+			Export(m, "_free_dbg", 0, c => { HeapFree(c.Arg(0)); return 0; });
 			// The runtime's own module look-ups, used for its debug checks: none found, which it handles.
 			Export(m, "__vcrt_GetModuleFileNameW", 0, c => 0);
 			Export(m, "__vcrt_GetModuleHandleW", 0, c => 0);
@@ -183,6 +185,7 @@ namespace OpenBve.X86
 			Export(m, "__current_exception", 0, c => CurrentExceptionSlot());
 			Export(m, "__current_exception_context", 0, c => CurrentExceptionSlot() + PtrSize);
 			Export(m, "__C_specific_handler", 0, c => 1); // ExceptionContinueSearch: a __try doesn't take a C++ exception
+			Export(m, "__C_specific_handler_noexcept", 0, c => 1); // the Debug runtime's (vcruntime140d)
 			Export(m, "__CxxFrameHandler3", 0, c => 1); // ExceptionContinueSearch: only reached if an exception is raised
 			Export(m, "__CxxFrameHandler4", 0, c => 1);
 			Export(m, "__std_terminate", 0, c => throw new X86Exception("the plugin called std::terminate"));
