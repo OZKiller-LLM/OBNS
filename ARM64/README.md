@@ -92,7 +92,12 @@ The copies of a shadow caster's face drawn as one, with an instance each (131k, 
 frames against 4,731 and 6,075; shadows 10.24 ms against 12.43, 20.43 a frame against 22.11; worst frames 29.6 ms
 against 31.2. One pair of snapshots bit-identical; the other differs by 1 or 2 levels in scattered pixels over the
 whole frame, the sky and HUD included, not in shadow-shaped patches. The world and cab's draws the same way (131l,
-`OBNS_WORLD_INSTANCES=0`): East Rail's 5,320 draws in 4,146 calls on the RTX 2060.
+`OBNS_WORLD_INSTANCES=0`): East Rail's 5,320 draws in 4,146 calls on the RTX 2060. On the laptop (131l, TML at High):
+5,178 draws in 4,674 calls; 50.7 fps against 49.0; the world 9.15 ms against 9.91, 19.54 a frame against 20.24; worst
+frames 28.6 ms against 29.1; the snapshots alike (one bit-identical, the other one pixel tile 1 level apart). The faint
+1 to 2 level difference over the whole frame comes with when a snapshot is taken, instances on or off.
+
+So far on TML at High: 34.3 fps (131i) to 50.7 (131l), the GPU's frame from 29.5 ms to 19.5.
 
 Vulkan's pipeline cache (131e, Keisei): 8 pipelines in 197 ms on the first start, 2 ms on the next; the first long frame
 497 ms, then 317 ms. About 177 ms of that frame is outside the timed parts in both runs (likely the JIT compiling the
