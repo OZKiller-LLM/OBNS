@@ -20,8 +20,10 @@ only Microsoft's OpenGL Compatibility Pack (OpenGL over Direct3D 12), so the alo
 
 ## To do
 
-1. **OpenAL Soft for ARM64** (`arm64\OpenAL32.dll`), built from source or from a release that has it. Its source and
-   download need the user's OK. Without it the game runs silently.
+1. **OpenAL Soft for ARM64** (`arm64\OpenAL32.dll`). No release or CI build has one, so it is built from source: release
+   1.25.2, unchanged, `cmake -A ARM64`, on the ARM64 laptop (the user's choice; this PC's Visual Studio has no ARM64
+   compiler). It is LGPL, as upstream's x64 and x86 copies are: a separate DLL, shipped with `licenses\OpenALSoft.txt`
+   and its source named by tag, so OBNS's BSD-2 code is unaffected. Without it the game runs silently.
 2. **Packaging:** `build-desktop.ps1 -Package` to make an `-win-arm64` zip as well, with the `arm64\` folder. The
    screen-reader DLLs (Tolk and the rest) are x64 only and would be left out of it.
 3. **On the laptop**, in this order:
