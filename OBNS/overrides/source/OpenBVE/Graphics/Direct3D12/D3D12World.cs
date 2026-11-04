@@ -349,12 +349,33 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 
 			frameDrawing.RecordParticles(list, width, height);
+			if (timedFrame) gpuTimes.Mark(list, openSlot, D3D12GpuTimes.World);
 			depth = DepthView(1);
 			D12.ClearDepthView(list, depth, 1.0f);
 			D12.OMSetRenderTargets(list, 1, &target, &depth);
 			scene.Bind(list);
 			scene.Draw(list, WorldScene.CabLayer, width, height);
+			if (DiscardDepth)
+			{
+				// Neither depth is read again this frame, and the next clears them: a GPU that draws in tiles (Adreno) can leave
+				// them in its tile memory rather than write them out.
+				D12.DiscardResource(list, depthBuffer);
+				D12.DiscardResource(list, cabDepthBuffer);
+			}
+
+			if (timedFrame) gpuTimes.Mark(list, openSlot, D3D12GpuTimes.Cab);
 		}
+
+		/// <summary>Whether the frame's depths are discarded once drawn with (OBNS_D3D12_DISCARD=0: kept, for comparing).</summary>
+		private static readonly bool DiscardDepth = Environment.GetEnvironmentVariable("OBNS_D3D12_DISCARD") != "0";
+
+		/// <summary>The GPU's time for each part of the frame, kept with the frame statistics (OBNS_FRAMESTATS=1).</summary>
+		private static readonly bool TimingGpu = Environment.GetEnvironmentVariable("OBNS_FRAMESTATS") == "1";
+
+		private D3D12GpuTimes gpuTimes;
+
+		/// <summary>Whether the frame being made is timed (its world drawn, from its start).</summary>
+		private bool timedFrame;
 
 		public void Present()
 		{
@@ -382,6 +403,7 @@ namespace OpenBve.Graphics.Direct3D12
 					UIntPtr target = TargetView(0);
 					D12.OMSetRenderTargets(list, 1, &target, null);
 					frameDrawing.Record(list, width, height);
+					if (timedFrame) gpuTimes.Mark(list, openSlot, D3D12GpuTimes.TwoD);
 					if (snapshotFile != null)
 					{
 						snapshot = snapshotFile;
@@ -400,8 +422,10 @@ namespace OpenBve.Graphics.Direct3D12
 					frameDrawing.DrawImage(list, Textures.ExtraView(ExtraColor), swapWidth, swapHeight, 1.0f, false, true);
 					Transition(list, back, D12.StateRenderTarget, D12.StatePresent);
 					Transition(list, colorImage, D12.StatePixelShaderResource, D12.StateRenderTarget);
+					if (timedFrame) gpuTimes.End(list, openSlot);
 				}
 
+				timedFrame = false;
 				ulong value = SendFrame(show);
 				if (snapshot != null)
 				{
@@ -675,8 +699,16 @@ namespace OpenBve.Graphics.Direct3D12
 				scene.BuildRecords();
 				scene.Upload(openSlot, frameNumber);
 				IntPtr list = lists[openSlot];
+				if (TimingGpu)
+				{
+					gpuTimes = gpuTimes ?? new D3D12GpuTimes(device, D3D12Scene.FramesInFlight);
+					gpuTimes.Begin(list, openSlot);
+					timedFrame = true;
+				}
+
 				scene.Bind(list);
 				scene.DrawShadows(list);
+				if (timedFrame) gpuTimes.Mark(list, openSlot, D3D12GpuTimes.Shadows);
 				DrawWhole(list);
 			}
 			catch (Exception ex)
@@ -776,7 +808,8 @@ namespace OpenBve.Graphics.Direct3D12
 				instance.uploads.Bytes = 0;
 				return "on (Direct3D 12: " + scene.LastDraws + " draws (" + scene.LastCabDraws + " of them the cab's), " + scene.LastStateChanges + " pipeline and texture changes, " + scene.LastShadowCasters + " shadow casters a cascade; " +
 				       (uploaded >> 20) + " MB uploaded; " + instance.Textures.Describe() + "; " + instance.Meshes.Describe() +
-				       (scene.SkippedFaces > 0 ? "; " + scene.SkippedFaces + " faces without a copy" : "") + ")";
+				       (scene.SkippedFaces > 0 ? "; " + scene.SkippedFaces + " faces without a copy" : "") +
+				       (instance.gpuTimes?.Take() is string gpu ? "; " + gpu : "") + ")";
 			}
 		}
 
@@ -793,6 +826,7 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 
 			frameDrawing?.Dispose();
+			gpuTimes?.Dispose();
 			ReleaseBackBuffers();
 			D12.Release(swapChain);
 			composite?.Dispose();

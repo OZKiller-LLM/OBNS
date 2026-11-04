@@ -230,6 +230,7 @@
     <Compile Include="Graphics\DebugNormals.cs" />
     <Compile Include="Graphics\Direct3D11\D3D11FrameDrawing.cs" />
     <Compile Include="Graphics\Direct3D12\D3D12FrameDrawing.cs" />
+    <Compile Include="Graphics\Direct3D12\D3D12GpuTimes.cs" />
     <Compile Include="Graphics\Direct3D9\D3D9FrameDrawing.cs" />
     <Compile Include="Graphics\Vulkan\GpuMemory.cs" />
     <Compile Include="Graphics\Vulkan\SharedHeap.cs" />

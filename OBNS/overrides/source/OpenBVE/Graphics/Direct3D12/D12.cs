@@ -518,6 +518,27 @@ namespace OpenBve.Graphics.Direct3D12
 		/// <summary>ID3D12Device::GetDeviceRemovedReason (37).</summary>
 		internal static int GetDeviceRemovedReason(IntPtr device) => ((delegate* unmanaged[Stdcall]<IntPtr, int>)Table(device)[37])(device);
 
+		private static readonly Guid IQueryHeap = new Guid("0d9658ae-ed45-469e-a61d-970ec583cab4");
+
+		/// <summary>D3D12_QUERY_HEAP_TYPE_TIMESTAMP and D3D12_QUERY_TYPE_TIMESTAMP.</summary>
+		internal const uint QueryHeapTimestamp = 1, QueryTimestamp = 2;
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct QueryHeapDesc
+		{
+			public uint Type, Count, NodeMask;
+		}
+
+		/// <summary>ID3D12Device::CreateQueryHeap (39): timestamps.</summary>
+		internal static IntPtr CreateTimestampHeap(IntPtr device, uint count)
+		{
+			QueryHeapDesc desc = new QueryHeapDesc { Type = QueryHeapTimestamp, Count = count };
+			Guid id = IQueryHeap;
+			IntPtr heap;
+			int hr = ((delegate* unmanaged[Stdcall]<IntPtr, QueryHeapDesc*, Guid*, IntPtr*, int>)Table(device)[39])(device, &desc, &id, &heap);
+			return Make(hr, "ID3D12Device::CreateQueryHeap", heap);
+		}
+
 		// --- ID3D12CommandQueue ---
 
 		/// <summary>ID3D12CommandQueue::ExecuteCommandLists (10): one list.</summary>
@@ -530,6 +551,14 @@ namespace OpenBve.Graphics.Direct3D12
 		internal static void Signal(IntPtr queue, IntPtr fence, ulong value)
 		{
 			Check(((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, ulong, int>)Table(queue)[14])(queue, fence, value), "ID3D12CommandQueue::Signal");
+		}
+
+		/// <summary>ID3D12CommandQueue::GetTimestampFrequency (16): the queue's timestamp ticks a second.</summary>
+		internal static ulong TimestampFrequency(IntPtr queue)
+		{
+			ulong frequency;
+			Check(((delegate* unmanaged[Stdcall]<IntPtr, ulong*, int>)Table(queue)[16])(queue, &frequency), "ID3D12CommandQueue::GetTimestampFrequency");
+			return frequency;
 		}
 
 		/// <summary>ID3D12CommandQueue::Wait (15): the queue waits (not the CPU).</summary>
@@ -731,6 +760,18 @@ namespace OpenBve.Graphics.Direct3D12
 		internal static void ClearDepthView(IntPtr list, UIntPtr view, float depth)
 		{
 			((delegate* unmanaged[Stdcall]<IntPtr, UIntPtr, int, float, byte, uint, Rect*, void>)Table(list)[47])(list, view, ClearDepth, depth, 0, 0, null);
+		}
+
+		/// <summary>ID3D12GraphicsCommandList::DiscardResource (51): the whole resource's contents no longer needed.</summary>
+		internal static void DiscardResource(IntPtr list, IntPtr resource) => ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, void*, void>)Table(list)[51])(list, resource, null);
+
+		/// <summary>ID3D12GraphicsCommandList::EndQuery (53): a timestamp.</summary>
+		internal static void EndQuery(IntPtr list, IntPtr heap, uint index) => ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, uint, void>)Table(list)[53])(list, heap, QueryTimestamp, index);
+
+		/// <summary>ID3D12GraphicsCommandList::ResolveQueryData (54): timestamps into a buffer.</summary>
+		internal static void ResolveQueryData(IntPtr list, IntPtr heap, uint start, uint count, IntPtr buffer, ulong offset)
+		{
+			((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, uint, uint, IntPtr, ulong, void>)Table(list)[54])(list, heap, QueryTimestamp, start, count, buffer, offset);
 		}
 
 		/// <summary>ID3D12GraphicsCommandList::ClearRenderTargetView (48): the whole view.</summary>
