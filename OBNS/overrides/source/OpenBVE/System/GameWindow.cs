@@ -67,6 +67,29 @@ namespace OpenBve
 			}
 		}
 
+		[DllImport("kernel32.dll", SetLastError = true)]
+		private static extern bool IsWow64Process2(IntPtr process, out ushort processMachine, out ushort nativeMachine);
+
+		/// <summary>OBNS: the process's architecture, and on Windows whether it is emulated (x64 or x86 on ARM64, x86 on x64).</summary>
+		private static string ProcessArchitecture()
+		{
+			string process = RuntimeInformation.ProcessArchitecture.ToString(), machine = RuntimeInformation.OSArchitecture.ToString();
+			try
+			{
+				if (Environment.OSVersion.Platform == PlatformID.Win32NT && IsWow64Process2(Process.GetCurrentProcess().Handle, out ushort _, out ushort native))
+				{
+					// The machine as it is, not as the emulated process is told (0xAA64 ARM64, 0x8664 x64).
+					machine = native == 0xAA64 ? "Arm64" : native == 0x8664 ? "X64" : "0x" + native.ToString("X4");
+				}
+			}
+			catch (EntryPointNotFoundException)
+			{
+				// Windows before 10 (1709)
+			}
+
+			return process == machine ? process + ", native" : process + " on " + machine + ", emulated";
+		}
+
 		//We need to explicitly specify the default constructor
 		private static readonly double obnsCameraTurn = double.TryParse(System.Environment.GetEnvironmentVariable("OBNS_CAMERA_TURN"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double turn) ? turn : 0.0;
 
@@ -399,6 +422,8 @@ namespace OpenBve
 					 * Also update the viewing distances in case of jumps etc.
 					 */
 					Program.Renderer.UpdateViewingDistances(Program.CurrentRoute.CurrentBackground.BackgroundImageDistance);
+					// OBNS: the process's architecture and the machine's, as Windows on ARM64 runs the program natively or as x64 (OBNS/ARM64.md).
+					Program.FileSystem.AppendToLogFile("OBNS process: " + ProcessArchitecture());
 					// OBNS: OBNS_START_DELAY=<seconds> waits before the first frame, for testing on a machine loading leaves hot.
 					if (int.TryParse(Environment.GetEnvironmentVariable("OBNS_START_DELAY"), out int startDelay) && startDelay > 0)
 					{
