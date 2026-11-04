@@ -368,6 +368,7 @@
     <Compile Include="System\Input\JoystickManager\ConfigurationLink.cs" />
     <Compile Include="System\Input\JoystickManager\JoystickManager32.cs" />
     <Compile Include="System\Input\JoystickManager\JoystickManager64.cs" />
+    <Compile Include="System\Input\JoystickManager\JoystickManagerArm64.cs" />
     <Compile Include="System\Input\JoystickManager\RailDriver\AbstractRailDriver.cs" />
     <Compile Include="System\Input\JoystickManager\StandardJoystick.cs" />
     <Compile Include="System\Input\ProcessControls.Analog.cs" />

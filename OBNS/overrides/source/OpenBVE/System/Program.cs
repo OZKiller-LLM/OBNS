@@ -178,9 +178,14 @@ namespace OpenBve {
 			{
 				Joysticks = new JoystickManager32();
 			}
+			else if (CurrentHost.Platform == HostPlatform.MicrosoftWindows && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64)
+			{
+				// OBNS: the RailDriver's library is x64 only, which Windows on ARM64 can't load (JoystickManagerArm64).
+				Joysticks = new JoystickManagerArm64();
+			}
 			else
 			{
-				Joysticks = new JoystickManager64();	
+				Joysticks = new JoystickManager64();
 			}
 
 			if (CurrentHost.Platform == HostPlatform.FreeBSD)
