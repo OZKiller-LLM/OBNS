@@ -2,7 +2,7 @@
 
 An ARM64 process can't load the x64 DLLs upstream ships in `x64\`, so the ARM64 build has its own here, copied by
 `ARM64/build-arm64.ps1` to `arm64\` beside the program. The game needs OpenAL to start, as upstream's does, so the build
-stops without it. Tolk and the screen readers' DLLs have no ARM64 build here: the game runs without a screen reader.
+stops without it. Tolk is here too (screen readers); without it the game runs, with none.
 
 ## OpenAL Soft (`arm64/OpenAL32.dll`)
 
@@ -24,3 +24,22 @@ stops without it. Tolk and the screen readers' DLLs have no ARM64 build here: th
 - Backends: WASAPI, DirectSound, WinMM, WaveFile, Null; NEON; EAX on; HRTF data embedded.
 - `OpenAL32.dll`: 2,066,432 bytes, machine ARM64 (0xAA64), sha256
   `0754daf16827b2a8297cdcf49b54db58fc10f793ae16d8e9591edd6775e13e0c`.
+
+## Tolk (`arm64/Tolk.dll`)
+
+- What: Davy Kager's Tolk, the screen reader library upstream ships for x64 and x86, built for ARM64. Without it the game
+  runs with no screen reader (OBNS's MainLoop).
+- Licence: GNU LGPL 3, as upstream's copies (`licenses/TOLK.txt`); a separate DLL loaded at run time.
+- Source: https://github.com/dkager/tolk, which has no releases: master at `e5149f0cb6ef9b941673017e0e7b7c409e485fbe`
+  (2024-06-08), unchanged (https://github.com/dkager/tolk/archive/e5149f0cb6ef9b941673017e0e7b7c409e485fbe.zip,
+  557,864 bytes, sha256 `2f685cac7bd3824eb7c3b632898dd8e443f112ffc1f81f9a2b4b5f06f00a95a1`).
+- Built with Visual Studio 2022 Build Tools (MSVC 14.44.35207) on an ARM64 laptop, with upstream's `src\Makefile`:
+
+      vcvarsall.bat arm64
+      nmake /nologo OUTDIR=<out> CFLAGS="/nologo /O2 /EHsc /LD /Gw /W4 /WL /MT /D_EXPORTING /DUNICODE"
+
+  Against upstream's flags, `/MT` (the runtime linked in) and no `/D_WITH_JNI` (the Java bridge, which needs a JDK).
+- `Tolk.dll`: 120,320 bytes, machine ARM64 (0xAA64), sha256 `e77a3228814e16712c3a6855c1878c2912c4969d0893aa065eae9d297c2292cd`;
+  imports only USER32, ole32, OLEAUT32 and KERNEL32.
+- JAWS and SAPI work through COM. NVDA needs its controller client, which NV Access ships for ARM64 (not here yet; Tolk
+  loads it as `nvdaControllerClient64.dll` in a 64-bit process). The other readers' clients are x86 and x64 only.
