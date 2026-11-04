@@ -208,6 +208,7 @@ namespace OpenBve
 			
 			
 			FrameStats.BeginFrame();
+			DriveLog.Tick();
 			if (Program.Renderer.PreviousInterface != InterfaceType.Normal)
 			{
 				// Update animated objects with zero elapsed time (NOT time elapsed in menu)
@@ -1608,6 +1609,113 @@ namespace OpenBve
 			totals[(int)part] += now - lastMark;
 			current[(int)part] += now - lastMark;
 			lastMark = now;
+		}
+	}
+
+	/// <summary>
+	/// OBNS: for tests, with OBNS_DRIVE_LOG=1, the player's train in the log each second of game time: where it is, its speed
+	/// against the limits, and each handle as the driver set it, as the safety system holds it and as it acts. Shows when
+	/// an ATS (built in or a plugin) brakes. With OBNS_DRIVE_TEST=power as well, from 20 s of game time the driver closes
+	/// the doors, sets the reverser forward, releases the brakes and holds full power, as the keys would (posted keys are
+	/// unreliable in tests), so an ATS's overspeed and signal checks can be seen. Stopped by the safety system for 3 s, it
+	/// resets it as a driver would: reverser neutral, no power, the emergency brake, then the reset keys (B1, A1).
+	/// </summary>
+	internal static class DriveLog
+	{
+		private static readonly bool enabled = Environment.GetEnvironmentVariable("OBNS_DRIVE_LOG") == "1";
+		private static readonly bool fullPower = Environment.GetEnvironmentVariable("OBNS_DRIVE_TEST") == "power";
+		private static double last = double.MinValue, first = double.NaN, resetAt = double.NaN;
+		private static int held;
+
+		/// <summary>The built-in ATS's lamps (OpenBveAts): ATS-S 256 to 258, ATS-P 259 to 264, as "lamps 256=1 ..." where lit.</summary>
+		private static string Lamps(TrainBase train)
+		{
+			int[] panel = train.Plugin?.Panel;
+			if (panel == null || panel.Length <= 264)
+			{
+				return string.Empty;
+			}
+
+			System.Text.StringBuilder lit = new System.Text.StringBuilder();
+			for (int i = 256; i <= 264; i++)
+			{
+				if (panel[i] != 0)
+				{
+					lit.Append(' ').Append(i).Append('=').Append(panel[i]);
+				}
+			}
+
+			return lit.Length == 0 ? ", no lamps" : ", lamps" + lit;
+		}
+
+		internal static void Tick()
+		{
+			if (!enabled || TrainManager.PlayerTrain == null || Program.CurrentRoute == null)
+			{
+				return;
+			}
+
+			double now = Program.CurrentRoute.SecondsSinceMidnight;
+			if (now - last < 1.0 && now >= last)
+			{
+				return;
+			}
+
+			last = now;
+			TrainBase train = TrainManager.PlayerTrain;
+			if (double.IsNaN(first))
+			{
+				first = now;
+			}
+
+			if (fullPower && now - first >= 20.0 && !double.IsNaN(resetAt))
+			{
+				if (now >= resetAt)
+				{
+					train.Plugin?.KeyDown(VirtualKeys.B1);
+					train.Plugin?.KeyDown(VirtualKeys.A1);
+					resetAt = double.NaN;
+					Program.FileSystem.AppendToLogFile("OBNS drive test: the reset keys (B1, A1) pressed", false);
+				}
+			}
+			else if (fullPower && now - first >= 20.0)
+			{
+				bool safetyBrake = train.Handles.EmergencyBrake.Safety && !train.Handles.EmergencyBrake.Driver || train.Handles.Brake.Safety > train.Handles.Brake.Driver;
+				held = safetyBrake && Math.Abs(train.CurrentSpeed) < 0.1 ? held + 1 : 0;
+				if (held >= 3)
+				{
+					held = 0;
+					train.Handles.Power.ApplyState(0, false);
+					train.Handles.Reverser.ApplyState(global::TrainManager.Handles.ReverserPosition.Neutral);
+					train.Handles.EmergencyBrake.Apply();
+					resetAt = now + 2.0;
+					Program.FileSystem.AppendToLogFile("OBNS drive test: stopped by the safety system; resetting it", false);
+				}
+			}
+
+			if (fullPower && now - first >= 20.0 && double.IsNaN(resetAt))
+			{
+				if ((train.GetDoorsState(true, true) & TrainDoorState.AllClosed) == 0)
+				{
+					train.CloseDoors(true, true);
+				}
+
+				train.Handles.Reverser.ApplyState(global::TrainManager.Handles.ReverserPosition.Forwards);
+				if (train.Handles.EmergencyBrake.Driver)
+				{
+					train.Handles.EmergencyBrake.Release();
+				}
+
+				train.Handles.Brake.ApplyState(0, false);
+				train.Handles.Power.ApplyState(train.Handles.Power.MaximumDriverNotch, false);
+			}
+			string Limit(double v) => double.IsInfinity(v) || v > 1000.0 ? "none" : (v * 3.6).ToString("0");
+			Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+				"OBNS drive: {0:0.0} m, {1:0.0} km/h (limits: route {2}, signal {3}), reverser {13}/{14}, doors {15}, power {4}/{5}, brake {6}/{7}/{8}, emergency {9}/{10}/{11}, safety system {12}{16}",
+				train.FrontCarTrackPosition, train.CurrentSpeed * 3.6, Limit(train.CurrentRouteLimit), Limit(train.CurrentSectionLimit),
+				train.Handles.Power.Driver, train.Handles.Power.Actual, train.Handles.Brake.Driver, train.Handles.Brake.Safety, train.Handles.Brake.Actual,
+				train.Handles.EmergencyBrake.Driver, train.Handles.EmergencyBrake.Safety, train.Handles.EmergencyBrake.Actual,
+				train.Plugin == null ? "none" : train.Plugin.PluginTitle, (int)train.Handles.Reverser.Driver, (int)train.Handles.Reverser.Actual, train.GetDoorsState(true, true), Lamps(train)), false);
 		}
 	}
 }
