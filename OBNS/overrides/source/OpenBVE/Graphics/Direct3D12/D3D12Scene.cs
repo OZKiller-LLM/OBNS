@@ -64,13 +64,14 @@ namespace OpenBve.Graphics.Direct3D12
 		private readonly uint samplerSize;
 
 		/// <summary>The records' buffers per frame in flight (frames, objects, draws, matrices): upload memory, mapped.</summary>
-		// The records (frame, objects, draws, matrices), then the shadow casters' instance list (each one's draw record, in
-		// shadowCommands' order).
+		// The records (frame, objects, draws, matrices), then the instance stream: each command's draw record, in commands'
+		// order, then the shadow casters' in shadowCommands' (a draw's StartInstanceLocation is its place there).
 		private readonly IntPtr[,] recordBuffers = new IntPtr[FramesInFlight, 5];
 		private readonly byte*[,] recordData = new byte*[FramesInFlight, 5];
 		private readonly long[,] recordSizes = new long[FramesInFlight, 5];
 		private readonly ulong[] recordAddresses = new ulong[5];
-		private uint[] casterRecords = new uint[1024];
+		private uint[] instanceRecords = new uint[4096];
+		private int instanceTotal;
 
 		/// <summary>
 		/// Whether the copies of a face among the shadow casters (an object placed again and again) are drawn as one, with an
@@ -79,8 +80,16 @@ namespace OpenBve.Graphics.Direct3D12
 		/// </summary>
 		private static readonly bool InstanceShadows = Environment.GetEnvironmentVariable("OBNS_SHADOW_INSTANCES") != "0";
 
+		/// <summary>The same for the world, cab and background draws, where copies of a face are side by side in their pass (OBNS_WORLD_INSTANCES=0: a draw each).</summary>
+		private static readonly bool InstanceWorld = Environment.GetEnvironmentVariable("OBNS_WORLD_INSTANCES") != "0";
+
 		/// <summary>Draw calls of the shadow pass in the last frame, for the log.</summary>
 		internal int LastShadowCalls { get; private set; }
+
+		/// <summary>Draw calls of the world, cab and background in the last frame, for the log.</summary>
+		internal int LastCalls { get; private set; }
+
+		private int calls;
 
 		// The shadow pass: the maps (one array, a layer per cascade; written as depth, read through a comparison sampler),
 		// their depth views, and whether they are readable (else being written).
@@ -89,10 +98,6 @@ namespace OpenBve.Graphics.Direct3D12
 		private bool shadowReadable;
 		private uint depthViewSize;
 
-		/// <summary>The instance stream: 0, 1, 2, ... (a draw's StartInstanceLocation picks its record); replaced ones kept until done with.</summary>
-		private IntPtr instanceBuffer;
-		private ulong instanceAddress;
-		private int instanceCount;
 		private readonly List<KeyValuePair<IntPtr, long>> retired = new List<KeyValuePair<IntPtr, long>>();
 
 		/// <summary>Pipeline and texture changes in the last frame, for the log.</summary>
@@ -494,22 +499,29 @@ namespace OpenBve.Graphics.Direct3D12
 				}
 			}
 
-			if (casterRecords.Length < shadowCount)
+			instanceTotal = commandCount + shadowCount;
+			if (instanceRecords.Length < instanceTotal)
 			{
-				casterRecords = new uint[shadowCount + shadowCount / 2];
+				instanceRecords = new uint[instanceTotal + instanceTotal / 2];
+			}
+
+			for (int i = 0; i < commandCount; i++)
+			{
+				instanceRecords[i] = (uint)commands[i].Draw;
 			}
 
 			for (int i = 0; i < shadowCount; i++)
 			{
-				casterRecords[i] = (uint)shadowCommands[i].Draw;
+				instanceRecords[commandCount + i] = (uint)shadowCommands[i].Draw;
 			}
 
-			fixed (uint* data = casterRecords)
+			fixed (uint* data = instanceRecords)
 			{
-				Write(slot, 4, data, shadowCount, 4);
+				Write(slot, 4, data, instanceTotal, 4);
 			}
 
-			EnsureInstances(drawCount, frameNumber);
+			LastCalls = calls;
+			calls = 0;
 		}
 
 		private void Write(int slot, int which, void* data, int count, int stride)
@@ -540,30 +552,6 @@ namespace OpenBve.Graphics.Direct3D12
 			return buffer;
 		}
 
-		/// <summary>The instance stream, at least so long (a replaced one kept until the frames in flight are done with it).</summary>
-		private void EnsureInstances(int count, long frameNumber)
-		{
-			if (instanceCount >= count && instanceBuffer != IntPtr.Zero)
-			{
-				return;
-			}
-
-			if (instanceBuffer != IntPtr.Zero)
-			{
-				retired.Add(new KeyValuePair<IntPtr, long>(instanceBuffer, frameNumber));
-			}
-
-			instanceCount = Math.Max(count + count / 2, 16384);
-			instanceBuffer = UploadBuffer((ulong)instanceCount * 4, out byte* data);
-			uint* indices = (uint*)data;
-			for (int i = 0; i < instanceCount; i++)
-			{
-				indices[i] = (uint)i;
-			}
-
-			instanceAddress = D12.GpuAddress(instanceBuffer);
-		}
-
 		/// <summary>The bindings every draw of the frame shares: heaps, root signature, records, instance stream, shadow maps.</summary>
 		internal void Bind(IntPtr list)
 		{
@@ -576,7 +564,7 @@ namespace OpenBve.Graphics.Direct3D12
 
 			D12.SetGraphicsRootDescriptorTable(list, RootShadowMap, textures.ExtraView(0));
 			D12.IASetPrimitiveTopology(list, Dx.TopologyTriangleList);
-			D12.IASetVertexBuffer(list, 1, new D12.VertexBufferView { BufferLocation = instanceAddress, SizeInBytes = (uint)instanceCount * 4, StrideInBytes = 4 });
+			D12.IASetVertexBuffer(list, 1, new D12.VertexBufferView { BufferLocation = recordAddresses[4], SizeInBytes = (uint)Math.Max(1, instanceTotal) * 4, StrideInBytes = 4 });
 		}
 
 		private void SetLayer(IntPtr list, int layer, int cascade)
@@ -611,12 +599,10 @@ namespace OpenBve.Graphics.Direct3D12
 				}
 			}
 
-			int calls = 0;
+			int shadowCalls = 0;
 			if (shadowCascades > 0 && shadowCount > 0)
 			{
 				D12.SetViewport(list, (uint)shadowResolution, (uint)shadowResolution);
-				// The instance stream is the casters' list: a draw's instances are its run of copies there.
-				D12.IASetVertexBuffer(list, 1, new D12.VertexBufferView { BufferLocation = recordAddresses[4], SizeInBytes = (uint)shadowCount * 4, StrideInBytes = 4 });
 				for (int cascade = 0; cascade < Math.Min(shadowCascades, shadowLayers); cascade++)
 				{
 					UIntPtr view = ShadowView(cascade);
@@ -646,17 +632,14 @@ namespace OpenBve.Graphics.Direct3D12
 							}
 						}
 
-						D12.DrawIndexedInstanced(list, command.IndexCount, (uint)copies, command.FirstIndex, command.VertexBase, (uint)i);
+						D12.DrawIndexedInstanced(list, command.IndexCount, (uint)copies, command.FirstIndex, command.VertexBase, (uint)(commandCount + i));
 						i += copies - 1;
-						calls++;
+						shadowCalls++;
 					}
 				}
-
-				// The world's draws: the instance stream 0, 1, 2, ... again.
-				D12.IASetVertexBuffer(list, 1, new D12.VertexBufferView { BufferLocation = instanceAddress, SizeInBytes = (uint)instanceCount * 4, StrideInBytes = 4 });
 			}
 
-			LastShadowCalls = calls;
+			LastShadowCalls = shadowCalls;
 
 			barrier[0] = D12.Transition(shadowMap, D12.StateDepthWrite, D12.StatePixelShaderResource);
 			D12.ResourceBarriers(list, barrier, 1);
@@ -732,7 +715,18 @@ namespace OpenBve.Graphics.Direct3D12
 					changes++;
 				}
 
-				D12.DrawIndexedInstanced(list, command.IndexCount, 1, command.FirstIndex, command.VertexBase, (uint)command.Draw);
+				int texture = draws[command.Draw].Texture, sampler = draws[command.Draw].Sampler & 3, copies = 1;
+				if (InstanceWorld)
+				{
+					while (i + copies < end && SameFace(ref command, ref commands[i + copies]) && draws[commands[i + copies].Draw].Texture == texture && (draws[commands[i + copies].Draw].Sampler & 3) == sampler)
+					{
+						copies++;
+					}
+				}
+
+				D12.DrawIndexedInstanced(list, command.IndexCount, (uint)copies, command.FirstIndex, command.VertexBase, (uint)i);
+				i += copies - 1;
+				calls++;
 			}
 
 			LastStateChanges += changes;
@@ -769,10 +763,9 @@ namespace OpenBve.Graphics.Direct3D12
 			}
 
 			retired.Clear();
-			D12.Release(instanceBuffer);
 			D12.Release(SamplerHeap);
 			D12.Release(rootSignature);
-			instanceBuffer = rootSignature = IntPtr.Zero;
+			rootSignature = IntPtr.Zero;
 		}
 	}
 }

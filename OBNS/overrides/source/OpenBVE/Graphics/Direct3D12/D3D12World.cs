@@ -808,7 +808,7 @@ namespace OpenBve.Graphics.Direct3D12
 				D3D12Scene scene = instance.scene;
 				long uploaded = instance.uploads.Bytes;
 				instance.uploads.Bytes = 0;
-				return "on (Direct3D 12: " + scene.LastDraws + " draws (" + scene.LastCabDraws + " of them the cab's), " + scene.LastStateChanges + " pipeline and texture changes, " + scene.LastShadowCasters + " shadow casters a cascade (" + scene.LastShadowCalls + " shadow draw calls); " +
+				return "on (Direct3D 12: " + scene.LastDraws + " draws in " + scene.LastCalls + " calls (" + scene.LastCabDraws + " of them the cab's), " + scene.LastStateChanges + " pipeline and texture changes, " + scene.LastShadowCasters + " shadow casters a cascade (" + scene.LastShadowCalls + " shadow draw calls); " +
 				       (uploaded >> 20) + " MB uploaded; " + instance.Textures.Describe() + "; " + instance.Meshes.Describe() +
 				       (scene.SkippedFaces > 0 ? "; " + scene.SkippedFaces + " faces without a copy" : "") +
 				       (Full && instance.frameDrawing != null ? "; " + instance.frameDrawing.LastQuads + " 2D quads" : "") +

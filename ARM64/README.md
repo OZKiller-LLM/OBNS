@@ -87,6 +87,13 @@ bit-identical across 30 s with it on and off, and nothing went back and forth wh
 frame by frame). Ultra (3 cascades of 4096): 29.4 fps, shadows 23.53 ms. Its HUD, missing in 131i, draws: 260 2D
 quads, as at High, and the same HUD pixels. Process memory 2.65 to 2.84 GB, no exceptions.
 
+The copies of a shadow caster's face drawn as one, with an instance each (131k, the same scene at High, staggered;
+`OBNS_SHADOW_INSTANCES=0` turns it off): 48.5 fps against 44.9; shadow draw calls 3,173 and 4,186 on alternate
+frames against 4,731 and 6,075; shadows 10.24 ms against 12.43, 20.43 a frame against 22.11; worst frames 29.6 ms
+against 31.2. One pair of snapshots bit-identical; the other differs by 1 or 2 levels in scattered pixels over the
+whole frame, the sky and HUD included, not in shadow-shaped patches. The world and cab's draws the same way (131l,
+`OBNS_WORLD_INSTANCES=0`): East Rail's 5,320 draws in 4,146 calls on the RTX 2060.
+
 Vulkan's pipeline cache (131e, Keisei): 8 pipelines in 197 ms on the first start, 2 ms on the next; the first long frame
 497 ms, then 317 ms. About 177 ms of that frame is outside the timed parts in both runs (likely the JIT compiling the
 first frame's code, slower on ARM64), and "Vulkan start" (52 ms) and "touch and overlays" (43 ms) don't change.

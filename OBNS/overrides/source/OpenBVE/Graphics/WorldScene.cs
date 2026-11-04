@@ -1043,7 +1043,8 @@ namespace OpenBve.Graphics
 				int start = segmentStarts[s], end = s + 1 < segmentStarts.Count ? segmentStarts[s + 1] : commandCount;
 				if (!segmentOrdered[s] && end - start > 1)
 				{
-					Array.Sort(commands, start, end - start, KeyComparer.Instance);
+					// By key, then face: the copies of a face (an object placed again and again) side by side, so an API may draw them as one.
+					Array.Sort(commands, start, end - start, FaceComparer.Instance);
 				}
 			}
 
@@ -1067,7 +1068,7 @@ namespace OpenBve.Graphics
 				}
 
 				// The copies of a face (an object placed again and again) side by side, so an API may draw them as one.
-				Array.Sort(casterCommands, 0, casters, CasterComparer.Instance);
+				Array.Sort(casterCommands, 0, casters, FaceComparer.Instance);
 			}
 
 			for (int cascade = 0; cascade < 4; cascade++)
@@ -1143,10 +1144,10 @@ namespace OpenBve.Graphics
 			public int Compare(DrawCommand x, DrawCommand y) => x.Key.CompareTo(y.Key);
 		}
 
-		/// <summary>The shadow casters' order: by key, then face (vertices, indices), the copies of one face together.</summary>
-		private sealed class CasterComparer : IComparer<DrawCommand>
+		/// <summary>The grouped passes' and shadow casters' order: by key, then face (vertices, indices), the copies of one face together.</summary>
+		private sealed class FaceComparer : IComparer<DrawCommand>
 		{
-			internal static readonly CasterComparer Instance = new CasterComparer();
+			internal static readonly FaceComparer Instance = new FaceComparer();
 			public int Compare(DrawCommand x, DrawCommand y)
 			{
 				int order = x.Key.CompareTo(y.Key);
