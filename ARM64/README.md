@@ -40,7 +40,21 @@ through the Compatibility Pack, keeps 60 fps (the display's rate) after one or t
 and draws correctly. Vulkan is Qualcomm's own driver (an ARM64X build serving x64 processes too), not Dozen. Direct3D 9
 goes through Direct3D 9 on 12. Both trains' x86 plugins load through the proxy.
 
-Run natively (build 131d), the same route: "OBNS process: Arm64, native", Vulkan alone on Qualcomm's ARM64 driver, OpenAL
+Natively (build 131d), every renderer, 60 s after loading, display at 60 Hz with vsync:
+
+| Renderer | Keisei: load, first 10 s (fps / worst) | Then | Uchibo 3793F: load, first 10 s |
+| --- | --- | --- | --- |
+| Vulkan (default) | 5.2 s, 55.7 / 630 ms (emulated 8.4 s, 53.3 / 974 ms) | 60 fps, worst 18 to 20 ms | 18.2 s (emulated 27.9 s), 54.6 / 651 ms |
+| Direct3D 12 | 7.6 s, 58.3 / 292 ms | 60 fps, worst 20 ms | 20.1 s, 57.4 / 324 ms |
+| Direct3D 11 | 7.3 s, 57.0 / 482 ms | 60 fps, worst 20 ms | |
+| Direct3D 9 (9 on 12) | 5.2 s, 57.2 / 416 ms | 60 fps, worst 19 ms | |
+| OpenGL (OpenGL on 12) | 5.4 s, 52.9 / 581 ms | 60 fps, worst 20 ms | |
+
+Loading is about 30 to 35% faster than under emulation and the first long frame 25 to 40% shorter; drawing is held by vsync
+either way. Snapshots right on every renderer. Drivers: Qualcomm's ARM64 Vulkan, Direct3D 12 and 11; Direct3D 9 and
+OpenGL through Microsoft's layers onto Direct3D 12.
+
+The first native start, Keisei: "OBNS process: Arm64, native", Vulkan alone on Qualcomm's ARM64 driver, OpenAL
 Soft for ARM64 loaded, loading 8.5 s, the first 10 s 55 fps with a worst frame of 0.7 s (emulated 53 fps, 0.9 to 1.0 s),
 then 60 fps, and 785 MB of process memory against 908 MB emulated. Two x64-only libraries stopped the first native
 builds: PI Engineering's PIEHid64Net (the RailDriver, left out on ARM64) and Tolk (screen readers: none on ARM64 yet).
