@@ -40,12 +40,16 @@ through the Compatibility Pack, keeps 60 fps (the display's rate) after one or t
 and draws correctly. Vulkan is Qualcomm's own driver (an ARM64X build serving x64 processes too), not Dozen. Direct3D 9
 goes through Direct3D 9 on 12. Both trains' x86 plugins load through the proxy.
 
+Run natively (build 131d), the same route: "OBNS process: Arm64, native", Vulkan alone on Qualcomm's ARM64 driver, OpenAL
+Soft for ARM64 loaded, loading 8.5 s, the first 10 s 55 fps with a worst frame of 0.7 s (emulated 53 fps, 0.9 to 1.0 s),
+then 60 fps, and 785 MB of process memory against 908 MB emulated. Two x64-only libraries stopped the first native
+builds: PI Engineering's PIEHid64Net (the RailDriver, left out on ARM64) and Tolk (screen readers: none on ARM64 yet).
+
 ## To do
 
-1. **OpenAL Soft for ARM64**, being built on the laptop (`dependencies/README.md`).
-2. **The native build on the laptop:** that it runs as ARM64, with and without OpenAL; each renderer; the x64 plugins in
-   the layer; loading and the first frames against the emulated runs.
-3. **The GPU list's default for Adreno X** from those numbers.
+1. **The native build on the laptop:** each renderer; the x64 plugins in the layer; sound heard.
+2. **The GPU list's default for Adreno X** from those numbers.
+3. **Screen readers:** Tolk for ARM64, if the user wants it (LGPL, built from source like OpenAL Soft).
 
 ## Snapdragon tuning (after the native build's first numbers)
 

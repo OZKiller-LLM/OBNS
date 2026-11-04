@@ -1,7 +1,8 @@
 # Native libraries for Windows on ARM64
 
 An ARM64 process can't load the x64 DLLs upstream ships in `x64\`, so the ARM64 build has its own here, copied by
-`ARM64/build-arm64.ps1` to `arm64\` beside the program.
+`ARM64/build-arm64.ps1` to `arm64\` beside the program. The game needs OpenAL to start, as upstream's does, so the build
+stops without it. Tolk and the screen readers' DLLs have no ARM64 build here: the game runs without a screen reader.
 
 ## OpenAL Soft (`arm64/OpenAL32.dll`)
 

@@ -48,15 +48,12 @@ if ($machine -ne 0xAA64) { throw ('OpenBve.exe was built for machine 0x{0:X4}, n
 # 32-bit copies an earlier build may have left: an ARM64 program has none.
 Get-ChildItem $output -Filter '*-32.exe*' | Remove-Item -Force
 
-# OpenAL Soft for ARM64 (ARM64/dependencies/README.md); without it the game runs, silent.
+# OpenAL Soft for ARM64 (ARM64/dependencies/README.md). Without it the game stops as it starts, as upstream's does
+# without its OpenAL: "The required system library ... was not found".
 $dependencies = Join-Path $PSScriptRoot 'dependencies\arm64'
-if (Test-Path (Join-Path $dependencies 'OpenAL32.dll')) {
-    New-Item -ItemType Directory -Force (Join-Path $output 'arm64') | Out-Null
-    Copy-Item (Join-Path $dependencies '*.dll') (Join-Path $output 'arm64') -Force
-}
-else {
-    Write-Warning 'ARM64/dependencies/arm64/OpenAL32.dll is missing: this build has no sound'
-}
+if (-not (Test-Path (Join-Path $dependencies 'OpenAL32.dll'))) { throw 'ARM64/dependencies/arm64/OpenAL32.dll is missing: the game would not start' }
+New-Item -ItemType Directory -Force (Join-Path $output 'arm64') | Out-Null
+Copy-Item (Join-Path $dependencies '*.dll') (Join-Path $output 'arm64') -Force
 
 Write-Host "Built for ARM64: $exe"
 
