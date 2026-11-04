@@ -138,7 +138,7 @@ namespace OpenBve
 		private static extern bool IsWow64Process2(IntPtr process, out ushort processMachine, out ushort nativeMachine);
 
 		/// <summary>Whether this is an ARM64 Windows machine, whether the program runs natively or as x64 under emulation.</summary>
-		private static bool WindowsOnArm64()
+		internal static bool WindowsOnArm64()
 		{
 			try
 			{

@@ -361,6 +361,9 @@ namespace OpenBve.Graphics.Direct3D12
 			return pipeline;
 		}
 
+		/// <summary>The shadow pass clears only the cascades it draws, so the others keep their maps.</summary>
+		protected override bool KeepsCascades => true;
+
 		/// <summary>The shadow pass's pipeline: depth only (less), culled as upstream's shadow pass culls the face, or not.</summary>
 		private IntPtr ShadowPipeline(bool cull, bool noPixelShader)
 		{
@@ -406,6 +409,7 @@ namespace OpenBve.Graphics.Direct3D12
 			// The frames in flight read the maps and their view: done with first (the options changed; rare).
 			device.WaitIdle();
 			ReleaseShadowMaps();
+			ShadowMapsLost();
 			D12.ResourceDesc desc = new D12.ResourceDesc
 			{
 				Dimension = D12.DimensionTexture2D,
@@ -570,9 +574,13 @@ namespace OpenBve.Graphics.Direct3D12
 				D12.ResourceBarriers(list, barrier, 1);
 			}
 
+			// Only the cascades drawn this frame: the others keep their maps (WorldScene.StaggerCascades).
 			for (int cascade = 0; cascade < shadowLayers; cascade++)
 			{
-				D12.ClearDepthView(list, ShadowView(cascade), 1.0f);
+				if (cascade >= shadowCascades || CascadeDrawn(cascade))
+				{
+					D12.ClearDepthView(list, ShadowView(cascade), 1.0f);
+				}
 			}
 
 			if (shadowCascades > 0 && shadowCount > 0)

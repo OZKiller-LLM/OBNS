@@ -296,10 +296,12 @@ namespace OpenBve.Graphics
 			{
 				data.ShadowEnabled = 0;
 				frameData[WorldLayerIndex] = data;
+				ShadowMapsLost();
 				return;
 			}
 
 			shadowCascades = caster.CascadeCount;
+			ChooseCascades(caster);
 			// Upstream's per-cascade culling (Shadows.RenderPass, with the "filter cascades" option): an object casts into a
 			// cascade only within its split distance and 150 m more of the camera (here: the nearest of its bounds).
 			bool filter = Interface.CurrentOptions.ShadowFilterCascades;
@@ -309,7 +311,7 @@ namespace OpenBve.Graphics
 				cascadeLimits[i] = limit < double.MaxValue ? (float)(limit * limit) : float.MaxValue;
 				if (i < caster.CascadeCount)
 				{
-					Matrix4D m = caster.LightSpaceMatrices[i];
+					Matrix4D m = cascadeMatrices[i];
 					cascadeBoxes[i, 0] = m.Row0.X;
 					cascadeBoxes[i, 1] = m.Row1.X;
 					cascadeBoxes[i, 2] = m.Row2.X;
@@ -333,7 +335,7 @@ namespace OpenBve.Graphics
 			{
 				if (i < caster.CascadeCount)
 				{
-					Store(caster.LightSpaceMatrices[i], data.LightSpace + 16 * i);
+					Store(cascadeMatrices[i], data.LightSpace + 16 * i);
 					data.ShadowSplit[i] = caster.SplitDistances[i];
 					data.ShadowBias[i] = caster.CascadeBiases[i] + userBias;
 					data.ShadowNormalBias[i] = normalBiasTexels;
@@ -358,6 +360,58 @@ namespace OpenBve.Graphics
 
 		/// <summary>Whether a shadow draw has nothing see-through, so it can do without a fragment shader.</summary>
 		protected static bool ShadowDepthOnly(long key) => (int)(key >> 48) >= 3;
+
+		/// <summary>
+		/// Whether this API keeps a cascade's map from frame to frame when it isn't drawn (its shadow pass clears only the
+		/// cascades drawn), so that the farther cascades can be drawn in turn (StaggerCascades).
+		/// </summary>
+		protected virtual bool KeepsCascades => false;
+
+		/// <summary>
+		/// Whether the farther cascades are drawn in turn, one a frame, the nearest every frame: on a GPU whose time goes by the
+		/// draw (Adreno, about 2.3 µs a shadow caster), each far cascade cost 5.7 ms of a 29 ms frame (TML, High). A map not
+		/// drawn keeps the light space it was drawn in, so it stays in place; only what moved is a frame or two behind in it.
+		/// OBNS_SHADOW_STAGGER=1 or 0; by default on Windows on ARM64.
+		/// </summary>
+		private static readonly bool StaggerCascades = Environment.GetEnvironmentVariable("OBNS_SHADOW_STAGGER") == "1" || Environment.GetEnvironmentVariable("OBNS_SHADOW_STAGGER") != "0" && ObnsOptions.WindowsOnArm64();
+
+		/// <summary>The light space each cascade's map was last drawn in.</summary>
+		private readonly Matrix4D[] cascadeMatrices = new Matrix4D[4];
+
+		/// <summary>Whether each cascade is drawn this frame, and whether its map holds a drawing.</summary>
+		private readonly bool[] cascadeDrawn = new bool[4], cascadeHeld = new bool[4];
+
+		private long cascadeTurn;
+
+		/// <summary>Whether a cascade's map is drawn (and cleared) this frame.</summary>
+		protected bool CascadeDrawn(int cascade) => cascadeDrawn[cascade];
+
+		/// <summary>The maps' contents are gone (made again, or shadows turned off): every cascade is drawn next time.</summary>
+		protected void ShadowMapsLost()
+		{
+			for (int i = 0; i < 4; i++)
+			{
+				cascadeHeld[i] = false;
+			}
+		}
+
+		/// <summary>Which cascades are drawn this frame, and the light space each is read in.</summary>
+		private void ChooseCascades(CascadedShadowCaster caster)
+		{
+			int count = caster.CascadeCount;
+			bool stagger = StaggerCascades && KeepsCascades && count > 1;
+			// One of the farther cascades a frame, in turn.
+			int turn = stagger ? 1 + (int)(cascadeTurn++ % (count - 1)) : -1;
+			for (int i = 0; i < 4; i++)
+			{
+				cascadeDrawn[i] = i < count && (!stagger || i == 0 || i == turn || !cascadeHeld[i]);
+				if (cascadeDrawn[i])
+				{
+					cascadeMatrices[i] = caster.LightSpaceMatrices[i];
+					cascadeHeld[i] = true;
+				}
+			}
+		}
 
 		/// <summary>Each cascade's light space, x and y as rows of the matrix, and how far a unit radius reaches in each.</summary>
 		private readonly double[,] cascadeBoxes = new double[4, 10];
@@ -1019,7 +1073,7 @@ namespace OpenBve.Graphics
 			{
 				shadowFirst[cascade] = shadowCount;
 				shadowLength[cascade] = 0;
-				if (cascade >= shadowCascades)
+				if (cascade >= shadowCascades || !cascadeDrawn[cascade])
 				{
 					continue;
 				}
