@@ -19,6 +19,9 @@
     <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\MapParser\Structures.cs" Link="OBNS\Structures.cs" />
     <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\MapParser\ApplyRouteData.cs" />
     <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\MapParser\ApplyRouteData.cs" Link="OBNS\ApplyRouteData.cs" />
+    <!-- OBNS's copy, shared with the desktop build: Section.SetSpeedLimit's limits in km/h. -->
+    <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\MapParser\ConfirmComponents.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\Plugins\Route.Bve5\MapParser\ConfirmComponents.cs" Link="OBNS\ConfirmComponents.cs" />
     <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\Properties\AssemblyInfo.cs" />
     <!-- OBNS's copy, shared with the desktop build: the scenario's vehicle is the route's suggested train. -->
     <Compile Remove="$(UpstreamSource)Plugins\Route.Bve5\ScenarioParser.cs" />
