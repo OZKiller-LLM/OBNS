@@ -79,6 +79,14 @@ ms of 13.29; the depths discarded or not, no difference (74.4 against 74.9 fps).
 33.7 fps, shadows 19.78 ms, the world 9.43, 29.47 a frame. The swap chain allows tearing, so the 120 fps on light routes
 is something else.
 
+The shadow cascades staggered (131j, the same scene; the nearest cascade drawn every frame, the farther two in turn, each
+kept in the light space it was drawn in; `OBNS_SHADOW_STAGGER=0` turns it off). At High, 44.3 fps against 34.3 with
+it off; shadows 12.81 ms against 19.63 (35% less), the world 9.38, 22.41 a frame; worst frames 45.6 ms against 36.9,
+leaving out the snapshot frames. Driving at High, 48.7 to 49.8 fps while moving. Snapshots of the train at rest are
+bit-identical across 30 s with it on and off, and nothing went back and forth while moving (sampled every 2 s, so not
+frame by frame). Ultra (3 cascades of 4096): 29.4 fps, shadows 23.53 ms. Its HUD, missing in 131i, draws: 260 2D
+quads, as at High, and the same HUD pixels. Process memory 2.65 to 2.84 GB, no exceptions.
+
 Vulkan's pipeline cache (131e, Keisei): 8 pipelines in 197 ms on the first start, 2 ms on the next; the first long frame
 497 ms, then 317 ms. About 177 ms of that frame is outside the timed parts in both runs (likely the JIT compiling the
 first frame's code, slower on ARM64), and "Vulkan start" (52 ms) and "touch and overlays" (43 ms) don't change.
@@ -92,9 +100,11 @@ KqAts64.dll is a Debug build and stopped on `ucrtbased`; the layer now maps the 
 1. **Direct3D 12 alone is the default on Windows on ARM64** (decided from TML without vsync, 131f: Direct3D 12 75.7 fps,
    Vulkan 51.9, Direct3D 11 44.6; `OBNS/GPU_SUPPORT.md`). To check on the laptop: a fresh settings folder starts on it.
 2. **Direct3D 12's 120 fps on light routes**, twice the display's rate, while Direct3D 11 and Vulkan pass 140.
-3. **Sound heard** by a person: OpenAL Soft opens a device, but no one has listened yet.
-4. **ATS braking** on a red signal or overspeed, through the proxy and the layer.
-5. **Screen readers:** Tolk for ARM64, if the user wants it (LGPL, built from source like OpenAL Soft).
+3. **ATS braking** on a red signal or overspeed, through the proxy and the layer.
+4. **NVDA running with the game:** Tolk and NVDA's ARM64 client load (`dependencies/`), and find no screen reader on
+   the laptop.
+
+Done: sound heard on the laptop by the user (131h); Tolk built for ARM64 and NVDA's ARM64 client added (131i).
 
 ## Snapdragon tuning (after the native build's first numbers)
 
