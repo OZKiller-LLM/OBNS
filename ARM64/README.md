@@ -59,6 +59,11 @@ Soft for ARM64 loaded, loading 8.5 s, the first 10 s 55 fps with a worst frame o
 then 60 fps, and 785 MB of process memory against 908 MB emulated. Two x64-only libraries stopped the first native
 builds: PI Engineering's PIEHid64Net (the RailDriver, left out on ARM64) and Tolk (screen readers: none on ARM64 yet).
 
+Without vsync (131e, Uchibo 3793F, 1,337 draws, the clean windows): Direct3D 11 143.7 fps, Vulkan 140.9, OpenGL 128.5
+(its first frame 2.5 s, nearly all in OpenGL on 12's set-up), Direct3D 12 exactly 120.0 in every window (its time is
+the wait for the frame two back, not drawing: a pace to twice the display's rate, still to explain), Direct3D 9 108.9.
+Uchibo is too light to choose the default; TML decides.
+
 Vulkan's pipeline cache (131e, Keisei): 8 pipelines in 197 ms on the first start, 2 ms on the next; the first long frame
 497 ms, then 317 ms. About 177 ms of that frame is outside the timed parts in both runs (likely the JIT compiling the
 first frame's code, slower on ARM64), and "Vulkan start" (52 ms) and "touch and overlays" (43 ms) don't change.
