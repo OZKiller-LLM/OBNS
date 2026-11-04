@@ -41,5 +41,18 @@ stops without it. Tolk is here too (screen readers); without it the game runs, w
   Against upstream's flags, `/MT` (the runtime linked in) and no `/D_WITH_JNI` (the Java bridge, which needs a JDK).
 - `Tolk.dll`: 120,320 bytes, machine ARM64 (0xAA64), sha256 `e77a3228814e16712c3a6855c1878c2912c4969d0893aa065eae9d297c2292cd`;
   imports only USER32, ole32, OLEAUT32 and KERNEL32.
-- JAWS and SAPI work through COM. NVDA needs its controller client, which NV Access ships for ARM64 (not here yet; Tolk
-  loads it as `nvdaControllerClient64.dll` in a 64-bit process). The other readers' clients are x86 and x64 only.
+- JAWS and SAPI work through COM; NVDA through its controller client, below. The other readers' clients are x86 and x64
+  only.
+
+## NVDA's controller client (`arm64/nvdaControllerClient64.dll`)
+
+- What: NV Access's own ARM64 build of the client Tolk talks to NVDA through, renamed: Tolk loads
+  `nvdaControllerClient64.dll` in any 64-bit process, ARM64 included. The same bytes as the package's
+  `arm64/nvdaControllerClient.dll`; pure ARM64 (no ARM64EC metadata), signed by NV Access Limited.
+- Licence: GNU LGPL 2.1, the package's `license.txt`, byte for byte upstream's `licenses/NVDA.txt`.
+- Source: https://download.nvaccess.org/releases/2026.3/nvda_2026.3_controllerClient.zip (NVDA 2026.3; 4,704,999 bytes,
+  sha256 `e38a00689eab422f13aaed9aaaacdd3ae96411643b6f2f5fbf86222660ac7938`), unchanged.
+- `nvdaControllerClient64.dll`: 251,544 bytes, machine ARM64 (0xAA64), sha256
+  `3e290d45b4570ff7d6971139093fd2c161f61aa35f147f3343bd399a1ec93a69`; imports USER32, RPCRT4 and KERNEL32.
+- Checked with NVDA not running: Tolk and the client load into the ARM64 game, which finds no screen reader. Not yet
+  tried with NVDA running.
