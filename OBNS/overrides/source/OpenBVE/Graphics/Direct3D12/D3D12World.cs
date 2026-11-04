@@ -490,8 +490,10 @@ namespace OpenBve.Graphics.Direct3D12
 				{
 					const uint noAltEnter = 2, flipDiscard = 4;
 					swapFlags = Dx.TearingAllowed(factory) ? Dx.SwapChainAllowTearing : 0;
-					// Without tearing, two would hold the game to the display's rate even with vertical sync off.
-					backBufferCount = TestBuffers != 0 ? TestBuffers : swapFlags != 0 ? 2 : 3;
+					// Three, with tearing or not: two held a window to 1.5 or 2 times the display's rate with vertical sync off, paced
+					// by the compositor even where tearing is allowed (a Snapdragon X: 90 or 120 fps at 60 Hz with two, 197 with
+					// three, no more with four; ARM64/README.md).
+					backBufferCount = TestBuffers != 0 ? TestBuffers : 3;
 					Dx.SwapChainDesc desc = new Dx.SwapChainDesc
 					{
 						Width = newWidth,

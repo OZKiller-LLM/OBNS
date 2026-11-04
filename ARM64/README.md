@@ -111,8 +111,7 @@ KqAts64.dll is a Debug build and stopped on `ucrtbased`; the layer now maps the 
 
 1. **Direct3D 12 alone is the default on Windows on ARM64** (decided from TML without vsync, 131f: Direct3D 12 75.7 fps,
    Vulkan 51.9, Direct3D 11 44.6; `OBNS/GPU_SUPPORT.md`). To check on the laptop: a fresh settings folder starts on it.
-2. **Direct3D 12's 120 fps on light routes**, twice the display's rate, while Direct3D 11 and Vulkan pass 140.
-3. **NVDA's speech heard** by a person: the game finds NVDA (below), but no one was listening. Parked by the user
+2. **NVDA's speech heard** by a person: the game finds NVDA (below), but no one was listening. Parked by the user
    (2026-11-05).
 
 Done: sound heard on the laptop by the user (131h); Tolk built for ARM64 and NVDA's ARM64 client added (131i). NVDA
@@ -126,8 +125,29 @@ ATS-P and no plugin, on BVE6 Uchibo (3793F's map), held at full power by the tes
 (the starting signal at 4.8 km/h; a pattern brake from 76 km/h to a stop at 4,105 m). ATS-S's emergency brake came
 three times at 100 to 109 km/h, 66 s after each start: the EB device (no handle moved for 60 s). Overspeed against the
 route's limits isn't checked: 80.9 km/h through a 45 limit (+36) with nothing. The built-in ATS-P reads only the
-signal beacons (3 and 4), not this route's speed-check beacons (6, 12) or BVE5 speed limits. The plugin ATS through
-the proxy and the layer (the E217's own DetailManager chain) is still to be driven this way.
+signal beacons (3 and 4), not this route's speed-check beacons (6, 12) or BVE5 speed limits.
+
+ATS braking, with the scenario's own E217 and its plugins (DetailManager: EB, E217_ATC_ATS, TIMS, DoorInterlock,
+ConstSpdCtrl), driven the same way (131n). Run A, Ats32 through the x86 proxy under emulation; Run B, the x64 chain in
+the plugin layer (`OBNS_ATS64=1`). Both match each other and x64 to within a metre:
+- The red starting signal: emergency at 6.7 km/h. After the reset, ATS-P holds the train under 11 km/h until 424 m.
+- The line maximum, 95 km/h (beacon 12): a service brake at 105.9 km/h, released at about 92, at 2,035, 2,671 and
+  3,260 m.
+- A red signal ahead: a pattern brake from 70.8 km/h, then stops creeping up to 9 m short of the signal.
+- The 45 km/h curve at 805 m: 67.9 km/h (+22.9) with nothing. The route has no ATS-P beacon there, and the train was
+  still accelerating from the platform, so +30 wasn't reached against a route limit.
+- Run B's layer logs C++ exceptions caught inside DetailManager.dll ("invalid stoi argument"): 77 at loading, 11 at
+  about 1,900 m, 12 at about 4,118 m; driving is unaffected. The proxy doesn't report caught C++ exceptions.
+The test driver resets after a stop with the emergency and full service brakes in turn (E217_ATC_ATS's ATS-P resets
+only from full service), holding S, A1, A2, B1 and B2 for a second. It eases the power a notch every 20 s, so the EB
+device (EB.dll, a brake after a minute without a handle moved) stays out of it.
+
+Direct3D 12's cap with vertical sync off (131n, Uchibo 3793F, windowed 960x600, shadows off). With 2 buffers it was
+paced by the compositor although tearing is allowed: exactly 90.0 fps that day, 120 in 131e, while the GPU could do
+about 120. With 3 buffers, 197.4 fps (GPU 5.0 ms a frame); with 4, 199.1. Direct3D 11 with 2 buffers made 133.6 fps,
+its worst frames mostly in the swap. Full screen at the display's 1920x1200 with 2 buffers: 106.8 fps, not capped.
+Direct3D 12 now makes 3 buffers everywhere (`OBNS_D3D12_BUFFERS` for tests). One of two 4-buffer runs lost the device
+(a 2 s Present, then DXGI_ERROR_DEVICE_REMOVED), not seen at 2 or 3.
 
 ## Snapdragon tuning (after the native build's first numbers)
 
