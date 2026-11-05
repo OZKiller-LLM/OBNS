@@ -189,7 +189,9 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 
   The plugins' C# runs as it is, given a back end for what they call on the PC (OpenTK's joystick, HidSharp, LibUsb) over libnx's HID
   and USB host services. Their settings dialogs are Windows Forms, so each needs a page in the console's menu instead.
-- **The HUD is Android's** (`DriverHud.cs`), without the touch controls by default.
+- **The in-game GUI is Android's** (the user, 2026-11-05): the HUD (`DriverHud.cs`), the pause menu, the station list, the
+  timetable and the other overlays as the Android build draws them, rewritten for the Switch (drawn by deko3d), without the
+  touch controls by default.
 - **Touch controls** (`ControlOverlay.cs`'s buttons, and the cab's touch areas, `CabTouch.cs`): **off by default**; an options toggle
   turns them on in handheld mode. **Docked, they are off whatever the toggle says**: there is no touch screen in use.
 
