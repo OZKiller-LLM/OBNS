@@ -22,6 +22,22 @@ index d11838381..7051efcd1 100644
          }
  
          // Socket continuations are dispatched to the ThreadPool from the event thread.
+diff --git a/src/libraries/System.Text.Encoding.CodePages/src/System/Text/EncodingNLS.cs b/src/libraries/System.Text.Encoding.CodePages/src/System/Text/EncodingNLS.cs
+index 13950059d..1c572c520 100644
+--- a/src/libraries/System.Text.Encoding.CodePages/src/System/Text/EncodingNLS.cs
++++ b/src/libraries/System.Text.Encoding.CodePages/src/System/Text/EncodingNLS.cs
+@@ -538,6 +538,11 @@ public override string EncodingName
+             };
+ 
+         // Returns the IANA preferred name for this encoding
++        // OBNS (libnx): a code page encoding's Windows code page is its own. CoreLib's table, which the base property
++        // reads, lists only the encodings built into CoreLib, so it threw NotSupported_NoCodepageData for Big5 (950),
++        // Shift-JIS and the rest: OpenBVE's route parser compares an $Include file's with the route's.
++        public override int WindowsCodePage => CodePage;
++
+         public override string WebName
+         {
+             get
 diff --git a/src/mono/mono/mini/CMakeLists.txt b/src/mono/mono/mini/CMakeLists.txt
 index 1da35c68e..0174989dc 100644
 --- a/src/mono/mono/mini/CMakeLists.txt
