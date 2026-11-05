@@ -193,7 +193,7 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 - **Touch controls** (`ControlOverlay.cs`'s buttons, and the cab's touch areas, `CabTouch.cs`): **off by default**; an options toggle
   turns them on in handheld mode. **Docked, they are off whatever the toggle says**: there is no touch screen in use.
 
-## The work, in order (a proposal)
+## The work, in order (kept by the user, 2026-11-05)
 
 1. **Runtime:** the Android port's projects built for libnx with Mono full AOT (NroForge's toolchain as the starting point), a console
    with nothing drawn: load TML, log the time and memory. This alone answers whether the load fits in 3.2 GB.
