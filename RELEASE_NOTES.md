@@ -1,5 +1,44 @@
 # OpenBVE for Android — release notes
 
+## 1.31 (desktop 1.14.1.2-OBNS; Android unchanged, 1.14.1.2-android.6) — Windows on ARM64
+
+### Windows on ARM64 (new)
+
+- **A native ARM64 build** (`OpenBVE-1.14.1.2-OBNS-win-arm64.zip`, for Windows 11 on ARM64 with .NET Framework 4.8.1):
+  no x64 emulation for the game itself. OpenAL Soft, Tolk and NVDA's client come built for ARM64. Joysticks are read
+  without the RailDriver, whose library is x64 only.
+- **Direct3D 12 alone is the default** there, measured on a Snapdragon X (Adreno X1-45): TML without vsync, Direct3D 12
+  75.7 fps, Vulkan 51.9, Direct3D 11 44.6.
+- **Train plugins:** 32-bit plugins run through upstream's proxy under Windows' x86 emulation. With `OBNS_ATS64=1`, a
+  train's 64-bit plugins run in the plugin layer instead, including plugins built as Debug. The E217's ATS-P braked
+  alike both ways (line maximum and red signals); Keisei's KqAts64 runs in the layer.
+- **Tuned for the Snapdragon X:** the farther shadow cascades are drawn one a frame in turn, and copies of a face are drawn
+  as one. TML at High went from 34 to 51 fps.
+
+### Windows
+
+- **Direct3D 12 without vsync** is no longer held to 1.5 or 2 times the display's rate in a window: the swap chain has three
+  buffers in place of two. Uchibo on the Snapdragon X: 90 fps before, 197 now.
+- **Direct3D 12 draws copies of a face as one** (instanced), on any GPU: East Rail at High on an RTX 2060, 5,320 draws in
+  4,146 calls, and 8,995 shadow draws in 3,421.
+- **`obns.cfg` names the renderer only when you chose it,** so a default renderer isn't written as if chosen.
+
+### All desktop systems
+
+- **BVE5 and BVE6 routes:** the speed limits of signal aspects (`Section.SetSpeedLimit`) were read as metres a second, 3.6
+  times too high: Uchibo's 45 and 95 km/h aspects were 162 and 342 km/h. Android gets this in its next build.
+- **Vulkan's pipelines are kept between starts** in the settings folder, so the first frames don't wait on the shader
+  compiler: East Rail on an RTX 2060, 23 ms the first time, 2 ms after.
+- **A screen reader library that can't be loaded** now means no screen reader, where it stopped the game as a route started.
+- **For testing:** `OBNS_DRIVE_LOG=1` logs the train each second of game time (speed against the limits, handles, safety
+  system lamps), and `OBNS_DRIVE_TEST=power` adds a driver that holds full power and resets the safety system after a stop.
+
+### Known limitations
+
+- **Windows on ARM64:** NVDA is found and spoken to, but its speech hasn't been heard by a tester. The RailDriver isn't
+  supported. 32-bit plugins are emulated.
+- **macOS:** the 1.3 app is still current; the 1.31 app will be built when a Mac is available.
+
 ## 1.3 (desktop 1.14.1.2-OBNS; Android unchanged, 1.14.1.2-android.6) — Renderers without OpenGL
 
 ### Windows (x64), macOS (Apple silicon) and Linux (x86-64)
