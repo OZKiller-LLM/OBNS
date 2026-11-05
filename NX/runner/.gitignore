@@ -1,0 +1,9 @@
+build/
+*.elf
+*.nro
+*.nacp
+*.map
+output/
+nxshared/
+source/mono_symbols.h
+source/obns_stubs.c
