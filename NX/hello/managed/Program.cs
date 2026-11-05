@@ -117,8 +117,15 @@ static class Program
         Console.WriteLine($"Clock set to {mhz} MHz");
         Console.WriteLine($"CPU loop at {mhz}: {CpuLoop():F3} s (C: 0.224 s)");
         Console.WriteLine($"Vector loop at {mhz}: {VectorLoop():F3} s");
-        Console.WriteLine($"Same loop split over 1, 2, 3 threads: {ParallelLoop(1):F3}, {ParallelLoop(2):F3}, {ParallelLoop(3):F3} s");
         GcTest();
+        // Threads last, each result printed before the next thread starts: a thread ending crashed the runtime before
+        // the libnx TLS fix (NX/patches), and a crash must not take the other results with it.
+        Console.Out.Flush();
+        for (int threads = 1; threads <= 3; threads++)
+        {
+            Console.WriteLine($"Same loop split over {threads} thread(s): {ParallelLoop(threads):F3} s");
+            Console.Out.Flush();
+        }
         Console.WriteLine($"Clock back to {obns_set_boost(0)} MHz");
         Console.WriteLine("Done.");
         return 0;

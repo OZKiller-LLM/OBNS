@@ -13,6 +13,8 @@ in every frame.
 | Path | What it is |
 | --- | --- |
 | `probe/` | A small libnx program reporting the console: memory by launch mode, model and versions, clocks (clkrst and apm FastLoad), cores, the SD card's speed. Results in `OBNS/SWITCH.md` |
+| `hello/` | The first C# on the console: mono-nx's AOT example in Release (`build.sh` on Linux). Times C# against the probe's C, the garbage collector and three threads |
+| `patches/` | Changes to mono-nx's runtime fork (`dotnet_runtime`, branch `libnx`, at 289cdaa): `Console` in sockets logging made Debug-only (Release doesn't reference System.Console), and NroForge's libnx TLS clean-up (MIT), without which a managed thread ending trips an assertion in `unregister_thread` and the console crashes |
 
 ## Building
 
@@ -62,3 +64,19 @@ although it shows "waiting for connection", leave it (B) and start it again (Y) 
 ## The test console
 
 The user's Switch: the first model (Erista), firmware 20.5.0, Atmosphère 1.12.1, hbmenu 3.6.1, docked with Ethernet.
+
+## Measured
+
+`hello` on the test console (2026-11-05), Mono's standard full AOT (not LLVM), Release runtime with the TLS fix:
+
+| What | Result |
+| --- | --- |
+| Runtime | .NET 9.0.3 on libnx, Arm64, 3 processors; invariant culture; formatting right |
+| Heaps | mono-nx splits the memory in two: 1,582 MB for libnx (C, GPU) and 1,580 MB for Mono's. OBNS will want its own split |
+| The probe's CPU loop in C# | 0.767 s at 1,020 MHz (C 0.392), 0.410 s at 1,785 (C 0.224): about 1.9 times C's time |
+| A vector loop over structs | 0.281 s at 1,020 MHz, 0.161 s at 1,785 |
+| Garbage collector | 0.75 ms of allocation a frame for 360 frames, the worst 1.20 ms, with 104 MiB held (plain arrays, nothing to trace); 35 minor and 22 major collections |
+| Threads | the loop over 1, 2 and 3 threads: 0.544, 0.273, 0.187 s (2.9 times on three) |
+
+The first run, before the TLS fix, crashed the console when its first worker thread ended.
+

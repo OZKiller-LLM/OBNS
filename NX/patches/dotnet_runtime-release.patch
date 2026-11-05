@@ -22,3 +22,86 @@ index d11838381..7051efcd1 100644
          }
  
          // Socket continuations are dispatched to the ThreadPool from the event thread.
+diff --git a/src/mono/mono/utils/mono-tls.c b/src/mono/mono/utils/mono-tls.c
+index b72018775..e1ea6e374 100644
+--- a/src/mono/mono/utils/mono-tls.c
++++ b/src/mono/mono/utils/mono-tls.c
+@@ -225,35 +225,42 @@ static void tls_thread_destructor(void* data)
+ {
+ 	if (!data)
+ 		return;
+-	
+-	mono_trace_message (MONO_TRACE_DIAGNOSTICS, "Running fake TLS destructor for %p\n", data);
+-
+ 	emulated_tls_data* tls = (emulated_tls_data*)data;
+-	for (int i = 0; i < TLS_EMU_MAX_KEYS; i++)
++	/* libnx clears the real slot before callback. Preserve the same context
++	 * while Mono's destructors temporarily restore their values. */
++	threadTlsSet(g_fake_tls_key, tls);
++	tls->being_destroyed = true;
++	/* NULL values have no destructor; callbacks may re-register a value
++	 * for a bounded subsequent pass, as with pthread TLS destruction. */
++	for (int pass = 0; pass < 4; pass++)
+ 	{
+-		// If this key is not valid, or has been freed, skip it
+-		// The call to a destructor may free other keys so we need to check this every time
+-		if (!(g_my_key_bitmap & KEY(i)))
+-			continue;
+-
+-		// If this thread does not use this key, skip it
+-		if (!(tls->bitmap & KEY(i)))
+-			continue;
+-
+-		if (g_destructors[i])
++		bool called = false;
++		for (int i = 0; i < TLS_EMU_MAX_KEYS; i++)
+ 		{
+-			void* value = tls->items[i];
+-			tls->items[i] = NULL;
+-			tls->bitmap &= ~KEY(i);
+-			g_destructors[i](value);
+-
+-			mono_trace_message (MONO_TRACE_DIAGNOSTICS, "Ran g_destructors[%d] for value %p\n", i, value);
+-
+-			if (tls->bitmap & KEY(i))
+-				g_error("TLS destructor for key %d re-set the value, which is not supported", i);
++			TlsDestructor destructor = NULL;
++			void* value = NULL;
++			mutexLock(&g_tls_mutex);
++			if ((g_my_key_bitmap & KEY(i)) && (tls->bitmap & KEY(i)) &&
++				tls->items[i] && g_destructors[i])
++			{
++				destructor = g_destructors[i];
++				value = tls->items[i];
++				tls->items[i] = NULL;
++				tls->bitmap &= ~KEY(i);
++			}
++			mutexUnlock(&g_tls_mutex);
++			if (destructor)
++			{
++				called = true;
++				destructor(value);
++			}
+ 		}
++		if (!called)
++			break;
+ 	}
+-}	
++	threadTlsSet(g_fake_tls_key, NULL);
++	free(tls);
++}
+ 
+ static emulated_tls_data* fake_tls_get(void)
+ {
+@@ -328,7 +335,10 @@ int mono_native_tls_set_value (MonoNativeTlsKey key, gpointer value)
+ 
+ 	emulated_tls_data* data = fake_tls_get();
+ 	data->items[key] = value;
+-	data->bitmap |= KEY(key);
++	if (value)
++		data->bitmap |= KEY(key);
++	else
++		data->bitmap &= ~KEY(key);
+ 	return 1;
+ }
+ 
