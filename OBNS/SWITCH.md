@@ -12,12 +12,29 @@ in its own folder under `/switch` on the SD card, run from hbmenu on custom firm
 
 | What | Switch 1 (Tegra X1, "Erista" and "Mariko" alike at stock clocks) |
 | --- | --- |
-| CPU | 4 Cortex-A57 at 1,020 MHz in games, docked or not; 3 for the game, 1 kept by the OS *(verify)*. A loading "boost mode" of 1,785 MHz exists for games *(verify how homebrew asks for it)* |
+| CPU | 4 Cortex-A57 at 1,020 MHz in games, docked or not; 3 for the game (cores 0 to 2, mask 0x7), 1 kept by the OS (measured). A loading "boost mode" of 1,785 MHz: homebrew asks for it with `appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad)`, which also holds the GPU at 76 MHz (measured) |
 | GPU | Maxwell, 256 cores: 307.2 MHz handheld (about 157 GFLOPS), 768 MHz docked (about 393 GFLOPS); FP16 at twice the rate |
 | Memory | 4 GB LPDDR4 shared by CPU and GPU: 25.6 GB/s docked, 21.3 GB/s handheld. A texture's CPU copy and GPU copy both count against the same 4 GB |
-| Memory a homebrew gets | **title takeover** (hbmenu started by holding R while starting a game): 3,189 MiB for the whole process, code and GPU memory included. **Applet mode** (from the album): about 386 MiB, too little for anything here. Measured by one tester with `svcGetInfo` *(verify on current firmware)* |
+| Memory a homebrew gets | **title takeover** (hbmenu started by holding R while starting a game): 3,189 MiB for the whole process, code and GPU memory included. **Applet mode** (from the album): about 386 MiB, too little for anything here. Measured with `svcGetInfo` on firmware 20.5.0 (the user's console, 2026-11-05): 3,189 MiB, 3,136 MiB of it allocatable in 64 MiB blocks |
 | Screen | 1280x720 handheld (touch), up to 1920x1080 docked |
 | Storage | the SD card (FAT32 or exFAT). Read speed is that of a UHS-I card through the Switch's reader *(measure)*; TML's load takes 400 to 530 s on the Zhaoxin PC and 86 to 95 s on the MacBook Neo |
+
+### The test console, measured (2026-11-05)
+
+`OBNS/switch/probe` (a libnx program, sent by nxlink) on the user's Switch: the first model (Icosa, Erista), firmware 20.5.0,
+Atmosphère 1.12.1, started from hbmenu 3.6.1 by title takeover.
+
+| What | Measured |
+| --- | --- |
+| Memory | 3,189 MiB for the process; 3,136 MiB allocated in 64 MiB blocks |
+| Cores | threads ran on cores 0, 1 and 2; not 3 |
+| Clocks (handheld, on battery) | CPU 1,020 MHz, GPU 307 MHz, memory 1,331 MHz |
+| 1,785 MHz through clkrst | accepted; a fixed CPU loop 0.392 s at 1,020 MHz, 0.224 s at 1,785 (the clocks' ratio, 1.75); put back to 1,020 |
+| apm FastLoad | accepted: CPU 1,785 MHz, GPU 76 MHz, memory 1,331 MHz; back to 1,020 and 307 after |
+| SD card | 256 MiB written at 18.6 MiB/s, read back at 72.5 MiB/s (perhaps partly from the cache) |
+
+For loading, FastLoad is Nintendo's own clock and leaves the GPU idle, which loading doesn't need; in play, clkrst at 1,785 MHz.
+nxlink's broadcast found no console here: give it the address hbmenu shows (`nxlink -a <address>`).
 
 ### Clocks a homebrew can set
 
