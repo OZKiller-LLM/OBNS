@@ -1,6 +1,6 @@
 # OpenBVE for Android — release notes
 
-## 1.31 (desktop 1.14.1.2-OBNS; Android unchanged, 1.14.1.2-android.6) — Windows on ARM64
+## 1.31 (Windows on ARM64 only, 1.14.1.2-OBNS; the other systems unchanged since 1.3) — Windows on ARM64
 
 ### Windows on ARM64 (new)
 
@@ -15,7 +15,12 @@
 - **Tuned for the Snapdragon X:** the farther shadow cascades are drawn one a frame in turn, and copies of a face are drawn
   as one. TML at High went from 34 to 51 fps.
 
-### Windows
+### Also in this source, for the other systems' next release
+
+Windows x64, Ubuntu and macOS keep 1.3's files, and Android 1.22's (1.14.1.2-android.6): none of these is large enough
+for a release of its own. The ARM64 build has them all.
+
+#### Windows
 
 - **Direct3D 12 without vsync** is no longer held to 1.5 or 2 times the display's rate in a window: the swap chain has three
   buffers in place of two. Uchibo on the Snapdragon X: 90 fps before, 197 now.
@@ -23,7 +28,7 @@
   4,146 calls, and 8,995 shadow draws in 3,421.
 - **`obns.cfg` names the renderer only when you chose it,** so a default renderer isn't written as if chosen.
 
-### All desktop systems
+#### All desktop systems
 
 - **BVE5 and BVE6 routes:** the speed limits of signal aspects (`Section.SetSpeedLimit`) were read as metres a second, 3.6
   times too high: Uchibo's 45 and 95 km/h aspects were 162 and 342 km/h. Android gets this in its next build.
@@ -37,7 +42,6 @@
 
 - **Windows on ARM64:** NVDA is found and spoken to, but its speech hasn't been heard by a tester. The RailDriver isn't
   supported. 32-bit plugins are emulated.
-- **macOS:** the 1.3 app is still current; the 1.31 app will be built when a Mac is available.
 
 ## 1.3 (desktop 1.14.1.2-OBNS; Android unchanged, 1.14.1.2-android.6) — Renderers without OpenGL
 
