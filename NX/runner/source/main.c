@@ -7,6 +7,7 @@
 // there), land on the SD card. Output goes to nxlink's console when sent by nxlink -s, and to UserData/runner.log.
 
 #include "core.h"
+#include <malloc.h>
 #include <stdarg.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -27,6 +28,13 @@ EXPORT int64_t obns_memory_used(void)
     u64 used = 0;
     svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
     return (int64_t)used;
+}
+
+// The native heap in use: malloc's, which the process's used memory can't show (libnx reserves it all up front).
+EXPORT int64_t obns_native_heap_used(void)
+{
+    struct mallinfo info = mallinfo();
+    return (int64_t)info.uordblks;
 }
 
 // Clocks (the user, 2026-11-04): 0 stock, 1 apm's FastLoad (CPU 1,785 MHz, GPU held low: loading), 2 the CPU at 1,785
@@ -76,11 +84,19 @@ int main(int argc, char *argv[])
         freopen("sdmc:/switch/OBNS/UserData/runner.log", "a", stderr);
     }
     printf("OBNS runner (1.31N): %s\n", nxlink ? "output to nxlink" : "output to UserData/runner.log");
+    // No auto-sleep while OBNS runs, as games during long loads and video: the console slept through a TML load
+    // with nothing on the screen yet, suspending it and dropping nxlink (2026-11-06). For this app only; the
+    // console's own sleep setting is untouched, and the system restores it when the app exits.
+    appletSetAutoSleepDisabled(true);
 
     // Invariant globalisation: ICU's 30 MB of data left out. OpenBVE parses with the invariant culture.
     setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1", 1);
     // What a Unix desktop has and the Switch doesn't: a home, for .NET's special folders (upstream's FileSystem
     // builds its user data folder from ApplicationData, and an empty one throws).
+    // The garbage collector's nursery at sgen's largest (32 MB, the default 4): TML's load ran 1,450 minor
+    // collections, each scanning a heap of up to 700 MB for references into the nursery (2026-11-06, 669 s).
+    // A value already in the environment wins, for comparing settings.
+    setenv("MONO_GC_PARAMS", "nursery-size=32m", 0);
     setenv("HOME", "/switch/OBNS/UserData", 1);
     setenv("XDG_CONFIG_HOME", "/switch/OBNS/UserData", 1);
     setenv("XDG_DATA_HOME", "/switch/OBNS/UserData", 1);
@@ -118,6 +134,7 @@ int main(int argc, char *argv[])
     printf("OBNS ended (%d)\n", result);
 
     obns_set_cpu_boost(0);
+    appletSetAutoSleepDisabled(false);
     mono_jit_cleanup(domain);
     if (nxlink) socketExit();
     application_terminate();

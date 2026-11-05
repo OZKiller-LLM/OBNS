@@ -53,8 +53,10 @@ namespace OpenBve.NX
 		private const string Root = "/switch/OBNS";
 		private const string Tag = "OBNS";
 
-		[DllImport("__Internal", EntryPoint = "obns_memory_used")]
-		private static extern long NativeMemoryUsed();
+		/// <summary>The native heap in use (malloc's, mallinfo): libnx reserves title takeover's memory up front, so the
+		/// process's used memory says only 3,185 MiB whatever is loaded.</summary>
+		[DllImport("__Internal", EntryPoint = "obns_native_heap_used")]
+		private static extern long NativeHeapUsed();
 
 		[DllImport("__Internal", EntryPoint = "obns_set_cpu_boost")]
 		private static extern int SetCpuBoost(int mode);
@@ -69,7 +71,18 @@ namespace OpenBve.NX
 
 		private static string Memory()
 		{
-			return "process " + (NativeMemoryUsed() >> 20) + " MiB, managed " + (GC.GetTotalMemory(false) >> 20) + " MiB";
+			string heap;
+			try
+			{
+				GCMemoryInfo info = GC.GetGCMemoryInfo();
+				heap = ", GC heap " + (info.HeapSizeBytes >> 20) + " MiB";
+			}
+			catch (Exception)
+			{
+				heap = string.Empty;
+			}
+
+			return "native " + (NativeHeapUsed() >> 20) + " MiB, managed " + (GC.GetTotalMemory(false) >> 20) + " MiB" + heap;
 		}
 
 		private static void Stage(string what)
@@ -120,6 +133,23 @@ namespace OpenBve.NX
 					Log($"code page {codePage} failed: {e}");
 				}
 			}
+		}
+
+		/// <summary>
+		/// What BaseRenderer.Initialize sets up that loading uses, without its shaders, text and GL state, which need a
+		/// device (step 3, deko3d). Without the texture manager every texture registration threw, the route's and the
+		/// objects' alike; with Initialize itself, OpenGlString failed on the shader the GL stubs couldn't make.
+		/// </summary>
+		private static void InitializeWithoutDrawing(AndroidRenderer renderer, AndroidHost host)
+		{
+			renderer.Background = new LibRender2.Backgrounds.Background(renderer);
+			renderer.Fog = new LibRender2.Fogs.Fog(renderer);
+			renderer.TextureManager = new LibRender2.Textures.TextureManager(host, renderer);
+			renderer.Loading = new LibRender2.Loadings.Loading(renderer);
+			renderer.StaticObjectStates = new System.Collections.Generic.List<OpenBveApi.Objects.ObjectState>();
+			renderer.DynamicObjectStates = new System.Collections.Generic.List<OpenBveApi.Objects.ObjectState>();
+			renderer.VisibleObjects = new LibRender2.Objects.VisibleObjectLibrary(renderer);
+			renderer.Lighting.Initialize();
 		}
 
 		private static int Run()
@@ -181,13 +211,25 @@ namespace OpenBve.NX
 			OpenBve.Program.TrainManager = trainManager;
 			OpenBve.Interface.CurrentOptions = options;
 			string plugins = AndroidPlugins.Register(host, fileSystem, options, trainManager, renderer);
+			// As GameView: this thread is the render thread (textures load in place rather than waiting on a queue no
+			// frame services), and the renderer is set up after the plugins.
+			OpenTK.AndroidGraphicsContext.RenderThreadId = Environment.CurrentManagedThreadId;
+			InitializeWithoutDrawing(renderer, host);
 			OpenBve.Program.FileSystem = fileSystem;
 			Stage("plugins: " + plugins.Replace("\n", "; "));
 
 			host.FileSystem = fileSystem;
 			host.CurrentTrainFolder = trainFolder ?? AndroidTrainSession.FindTrain(fileSystem.InitialTrainFolder, host) ?? string.Empty;
 			OpenBveApi.Path.CacheListings = true;
+			// As GameView: where the route's time goes, by category (parsing, objects, textures, sounds, file access).
+			LoadProfile.Begin("route parser");
 			string route = AndroidRouteLoader.LoadRoute(host, fileSystem, renderer, routeFile, null, out RouteManager2.CurrentRoute currentRoute);
+			Log("load profile, route: " + LoadProfile.End());
+			string gaps = LoadProfile.GapReport();
+			if (gaps.Length != 0)
+			{
+				Log("load profile, " + gaps);
+			}
 			Stage("route: " + route);
 			GC.Collect();
 			Stage("route, after a collection");
@@ -197,18 +239,30 @@ namespace OpenBve.NX
 				renderer.Route = currentRoute;
 				OpenBve.Program.CurrentRoute = currentRoute;
 				sounds.Route = currentRoute;
+				// As GameView's scene preparation: meshes shared, the camera and its track follower (the train's
+				// placement needs it), the objects' buffers made (to the GL stubs until deko3d) and their vertex copies
+				// dropped before the train loads on top.
+				LoadProfile.Begin("scene preparation");
 				MeshSharing.Reset();
 				MeshSharing.Share(trainManager.TFOs);
 				MeshSharing.Share(host.AnimatedWorldObjects, host.AnimatedWorldObjectsUsed);
-				Stage("meshes shared: " + MeshSharing.Describe());
+				renderer.PrepareScene(host, options.ViewingDistance);
+				VertexCopyReleaser.ReleaseAll(renderer);
+				GC.Collect();
+				Log("load profile, scene: " + LoadProfile.End());
+				Stage("scene prepared: " + MeshSharing.Describe());
+				LoadProfile.Begin("train and placement");
 				try
 				{
 					string train = AndroidTrainSession.Load(host, trainManager, renderer, currentRoute, fileSystem, host.CurrentTrainFolder, null, out AndroidTrainSession session);
+					Log("load profile, train: " + LoadProfile.End());
 					Stage("train: " + train.Replace("\n", "; "));
 				}
 				catch (Exception e)
 				{
-					Stage("train failed: " + e.GetType().Name + ": " + e.Message);
+					Log("load profile, train: " + LoadProfile.End());
+					Log("train failed: " + e);
+					Stage("train failed: " + e.GetType().Name);
 				}
 			}
 
