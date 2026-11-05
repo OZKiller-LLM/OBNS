@@ -4,7 +4,7 @@
     OBNS 1.31N: builds the Android port's projects for the Switch without changing them. Imported into every project
     of a build through CustomAfterMicrosoftCommonTargets, with AndroidTfm set to the Switch runtime's framework:
 
-      dotnet build <project> -p:AndroidTfm=net9.0 -p:CustomAfterMicrosoftCommonTargets=<this file>
+      dotnet build <project> -p:AndroidTfm=net9.0 -p:ObnsX86Tfm=net9.0 -p:CustomAfterMicrosoftCommonTargets=<this file>
 
     It runs after each project's own items, so it can replace Android's OpenBve.Compat (Skia, which has no Switch build)
     with NX's (NX/OpenBve.Compat.NX), and drop the SkiaSharp packages.
@@ -26,6 +26,26 @@
     <ProjectReference Include="$(MSBuildThisFileDirectory)OpenBve.Compat.NX\OpenBve.Compat.NX.csproj" Condition="'@(_ObnsAndroidCompat)' != ''" />
     <PackageReference Remove="SkiaSharp" />
     <PackageReference Remove="SkiaSharp.NativeAssets.Android" />
+  </ItemGroup>
+
+  <!--
+    The Android game project (Android/OpenBve.Android), the composition root: upstream's game files, OBNS's shared plugin
+    layer and the Android host's loading code, compiled for the Switch as a library that NX/OpenBve.NX starts. The files
+    that need Android's activity, views, settings, file system or ANGLE and Vulkan surfaces are left out; NX supplies
+    what the rest needs from them (NX/OpenBve.NX/AndroidStandIns).
+  -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'OpenBve.Android'">
+    <OutputType>Library</OutputType>
+    <!-- No Android runtimes: with them, Antlr4's .NET Standard 1.6 dependencies resolve as package downgrades. -->
+    <RuntimeIdentifiers />
+    <RuntimeIdentifier />
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'OpenBve.Android'">
+    <Compile Remove="AngleSurface.cs;AndroidFileSystem.cs;AndroidSettings.cs;BetaLog.cs;ControlBindings.cs;ControlOverlay.cs;ControlsPage.cs;DriverHud.cs;FileBrowser.cs;GameActivity.cs;GameView.cs;KeyboardInput.cs;LaunchParameters.cs;Menu.cs;MenuActivity.cs;OptionsPage.cs;PackageInstaller.cs;PackagesPage.cs;PauseMenu.cs;RouteViews.cs;SceneInput.cs;Speech.cs;StartPage.cs;SwitchMapPanel.cs;TimetablePanel.cs;Ui.cs;VulkanStartup.cs;VulkanSurface.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Game\*.cs" LinkBase="NX" />
+    <PackageReference Remove="MonoGame.Library.OpenAL" />
+    <AndroidAsset Remove="@(AndroidAsset)" />
   </ItemGroup>
 
 </Project>

@@ -22,25 +22,44 @@
 //(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+using System;
+
 // ReSharper disable once CheckNamespace
 namespace Android.Util
 {
 	/// <summary>
-	/// Stands in for Android's log in the Android files compiled here as they are (WindowsForms.cs' message boxes):
+	/// Stands in for Android's log in the Android files compiled for the Switch as they are (Compat's message boxes, the game's host):
 	/// on the Switch the lines go to the console, which nxlink sends back to the PC, and to the runner's log file.
 	/// </summary>
-	internal static class Log
+	public static class Log
 	{
-		internal static int Info(string tag, string message)
+		/// <summary>The lines written, for the runner's log file as well (set by the Switch entry).</summary>
+		public static Action<string> Sink;
+
+		private static int Write(string level, string tag, string message)
 		{
-			System.Console.WriteLine(tag + ": " + message);
+			string line = level.Length == 0 ? tag + ": " + message : tag + " (" + level + "): " + message;
+			System.Console.WriteLine(line);
+			Sink?.Invoke(line);
 			return 0;
 		}
 
-		internal static int Warn(string tag, string message)
-		{
-			System.Console.WriteLine(tag + " (warning): " + message);
-			return 0;
-		}
+		/// <summary>A verbose line.</summary>
+		public static int Verbose(string tag, string message) => Write("verbose", tag, message);
+
+		/// <summary>A debug line.</summary>
+		public static int Debug(string tag, string message) => Write("debug", tag, message);
+
+		/// <summary>An information line.</summary>
+		public static int Info(string tag, string message) => Write(string.Empty, tag, message);
+
+		/// <summary>A warning.</summary>
+		public static int Warn(string tag, string message) => Write("warning", tag, message);
+
+		/// <summary>An error.</summary>
+		public static int Error(string tag, string message) => Write("error", tag, message);
+
+		/// <summary>An error with its exception.</summary>
+		public static int Error(string tag, string message, Exception exception) => Write("error", tag, message + ": " + exception);
 	}
 }

@@ -11,7 +11,9 @@
   -->
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- net10.0, as the Android app; the Switch build (NX/Switch.targets) passes ObnsX86Tfm=net9.0, its runtime's. -->
+    <TargetFramework>$(ObnsX86Tfm)</TargetFramework>
+    <TargetFramework Condition="'$(ObnsX86Tfm)' == ''">net10.0</TargetFramework>
     <OutputType>Library</OutputType>
     <RootNamespace>OpenBve.X86</RootNamespace>
     <AssemblyName>OpenBve.X86</AssemblyName>

@@ -119,6 +119,10 @@ proxy): "OBNS Direct3D 12 draws the whole game" and "swap chain: 3 buffers, tear
 no renderer line and obns.cfg only `lastdrawn = direct3d12`. 60.0 fps with vsync on (its default), 82.8 to 86.2 with it
 off, on battery at 24% (131n's 197 was on mains; the CPU's frame 12.0 ms against 5.1, the GPU's world 5.19 ms against
 4.80). Loading 48 s on battery against 19 s. The managed heap again differed between runs: 548 MB and 2,172 MB.
+Rerun on mains power (the same day, at 72 to 74%, charging): 177.4 fps with vsync off, the worst frames 7.3 to 7.7 ms,
+loading 20 s. The frame is the GPU's now (5.59 ms of 5.64): the cab layer took 0.81 ms of GPU time against 0.01 ms in
+131n's 197 fps run, which seems to have drawn almost no cab (a view its other options gave; not confirmed). Managed heap
+214 MB, private memory 1,250 MB.
 
 Done: sound heard on the laptop by the user (131h); Tolk built for ARM64 and NVDA's ARM64 client added (131i). NVDA
 2026.3 (an x64 program, emulated) installed on the laptop: with it running, the native game logs "Supported screen
