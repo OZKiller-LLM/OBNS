@@ -98,6 +98,30 @@ namespace OpenBve.NX
 			}
 		}
 
+		/// <summary>
+		/// The code pages content is written in (TML's Big5, BVE's Shift-JIS, GBK, Korean), each decoded once here on the
+		/// main thread before any loading thread starts: their tables load once, and a failure is logged with its stack.
+		/// The first TML load (2026-11-05) failed in the route parser with "NotSupported_NoCodepageData, 950", though the
+		/// hello decoded Big5 on the same console.
+		/// </summary>
+		private static void WarmCodePages()
+		{
+			byte[] sample = { 0x41, 0x42, 0x43 };
+			foreach (int codePage in new[] { 950, 932, 936, 949, 1252 })
+			{
+				try
+				{
+					Encoding encoding = Encoding.GetEncoding(codePage);
+					string text = encoding.GetString(codePage == 950 ? new byte[] { 0xAA, 0xF7 } : codePage == 932 ? new byte[] { 0x93, 0xFA } : sample);
+					Log($"code page {codePage}: {encoding.WebName}, a sample decodes to U+{(int)text[0]:X4}");
+				}
+				catch (Exception e)
+				{
+					Log($"code page {codePage} failed: {e}");
+				}
+			}
+		}
+
 		private static int Run()
 		{
 			// Loading at the CPU's 1,785 MHz with the GPU held low: apm's FastLoad, the console's own loading clock.
@@ -105,6 +129,7 @@ namespace OpenBve.NX
 			Stage($"OBNS for the Switch (1.31N): {RuntimeInformation.FrameworkDescription}, {Environment.ProcessorCount} cores, CPU {mhz} MHz");
 
 			Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+			WarmCodePages();
 			AndroidHost host = new AndroidHost();
 			AndroidOptions options = new AndroidOptions();
 			// The Switch's measures (OBNS/SWITCH.md, step 2), as Android's on a phone of 4.5 GB or less.

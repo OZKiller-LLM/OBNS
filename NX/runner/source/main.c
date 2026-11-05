@@ -13,6 +13,9 @@
 
 #define EXPORT __attribute__((visibility("default")))
 
+// Mono's embedding entry for runtime properties (mono-private-unstable.h).
+int monovm_initialize(int propertyCount, const char **propertyKeys, const char **propertyValues);
+
 #define STATIC_MONO_SYM(x) do {\
     extern void* x; \
     mono_aot_register_module(x);\
@@ -48,6 +51,18 @@ EXPORT int obns_set_cpu_boost(int mode)
     return (int)(now / 1000000);
 }
 
+// An exception nothing caught: printed (to nxlink, or UserData/runner.log) before mono-nx's error screen, which alone
+// shows only the first line unless its details are opened.
+static void obns_unhandled(MonoObject *exc, void *user_data)
+{
+    MonoString *text = mono_object_to_string(exc, NULL);
+    char *utf8 = text ? mono_string_to_utf8(text) : NULL;
+    printf("--- OBNS: unhandled exception ---\n%s\n", utf8 ? utf8 : "(no text)");
+    fflush(stdout);
+    fatal_error(utf8 ? utf8 : "unhandled exception");
+    if (utf8) mono_free(utf8);
+}
+
 int main(int argc, char *argv[])
 {
     bool nxlink = R_SUCCEEDED(socketInitializeDefault()) && nxlinkStdio() >= 0;
@@ -64,6 +79,11 @@ int main(int argc, char *argv[])
 
     // Invariant globalisation: ICU's 30 MB of data left out. OpenBVE parses with the invariant culture.
     setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1", 1);
+    // What a Unix desktop has and the Switch doesn't: a home, for .NET's special folders (upstream's FileSystem
+    // builds its user data folder from ApplicationData, and an empty one throws).
+    setenv("HOME", "/switch/OBNS/UserData", 1);
+    setenv("XDG_CONFIG_HOME", "/switch/OBNS/UserData", 1);
+    setenv("XDG_DATA_HOME", "/switch/OBNS/UserData", 1);
 
     if (!application_initialize("sdmc:/switch/OBNS/managed/obns.ini"))
         return 1;
@@ -74,11 +94,18 @@ int main(int argc, char *argv[])
     mono_jit_set_aot_mode(MONO_AOT_MODE_FULL);
     application_configure_mono();
 
+    // AppContext.BaseDirectory, which the Android port's FileSystem falls back on when Assembly.Location is empty (as
+    // it is here: mono-nx's images have no file name). A host sets it; mono-nx doesn't.
+    const char *keys[] = { "APP_CONTEXT_BASE_DIRECTORY" };
+    const char *values[] = { "/switch/OBNS/managed/" };
+    monovm_initialize(1, keys, values);
+
     MonoDomain *domain = mono_jit_init("obns");
     if (!domain) {
         fatal_error("Mono could not start (is /switch/OBNS/managed on the SD card?)");
         return 1;
     }
+    mono_install_unhandled_exception_hook(obns_unhandled, NULL);
 
     MonoAssembly *assembly = mono_domain_assembly_open(domain, g_config.default_assembly);
     if (!assembly) {

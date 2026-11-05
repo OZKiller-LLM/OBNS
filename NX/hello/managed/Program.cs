@@ -102,8 +102,58 @@ static class Program
         return sw.Elapsed.TotalSeconds;
     }
 
+    // Embedded resources and code pages (OBNS's first TML load, 2026-11-05: "NotSupported_NoCodepageData, 950", TML
+    // being in Big5): whether the resource is there, can be opened and read, and the encodings it feeds.
+    static void ResourceTest()
+    {
+        System.Reflection.Assembly codePages = typeof(System.Text.CodePagesEncodingProvider).Assembly;
+        try
+        {
+            Console.WriteLine("CodePages resources: " + string.Join(", ", codePages.GetManifestResourceNames()));
+            var info = codePages.GetManifestResourceInfo("codepages.nlp");
+            Console.WriteLine("  info: " + (info == null ? "none" : info.ResourceLocation.ToString()));
+            using (var stream = codePages.GetManifestResourceStream("codepages.nlp"))
+            {
+                if (stream == null)
+                    Console.WriteLine("  stream: null");
+                else
+                {
+                    byte[] head = new byte[16];
+                    int read = stream.Read(head, 0, head.Length);
+                    Console.WriteLine($"  stream: {stream.GetType().Name}, {stream.Length} bytes, read {read}: {BitConverter.ToString(head, 0, read)}");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("  resource failed: " + e);
+        }
+
+        try
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            var big5 = System.Text.Encoding.GetEncoding(950);
+            string text = big5.GetString(new byte[] { 0xAA, 0xF7, 0xA4, 0x7C }); // 東涌? no: 杖 and 中 - a check, printed as code points
+            Console.WriteLine("Big5 950: " + big5.EncodingName + ", decoded U+" + string.Join(" U+", Array.ConvertAll(text.ToCharArray(), c => ((int)c).ToString("X4"))));
+            var sjis = System.Text.Encoding.GetEncoding(932);
+            Console.WriteLine("Shift-JIS 932: " + sjis.EncodingName + ", decoded U+" + ((int)sjis.GetString(new byte[] { 0x93, 0xFA })[0]).ToString("X4") + " (日 is U+65E5)");
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("Encodings failed: " + e);
+        }
+    }
+
     static int Main()
     {
+        ResourceTest();
+        Console.Out.Flush();
+        if (Environment.GetEnvironmentVariable("OBNS_HELLO_ALL") != "1")
+        {
+            Console.WriteLine("Done (resource test only).");
+            return 0;
+        }
+
         Console.WriteLine("OBNS hello (1.31N): C# compiled ahead of time by Mono for libnx");
         Console.WriteLine($"Runtime: {RuntimeInformation.FrameworkDescription}, {RuntimeInformation.OSDescription}, " +
             $"{RuntimeInformation.ProcessArchitecture}; {Environment.ProcessorCount} processors; " +

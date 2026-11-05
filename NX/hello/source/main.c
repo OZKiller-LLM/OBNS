@@ -30,6 +30,8 @@ int main(int argc, char *argv[])
 {
     // Sent by nxlink -s: stdout and stderr go back to the PC.
     bool nxlink = R_SUCCEEDED(socketInitializeDefault()) && nxlinkStdio() >= 0;
+    // Invariant globalisation, as OBNS runs: does it change the code pages?
+    setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1", 1);
 
     romfsInit();
 

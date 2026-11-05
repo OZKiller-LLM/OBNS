@@ -20,7 +20,7 @@ ILLINK_CFG=$MONO_NX_ROOT/src/mono/System.Private.CoreLib/src/ILLink/ILLink.Descr
 ILLINK_CFG1=$MONO_NX_ROOT/src/mono/System.Private.CoreLib/src/ILLink/ILLink.LinkAttributes.xml
 LIB_ROOT=$MONO_NX_ROOT/artifacts/bin/mono/libnx.arm64.$CONFIG/
 FRAMEWORK_ROOT=$MONO_NX_ROOT/artifacts/bin/runtime/net9.0-libnx-$CONFIG-arm64/
-$DOTNET $ILLINK -x $ILLINK_CFG -x $ILLINK_CFG1 --feature System.Resources.UseSystemResourceKeys true \
+$DOTNET $ILLINK -x $ILLINK_CFG -x $ILLINK_CFG1 --feature System.Resources.UseSystemResourceKeys true --feature System.Globalization.Invariant true \
     -d $LIB_ROOT -d $FRAMEWORK_ROOT --trim-mode link -a managed/bin/Release/net9.0/hello.dll -out output
 
 MONO_COMPILER=$MONO_NX_ROOT/artifacts/bin/mono/linux.x64.$CONFIG/cross/linux-x64/libnx-arm64/mono-aot-cross
