@@ -21,7 +21,7 @@ in its own folder under `/switch` on the SD card, run from hbmenu on custom firm
 
 ### The test console, measured (2026-11-05)
 
-`OBNS/switch/probe` (a libnx program, sent by nxlink) on the user's Switch: the first model (Icosa, Erista), firmware 20.5.0,
+`NX/probe` (a libnx program, sent by nxlink) on the user's Switch: the first model (Icosa, Erista), firmware 20.5.0,
 Atmosphère 1.12.1, started from hbmenu 3.6.1 by title takeover.
 
 | What | Measured |
