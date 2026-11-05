@@ -1,0 +1,31 @@
+<Project>
+
+  <!--
+    OBNS 1.31N: builds the Android port's projects for the Switch without changing them. Imported into every project
+    of a build through CustomAfterMicrosoftCommonTargets, with AndroidTfm set to the Switch runtime's framework:
+
+      dotnet build <project> -p:AndroidTfm=net9.0 -p:CustomAfterMicrosoftCommonTargets=<this file>
+
+    It runs after each project's own items, so it can replace Android's OpenBve.Compat (Skia, which has no Switch build)
+    with NX's (NX/OpenBve.Compat.NX), and drop the SkiaSharp packages.
+  -->
+
+  <PropertyGroup>
+    <ObnsSwitch>true</ObnsSwitch>
+    <!--
+      C# 13, .NET 9's own: under C# 14 (the Android projects' "latest") upstream's byte[].Reverse() binds to
+      MemoryExtensions.Reverse(Span), which returns nothing; .NET 10 added the array overload that keeps it working.
+    -->
+    <LangVersion>13</LangVersion>
+    <DefineConstants>$(DefineConstants);OBNS_SWITCH</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <_ObnsAndroidCompat Include="@(ProjectReference->WithMetadataValue('Filename', 'OpenBve.Compat'))" />
+    <ProjectReference Remove="@(_ObnsAndroidCompat)" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)OpenBve.Compat.NX\OpenBve.Compat.NX.csproj" Condition="'@(_ObnsAndroidCompat)' != ''" />
+    <PackageReference Remove="SkiaSharp" />
+    <PackageReference Remove="SkiaSharp.NativeAssets.Android" />
+  </ItemGroup>
+
+</Project>

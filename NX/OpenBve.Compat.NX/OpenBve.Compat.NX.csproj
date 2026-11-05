@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    OBNS 1.31N: the Switch's OpenBve.Compat. The same public System.Drawing and System.Windows.Forms surface as the
+    Android port's (Android/OpenBve.Compat), with Skia, which has no Switch build, replaced: pixels in native memory,
+    PNG, JPEG and GIF decoded by libpng, libjpeg-turbo and giflib in the runner (NX/runner), BMP decoded here, shapes
+    drawn by a small rasteriser here, text by FreeType in the runner. The Android files without Skia are compiled as
+    they are. The user, 2026-11-05: "Switch backend for Compat".
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>$(NxTfm)</TargetFramework>
+    <TargetFramework Condition="'$(NxTfm)' == ''">net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>OpenBve.Compat</RootNamespace>
+    <AssemblyName>OpenBve.Compat</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CS1591;CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Drawing\*.cs" />
+    <Compile Include="AndroidLog.cs" />
+    <Compile Include="..\..\Android\OpenBve.Compat\Drawing\Imaging.cs" Link="Android\Imaging.cs" />
+    <Compile Include="..\..\Android\OpenBve.Compat\Drawing\Text.cs" Link="Android\Text.cs" />
+    <Compile Include="..\..\Android\OpenBve.Compat\WindowsForms\*.cs" Link="Android\WindowsForms\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>
