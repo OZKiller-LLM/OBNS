@@ -109,10 +109,16 @@ KqAts64.dll is a Debug build and stopped on `ucrtbased`; the layer now maps the 
 
 ## To do
 
-1. **Direct3D 12 alone is the default on Windows on ARM64** (decided from TML without vsync, 131f: Direct3D 12 75.7 fps,
-   Vulkan 51.9, Direct3D 11 44.6; `OBNS/GPU_SUPPORT.md`). To check on the laptop: a fresh settings folder starts on it.
-2. **NVDA's speech heard** by a person: the game finds NVDA (below), but no one was listening. Parked by the user
+1. **NVDA's speech heard** by a person: the game finds NVDA (below), but no one was listening. Parked by the user
    (2026-11-05).
+
+Released as 1.31 (2026-11-05), for Windows on ARM64 only, from 131o (3b2a300).
+
+Done: a fresh settings folder starts on Direct3D 12 alone (131o, Uchibo with the E217, the 32-bit plugin through the
+proxy): "OBNS Direct3D 12 draws the whole game" and "swap chain: 3 buffers, tearing allowed", no errors; options.cfg holds
+no renderer line and obns.cfg only `lastdrawn = direct3d12`. 60.0 fps with vsync on (its default), 82.8 to 86.2 with it
+off, on battery at 24% (131n's 197 was on mains; the CPU's frame 12.0 ms against 5.1, the GPU's world 5.19 ms against
+4.80). Loading 48 s on battery against 19 s. The managed heap again differed between runs: 548 MB and 2,172 MB.
 
 Done: sound heard on the laptop by the user (131h); Tolk built for ARM64 and NVDA's ARM64 client added (131i). NVDA
 2026.3 (an x64 program, emulated) installed on the laptop: with it running, the native game logs "Supported screen
