@@ -219,7 +219,10 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 5. **The console's ways:** the controls and HUD above, sleep and resume, the HOME button. Resolution (the user, 2026-11-04):
    **1280x720 in handheld mode** (all three models' screens: 6.2" LCD, 7.0" OLED, 5.5" Lite), **up to 1920x1080 docked**, switched as
    the console is docked or undocked; 720p rendering scaled up stays possible docked if 1080p can't hold the 30 fps floor.
-6. **The menu, redesigned for the console** (the user's instructions to come): laid out at 1280x720 and scaled to 1080p docked; every part reachable with buttons alone
+6. **The menu, redesigned for the console.** The user, 2026-11-05: the Android build's more modern menu, rewritten for the
+   Switch (drawn by deko3d, in the runner's code rather than Android's views), with the Options entries that don't apply to
+   the Switch left out (for example renderer and graphics-API choices, Android storage and permission items, phone-only
+   touch settings, desktop window modes). The layout: laid out at 1280x720 and scaled to 1080p docked; every part reachable with buttons alone
    (no touch docked), touch as well in handheld; text readable on the Lite's 5.5" screen (about 18 to 20 px at 720p at least), touch
    targets of 60 to 80 px, about 5% kept clear of the edges for TVs.
 

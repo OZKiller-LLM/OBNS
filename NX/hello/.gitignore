@@ -1,0 +1,14 @@
+build/
+output/
+managed/bin/
+managed/obj/
+romfs/*.dll
+romfs/*.dat
+source/mono_symbols.h
+*.elf
+*.nro
+*.nacp
+*.map
+*.lst
+mono_aot.log
+nxshared/
