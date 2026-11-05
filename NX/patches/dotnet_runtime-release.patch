@@ -22,6 +22,18 @@ index d11838381..7051efcd1 100644
          }
  
          // Socket continuations are dispatched to the ThreadPool from the event thread.
+diff --git a/src/mono/mono/mini/CMakeLists.txt b/src/mono/mono/mini/CMakeLists.txt
+index 1da35c68e..0174989dc 100644
+--- a/src/mono/mono/mini/CMakeLists.txt
++++ b/src/mono/mono/mini/CMakeLists.txt
+@@ -294,6 +294,7 @@ set(llvm_runtime_sources
+ elseif(ENABLE_LLVM_RUNTIME AND NOT HOST_WASM)
+ set(llvm_runtime_sources
+     llvm-runtime.cpp)
++set_source_files_properties(llvm-runtime.cpp PROPERTIES COMPILE_OPTIONS "-fexceptions")
+ else()
+ set(llvm_runtime_sources)
+ endif()
 diff --git a/src/mono/mono/utils/mono-tls.c b/src/mono/mono/utils/mono-tls.c
 index b72018775..e1ea6e374 100644
 --- a/src/mono/mono/utils/mono-tls.c

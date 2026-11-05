@@ -14,7 +14,8 @@ in every frame.
 | --- | --- |
 | `probe/` | A small libnx program reporting the console: memory by launch mode, model and versions, clocks (clkrst and apm FastLoad), cores, the SD card's speed. Results in `OBNS/SWITCH.md` |
 | `hello/` | The first C# on the console: mono-nx's AOT example in Release (`build.sh` on Linux). Times C# against the probe's C, the garbage collector and three threads |
-| `patches/` | Changes to mono-nx's runtime fork (`dotnet_runtime`, branch `libnx`, at 289cdaa): `Console` in sockets logging made Debug-only (Release doesn't reference System.Console), and NroForge's libnx TLS clean-up (MIT), without which a managed thread ending trips an assertion in `unregister_thread` and the console crashes |
+| `build-mono.sh` | Builds Mono for libnx on Linux, with the patches: the runtime and libraries in Release, the AOT offsets, and the PC's AOT cross-compiler with LLVM |
+| `patches/` | Changes to mono-nx's runtime fork (`dotnet_runtime`, branch `libnx`, at 289cdaa): `Console` in sockets logging made Debug-only (Release doesn't reference System.Console), NroForge's libnx TLS clean-up (MIT), without which a managed thread ending trips an assertion in `unregister_thread` and the console crashes, and NroForge's `-fexceptions` for `llvm-runtime.cpp` (unused on ARM64 so far) |
 
 ## Building
 

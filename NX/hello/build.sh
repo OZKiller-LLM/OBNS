@@ -23,14 +23,27 @@ FRAMEWORK_ROOT=$MONO_NX_ROOT/artifacts/bin/runtime/net9.0-libnx-$CONFIG-arm64/
 $DOTNET $ILLINK -x $ILLINK_CFG -x $ILLINK_CFG1 --feature System.Resources.UseSystemResourceKeys true \
     -d $LIB_ROOT -d $FRAMEWORK_ROOT --trim-mode link -a managed/bin/Release/net9.0/hello.dll -out output
 
-echo "AOT compiling..."
 MONO_COMPILER=$MONO_NX_ROOT/artifacts/bin/mono/linux.x64.$CONFIG/cross/linux-x64/libnx-arm64/mono-aot-cross
 export PATH=$PATH:$DEVKITPRO/devkitA64/bin/
+# LLVM=1 (the default when Mono's LLVM tools are there): methods compiled by LLVM, as NroForge does, with
+# position-independent code (llc's static relocation doesn't link into an NRO). LLVM=0: Mono's own code generator.
+LLVM_TOOLS=$MONO_NX_ROOT/artifacts/obj/mono/linux.x64.$CONFIG/llvm/x64/bin
+if [ -z "$LLVM" ]; then [ -x "$LLVM_TOOLS/llc" ] && LLVM=1 || LLVM=0; fi
+echo "AOT compiling (LLVM=$LLVM)..."
 : > mono_aot.log
 for file in output/*.dll; do
-    $MONO_COMPILER --path=output/ --aot=full,static,direct-icalls,direct-pinvoke,tool-prefix=aarch64-none-elf- "$file" >> mono_aot.log 2>&1 \
-        || { echo "AOT failed on $file"; tail -20 mono_aot.log; exit 1; }
+    name=$(basename "$file")
+    options=full,static,direct-icalls,direct-pinvoke,tool-prefix=aarch64-none-elf-,outfile=output/$name.o
+    if [ "$LLVM" = 1 ]; then
+        options=$options,llvm,llvmllc=-relocation-model=pic,llvm-path=$LLVM_TOOLS/,llvm-outfile=output/$name-llvm.o
+        $MONO_COMPILER --llvm --path=output/ --aot=$options "$file" >> mono_aot.log 2>&1 \
+            || { echo "AOT failed on $file"; tail -20 mono_aot.log; exit 1; }
+    else
+        $MONO_COMPILER --path=output/ --aot=$options "$file" >> mono_aot.log 2>&1 \
+            || { echo "AOT failed on $file"; tail -20 mono_aot.log; exit 1; }
+    fi
 done
+grep -h "LLVM:" mono_aot.log | head -3 || true
 
 cp output/*.dll romfs/
 cp $ICU_NX_INSTALL_DIR/share/icu/77.1/icudt77l.dat romfs/
