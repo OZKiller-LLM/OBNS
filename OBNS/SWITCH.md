@@ -64,7 +64,8 @@ What OBNS does with it (the user, 2026-11-04):
 
 For scale, TML in 1.3 on the MacBook Neo (Metal alone): 2.9 GB private memory, a 1.4 GB managed heap at load, 2.23 M vertices and 7.66 M
 face vertices (about 375 MB), 7,900 to 8,000 draws a frame, and 12.5 ms of CPU a frame (train 3.4, render 8.5, world 0.7). An A57 at
-1 GHz is several times slower a core than the A18 Pro, and Mono's AOT code is slower than its JIT's *(estimate)*: the same work would
+1 GHz is several times slower a core than the A18 Pro; Mono's AOT code through LLVM measured within about 10% of C on the
+console (NX/README.md), three times Mono's own code generator on struct maths: the same work would
 take roughly 80 to 110 ms a frame at 1,020 MHz, about 10 fps, and 46 to 63 ms at 1,785 MHz. **30 fps needs the CPU's work cut to
 about a third at stock clocks, or by about half at 1,785 MHz, and spread over the 3 cores; and the memory cut by about a quarter**,
 before the GPU is the limit. **The 30 fps floor is to hold at 1,785 MHz** (the user, 2026-11-04; on power, and on battery with the

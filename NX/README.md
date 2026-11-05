@@ -81,3 +81,17 @@ The user's Switch: the first model (Erista), firmware 20.5.0, Atmosphère 1.12.1
 
 The first run, before the TLS fix, crashed the console when its first worker thread ended.
 
+With LLVM (Mono's AOT cross-compiler with Microsoft's Mono LLVM 19, `opt` at O2, `llc` with position-independent code), the
+same hello on the same console:
+
+| What | Mono's code generator | LLVM | C |
+| --- | --- | --- | --- |
+| CPU loop, 1,020 MHz | 0.767 s | 0.431 s | 0.392 s |
+| CPU loop, 1,785 MHz | 0.410 s | 0.247 s | 0.224 s |
+| Vector loop, 1,020 / 1,785 MHz | 0.281 / 0.161 s | 0.097 / 0.059 s | |
+| Allocation a frame, worst frame | 0.75, 1.20 ms | 0.53, 0.85 ms | |
+| Loop over 1, 2, 3 threads (1,785 MHz) | 0.544, 0.273, 0.187 s | 0.247, 0.124, 0.083 s | |
+
+C# under LLVM is within about 10% of C on the loop and three times faster than Mono's own code on structs; three threads
+give three times the speed. OBNS is built with LLVM.
+
