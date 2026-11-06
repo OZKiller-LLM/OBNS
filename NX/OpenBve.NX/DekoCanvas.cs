@@ -38,6 +38,9 @@ namespace OpenBve.NX
 		[DllImport("__Internal", EntryPoint = "obns_dk_open")]
 		internal static extern int Open(int width, int height);
 
+		[DllImport("__Internal", EntryPoint = "obns_dk_close")]
+		internal static extern void Close();
+
 		[DllImport("__Internal", EntryPoint = "obns_dk2d_begin")]
 		private static extern int BeginFrame(uint background);
 
@@ -56,8 +59,8 @@ namespace OpenBve.NX
 		[DllImport("__Internal", EntryPoint = "obns_dk2d_text_width")]
 		private static extern float DkTextWidth(char* text, int length, float size, int bold);
 
-		[DllImport("__Internal", EntryPoint = "obns_dk2d_image")]
-		private static extern int DkImage(byte* path, float x, float y, float width, float height);
+		[DllImport("__Internal", EntryPoint = "obns_dk2d_image_ex")]
+		private static extern int DkImage(byte* path, float x, float y, float width, float height, int cover, uint tint);
 
 		[DllImport("__Internal", EntryPoint = "obns_dk2d_clip")]
 		private static extern void DkClip(float x, float y, float width, float height);
@@ -118,7 +121,11 @@ namespace OpenBve.NX
 			return width;
 		}
 
-		public bool Image(string file, float x, float y, float width, float height)
+		public bool Image(string file, float x, float y, float width, float height) => Image(file, x, y, width, height, false, 0xFFFFFFFF);
+
+		/// <summary>An image fitted inside the rectangle, or (<paramref name="cover"/>) filling it with the overflow cropped
+		/// (Android's CenterCrop), multiplied by <paramref name="tint"/> (its alpha: the opacity).</summary>
+		public bool Image(string file, float x, float y, float width, float height, bool cover, uint tint)
 		{
 			if (string.IsNullOrEmpty(file))
 			{
@@ -128,7 +135,7 @@ namespace OpenBve.NX
 			byte[] path = System.Text.Encoding.UTF8.GetBytes(file + "\0");
 			fixed (byte* bytes = path)
 			{
-				return DkImage(bytes, x, y, width, height) != 0;
+				return DkImage(bytes, x, y, width, height, cover ? 1 : 0, tint) != 0;
 			}
 		}
 
@@ -144,7 +151,7 @@ namespace OpenBve.NX
 	internal static class MenuLoop
 	{
 		[DllImport("__Internal", EntryPoint = "obns_input_read")]
-		private static extern unsafe uint ReadInput(int* touching, float* x, float* y, int* docked);
+		internal static extern unsafe uint ReadInput(int* touching, float* x, float* y, int* docked);
 
 		internal static unsafe SwitchLaunch Run(System.Action<string> log)
 		{

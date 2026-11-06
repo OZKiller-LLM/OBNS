@@ -130,6 +130,9 @@ namespace OpenBve.NX
 			catch (Exception e)
 			{
 				Log("failed: " + e);
+				LoadingScreen.ShowError(e.Message);
+				// The error on the screen for a while, as Android's loading screen leaves it until back is pressed.
+				System.Threading.Thread.Sleep(LoadingScreen.Opened ? 10000 : 0);
 				return 1;
 			}
 			finally
@@ -261,6 +264,69 @@ namespace OpenBve.NX
 			    $"{parsed} parsed, {failed} failed; slowest {worst * 1000:F0} ms ({worstFile})");
 		}
 
+		/// <summary>
+		/// The first frames on deko3d (OBNS/SWITCH.md, step 3): the scene from where the train was placed, drawn as
+		/// GameView's loop draws it, the simulation running (the train stands at its first station), for some seconds or
+		/// until − is pressed; the frame rate, the draws and the memory logged every 5 s. Without a train the camera travels
+		/// the route at 15 m/s, as on Android.
+		/// </summary>
+		private static unsafe void Frames(AndroidRenderer renderer, AndroidHost host, AndroidSounds sounds, AndroidTrainSession session, Deko.DekoGL deko, double seconds)
+		{
+			Stage("frames: drawing for " + seconds.ToString("0") + " s" + (session == null ? " (no train: the camera travels the route)" : string.Empty));
+			Stopwatch clock = Stopwatch.StartNew();
+			double last = 0, windowStart = 0, worst = 0, trackPosition = 0;
+			int frames = 0, total = 0;
+			while (clock.Elapsed.TotalSeconds < seconds)
+			{
+				int touching, docked;
+				float x, y;
+				if ((MenuLoop.ReadInput(&touching, &x, &y, &docked) & (uint)OpenBve.Switch.MenuButtons.Minus) != 0)
+				{
+					Log("frames: left with −");
+					break;
+				}
+
+				double now = clock.Elapsed.TotalSeconds, elapsed = now - last;
+				last = now;
+				if (session != null)
+				{
+					session.Update(elapsed);
+				}
+				else
+				{
+					trackPosition += 15.0 * elapsed;
+					renderer.PlaceCamera(trackPosition);
+				}
+
+				host.BeginFrame();
+				renderer.RenderScene(elapsed);
+				sounds.Update(elapsed);
+				deko.EndFrame();
+				frames++;
+				total++;
+				double took = clock.Elapsed.TotalSeconds - now;
+				if (total > 3)
+				{
+					worst = Math.Max(worst, took);
+				}
+
+				if (total == 1)
+				{
+					Stage($"frames: the first in {took * 1000:F0} ms; {deko.Describe()}");
+				}
+
+				if (now - windowStart >= 5.0)
+				{
+					Stage($"frames: {frames / (now - windowStart):F1} fps, the slowest {worst * 1000:F1} ms, {renderer.VisibleFaceCount} visible faces; {deko.Describe()}");
+					frames = 0;
+					worst = 0;
+					windowStart = now;
+				}
+			}
+
+			Stage($"frames: {total} drawn");
+		}
+
 		private static int Run()
 		{
 			AppDomain.CurrentDomain.FirstChanceException += OnThrown;
@@ -291,7 +357,7 @@ namespace OpenBve.NX
 			Menu.Init(host, fileSystem, SwitchSettings.GetLanguage(), "1.14.1.2-nx");
 			Stage("file system and translations");
 
-			string routeFile = null, trainFolder = null;
+			string routeFile = null, trainFolder = null, imageFile = null;
 			string choice = Root + "/UserData/nx-load.txt";
 			if (File.Exists(choice))
 			{
@@ -314,13 +380,29 @@ namespace OpenBve.NX
 
 				routeFile = launch.RouteFile;
 				trainFolder = launch.TrainFolder;
+				imageFile = launch.ImageFile;
 			}
 
 			// The options the menu keeps (SwitchSettings), onto the game's.
 			SwitchSettings.ApplyTo(options);
 			Stage($"options: textures up to {TextureSizeLimit.MaxSize} px, {(AndroidHost.Textures16Bit ? 16 : 32)}-bit, viewing distance {options.ViewingDistance} m");
 
-			// As GameView: the renderer (its GL calls go nowhere until the deko3d renderer), sounds, trains, plugins.
+			// deko3d (OBNS/SWITCH.md, step 3): the renderer's GL calls go to DekoGL, which draws them with deko3d, as
+			// Android's native Vulkan renderer (VulkanGL) does with Vulkan. Without it they go to the stubs, as before.
+			Deko.DekoGL deko = null;
+			int opened = DekoCanvas.Open(1280, 720);
+			if (opened == 0)
+			{
+				Deko.DekoGL.Log = line => Log("deko3d: " + line);
+				deko = new Deko.DekoGL(1280, 720);
+				OpenTK.Graphics.OpenGL.GL.Device = deko;
+			}
+			else
+			{
+				Log("deko3d did not open (" + opened + "): nothing is drawn");
+			}
+
+			// As GameView: the renderer, sounds, trains, plugins.
 			DisplayDevice.Default = new DisplayDevice(1280, 720, 1.0f, 1.0f);
 			AndroidRenderer renderer = new AndroidRenderer(host, options, fileSystem);
 			host.Renderer = renderer;
@@ -344,10 +426,27 @@ namespace OpenBve.NX
 			// As GameView: this thread is the render thread (textures load in place rather than waiting on a queue no
 			// frame services), and the renderer is set up after the plugins.
 			OpenTK.AndroidGraphicsContext.RenderThreadId = Environment.CurrentManagedThreadId;
-			InitializeWithoutDrawing(renderer, host);
+			bool initialized = false;
+			if (deko != null)
+			{
+				try
+				{
+					renderer.Initialize();
+					initialized = true;
+				}
+				catch (Exception e)
+				{
+					Log("renderer.Initialize failed on deko3d: " + e);
+				}
+			}
+
+			if (!initialized)
+			{
+				InitializeWithoutDrawing(renderer, host);
+			}
 			OpenBve.Program.FileSystem = fileSystem;
 			Stage("plugins: " + plugins.Replace("\n", "; "));
-			LoadingScreen.Start(Log);
+			LoadingScreen.Start(Log, routeFile, imageFile);
 
 			host.FileSystem = fileSystem;
 			host.CurrentTrainFolder = trainFolder ?? AndroidTrainSession.FindTrain(fileSystem.InitialTrainFolder, host) ?? string.Empty;
@@ -366,6 +465,7 @@ namespace OpenBve.NX
 			GC.Collect();
 			Stage("route, after a collection");
 
+			AndroidTrainSession session = null;
 			if (currentRoute != null)
 			{
 				renderer.Route = currentRoute;
@@ -387,7 +487,7 @@ namespace OpenBve.NX
 				LoadProfile.Begin("train and placement");
 				try
 				{
-					string train = AndroidTrainSession.Load(host, trainManager, renderer, currentRoute, fileSystem, host.CurrentTrainFolder, null, out AndroidTrainSession session);
+					string train = AndroidTrainSession.Load(host, trainManager, renderer, currentRoute, fileSystem, host.CurrentTrainFolder, null, out session);
 					Log("load profile, train: " + LoadProfile.End());
 					Log(Exceptions());
 					Stage("train: " + train.Replace("\n", "; "));
@@ -397,6 +497,7 @@ namespace OpenBve.NX
 					Log("load profile, train: " + LoadProfile.End());
 					Log(Exceptions());
 					Log("train failed: " + e);
+					LoadingScreen.ShowError(e.Message);
 					Stage("train failed: " + e.GetType().Name);
 				}
 			}
@@ -408,17 +509,33 @@ namespace OpenBve.NX
 			GC.Collect();
 			Stage($"loaded; managed {before} MiB before the final collection; {host.ErrorCount} error(s)");
 			Stage(TextureCensus.DescribeMeshes(renderer));
-			try
+			if (File.Exists(Root + "/UserData/nx-benchmark.txt"))
 			{
-				ObjectBenchmark(host, content + "/Railway/Object");
-			}
-			catch (Exception e)
-			{
-				Log("object benchmark failed: " + e);
+				try
+				{
+					ObjectBenchmark(host, content + "/Railway/Object");
+				}
+				catch (Exception e)
+				{
+					Log("object benchmark failed: " + e);
+				}
+
+				Log(Exceptions());
+				Stage("benchmark done");
 			}
 
-			Log(Exceptions());
-			Stage("benchmark done");
+			if (deko != null && initialized && currentRoute != null)
+			{
+				// The loading screen gives way to the game's frames on the same device.
+				LoadingScreen.Stop(false);
+				deko.Drawing = true;
+				Frames(renderer, host, sounds, session, deko, 30.0);
+				deko.Dispose();
+				OpenTK.Graphics.OpenGL.GL.Device = null;
+				DekoCanvas.Close();
+				return 0;
+			}
+
 			LoadingScreen.Finish();
 			// The full bar for a few seconds, to be seen on the console.
 			System.Threading.Thread.Sleep(5000);

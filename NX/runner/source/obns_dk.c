@@ -25,6 +25,11 @@ static DkCmdBuf commands;
 static int width, height;
 static uint64_t frames;
 
+// The queue is one: the loading screen's thread draws on it while the loading thread's DekoGL uploads textures.
+static RMutex queueLock;
+#define QUEUE_LOCK() rmutexLock(&queueLock)
+#define QUEUE_UNLOCK() rmutexUnlock(&queueLock)
+
 static void debug(void *userData, const char *context, DkResult result, const char *message)
 {
     (void)userData;
@@ -34,6 +39,7 @@ static void debug(void *userData, const char *context, DkResult result, const ch
 static uint32_t align_up(uint32_t value, uint32_t alignment) { return (value + alignment - 1) & ~(alignment - 1); }
 
 static void close2d(void); // obns_dk2d.inc
+static void close3d(void); // obns_dk3d.inc
 
 // Opens the device and the swapchain at width x height (1280x720 handheld; the console scales it docked until the
 // renderer draws at 1080p there). 0 when it worked.
@@ -110,6 +116,7 @@ EXPORT int obns_dk_frame_rects(float red, float green, float blue, const float *
     if (!device || dkQueueIsInErrorState(queue))
         return 1;
 
+    QUEUE_LOCK();
     int slot = dkQueueAcquireImage(queue, swapchain);
     dkCmdBufClear(commands);
     dkCmdBufAddMemory(commands, commandMemory, 0, COMMAND_MEMORY);
@@ -139,6 +146,7 @@ EXPORT int obns_dk_frame_rects(float red, float green, float blue, const float *
     dkQueueSubmitCommands(queue, dkCmdBufFinishList(commands));
     dkQueuePresentImage(queue, swapchain, slot);
     dkQueueWaitIdle(queue);
+    QUEUE_UNLOCK();
     if (frames++ == 0)
         printf("deko3d: first frame presented\n");
     return dkQueueIsInErrorState(queue) ? 2 : 0;
@@ -149,8 +157,10 @@ EXPORT void obns_dk_close(void)
 {
     if (!device)
         return;
+    QUEUE_LOCK();
     dkQueueWaitIdle(queue);
     close2d();
+    close3d();
     dkCmdBufDestroy(commands);
     dkMemBlockDestroy(commandMemory);
     dkQueueDestroy(queue);
@@ -158,8 +168,12 @@ EXPORT void obns_dk_close(void)
     dkMemBlockDestroy(framebufferMemory);
     dkDeviceDestroy(device);
     device = NULL;
+    QUEUE_UNLOCK();
     printf("deko3d: closed after %llu frames\n", (unsigned long long)frames);
 }
 
 // The 2D drawing, sharing this file's device, queue and swapchain.
 #include "obns_dk2d.inc"
+
+// The renderer's 3D drawing (DekoGL), sharing the same.
+#include "obns_dk3d.inc"

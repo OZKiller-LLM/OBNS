@@ -385,7 +385,9 @@ static int load_image(int slot, const char *path)
     DkMemBlockMaker maker;
     dkMemBlockMakerDefaults(&maker, device, align_up((uint32_t)dkImageLayoutGetSize(&layout), DK_MEMBLOCK_ALIGNMENT));
     maker.flags = DkMemBlockFlags_GpuCached | DkMemBlockFlags_Image;
+    QUEUE_LOCK();
     image->memory = dkMemBlockCreate(&maker);
+    QUEUE_UNLOCK();
     if (!image->memory) return 0;
     dkImageInitialize(&image->image, &layout, image->memory, 0);
     image->width = sw;
@@ -396,9 +398,10 @@ static int load_image(int slot, const char *path)
     return 1;
 }
 
-// An image file fitted inside the rectangle, its proportions kept: 0 while it isn't there yet (one loads a frame) or
-// can't be read, when the caller draws a placeholder.
-EXPORT int obns_dk2d_image(const char *path, float x, float y, float w, float h)
+// An image file in the rectangle, its proportions kept: fitted inside it, or (cover) filling it with the overflow
+// cropped, as Android's CenterCrop; tint multiplies it (0xAARRGGBB: 0x8CFFFFFF is 55% opaque). 0 while it isn't there
+// yet (one loads a frame) or can't be read, when the caller draws a placeholder.
+EXPORT int obns_dk2d_image_ex(const char *path, float x, float y, float w, float h, int cover, uint32_t tint)
 {
     if (!ready2d || !path || !*path) return 0;
     int slot = -1, oldest = 0;
@@ -409,7 +412,11 @@ EXPORT int obns_dk2d_image(const char *path, float x, float y, float w, float h)
     if (slot < 0) {
         if (imagePending >= 0) return 0;
         // The least recently used goes (the GPU is idle between frames, so its memory can be let go of now).
-        if (images[oldest].memory) dkMemBlockDestroy(images[oldest].memory);
+        if (images[oldest].memory) {
+            QUEUE_LOCK();
+            dkMemBlockDestroy(images[oldest].memory);
+            QUEUE_UNLOCK();
+        }
         write_descriptor(1 + oldest, &atlas);
         load_image(oldest, path);
         slot = oldest;
@@ -417,10 +424,22 @@ EXPORT int obns_dk2d_image(const char *path, float x, float y, float w, float h)
     Image2D *image = &images[slot];
     image->used = frames + 1;
     if (image->failed) return 0;
+    if (cover) {
+        // The part of the image with the rectangle's proportions, from its middle.
+        float scale = fmaxf(w / image->width, h / image->height);
+        float u = (w / scale) / image->width, v = (h / scale) / image->height;
+        quad(x, y, w, h, (1 - u) * 0.5f, (1 - v) * 0.5f, (1 + u) * 0.5f, (1 + v) * 0.5f, 0, 0, 2, tint, 1 + slot);
+        return 1;
+    }
     float scale = fminf(w / image->width, h / image->height);
     float dw = image->width * scale, dh = image->height * scale;
-    quad(x + (w - dw) * 0.5f, y + (h - dh) * 0.5f, dw, dh, 0, 0, 1, 1, 0, 0, 2, 0xFFFFFFFF, 1 + slot);
+    quad(x + (w - dw) * 0.5f, y + (h - dh) * 0.5f, dw, dh, 0, 0, 1, 1, 0, 0, 2, tint, 1 + slot);
     return 1;
+}
+
+EXPORT int obns_dk2d_image(const char *path, float x, float y, float w, float h)
+{
+    return obns_dk2d_image_ex(path, x, y, w, h, 0, 0xFFFFFFFF);
 }
 
 // --- the frame ---
@@ -430,6 +449,7 @@ EXPORT int obns_dk2d_end(void)
     if (!ready2d || dkQueueIsInErrorState(queue))
         return 1;
 
+    QUEUE_LOCK();
     // The uploads: the atlas's changed rows and the new image.
     dkCmdBufClear(uploads);
     dkCmdBufAddMemory(uploads, uploadMemory, 0, COMMAND_MEMORY);
@@ -533,6 +553,7 @@ EXPORT int obns_dk2d_end(void)
     dkQueueSubmitCommands(queue, dkCmdBufFinishList(commands));
     dkQueuePresentImage(queue, swapchain, slot);
     dkQueueWaitIdle(queue);
+    QUEUE_UNLOCK();
     if (frames++ == 0)
         printf("deko3d: first frame presented\n");
     if (droppedQuads)

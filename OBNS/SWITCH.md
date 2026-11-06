@@ -229,6 +229,40 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
    (no touch docked), touch as well in handheld; text readable on the Lite's 5.5" screen (about 18 to 20 px at 720p at least), touch
    targets of 60 to 80 px, about 5% kept clear of the edges for TVs.
 
+## Progress (2026-11-06)
+
+**Step 1, measured on the console** (TML, TMLDN 20040 TT1-WKS2, handheld at the 1,785 MHz loading clock):
+
+| Part | Time | Memory |
+| --- | --- | --- |
+| Start-up, file system, translations, 19 plugins | 1.5 s | native 85 MiB |
+| Route (14,572 static objects) | 680 s, of it ~590 s loading objects | managed 594 to 670 MiB, native about 105 to 125 MiB |
+| Scene preparation (without a GPU: every buffer's creation failed and was logged) | 120 to 145 s | 401 MiB managed after a collection |
+| Train (DetailManager in the x86 layer, 1,560 textures classified) | placed; its fast-forward never finished with upstream's `dynamic` camera (fixed since) | |
+
+- The object parsers are the route's time: 141 ms a file against 6 ms to read it (300 files sampled). Not the collector (its pauses
+  sum to 0.0 s), not the SD card, nor exceptions any more (39,786 `DirectoryNotFoundException`s a load, now 19, made no difference).
+  About 7.5 times the MacBook Neo's 86 to 95 s, as an A57 at 1,785 MHz on 3 cores under Mono AOT can be expected to be. The ways
+  down are a parsed-object cache on the SD card and the parsers' hot spots under AOT (steps 2 and 4).
+- Runtime fixes on the way: `dynamic` call sites need no Reflection.Emit (mono-nx's System.Linq.Expressions given thunks for 3 to
+  8 parameters), the cab's camera read without `dynamic`, missing folders remembered while loading, sgen's nursery at 32 MB (mono-nx's
+  aligned allocation fixed), the console kept from sleeping while it loads.
+
+**Step 3, begun:** deko3d opens on the console and draws (the loading bar, 2026-11-06). Built since, not yet on the console: the 2D
+layer (rounded rectangles, text from the console's shared fonts, images; `NX/runner/source/obns_dk2d.inc`), the loading screen as
+Android's, and **DekoGL**, the renderer's GL calls carried out with deko3d (`NX/OpenBve.NX/Deko`, `obns_dk3d.inc`).
+
+*For the user to decide:* step 3 above names the Vulkan alone path's structure (`VulkanWorld`). The Switch build runs Android's
+renderer, though, and Android already has the matching structure: its native Vulkan renderer, `VulkanGL`, takes the renderer's GL
+calls (`GL.Device`) and draws them with Vulkan, no OpenGL ES involved. DekoGL is that, on deko3d: the same programs recognised by
+their source (Android's own shaders, compiled by `uam` at build time), the same buffer, texture and uniform semantics, with no
+OpenGL, Mesa or fallback anywhere - deko3d draws the world, the cab and the overlays. It reuses Android's tested behaviour; the
+alone-path structure would mean rewriting what the renderer draws. Not yet in DekoGL: shadows, frames in flight, native face drawing.
+
+**Step 6, begun:** the menu in `NX/Game/Menu` (Android's, for buttons: rail, Start, Options, pickers, hints), drawn through
+`IMenuCanvas`; `NX/MenuPreview` draws it into PNG files on Windows. A first pass: once the 2D and 3D rendering are done, its GUI and
+UX are to match Android's, with only the changes noted above (the user, 2026-11-06).
+
 ## Sources
 
 - deko3d: [repository](https://github.com/devkitPro/deko3d), [primer](https://www.github.com/devkitPro/deko3d/blob/master/Primer.md),

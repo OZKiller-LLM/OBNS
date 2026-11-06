@@ -84,6 +84,14 @@ link_nro() {
         name=$(basename "$shader")
         "$DEVKITPRO/tools/bin/uam" -s "${name##*.}" -o "$OUT/runner/data/${name%.*}_${name##*.}.dksh" "$shader" || { echo "uam failed: $name"; exit 1; }
     done
+    # The renderer's programs (DekoGL): Android's native Vulkan shaders, the same source, made deko3d's - no descriptor
+    # sets, the clip block a uniform buffer, GL's gl_VertexID.
+    mkdir -p "$OUT/runner/shaders"
+    for name in default.vert default.frag rectangle.vert rectangle.frag text.vert; do
+        sed -e 's/set = [0-9], //' -e 's/layout(push_constant) uniform ClipBlock/layout(std140, binding = 2) uniform ClipBlock/' \
+            -e 's/gl_VertexIndex/gl_VertexID/g' "$NX/../Android/OpenBve.Vulkan/Shaders/$name" > "$OUT/runner/shaders/$name"
+        "$DEVKITPRO/tools/bin/uam" -s "${name##*.}" -o "$OUT/runner/data/${name%.*}_${name##*.}.dksh" "$OUT/runner/shaders/$name" || { echo "uam failed: $name"; exit 1; }
+    done
 cp "$OUT/runner/mono_symbols.h" "$OUT/runner/source/"
 cp -r "$MONO_NX_ROOT/../native/shared" "$OUT/runner/nxshared"
 : > "$OUT/runner/source/obns_stubs.c"

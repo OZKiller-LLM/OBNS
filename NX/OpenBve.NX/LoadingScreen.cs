@@ -24,60 +24,66 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Threading;
 using OpenBve.Android;
 
 namespace OpenBve.NX
 {
 	/// <summary>
-	/// OBNS 1.31N, step 3's first part: deko3d's first frames on the console - the loading screen's progress bar
-	/// (LoadProgress: the route the first 80%, the train the rest, as upstream's), drawn from rectangles by its own thread
-	/// at 30 frames a second while the loading thread works. A small block moves along under the bar so that a long
-	/// stage still shows the game is alive. Text and the route's image come with the 2D drawing's shaders.
+	/// OBNS 1.31N: the loading screen on deko3d - Android's (GameActivity.LoadingScreen) drawn by the 2D layer: the route's
+	/// picture across the screen, centre-cropped at 55%, and at the bottom the route's name, "Loading route... NN%" (or
+	/// the train) and the bar, from LoadProgress (the route the first 80%, as upstream's). Its own thread draws at 30
+	/// frames a second while the loading thread works; an error replaces the bar, in Android's orange-red.
 	/// </summary>
 	internal static class LoadingScreen
 	{
-		[DllImport("__Internal", EntryPoint = "obns_dk_open")]
-		private static extern int Open(int width, int height);
-
-		[DllImport("__Internal", EntryPoint = "obns_dk_frame_rects")]
-		private static extern unsafe int FrameRects(float red, float green, float blue, float* rects, int count);
-
-		[DllImport("__Internal", EntryPoint = "obns_dk_close")]
-		private static extern void Close();
-
-		private const int Width = 1280, Height = 720;
-
 		private static Thread thread;
-		private static volatile bool running;
-		private static volatile bool finished;
+		private static volatile bool running, finished;
+		private static volatile string error;
+		private static string title, image;
 
 		/// <summary>Whether deko3d opened (else the screen stays black, as before).</summary>
 		internal static bool Opened { get; private set; }
 
-		/// <summary>Opens deko3d and starts drawing; logs what failed.</summary>
-		internal static void Start(Action<string> log)
+		/// <summary>Opens deko3d (if the menu hasn't) and starts drawing for the route; logs what failed.</summary>
+		internal static void Start(Action<string> log, string routeFile, string imageFile)
 		{
-			int result = Open(Width, Height);
+			int result = DekoCanvas.Open(1280, 720);
 			if (result != 0)
 			{
 				log("deko3d did not open (" + result + "): the screen stays black");
 				return;
 			}
 
+			title = string.IsNullOrEmpty(routeFile) ? "OpenBVE" : System.IO.Path.GetFileNameWithoutExtension(routeFile);
+			image = imageFile;
+			if (string.IsNullOrEmpty(image) && !string.IsNullOrEmpty(routeFile))
+			{
+				try
+				{
+					image = RouteInfo.FindImageBesideRoute(routeFile);
+				}
+				catch (Exception)
+				{
+					image = null;
+				}
+			}
+
 			Opened = true;
 			running = true;
 			thread = new Thread(() => Loop(log)) { IsBackground = true, Name = "OBNS loading screen" };
 			thread.Start();
-			log("deko3d open: the loading screen draws at 30 frames a second");
+			log("loading screen: drawn by deko3d at 30 frames a second" + (string.IsNullOrEmpty(image) ? string.Empty : ", with " + image));
 		}
 
-		/// <summary>The bar full, in the accent colour, until <see cref="Stop"/>.</summary>
+		/// <summary>The bar full, until <see cref="Stop"/>.</summary>
 		internal static void Finish() => finished = true;
 
-		/// <summary>Stops drawing and closes deko3d.</summary>
-		internal static void Stop()
+		/// <summary>The error in place of the bar, as Android's loading screen shows a failed load.</summary>
+		internal static void ShowError(string message) => error = message;
+
+		/// <summary>Stops drawing, and closes deko3d unless the game's frames are to follow.</summary>
+		internal static void Stop(bool close = true)
 		{
 			if (!Opened)
 			{
@@ -86,50 +92,46 @@ namespace OpenBve.NX
 
 			running = false;
 			thread?.Join();
-			Close();
+			thread = null;
+			if (close)
+			{
+				DekoCanvas.Close();
+			}
+
 			Opened = false;
 		}
 
-		// The menu's palette (MenuStyle), as 0 to 1.
-		private static readonly float[] Background = Rgb(0x12151C), Track = Rgb(0x262C3A), Accent = Rgb(0x5CA0FF), Secondary = Rgb(0x96A0B2), Done = Rgb(0x8CC8FF);
+		private const uint White = 0xFFFFFFFF, Shadow = 0x99000000, OrangeRed = 0xFFFF4500;
 
-		private static float[] Rgb(int rgb) => new[] { ((rgb >> 16) & 255) / 255f, ((rgb >> 8) & 255) / 255f, (rgb & 255) / 255f };
-
-		private static unsafe void Loop(Action<string> log)
+		private static void Loop(Action<string> log)
 		{
+			DekoCanvas canvas = new DekoCanvas();
 			Stopwatch clock = Stopwatch.StartNew();
-			float* rects = stackalloc float[7 * 8];
 			long frames = 0;
 			double worst = 0;
 			while (running)
 			{
 				double start = clock.Elapsed.TotalSeconds;
-				double progress = finished ? 1.0 : Math.Clamp(LoadProgress.Value, 0.0, 1.0);
-				int count = 0;
-				const float barX = 240, barY = 520, barWidth = 800, barHeight = 14;
-				Rect(rects, ref count, barX, barY, barWidth, barHeight, Track);
-				Rect(rects, ref count, barX, barY, (float)(barWidth * progress), barHeight, finished ? Done : Accent);
-				// Where the route's part ends and the train's starts (80%).
-				Rect(rects, ref count, barX + barWidth * 0.8f - 1, barY - 6, 2, barHeight + 12, Secondary);
-				if (!finished)
+				if (!canvas.Begin(0xFF0C1018))
 				{
-					// Alive: a block going to and fro under the bar, once every 2 s.
-					double phase = start % 2.0 / 2.0;
-					double along = phase < 0.5 ? phase * 2 : 2 - phase * 2;
-					Rect(rects, ref count, barX + (float)(along * (barWidth - 60)), barY + barHeight + 14, 60, 4, Secondary);
+					log("loading screen: the 2D drawing did not start");
+					break;
 				}
 
-				int result = FrameRects(Background[0], Background[1], Background[2], rects, count);
-				if (result != 0)
+				Draw(canvas);
+				if (!canvas.End())
 				{
-					log("deko3d: the queue is in an error state after " + frames + " frames; the loading screen stops");
-					running = false;
+					log("deko3d: the GPU's queue failed after " + frames + " frames; the loading screen stops");
 					break;
 				}
 
 				frames++;
 				double took = clock.Elapsed.TotalSeconds - start;
-				worst = Math.Max(worst, took);
+				if (frames > 2)
+				{
+					worst = Math.Max(worst, took);
+				}
+
 				int rest = (int)((1.0 / 30 - took) * 1000);
 				if (rest > 0)
 				{
@@ -137,20 +139,50 @@ namespace OpenBve.NX
 				}
 			}
 
+			running = false;
 			log($"loading screen: {frames} frames in {clock.Elapsed.TotalSeconds:F0} s, the slowest {worst * 1000:F1} ms");
 		}
 
-		private static unsafe void Rect(float* rects, ref int count, float x, float y, float width, float height, float[] color)
+		/// <summary>Text with Android's soft black shadow (a 6 px glow there; four offset copies here).</summary>
+		private static void ShadowedText(DekoCanvas canvas, string text, float x, float y, float size, uint color, bool bold)
 		{
-			float* r = rects + count * 7;
-			r[0] = x;
-			r[1] = y;
-			r[2] = width;
-			r[3] = height;
-			r[4] = color[0];
-			r[5] = color[1];
-			r[6] = color[2];
-			count++;
+			canvas.Text(text, x - 1.5f, y, size, Shadow, bold);
+			canvas.Text(text, x + 1.5f, y, size, Shadow, bold);
+			canvas.Text(text, x, y - 1.5f, size, Shadow, bold);
+			canvas.Text(text, x, y + 1.5f, size, Shadow, bold);
+			canvas.Text(text, x, y, size, color, bold);
+		}
+
+		private static void Draw(DekoCanvas canvas)
+		{
+			const float width = 1280, height = 720, padding = 36;
+			if (!string.IsNullOrEmpty(image))
+			{
+				canvas.Image(image, 0, 0, width, height, true, 0x8CFFFFFF);
+			}
+
+			const float titleSize = 34, labelSize = 22, barHeight = 8;
+			float barY = height - padding - barHeight;
+			float labelY = barY - 14 - labelSize;
+			float titleY = labelY - 8 - titleSize;
+			ShadowedText(canvas, title, padding, titleY, titleSize, White, false);
+
+			string failure = error;
+			if (failure != null)
+			{
+				ShadowedText(canvas, failure, padding, labelY, labelSize, OrangeRed, false);
+				return;
+			}
+
+			double value = finished ? 1.0 : Math.Clamp(LoadProgress.Value, 0.0, 1.0);
+			string label = LoadProgress.Train != null || finished
+				? Menu.T("loading", "loading_train", "Loading train...")
+				: Menu.T("loading", "loading_route", "Loading route...") + " " + (value / 0.8 * 100.0).ToString("0") + "%";
+			ShadowedText(canvas, label, padding, labelY, labelSize, White, false);
+			// Android's horizontal bar: the track, the progress over it.
+			float barWidth = width - 2 * padding;
+			canvas.Fill(padding, barY, barWidth, barHeight, 0x405CA0FF, barHeight / 2);
+			canvas.Fill(padding, barY, (float)(barWidth * value), barHeight, 0xFF5CA0FF, barHeight / 2);
 		}
 	}
 }

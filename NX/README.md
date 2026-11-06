@@ -15,7 +15,13 @@ in every frame.
 | `probe/` | A small libnx program reporting the console: memory by launch mode, model and versions, clocks (clkrst and apm FastLoad), cores, the SD card's speed. Results in `OBNS/SWITCH.md` |
 | `hello/` | The first C# on the console: mono-nx's AOT example in Release (`build.sh` on Linux). Times C# against the probe's C, the garbage collector and three threads |
 | `build-mono.sh` | Builds Mono for libnx on Linux, with the patches: the runtime and libraries in Release, the AOT offsets, and the PC's AOT cross-compiler with LLVM |
-| `patches/` | Changes to mono-nx's runtime fork (`dotnet_runtime`, branch `libnx`, at 289cdaa): `Console` in sockets logging made Debug-only (Release doesn't reference System.Console), NroForge's libnx TLS clean-up (MIT), without which a managed thread ending trips an assertion in `unregister_thread` and the console crashes, and NroForge's `-fexceptions` for `llvm-runtime.cpp` (unused on ARM64 so far) |
+| `patches/` | Changes to mono-nx's runtime fork (`dotnet_runtime`, branch `libnx`, at 289cdaa): `Console` in sockets logging made Debug-only (Release doesn't reference System.Console), NroForge's libnx TLS clean-up (MIT), without which a managed thread ending trips an assertion in `unregister_thread` and the console crashes, NroForge's `-fexceptions` for `llvm-runtime.cpp` (unused on ARM64 so far), the code page encodings' `WindowsCodePage`, the fake mmap's aligned allocations (sgen's 32 MB nursery), and System.Linq.Expressions' thunks for 3 to 8 parameters (`dynamic` without Reflection.Emit) |
+| `Switch.targets` | How the Android port's projects build for the Switch: Compat's Switch backend, the game project as a library without Android's views, `Game/` compiled in |
+| `Game/` | The game's Switch-only parts: the menu (`Menu/`, drawn through `IMenuCanvas`), its settings (`SwitchSettings.cs`, `UserData/options-nx.cfg`), the Menu, LoadProgress and Speech stand-ins |
+| `OpenBve.NX/` | The entry program: the menu, the load (logged with its time and memory), the loading screen, and the frames; `Deko/` is DekoGL, the renderer's GL calls on deko3d |
+| `runner/` | The native host linked into the NRO: Mono's start-up, deko3d (`obns_dk.c`: the device and swapchain, `obns_dk2d.inc` 2D drawing, `obns_dk3d.inc` the renderer's 3D), input, images and fonts, `shaders/` (GLSL for `uam`) |
+| `build-nro.sh` | The NRO on Linux: the C# built, trimmed and compiled ahead of time with LLVM, the shaders compiled by `uam` (the 2D ones and Android's native Vulkan ones made deko3d's), linked with `runner/` |
+| `MenuPreview/` | The menu drawn into PNG files on Windows (`preview.ps1`), for its layout without the console |
 
 ## Building
 
