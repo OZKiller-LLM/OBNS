@@ -1133,6 +1133,9 @@ namespace OpenBve.NX.Deko
 					{
 						vertexArray = null;
 					}
+
+					lastDrawArrayName = 0;
+					lastDrawArray = null;
 				}
 			}
 		}
@@ -1253,6 +1256,8 @@ namespace OpenBve.NX.Deko
 			internal DekoHeap.Allocation Image;
 			internal int Slot;
 			internal bool HasMips;
+			// Its sampler's slot, kept between draws (-1: work it out again, after a parameter or its mipmaps changed).
+			internal int SamplerSlotCache = -1;
 		}
 
 		private const int TextureSlots = 32768, SamplerSlots = 256;
@@ -1286,6 +1291,8 @@ namespace OpenBve.NX.Deko
 				}
 
 				textures.Remove(names[i]);
+				lastDrawTextureName = 0;
+				lastDrawTexture = null;
 				for (int unit = 0; unit < Units; unit++)
 				{
 					if (units[unit] == texture)
@@ -1328,6 +1335,7 @@ namespace OpenBve.NX.Deko
 			texture.Slot = 0;
 			texture.Image = default;
 			texture.HasMips = false;
+			texture.SamplerSlotCache = -1;
 		}
 
 		public void glBindTexture(int target, int texture)
@@ -1404,6 +1412,8 @@ namespace OpenBve.NX.Deko
 			{
 				return;
 			}
+
+			texture.SamplerSlotCache = -1;
 
 			switch (pname)
 			{
@@ -1769,6 +1779,7 @@ namespace OpenBve.NX.Deko
 			texture.Staging = default;
 			texture.Pending = false;
 			texture.HasMips = levels > 1;
+			texture.SamplerSlotCache = -1;
 			texture.Slot = slot;
 			if (!inFrame && stagingPending > StagingBudget)
 			{

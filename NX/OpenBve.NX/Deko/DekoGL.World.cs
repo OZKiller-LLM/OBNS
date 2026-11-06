@@ -85,6 +85,10 @@ namespace OpenBve.NX.Deko
 		private readonly WorldDraw[] world = new WorldDraw[WorldBatch];
 		private int worldCount;
 
+		private int lastDrawArrayName, lastDrawTextureName;
+		private GLVertexArray lastDrawArray;
+		private GLTexture lastDrawTexture;
+
 		/// <summary>Faces drawn this way in the last finished frame, for the log.</summary>
 		public int LastFrameFaces { get; private set; }
 
@@ -162,7 +166,19 @@ namespace OpenBve.NX.Deko
 			try
 			{
 				GLProgram program = currentProgram;
-				if (!CanDrawFaces || count <= 0 || mode == GL_POINTS || !vertexArrays.TryGetValue(vertexArrayName, out GLVertexArray array))
+				// The last face's vertex array and texture kept: neighbouring faces mostly share them (one lookup each saved).
+				GLVertexArray array;
+				if (vertexArrayName == lastDrawArrayName && lastDrawArray != null)
+				{
+					array = lastDrawArray;
+				}
+				else if (vertexArrays.TryGetValue(vertexArrayName, out array))
+				{
+					lastDrawArrayName = vertexArrayName;
+					lastDrawArray = array;
+				}
+
+				if (!CanDrawFaces || count <= 0 || mode == GL_POINTS || array == null)
 				{
 					return false;
 				}
@@ -185,7 +201,15 @@ namespace OpenBve.NX.Deko
 				GLTexture texture = null;
 				if (textureName != 0)
 				{
-					textures.TryGetValue(textureName, out texture);
+					if (textureName == lastDrawTextureName && lastDrawTexture != null)
+					{
+						texture = lastDrawTexture;
+					}
+					else if (textures.TryGetValue(textureName, out texture))
+					{
+						lastDrawTextureName = textureName;
+						lastDrawTexture = texture;
+					}
 				}
 
 				if (texture == null || (!texture.Pending && texture.Slot == 0))
@@ -201,7 +225,12 @@ namespace OpenBve.NX.Deko
 				}
 
 				draw.Texture = (uint)texture.Slot;
-				draw.Sampler = (uint)SamplerSlot(SamplerKey(texture));
+				if (texture.SamplerSlotCache < 0)
+				{
+					texture.SamplerSlotCache = SamplerSlot(SamplerKey(texture));
+				}
+
+				draw.Sampler = (uint)texture.SamplerSlotCache;
 
 				// The frame's block, when the renderer's values changed (a few times a frame).
 				if (worldFrameDirty || frameSerial != serial || frameAddress == 0)

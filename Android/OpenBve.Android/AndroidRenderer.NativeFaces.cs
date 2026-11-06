@@ -69,15 +69,32 @@ namespace OpenBve.Android
 		private void ResetNativeFaces()
 		{
 			nativeLastState = null;
+			nativeCull = -1;
 		}
+
+		/// <summary>The culling the native faces last set (-1: unknown, set it again): set only when it changes.</summary>
+		private int nativeCull = -1;
+
+		// The device, looked up once rather than cast for every face.
+		private object nativeDeviceSource;
+		private INativeFaceDevice nativeDevice;
 
 		/// <summary>Draws a face: natively on the Vulkan renderer when it can, through upstream's RenderFace otherwise.</summary>
 		internal void DrawFace(Shader shader, ObjectState state, MeshFace face)
 		{
-			INativeFaceDevice device = NativeFaces ? GL.Device as INativeFaceDevice : null;
+			object current = GL.Device;
+			if (!ReferenceEquals(current, nativeDeviceSource))
+			{
+				nativeDeviceSource = current;
+				nativeDevice = current as INativeFaceDevice;
+			}
+
+			INativeFaceDevice device = NativeFaces ? nativeDevice : null;
 			// The debug views (wireframe, normals) are upstream's RenderFace's own.
 			if (device == null || shader != DefaultShader || OptionWireFrame || OptionNormals || !device.CanDrawFaces || !(state.Prototype.Mesh.VAO is VertexArrayObject vao))
 			{
+				// Upstream's way sets its own state: the culling known no longer.
+				nativeCull = -1;
 				RenderFace(shader, state, face);
 				return;
 			}
@@ -104,13 +121,19 @@ namespace OpenBve.Android
 				nativeLastState = state;
 			}
 
-			if (!OptionBackFaceCulling || (face.Flags & FaceFlags.Face2Mask) != 0)
+			int cull = !OptionBackFaceCulling || (face.Flags & FaceFlags.Face2Mask) != 0 ? 0 : 1;
+			if (cull != nativeCull)
 			{
-				GL.Disable(EnableCap.CullFace);
-			}
-			else
-			{
-				GL.Enable(EnableCap.CullFace);
+				if (cull == 0)
+				{
+					GL.Disable(EnableCap.CullFace);
+				}
+				else
+				{
+					GL.Enable(EnableCap.CullFace);
+				}
+
+				nativeCull = cull;
 			}
 
 			MeshMaterial material = state.Prototype.Mesh.Materials[face.Material];
@@ -204,6 +227,8 @@ namespace OpenBve.Android
 				{
 					RestoreBlendFunc();
 				}
+
+				nativeCull = -1;
 
 				RenderFace(shader, state, face);
 				return;
