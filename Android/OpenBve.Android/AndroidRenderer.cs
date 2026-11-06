@@ -303,9 +303,14 @@ namespace OpenBve.Android
 			// Faces the static batches draw come out of the lists (see StaticBatcher).
 			batcher ??= new StaticBatcher(this);
 			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
-			VertexCopyReleaser.Step(this);
-
 			Profile.Mark("batch filter");
+			/*
+			 * 128 states a frame: each is two reflection reads, slow under the Switch's full AOT (at 1000 a frame they were
+			 * most of the 6 ms then charged to "batch filter", 2026-11-07). Buffers made while driving are still freed within
+			 * a few seconds.
+			 */
+			VertexCopyReleaser.Step(this, 128);
+			Profile.Mark("vertex copies");
 
 			bool shadows = ShadowsEnabled;
 			if (shadows)
