@@ -85,31 +85,47 @@ static bool on_battery(void)
     return battery;
 }
 
-// Overclock's CPU cap plugged in: 1,785 MHz until an undervolt is set and tested in Horizon OC (the Erista guide: 2,091 MHz
-// needs CPU undervolt 1 and a decent bin). At 2,091 MHz without one the console lost its network service (2162-0002)
-// and then its audio (2026-11-07): raised to 2,091 MHz once the user has tested it.
-#ifndef OVERCLOCK_CPU_HZ
-#define OVERCLOCK_CPU_HZ 1785000000u
-#endif
+/*
+ * Overclock's caps plugged in, by default the safe ones: CPU 1,785 MHz (the Erista guide: 2,091 MHz needs CPU undervolt 1
+ * and a decent bin - without one the console lost its network service, then OBNS's audio, 2026-11-07), GPU 921.6 MHz
+ * (998.4 needs undervolt 2 under 950 mV), memory 1,600 MHz (its rating: unstable memory corrupts the system storage and
+ * the SD card). Raised to what the user has set and tested in Horizon OC by UserData/nx-overclock.ini - lines cpu_mhz=,
+ * gpu_mhz=, memory_mhz= - never past the guide's ceilings: CPU 2,091, GPU 998.4, memory 2,133 MHz.
+ */
+static u32 ocCpuHz = 1785000000u, ocGpuHz = 921600000u, ocMemoryHz = 1600000000u;
 
-// Overclock's memory cap: raised to the rate stability-tested in Horizon OC (the user's), never past 2,133 MHz.
-#ifndef OVERCLOCK_MEMORY_HZ
-#define OVERCLOCK_MEMORY_HZ 1600000000u
-#endif
+static void read_overclock_caps(void)
+{
+    static bool read;
+    if (read) return;
+    read = true;
+    FILE *f = fopen("sdmc:/switch/OBNS/UserData/nx-overclock.ini", "r");
+    if (!f) return;
+    char line[128];
+    while (fgets(line, sizeof line, f)) {
+        unsigned mhz = 0;
+        if (sscanf(line, " cpu_mhz = %u", &mhz) == 1) ocCpuHz = (mhz > 2091 ? 2091 : mhz) * 1000000u;
+        else if (sscanf(line, " gpu_mhz = %u", &mhz) == 1) ocGpuHz = mhz >= 998 ? 998400000u : mhz * 1000000u;
+        else if (sscanf(line, " memory_mhz = %u", &mhz) == 1) ocMemoryHz = (mhz > 2133 ? 2133 : mhz) * 1000000u;
+    }
+    fclose(f);
+    printf("OBNS: overclock caps from nx-overclock.ini: CPU %u, GPU %u, memory %u MHz\n", ocCpuHz / 1000000u, ocGpuHz / 1000000u, ocMemoryHz / 1000000u);
+}
 
 static u32 target_rate(int mode, int clock)
 {
     bool docked = appletGetOperationMode() == AppletOperationMode_Console;
     if (mode == 4) {
         bool battery = !docked && on_battery();
-        if (clock == 0) return battery ? 1785000000u : OVERCLOCK_CPU_HZ;
+        read_overclock_caps();
+        if (clock == 0) return battery ? 1785000000u : ocCpuHz;
         /*
          * GPU 921.6 MHz: the Erista guide's safe rate (998.4 needs undervolt 2 under 950 mV, set and tested in Horizon
          * OC). Memory 1,600 MHz, its rating, until a rate has been chosen and stability-tested in Horizon OC (unstable
          * memory corrupts the system storage and the SD card); then this cap is raised to it (OVERCLOCK_MEMORY_HZ).
          */
-        if (clock == 1) return battery ? 460800000u : 921600000u;
-        return OVERCLOCK_MEMORY_HZ;
+        if (clock == 1) return battery ? 460800000u : ocGpuHz;
+        return ocMemoryHz;
     }
     if (mode == 3) {
         if (clock == 0) return 1785000000u;
@@ -225,6 +241,22 @@ EXPORT void obns_clock_rates(int *cpu, int *gpu, int *memory)
     *cpu = (int)(setHz[0] / 1000000);
     *gpu = clocksTouched[1] ? (int)(setHz[1] / 1000000) : 0;
     *memory = clocksTouched[2] ? (int)(setHz[2] / 1000000) : 0;
+}
+
+// The clocks as they are now, read back from the system (what another program may have set shows here), in MHz.
+EXPORT void obns_clock_now(int *cpu, int *gpu, int *memory)
+{
+    int *out[CLOCKS] = { cpu, gpu, memory };
+    for (int i = 0; i < CLOCKS; i++) *out[i] = 0;
+    if (!hosversionAtLeast(8, 0, 0) || R_FAILED(clkrstInitialize())) return;
+    for (int i = 0; i < CLOCKS; i++) {
+        ClkrstSession session;
+        if (R_FAILED(clkrstOpenSession(&session, clockModules[i], 3))) continue;
+        u32 hz = 0;
+        if (R_SUCCEEDED(clkrstGetClockRate(&session, &hz))) *out[i] = (int)(hz / 1000000u);
+        clkrstCloseSession(&session);
+    }
+    clkrstExit();
 }
 
 // An exception nothing caught: printed (to nxlink, or UserData/runner.log) before mono-nx's error screen, which alone

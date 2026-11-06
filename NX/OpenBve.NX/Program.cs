@@ -67,6 +67,10 @@ namespace OpenBve.NX
 		[DllImport("__Internal", EntryPoint = "obns_clock_rates")]
 		private static extern void ClockRates(out int cpu, out int gpu, out int memory);
 
+		/// <summary>The clocks as they are now, read back from the system: what another program set shows here too.</summary>
+		[DllImport("__Internal", EntryPoint = "obns_clock_now")]
+		private static extern void ClockNow(out int cpu, out int gpu, out int memory);
+
 		private static readonly Stopwatch Clock = Stopwatch.StartNew();
 		private static StreamWriter logFile;
 
@@ -487,7 +491,9 @@ namespace OpenBve.NX
 
 				if (now - windowStart >= 5.0)
 				{
-					Stage($"frames: {frames / (now - windowStart):F1} fps, the slowest {worst * 1000:F1} ms, {renderer.VisibleFaceCount} visible faces; {deko.Describe()}");
+					// The clocks as they are at the window's end (the user's, 2026-11-07: whether the overclock holds).
+					ClockNow(out int cpuNow, out int gpuNow, out int memoryNow);
+					Stage($"frames: {frames / (now - windowStart):F1} fps, the slowest {worst * 1000:F1} ms, clocks CPU {cpuNow} GPU {gpuNow} memory {memoryNow} MHz, {renderer.VisibleFaceCount} visible faces; {deko.Describe()}");
 					// Where a frame's time goes, on average: the loop's phases, then the renderer's own (as Android's GameView logs it).
 					string[] names = { "input", "simulation", "RenderScene", "overlay", "sound", "end of frame" };
 					System.Text.StringBuilder split = new System.Text.StringBuilder("frames: per frame ");
