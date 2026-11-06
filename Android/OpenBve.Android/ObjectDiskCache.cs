@@ -69,6 +69,10 @@ namespace OpenBve.Android
 		private static int hits, misses, stored, notStorable, failures;
 		private static long hitTicks, storeTicks, writeTicks, packBytes;
 
+		/// <summary>The pack is made longer in steps of this, ahead of the records: on the Switch a file that grows with each
+		/// write is slow to write (99 MB took 310 s of the writer's time, 2026-11-07). packBytes is where the records end.</summary>
+		private const long PackGrowth = 8L << 20;
+
 		/*
 		 * Records go to the SD card from a writer thread of their own: the parsing threads only turn an object into bytes (it
 		 * may change once handed back) and queue them, rather than wait on the card and on each other for the pack. At most
@@ -353,7 +357,12 @@ namespace OpenBve.Android
 						// The pack is written under the lock (TryLoad reads it under the lock too); the parsers no longer wait for it.
 						if (pack != null && !index.ContainsKey(record.Key))
 						{
-							long offset = pack.Length;
+							long offset = packBytes, end = offset + 8 + record.Payload.Length;
+							if (end > pack.Length)
+							{
+								pack.SetLength(end + PackGrowth);
+							}
+
 							pack.Seek(offset, SeekOrigin.Begin);
 							using (BinaryWriter header = new BinaryWriter(pack, Encoding.UTF8, true))
 							{
@@ -363,7 +372,7 @@ namespace OpenBve.Android
 
 							pack.Write(record.Payload, 0, record.Payload.Length);
 							index[record.Key] = (offset + 8, record.Payload.Length);
-							packBytes = pack.Length;
+							packBytes = end;
 							indexDirty = true;
 							stored++;
 							done = true;
@@ -458,7 +467,7 @@ namespace OpenBve.Android
 				{
 					writer.Write(IndexMagic);
 					writer.Write(signature);
-					writer.Write(pack.Length);
+					writer.Write(packBytes);
 					writer.Write(index.Count);
 					foreach (KeyValuePair<string, (long Offset, int Length)> entry in index)
 					{
@@ -480,7 +489,24 @@ namespace OpenBve.Android
 
 		private static void CloseLocked()
 		{
-			pack?.Dispose();
+			if (pack != null)
+			{
+				try
+				{
+					// The space grown ahead, given back.
+					if (pack.Length > packBytes)
+					{
+						pack.SetLength(packBytes);
+					}
+				}
+				catch (Exception)
+				{
+					// the index says where the records end; the rest is only space
+				}
+
+				pack.Dispose();
+			}
+
 			pack = null;
 		}
 
