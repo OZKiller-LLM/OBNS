@@ -300,6 +300,26 @@ namespace OpenBve.NX
 				trainFolder = lines.Length > 1 && lines[1].Trim().Length != 0 ? lines[1].Trim() : null;
 			}
 
+			if (!File.Exists(choice))
+			{
+				// The menu (OBNS/SWITCH.md, step 6) chooses the route and the train; nx-load.txt skips it for measurements.
+				// Before the game's renderer and plugins: the menu's previews set up their own (RouteInfo), as Android's
+				// menu does in its own process.
+				OpenBve.Switch.SwitchLaunch launch = MenuLoop.Run(Log);
+				if (launch == null)
+				{
+					Stage("menu: left without starting");
+					return 0;
+				}
+
+				routeFile = launch.RouteFile;
+				trainFolder = launch.TrainFolder;
+			}
+
+			// The options the menu keeps (SwitchSettings), onto the game's.
+			SwitchSettings.ApplyTo(options);
+			Stage($"options: textures up to {TextureSizeLimit.MaxSize} px, {(AndroidHost.Textures16Bit ? 16 : 32)}-bit, viewing distance {options.ViewingDistance} m");
+
 			// As GameView: the renderer (its GL calls go nowhere until the deko3d renderer), sounds, trains, plugins.
 			DisplayDevice.Default = new DisplayDevice(1280, 720, 1.0f, 1.0f);
 			AndroidRenderer renderer = new AndroidRenderer(host, options, fileSystem);
@@ -327,20 +347,6 @@ namespace OpenBve.NX
 			InitializeWithoutDrawing(renderer, host);
 			OpenBve.Program.FileSystem = fileSystem;
 			Stage("plugins: " + plugins.Replace("\n", "; "));
-			if (!File.Exists(choice))
-			{
-				// The menu (OBNS/SWITCH.md, step 6) chooses the route and the train; nx-load.txt skips it for measurements.
-				OpenBve.Switch.SwitchLaunch launch = MenuLoop.Run(Log);
-				if (launch == null)
-				{
-					Stage("menu: left without starting");
-					return 0;
-				}
-
-				routeFile = launch.RouteFile;
-				trainFolder = launch.TrainFolder;
-			}
-
 			LoadingScreen.Start(Log);
 
 			host.FileSystem = fileSystem;

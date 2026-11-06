@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    OBNS 1.31N: the Switch's menu (NX/Game/Menu) drawn on Windows into PNG files, for checking its layout without the
+    console. Built against the Android game project as the Switch build is (NX/Switch.targets); run with
+    NX/MenuPreview/preview.ps1. A development tool: nothing of it goes into the NRO.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>13</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <!-- Built against .NET 9 as the Switch's runtime is; runs on whichever newer runtime the PC has. -->
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Android\OpenBve.Android\OpenBve.Android.csproj" />
+    <!-- Aliased: the Switch's System.Drawing stand-in (OpenBve.Compat.NX) has the same namespace. -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" Aliases="GdiPlus" />
+  </ItemGroup>
+
+  <!-- GDI+'s Color and RectangleF are in the framework's System.Drawing.Primitives: aliased the same way. -->
+  <Target Name="AliasDrawingPrimitives" AfterTargets="ResolveTargetingPackAssets">
+    <ItemGroup>
+      <Reference Condition="'%(Filename)' == 'System.Drawing.Primitives'">
+        <Aliases>GdiPlus</Aliases>
+      </Reference>
+    </ItemGroup>
+  </Target>
+
+</Project>

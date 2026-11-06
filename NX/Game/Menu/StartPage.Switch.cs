@@ -86,6 +86,23 @@ namespace OpenBve.Switch
 
 		private static string Existing(string folder) => !string.IsNullOrEmpty(folder) && Directory.Exists(folder) ? folder : null;
 
+		/// <summary>What X and Y do here, for the hints along the bottom (empty when the list isn't in use).</summary>
+		public string Hints
+		{
+			get
+			{
+				if (part != Part.List)
+				{
+					return string.Empty;
+				}
+
+				string x = "    Ⓧ " + (showRecent
+					? T("start", step == Step.Route ? "route_browse" : "train_browse", "Browse manually")
+					: T("start", step == Step.Route ? "route_recently" : "train_recently", "Recently used"));
+				return showRecent ? x : x + "    Ⓨ " + T("switch", "hint_up", "Up a folder");
+			}
+		}
+
 		/// <summary>Whether the page has a route and a train to start with.</summary>
 		public bool Ready => route != null && route.Error == null && route.Description != Processing && train != null && train.Error == null;
 
@@ -122,7 +139,7 @@ namespace OpenBve.Switch
 		/// <summary>The list for the step and source shown: a folder's entries, or the recently used.</summary>
 		private void Fill()
 		{
-			string focusedPath = (list.Focused as EntryItem)?.Detail;
+			string focusedPath = (list.Focused as EntryItem)?.Path;
 			list.Clear();
 			if (showRecent)
 			{
@@ -131,12 +148,13 @@ namespace OpenBve.Switch
 				foreach (string item in items)
 				{
 					string path = item;
-					list.Add(new EntryItem(step == Step.Route ? "◆" : "■", Path.GetFileName(path.TrimEnd('/')), path, () => Choose(path)));
+					// The folder it's in as the second line: recent entries come from anywhere.
+					list.Add(new EntryItem(step == Step.Route ? "◆" : "■", Path.GetFileName(path.TrimEnd('/')), Shown(Path.GetDirectoryName(path.TrimEnd('/'))), () => Choose(path), path));
 				}
 
 				if (items.Count == 0)
 				{
-					list.Add(new InfoItem(T("android", "folder_empty", "Nothing to show in this folder.")));
+					list.Add(new InfoItem(T("switch", "recent_empty", "Nothing has been used yet.")));
 				}
 			}
 			else
@@ -152,7 +170,7 @@ namespace OpenBve.Switch
 			list.FocusFirst();
 			if (focusedPath != null)
 			{
-				int index = list.Items.FindIndex(i => i is EntryItem e && e.Detail == focusedPath);
+				int index = list.Items.FindIndex(i => i is EntryItem e && e.Path == focusedPath);
 				if (index >= 0)
 				{
 					list.Focus = index;
@@ -173,7 +191,7 @@ namespace OpenBve.Switch
 			string parent = Path.GetDirectoryName(folder.TrimEnd('/'));
 			if (!string.IsNullOrEmpty(parent))
 			{
-				entries.Add(new EntryItem("↑", "..", null, () => Open(parent)));
+				entries.Add(new EntryItem("↑", "..", null, () => Open(parent), parent));
 			}
 
 			string[] folders, files;
@@ -201,11 +219,11 @@ namespace OpenBve.Switch
 
 				if (step == Step.Train && RouteInfo.IsTrainFolder(sub))
 				{
-					entries.Add(new EntryItem("■", name, sub, () => Choose(path)));
+					entries.Add(new EntryItem("■", name, null, () => Choose(path), path));
 				}
 				else
 				{
-					entries.Add(new EntryItem("▸", name, null, () => Open(path)));
+					entries.Add(new EntryItem("▸", name, null, () => Open(path), path));
 				}
 			}
 
@@ -214,7 +232,7 @@ namespace OpenBve.Switch
 				string path = file;
 				if (step == Step.Route ? RouteInfo.IsRouteFile(file) : RouteInfo.IsTrainFile(file))
 				{
-					entries.Add(new EntryItem(step == Step.Route ? "◆" : "■", Path.GetFileName(file), file, () => Choose(path)));
+					entries.Add(new EntryItem(step == Step.Route ? "◆" : "■", Path.GetFileName(file), null, () => Choose(path), path));
 				}
 			}
 
@@ -271,7 +289,7 @@ namespace OpenBve.Switch
 			{
 				if (item is EntryItem entry)
 				{
-					entry.Chosen = chosen != null && entry.Detail == chosen;
+					entry.Chosen = chosen != null && entry.Path == chosen;
 				}
 			}
 		}
@@ -580,7 +598,7 @@ namespace OpenBve.Switch
 			canvas.Fill(x, top, leftWidth, bodyHeight, MenuStyle.Surface, MenuStyle.Radius);
 			string source = showRecent
 				? T("start", step == Step.Route ? "route_recently" : "train_recently", "Recently used")
-				: MenuStyle.Fit(canvas, (step == Step.Route ? routeFolder : trainFolder) ?? string.Empty, MenuStyle.SmallSize, leftWidth - 150);
+				: FitTail(canvas, Shown(step == Step.Route ? routeFolder : trainFolder), MenuStyle.SmallSize, leftWidth - 190);
 			canvas.Text(source, x + 14, top + 12, MenuStyle.SmallSize, MenuStyle.Secondary);
 			string toggle = "X  " + (showRecent ? T("start", step == Step.Route ? "route_browse" : "train_browse", "Browse manually") : T("start", "route_recently", "Recently used"));
 			toggle = MenuStyle.Fit(canvas, toggle, MenuStyle.SmallSize, 140);
@@ -589,7 +607,11 @@ namespace OpenBve.Switch
 
 			// Right: the choices and the preview.
 			canvas.Fill(rightX, top, rightWidth, bodyHeight, MenuStyle.Surface, MenuStyle.Radius);
-			float choicesHeight = step == Step.Train ? 2 * (MenuStyle.RowHeight + 4) : MenuStyle.RowHeight + 4;
+			float choicesHeight = choices.Items[0].Measure(canvas, rightWidth - 16) + 4;
+			if (step == Step.Train)
+			{
+				choicesHeight += choices.Items[1].Measure(canvas, rightWidth - 16) + 4;
+			}
 			DrawChoices(canvas, rightX + 8, top + 8, rightWidth - 16, choicesHeight, active && part == Part.Choices, seconds);
 			float previewY = top + 8 + choicesHeight + 4;
 			canvas.Text(T("start", step == Step.Route ? "route_details" : "train_details", "Details"), rightX + 16, previewY, MenuStyle.HeadingSize, MenuStyle.Primary, true);
@@ -644,6 +666,41 @@ namespace OpenBve.Switch
 			}
 
 			canvas.Unclip();
+		}
+
+		/// <summary>A folder as the list's heading shows it: from the content folder (LegacyContent) when it's inside it.</summary>
+		private static string Shown(string folder)
+		{
+			if (string.IsNullOrEmpty(folder))
+			{
+				return string.Empty;
+			}
+
+			string railway = Menu.FileSystem?.RouteInstallationDirectory;
+			string content = string.IsNullOrEmpty(railway) ? null : Path.GetDirectoryName(railway.TrimEnd('/', '\\'));
+			if (!string.IsNullOrEmpty(content) && folder.StartsWith(content, StringComparison.OrdinalIgnoreCase) && folder.Length > content.Length)
+			{
+				folder = folder.Substring(content.Length).TrimStart('/', '\\');
+			}
+
+			return folder.Replace('\\', '/');
+		}
+
+		/// <summary>Text cut from the start to fit, so a path's last folders stay in view.</summary>
+		private static string FitTail(IMenuCanvas canvas, string text, float size, float width)
+		{
+			if (canvas.TextWidth(text, size) <= width)
+			{
+				return text;
+			}
+
+			int start = 0;
+			while (start < text.Length - 1 && canvas.TextWidth("…" + text.Substring(start), size) > width)
+			{
+				start++;
+			}
+
+			return "…" + text.Substring(start);
 		}
 
 		/// <summary>The right side's choices: the game mode, and on the train step the suggested train.</summary>

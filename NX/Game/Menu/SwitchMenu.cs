@@ -342,7 +342,7 @@ namespace OpenBve.Switch
 			string hints = picker != null
 				? "Ⓐ " + T("switch", "hint_choose", "Choose") + "    Ⓑ " + T("switch", "hint_back", "Back")
 				: "Ⓐ " + T("switch", "hint_choose", "Choose") + "    Ⓑ " + T("switch", "hint_back", "Back") + "    Ⓛ Ⓡ " + T("switch", "hint_sections", "Sections") +
-				  (section == Section.Start && !inRail ? "    Ⓧ " + T("start", "route_recently", "Recently used") + "    Ⓨ " + T("switch", "hint_up", "Up a folder") : string.Empty) +
+				  (section == Section.Start && !inRail ? startPage.Hints : string.Empty) +
 				  (section == Section.Start && startPage.Ready ? "    ⊕ " + T("start", "start_start", "Start") : string.Empty);
 			hints = MenuStyle.Fit(canvas, hints, MenuStyle.SmallSize, MenuStyle.Width - 2 * MenuStyle.SafeX);
 			canvas.Text(hints, MenuStyle.Width - MenuStyle.SafeX - canvas.TextWidth(hints, MenuStyle.SmallSize), y + (HintsHeight - MenuStyle.SmallSize) / 2, MenuStyle.SmallSize, MenuStyle.Secondary);

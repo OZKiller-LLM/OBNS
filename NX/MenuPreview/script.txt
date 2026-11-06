@@ -1,0 +1,33 @@
+# The Switch menu's preview: presses and shots (NX/MenuPreview/Program.cs).
+shot 01-start
+# Into the list: ".." first, then the folders by name; open "Sample Line" (the third), choose its route.
+Down x2
+A
+shot 02-route-folder
+Down
+A
+shot 03-route-chosen
+# The train step, from the steps along the top (the route's suggested train is chosen already).
+Up x2
+Right
+A
+shot 04-train-step
+X
+shot 05-recent
+X
+# Options: R three times (Start, Packages, Controls, Options).
+R x3
+shot 06-options-top
+Down x8
+shot 07-options-quality
+A
+shot 08-picker
+B
+Down x20
+shot 09-options-touch
+R
+shot 10-about
+R
+L x4
+B
+shot 11-rail

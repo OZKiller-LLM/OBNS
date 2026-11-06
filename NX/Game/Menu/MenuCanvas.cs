@@ -83,6 +83,10 @@ namespace OpenBve.Switch
 
 		public const float Gap = 12, Radius = 10;
 
+		/// <summary>The width of a row's value (a choice's value, a slider's bar) on the right: the same on every row of a
+		/// page, so they line up.</summary>
+		public static float ValueColumn(float rowWidth) => rowWidth > 600 ? rowWidth * 0.4f : rowWidth * 0.5f;
+
 		/// <summary>Breaks text into lines no wider than <paramref name="width"/>, at spaces where it can (anywhere in
 		/// CJK text, which has none), keeping the text's own line breaks.</summary>
 		public static List<string> Wrap(IMenuCanvas canvas, string text, float size, float width)

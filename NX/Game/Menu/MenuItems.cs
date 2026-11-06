@@ -153,22 +153,64 @@ namespace OpenBve.Switch
 
 		private bool Enabled => enabled == null || enabled();
 
-		public override float Measure(IMenuCanvas canvas, float width) => MenuStyle.RowHeight;
+		// The value column: as wide as the widest value with its arrows, at most half the row.
+		private float laidWidth = -1, valueWidth;
+		private List<string> labelLines;
+
+		private void Layout(IMenuCanvas canvas, float width)
+		{
+			if (width == laidWidth)
+			{
+				return;
+			}
+
+			laidWidth = width;
+			float widest = 0;
+			foreach (string option in options)
+			{
+				widest = Math.Max(widest, canvas.TextWidth(option, MenuStyle.BodySize));
+			}
+
+			// Wide pages (Options) line their values up in one column, as Android's rows; a narrow panel fits the values.
+			valueWidth = width > 600 ? MenuStyle.ValueColumn(width) : Math.Min(width * 0.5f, widest + 80);
+			// A label too long for its side takes two lines (Android's rows wrap), the second cut if it must be.
+			List<string> lines = MenuStyle.Wrap(canvas, label, MenuStyle.BodySize, width - valueWidth - 32);
+			if (lines.Count > 2)
+			{
+				lines[1] = MenuStyle.Fit(canvas, lines[1] + " " + string.Join(" ", lines.GetRange(2, lines.Count - 2)), MenuStyle.BodySize, width - valueWidth - 32);
+				lines.RemoveRange(2, lines.Count - 2);
+			}
+
+			labelLines = lines;
+		}
+
+		public override float Measure(IMenuCanvas canvas, float width)
+		{
+			Layout(canvas, width);
+			return labelLines.Count > 1 ? MenuStyle.RowHeight + MenuStyle.BodySize + 4 : MenuStyle.RowHeight;
+		}
 
 		public override void Draw(IMenuCanvas canvas, float x, float y, float width, bool focused)
 		{
-			Row(canvas, x, y, width, MenuStyle.RowHeight, focused);
+			float height = Measure(canvas, width);
+			Row(canvas, x, y, width, height, focused);
 			uint color = Enabled ? MenuStyle.Primary : MenuStyle.Secondary;
-			float labelWidth = width * 0.5f - 24;
-			canvas.Text(MenuStyle.Fit(canvas, label, MenuStyle.BodySize, labelWidth), x + 16, Middle(y, MenuStyle.RowHeight, MenuStyle.BodySize), MenuStyle.BodySize, color);
-			float valueX = x + width * 0.5f, valueWidth = width * 0.5f - 16;
+			float lineHeight = MenuStyle.BodySize + 4;
+			float top = Middle(y, height, labelLines.Count * lineHeight - 4);
+			for (int i = 0; i < labelLines.Count; i++)
+			{
+				canvas.Text(labelLines[i], x + 16, top + i * lineHeight, MenuStyle.BodySize, color);
+			}
+
+			float valueX = x + width - valueWidth - 8;
 			string value = MenuStyle.Fit(canvas, options[Selected], MenuStyle.BodySize, valueWidth - 64);
 			float textWidth = canvas.TextWidth(value, MenuStyle.BodySize);
-			canvas.Text(value, valueX + (valueWidth - textWidth) / 2, Middle(y, MenuStyle.RowHeight, MenuStyle.BodySize), MenuStyle.BodySize, color);
+			float textY = Middle(y, height, MenuStyle.BodySize);
+			canvas.Text(value, valueX + (valueWidth - textWidth) / 2, textY, MenuStyle.BodySize, color);
 			if (focused && Enabled)
 			{
-				canvas.Text("‹", valueX + 8, Middle(y, MenuStyle.RowHeight, MenuStyle.BodySize), MenuStyle.BodySize, MenuStyle.Accent, true);
-				canvas.Text("›", valueX + valueWidth - 20, Middle(y, MenuStyle.RowHeight, MenuStyle.BodySize), MenuStyle.BodySize, MenuStyle.Accent, true);
+				canvas.Text("‹", valueX + 8, textY, MenuStyle.BodySize, MenuStyle.Accent, true);
+				canvas.Text("›", valueX + valueWidth - 20, textY, MenuStyle.BodySize, MenuStyle.Accent, true);
 			}
 		}
 
@@ -245,9 +287,10 @@ namespace OpenBve.Switch
 		public override void Draw(IMenuCanvas canvas, float x, float y, float width, bool focused)
 		{
 			Row(canvas, x, y, width, MenuStyle.RowHeight, focused);
-			float labelWidth = width * 0.5f - 24;
+			float labelWidth = width - MenuStyle.ValueColumn(width) - 24;
 			canvas.Text(MenuStyle.Fit(canvas, label, MenuStyle.BodySize, labelWidth), x + 16, Middle(y, MenuStyle.RowHeight, MenuStyle.BodySize), MenuStyle.BodySize, MenuStyle.Primary);
-			float barX = x + width * 0.5f + 8, barWidth = width * 0.5f - 130, barY = y + MenuStyle.RowHeight / 2 - 3;
+			float column = MenuStyle.ValueColumn(width);
+			float barX = x + width - column + 8, barWidth = column - 130, barY = y + MenuStyle.RowHeight / 2 - 3;
 			float fraction = max > min ? (value - min) / (float)(max - min) : 0;
 			canvas.Fill(barX, barY, barWidth, 6, MenuStyle.Surface, 3);
 			canvas.Fill(barX, barY, barWidth * fraction, 6, MenuStyle.Accent, 3);
@@ -286,7 +329,8 @@ namespace OpenBve.Switch
 
 		public override void Tap(float x, float width, IMenuHost host)
 		{
-			float barX = width * 0.5f + 8, barWidth = width * 0.5f - 130;
+			float column = MenuStyle.ValueColumn(width);
+			float barX = width - column + 8, barWidth = column - 130;
 			if (x >= barX - 20 && x <= barX + barWidth + 20)
 			{
 				Set(min + (int)Math.Round(Math.Clamp((x - barX) / barWidth, 0, 1) * (max - min)));
@@ -359,17 +403,22 @@ namespace OpenBve.Switch
 	public sealed class EntryItem : MenuItem
 	{
 		public readonly string Title, Detail, Mark;
+
+		/// <summary>The file or folder it stands for (to find it again in the list), or null.</summary>
+		public readonly string Path;
+
 		private readonly Action open;
 
 		/// <summary>Whether it is the one chosen (drawn with the selection colour).</summary>
 		public bool Chosen;
 
-		public EntryItem(string mark, string title, string detail, Action open)
+		public EntryItem(string mark, string title, string detail, Action open, string path = null)
 		{
 			Mark = mark;
 			Title = title;
 			Detail = detail;
 			this.open = open;
+			Path = path;
 		}
 
 		public override float Measure(IMenuCanvas canvas, float width) => string.IsNullOrEmpty(Detail) ? MenuStyle.RowHeight : MenuStyle.RowHeight + 8;
