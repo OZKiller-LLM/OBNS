@@ -648,6 +648,11 @@ namespace OpenBve.NX
 			{
 				// The loading screen gives way to the game's frames on the same device.
 				LoadingScreen.Stop(false);
+				// Play's clocks (OBNS/SWITCH.md): FastLoad, the loading clock, holds the GPU at 76 MHz - on the console the first
+				// frames waited 120 ms a frame for it (2026-11-06). In play the CPU is set to 1,785 MHz through clkrst and the GPU
+				// is left at the system's own clock.
+				int playMhz = SetCpuBoost(2);
+				Stage($"frames: CPU at {playMhz} MHz through clkrst, FastLoad off (the GPU at the system's clock)");
 				deko.Drawing = true;
 				Frames(renderer, host, sounds, session, deko, 600.0);
 				deko.Dispose();
