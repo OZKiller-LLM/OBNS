@@ -599,6 +599,8 @@ namespace OpenBve.NX
 			host.CurrentTrainFolder = trainFolder ?? AndroidTrainSession.FindTrain(fileSystem.InitialTrainFolder, host) ?? string.Empty;
 			OpenBveApi.Path.CacheListings = true;
 			// As GameView: where the route's time goes, by category (parsing, objects, textures, sounds, file access).
+			// Parsed objects kept on the SD card for the next load of the route (ObjectDiskCache); the file keeps it off.
+			ObjectDiskCache.Folder = File.Exists(Root + "/UserData/nx-no-object-cache.txt") ? null : Root + "/UserData/ObjectCache";
 			LoadProfile.Begin("route parser");
 			string route = AndroidRouteLoader.LoadRoute(host, fileSystem, renderer, routeFile, null, out RouteManager2.CurrentRoute currentRoute);
 			Log("load profile, route: " + LoadProfile.End());
@@ -652,6 +654,13 @@ namespace OpenBve.NX
 					LoadingScreen.ShowError(e.Message);
 					Stage("train failed: " + e.GetType().Name);
 				}
+			}
+
+			// The objects parsed this load, written down for the next (ObjectDiskCache).
+			if (ObjectDiskCache.Active)
+			{
+				ObjectDiskCache.Close();
+				Log(ObjectDiskCache.Describe());
 			}
 
 			OpenBveApi.Path.CacheListings = false;

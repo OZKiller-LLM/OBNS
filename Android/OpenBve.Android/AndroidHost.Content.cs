@@ -285,6 +285,14 @@ namespace OpenBve.Android
 			}
 
 			encoding = TextEncoding.GetSystemEncodingFromFile(path, encoding);
+			// Read back from the storage as a past load parsed it (ObjectDiskCache, where the platform keeps one).
+			if (ObjectDiskCache.TryLoad(this, path, encoding, preserveVertices, Options.ObjectOptimizationBasicThreshold, Options.ObjectOptimizationVertexCulling, out StaticObject stored))
+			{
+				staticObject = stored;
+				CacheStatic(ValueTuple.Create(path.ToLowerInvariant(), preserveVertices, OpenBveApi.Path.LastWriteTime(path)), stored);
+				return true;
+			}
+
 			foreach (ContentLoadingPlugin plugin in LoadedPlugins)
 			{
 				if (plugin.Object == null)
@@ -307,6 +315,8 @@ namespace OpenBve.Android
 							{
 								loaded.OptimizeObject(preserveVertices, Options.ObjectOptimizationBasicThreshold, Options.ObjectOptimizationVertexCulling);
 							}
+
+							ObjectDiskCache.Store(path, encoding, preserveVertices, Options.ObjectOptimizationBasicThreshold, Options.ObjectOptimizationVertexCulling, loaded);
 
 							staticObject = loaded;
 							CacheStatic(ValueTuple.Create(path.ToLowerInvariant(), preserveVertices, OpenBveApi.Path.LastWriteTime(path)), loaded);
@@ -336,6 +346,11 @@ namespace OpenBve.Android
 		/// </summary>
 		internal UnifiedObject ParseObjectForPrefetch(string path, Encoding encoding)
 		{
+			if (ObjectDiskCache.TryLoad(this, path, encoding, false, Options.ObjectOptimizationBasicThreshold, true, out StaticObject stored))
+			{
+				return stored;
+			}
+
 			foreach (ContentLoadingPlugin plugin in LoadedPlugins)
 			{
 				try
@@ -343,6 +358,11 @@ namespace OpenBve.Android
 					if (plugin.Object != null && plugin.Object.CanLoadObject(path) && plugin.Object.LoadObject(path, encoding, out UnifiedObject loaded) && loaded != null)
 					{
 						loaded.OptimizeObject(false, Options.ObjectOptimizationBasicThreshold, true);
+						if (loaded is StaticObject parsed)
+						{
+							ObjectDiskCache.Store(path, encoding, false, Options.ObjectOptimizationBasicThreshold, true, parsed);
+						}
+
 						return loaded;
 					}
 				}
@@ -405,6 +425,13 @@ namespace OpenBve.Android
 			}
 
 			encoding = TextEncoding.GetSystemEncodingFromFile(path, encoding);
+			if (ObjectDiskCache.TryLoad(this, path, encoding, false, Options.ObjectOptimizationBasicThreshold, true, out StaticObject stored))
+			{
+				unifiedObject = stored;
+				CacheStatic(ValueTuple.Create(path.ToLowerInvariant(), false, OpenBveApi.Path.LastWriteTime(path)), stored);
+				return true;
+			}
+
 			foreach (ContentLoadingPlugin plugin in LoadedPlugins)
 			{
 				if (plugin.Object == null)
@@ -430,6 +457,7 @@ namespace OpenBve.Android
 
 						if (loaded is StaticObject staticObject)
 						{
+							ObjectDiskCache.Store(path, encoding, false, Options.ObjectOptimizationBasicThreshold, true, staticObject);
 							CacheStatic(ValueTuple.Create(path.ToLowerInvariant(), false, OpenBveApi.Path.LastWriteTime(path)), staticObject);
 						}
 						else if (loaded is AnimatedObjectCollection collection)

@@ -112,6 +112,8 @@ namespace OpenBve.Android
 			object routeObject = currentRoute;
 
 			DateTime started = DateTime.UtcNow;
+			// Objects a past load parsed, read back from the storage where the platform keeps them (ObjectDiskCache).
+			ObjectDiskCache.Open(file);
 			// The route's object files parsed ahead on the other cores (ObjectPrefetch).
 			ObjectPrefetch.Start(host, file, encoding, objectFolder);
 			try
@@ -160,6 +162,12 @@ namespace OpenBve.Android
 				Log.Info(Tag, ObjectPrefetch.Describe());
 				Log.Info(Tag, ScriptedTrainLoader.Describe());
 				ObjectPrefetch.Stop();
+				// The route's objects are found next time even if the train's load stops half-way; the pack stays open for it.
+				if (ObjectDiskCache.Active)
+				{
+					ObjectDiskCache.Flush();
+					Log.Info(Tag, ObjectDiskCache.Describe());
+				}
 			}
 		}
 
