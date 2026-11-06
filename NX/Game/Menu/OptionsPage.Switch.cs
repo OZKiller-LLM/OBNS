@@ -136,7 +136,7 @@ namespace OpenBve.Switch
 					T("switch", "performance_normal", "Normal"), T("switch", "performance_turbo", "Turbo"), T("switch", "performance_overclock", "Overclock")
 				}, Math.Max(0, Array.IndexOf(performanceModes, SwitchSettings.GetPerformanceMode())), i => SwitchSettings.SetPerformanceMode(performanceModes[i])));
 			List.Add(new InfoItem(T("switch", "performance_note",
-				"Normal: the console's own clocks and fan control. Turbo: the highest clocks Nintendo allows games (CPU 1785 MHz, GPU 768 MHz docked or 460.8 MHz handheld, memory 1600 MHz), the fan at full speed. Overclock: the highest clocks the console's clock table lists for the CPU, GPU and memory, the fan at full speed - more heat and battery use. Clocks go back to normal when OBNS closes.")));
+				"Normal: the console's own clocks and fan control. Turbo: the highest clocks Nintendo allows games (CPU 1785 MHz, GPU 768 MHz docked or 460.8 MHz handheld, memory 1600 MHz), the fan at full speed. Overclock: the CPU, GPU and memory up to the chip's ratings (CPU 2091 MHz, GPU 998 MHz, memory 1600 MHz) where the console's clock table offers them - without an overclocking module it stops at CPU 1785 MHz and GPU 921 MHz - and on battery CPU 1785 MHz and GPU 460 MHz; the fan at full speed. More heat and battery use. Clocks go back to normal when OBNS closes.")));
 
 			// --- shadows, as upstream's Options ---
 			List.Add(new HeadingItem(T("options", "shadows_header", "Shadows")));

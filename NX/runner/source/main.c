@@ -42,8 +42,13 @@ EXPORT int64_t obns_native_heap_used(void)
 //   2 Normal    - the system's own clocks and fan control;
 //   3 Turbo     - the highest clocks Nintendo gives games: CPU 1,785 MHz (its boost clock), GPU 768 MHz docked and
 //                 460.8 MHz handheld, memory 1,600 MHz; the fan at full;
-//   4 Overclock - each clock at the highest rate the console's clock table lists (stock: the chip's rated limits - GPU
-//                 921.6 MHz, memory 1,600 MHz; an overclocking module that extends the table raises them); fan at full.
+//   4 Overclock - each clock at the highest rate the console's clock table lists, up to the chip's ratings (the
+//                 overclocking guides for the first model, researched 2026-11-06: past them "unstable" or "very
+//                 dangerous"): plugged in, CPU 2,091 MHz, GPU 998.4 MHz (NVIDIA's T210 rating), memory 1,600 MHz (its
+//                 rating: unstable memory clocks corrupt the system storage and the SD card); on battery, where over
+//                 8.6 W harms the battery, CPU 1,785 MHz and GPU 460.8 MHz. The stock table stops at CPU 1,785, GPU
+//                 921.6 and memory 1,600 MHz; an overclocking module extending it raises them, never past these. Fan
+//                 at full.
 // Each target is snapped to the highest listed rate not above it. Mode 0 (and OBNS's end) puts every clock back as it
 // was and gives the fan back to the system. Returns the CPU's MHz afterwards.
 enum { CLOCKS = 3 };
@@ -54,7 +59,7 @@ static bool fanHeld;
 static FanController fan;
 static float originalFan = -1.0f;
 
-// The highest listed rate not above `target` (0: the highest of all); `target` itself if the system lists none.
+// The highest listed rate not above `target`; `target` itself if the system lists none.
 static u32 listed_rate(ClkrstSession *session, u32 target)
 {
     u32 rates[64];
@@ -64,16 +69,30 @@ static u32 listed_rate(ClkrstSession *session, u32 target)
     u32 best = 0, lowest = 0xFFFFFFFFu;
     for (s32 i = 0; i < count && i < 64; i++) {
         if (rates[i] < lowest) lowest = rates[i];
-        if ((target == 0 || rates[i] <= target) && rates[i] > best) best = rates[i];
+        if (rates[i] <= target && rates[i] > best) best = rates[i];
     }
     return best ? best : lowest;
 }
 
-// What a mode asks of a clock: 0 leaves it to the system; ~0 the highest listed rate.
+// What a mode asks of a clock (the highest listed rate not above it is set); 0 leaves it to the system.
+static bool on_battery(void)
+{
+    PsmChargerType charger = PsmChargerType_Unconnected;
+    if (R_FAILED(psmInitialize())) return false;
+    bool battery = R_SUCCEEDED(psmGetChargerType(&charger)) && charger == PsmChargerType_Unconnected;
+    psmExit();
+    return battery;
+}
+
 static u32 target_rate(int mode, int clock)
 {
     bool docked = appletGetOperationMode() == AppletOperationMode_Console;
-    if (mode == 4) return 0xFFFFFFFFu;
+    if (mode == 4) {
+        bool battery = !docked && on_battery();
+        if (clock == 0) return battery ? 1785000000u : 2091000000u;
+        if (clock == 1) return battery ? 460800000u : 998400000u;
+        return 1600000000u;
+    }
     if (mode == 3) {
         if (clock == 0) return 1785000000u;
         if (clock == 1) return docked ? 768000000u : 460800000u;
@@ -95,7 +114,7 @@ static void apply_clocks(int mode, bool settle)
             clkrstGetClockRate(&session, &originalHz[i]);
             clocksTouched[i] = true;
         }
-        if (target) clkrstSetClockRate(&session, listed_rate(&session, target == 0xFFFFFFFFu ? 0 : target));
+        if (target) clkrstSetClockRate(&session, listed_rate(&session, target));
         else if (originalHz[i]) {
             clkrstSetClockRate(&session, originalHz[i]);
             clocksTouched[i] = false;
