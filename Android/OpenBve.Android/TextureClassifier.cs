@@ -59,6 +59,10 @@ namespace OpenBve.Android
 	internal static class TextureClassifier
 	{
 		private const string CacheFileName = "texture-transparency.v1.txt";
+
+		/// <summary>Decodes at once while classifying, when set (the Switch: all three of its cores, the loading thread
+		/// waiting meanwhile); otherwise as many as streaming decodes (AndroidHost.ParallelDecodes).</summary>
+		public static int Threads;
 		private static Dictionary<string, (long Length, long Ticks, TextureTransparencyType Type)> diskCache;
 		private static string cacheFile;
 
@@ -213,7 +217,7 @@ namespace OpenBve.Android
 			int fromCache = results.Count;
 			// Phones short of memory decode as few at once as streaming does (AndroidHost.ParallelDecodes):
 			// eight full-size decodes at a time got a 4 GB Galaxy A14 killed on the Tuen Ma Line's first load.
-			int threads = Math.Max(1, Math.Min(Environment.ProcessorCount, AndroidHost.ParallelDecodes));
+			int threads = Math.Max(1, Math.Min(Environment.ProcessorCount, Threads > 0 ? Threads : AndroidHost.ParallelDecodes));
 			Parallel.ForEach(decode, new ParallelOptions { MaxDegreeOfParallelism = threads }, origin =>
 			{
 				try
@@ -250,7 +254,7 @@ namespace OpenBve.Android
 				}
 			}
 
-			return results.Count + " textures classified (" + fromCache + " remembered) in " + clock.Elapsed.TotalSeconds.ToString("0.0") + " s on " + Math.Min(Environment.ProcessorCount, AndroidHost.ParallelDecodes) + " threads";
+			return results.Count + " textures classified (" + fromCache + " remembered) in " + clock.Elapsed.TotalSeconds.ToString("0.0") + " s on " + threads + " threads";
 		}
 
 		private static void Add(Texture texture, HashSet<TextureOrigin> seen, List<TextureOrigin> todo)

@@ -401,6 +401,8 @@ namespace OpenBve.Android
 			TextureSizeLimit.MaxSize = EffectiveTextureLimit();
 			// Two decodes at a time, as a phone of 4.5 GB or less: each holds a whole image's pixels.
 			AndroidHost.ParallelDecodes = 2;
+			// Classifying the textures' transparency while loading: all three cores (the loading thread waits for it).
+			TextureClassifier.Threads = 3;
 			int depth = GetTextureDepth();
 			AndroidHost.Textures16Bit = depth < 0 || depth == 16;
 			options.ViewingDistance = GetViewingDistance();
