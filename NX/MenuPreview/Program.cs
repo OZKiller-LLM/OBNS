@@ -126,6 +126,34 @@ namespace OpenBve.NX.MenuPreview
 					continue;
 				}
 
+				if (parts[0] == "timetable")
+				{
+					// The timetable card over the scene and the driving card, from a sample snapshot.
+					string name = parts.Length > 1 ? parts[1] : "timetable";
+					TimetableRow[] rows =
+					{
+						new TimetableRow("Alpha", null, "10:00:00", false, false, -2100, TimetableRowState.Done, double.NaN, double.NaN),
+						new TimetableRow("Beta", "10:02:30", "10:03:00", false, false, -900, TimetableRowState.Done, double.NaN, double.NaN),
+						new TimetableRow("Beta Junction", null, null, true, false, -200, TimetableRowState.Done, double.NaN, double.NaN),
+						new TimetableRow("Gamma", "10:05:10", "10:05:40", false, false, 350, TimetableRowState.Next, -12, 18),
+						new TimetableRow("Delta Interchange", "10:08:00", "10:08:45", false, false, 2400, TimetableRowState.Ahead, double.NaN, double.NaN),
+						new TimetableRow("Epsilon", "10:11:20", "10:11:50", false, false, 4700, TimetableRowState.Ahead, double.NaN, double.NaN),
+						new TimetableRow("Zeta", "10:14:00", null, false, true, 6800, TimetableRowState.Ahead, double.NaN, double.NaN)
+					};
+					TimetableCard card = new TimetableCard();
+					card.Toggle();
+					DriverStatus status = new DriverStatus(54, 60, "N", HandleState.Neutral, "F", "10:05:22", "Gamma", "350 m", "10:05:10", "10:05:40", null,
+						Array.Empty<(string, OpenBveApi.Colors.MessageColor)>(), "Cab", false);
+					canvas.Begin();
+					canvas.Fill(0, 0, 1280, 360, 0xFF6E8FB4);
+					canvas.Fill(0, 360, 1280, 360, 0xFF4A4E44);
+					DriverCard.Draw(canvas, status);
+					card.Draw(canvas, new TimetableSnapshot(rows, "10:05:22", null), 1.0);
+					canvas.Save(Path.Combine(output, name + ".png"));
+					Console.WriteLine("wrote " + name + ".png");
+					continue;
+				}
+
 				if (parts[0] == "pause")
 				{
 					// The pause menu over the card: its top level, then the stations (the one after the last stop suggested).

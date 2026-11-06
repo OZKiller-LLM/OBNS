@@ -36,3 +36,5 @@ shot 11-rail
 card 12-card
 # The pause menu (PauseMenu.Switch.cs) over the card.
 pause 13-pause
+# The timetable card (TimetableCard) over the driving card.
+timetable 14-timetable

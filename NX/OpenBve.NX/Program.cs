@@ -293,6 +293,10 @@ namespace OpenBve.NX
 			};
 			pause.JumpRequested += station => controls.Post(s => s.JumpToStation(station));
 			pause.ExitRequested += () => leave = true;
+			// The timetable card (Android's route card, its Timetable tab): − shows and hides it; refreshed once a second.
+			OpenBve.Switch.TimetableCard timetable = new OpenBve.Switch.TimetableCard();
+			TimetableSnapshot snapshot = null;
+			double snapshotAge = 1.0;
 			pause.QuitRequested += () => leave = true;
 			double last = 0, windowStart = 0, worst = 0, trackPosition = 0;
 			int frames = 0, total = 0;
@@ -315,6 +319,13 @@ namespace OpenBve.NX
 						break;
 					}
 
+					if (pad.Is(OpenBve.Switch.SwitchPad.Minus))
+					{
+						timetable.Toggle();
+						snapshotAge = 1.0;
+					}
+
+					timetable.Update(pad.RightY, clock.Elapsed.TotalSeconds - last);
 					if (pad.Is(OpenBve.Switch.SwitchPad.Plus))
 					{
 						paused = true;
@@ -358,6 +369,18 @@ namespace OpenBve.NX
 				{
 					// The in-game interface over the scene (the driving information, as Android's).
 					OpenBve.Switch.DriverCard.Draw(overlay, session.Status(session.Camera.ModeName, paused));
+					if (timetable.Shown)
+					{
+						snapshotAge += elapsed;
+						if (snapshotAge >= 1.0 || snapshot == null)
+						{
+							snapshot = session.GetTimetable();
+							snapshotAge = 0;
+						}
+
+						timetable.Draw(overlay, snapshot, elapsed);
+					}
+
 					pause.Draw(overlay, elapsed);
 					overlay.EndOverlay();
 				}
