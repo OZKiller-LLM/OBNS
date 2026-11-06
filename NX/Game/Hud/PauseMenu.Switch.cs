@@ -98,6 +98,15 @@ namespace OpenBve.Switch
 				Item(T("menu", "jump", "Jump to station"), ShowStations);
 			}
 
+			// The touch controls (Options' setting): each press goes on to the next mode, Off, On, ATS keys only.
+			int touchItem = list.Items.Count;
+			Item(TouchLabel(), () =>
+			{
+				int mode = SwitchSettings.GetTouchMode();
+				SwitchSettings.SetTouchMode(mode == SwitchSettings.TouchOff ? SwitchSettings.TouchFull : mode == SwitchSettings.TouchFull ? SwitchSettings.TouchAts : SwitchSettings.TouchOff);
+				ShowTop();
+				list.Focus = touchItem;
+			});
 			Item(T("menu", "exit", "Exit to main menu"), () => Question(
 				T("menu", "exit_question", "Do you really want to exit to the main menu?"),
 				T("menu", "exit_no", "No"), T("menu", "exit_yes", "Yes"), () => ExitRequested?.Invoke()));
@@ -106,6 +115,13 @@ namespace OpenBve.Switch
 				T("menu", "quit_question", "Do you really want to quit?"),
 				T("menu", "quit_no", "No"), T("menu", "quit_yes", "Yes"), () => QuitRequested?.Invoke()));
 			list.FocusFirst();
+		}
+
+		private static string TouchLabel()
+		{
+			int mode = SwitchSettings.GetTouchMode();
+			string value = mode == SwitchSettings.TouchFull ? T("android", "on", "On") : mode == SwitchSettings.TouchAts ? T("switch", "touch_ats", "ATS keys only") : T("android", "off", "Off");
+			return T("switch", "touch_pause", "Touch controls") + ": " + value;
 		}
 
 		private void ShowStations()
