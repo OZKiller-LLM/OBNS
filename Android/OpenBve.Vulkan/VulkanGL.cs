@@ -51,7 +51,7 @@ namespace OpenBve.Vulkan
 	 * Frames begin with the first clear or draw after a swap and end at the swap. Everything runs
 	 * on the render thread, as GL would.
 	 */
-	public sealed unsafe partial class VulkanGL : IGLDevice, IDisposable
+	public sealed unsafe partial class VulkanGL : IGLDevice, INativeFaceDevice, IDisposable
 	{
 		// GL enum values used here.
 		private const int GL_TEXTURE_2D = 0x0DE1, GL_TEXTURE0 = 0x84C0;

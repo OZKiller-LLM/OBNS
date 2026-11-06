@@ -71,7 +71,7 @@ namespace OpenBve.Android
 		/// <summary>Draws a face: natively on the Vulkan renderer when it can, through upstream's RenderFace otherwise.</summary>
 		internal void DrawFace(Shader shader, ObjectState state, MeshFace face)
 		{
-			VulkanGL device = NativeFaces ? GL.Device as VulkanGL : null;
+			INativeFaceDevice device = NativeFaces ? GL.Device as INativeFaceDevice : null;
 			// The debug views (wireframe, normals) are upstream's RenderFace's own.
 			if (device == null || shader != DefaultShader || OptionWireFrame || OptionNormals || !device.CanDrawFaces || !(state.Prototype.Mesh.VAO is VertexArrayObject vao))
 			{

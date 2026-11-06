@@ -13,6 +13,8 @@
 #include "rectangle_vert_dksh.h"
 #include "rectangle_frag_dksh.h"
 #include "text_vert_dksh.h"
+#include "world_vert_dksh.h"
+#include "world_frag_dksh.h"
 
 #define TEXTURES3D 32768
 #define SAMPLERS3D 256
@@ -49,11 +51,12 @@ typedef struct {
 static int ready3d, failed3d, inFrame3d, frameSlot3d, uploadsPending;
 static DkMemBlock code3d, descriptors3d, commands3dMemory, uploads3dMemory, depthMemory, clipMemory;
 static DkCmdBuf commands3d, uploads3d;
-static DkShader shaders3d[5]; // default vert, default frag, rectangle vert, rectangle frag, text vert
+static DkShader shaders3d[7]; // default vert, default frag, rectangle vert, rectangle frag, text vert, world vert, world frag
 static DkImage textures3d[TEXTURES3D];
 static DkImage depthImage;
 static Draw3D last3d;
 static int lastValid3d;
+static int worldValid; // the world records' state is what is bound (see obns_dkw_draws)
 static uint64_t frames3d, draws3d;
 
 #define DESCRIPTOR_IMAGES 0
@@ -69,10 +72,11 @@ static int init3d(void)
         return 0;
     }
 
-    const uint8_t *code[5] = { default_vert_dksh, default_frag_dksh, rectangle_vert_dksh, rectangle_frag_dksh, text_vert_dksh };
-    uint32_t sizes[5] = { default_vert_dksh_size, default_frag_dksh_size, rectangle_vert_dksh_size, rectangle_frag_dksh_size, text_vert_dksh_size };
+    const uint8_t *code[7] = { default_vert_dksh, default_frag_dksh, rectangle_vert_dksh, rectangle_frag_dksh, text_vert_dksh, world_vert_dksh, world_frag_dksh };
+    uint32_t sizes[7] = { default_vert_dksh_size, default_frag_dksh_size, rectangle_vert_dksh_size, rectangle_frag_dksh_size, text_vert_dksh_size,
+                          world_vert_dksh_size, world_frag_dksh_size };
     uint32_t codeSize = DK_SHADER_CODE_UNUSABLE_SIZE;
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 7; i++)
         codeSize += align_up(sizes[i], DK_SHADER_CODE_ALIGNMENT);
     DkMemBlockMaker maker;
     dkMemBlockMakerDefaults(&maker, device, align_up(codeSize, DK_MEMBLOCK_ALIGNMENT));
@@ -80,7 +84,7 @@ static int init3d(void)
     code3d = dkMemBlockCreate(&maker);
     if (!code3d) return 0;
     uint32_t offset = 0;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 7; i++) {
         memcpy((uint8_t *)dkMemBlockGetCpuAddr(code3d) + offset, code[i], sizes[i]);
         DkShaderMaker shaderMaker;
         dkShaderMakerDefaults(&shaderMaker, code3d, offset);
@@ -315,6 +319,7 @@ EXPORT int obns_dk3d_begin(void)
     DkGpuAddr clip = dkMemBlockGetGpuAddr(clipMemory);
     dkCmdBufBindUniformBuffer(commands3d, DkStage_Vertex, 2, clip, DK_UNIFORM_BUF_ALIGNMENT);
     lastValid3d = 0;
+    worldValid = 0;
     inFrame3d = 1;
     return 0;
 }
@@ -327,6 +332,9 @@ EXPORT void obns_dk3d_clear(int mask, float r, float g, float b, float a)
     dkCmdBufSetScissors(commands3d, 0, &all, 1);
     if (mask & 1) dkCmdBufClearColorFloat(commands3d, 0, DkColorMask_RGBA, r, g, b, a);
     if (mask & 2) dkCmdBufClearDepthStencil(commands3d, true, 1.0f, 0xFF, 0);
+    // The scissor is the whole target now: the next draw sets its own again.
+    lastValid3d = 0;
+    worldValid = 0;
 }
 
 static void apply_state(const Draw3D *d)
@@ -417,10 +425,13 @@ static void apply_state(const Draw3D *d)
     lastValid3d = 1;
 }
 
+
+
 // One draw: the state where it changed, then the draw.
 EXPORT void obns_dk3d_draw(const Draw3D *d)
 {
     if (!inFrame3d || d->count == 0) return;
+    worldValid = 0;
     apply_state(d);
     if (d->indexFormat) {
         dkCmdBufBindIdxBuffer(commands3d, (DkIdxFormat)(d->indexFormat - 1), d->indexAddress);
@@ -429,6 +440,158 @@ EXPORT void obns_dk3d_draw(const Draw3D *d)
         dkCmdBufDraw(commands3d, (DkPrimitive)d->primitive, d->count, 1, d->first, 0);
     }
     draws3d++;
+}
+
+// --- the world's records (OBNS/SWITCH.md, step 3, the alone way): the faces of the world and the cab handed over as
+// compact records in batches rather than as GL calls (NX/OpenBve.NX/Deko/DekoGL.World.cs; shaders/world.*) ---
+
+// One face, as DekoGL.World hands it over (the same layout as its WorldDraw).
+typedef struct {
+    uint64_t vertexAddress;     // the mesh's interleaved vertex buffer
+    uint32_t vertexSize;
+    uint32_t stride;
+    uint64_t indexAddress;
+    uint32_t indexFormat;       // DkIdxFormat + 1
+    uint32_t primitive;         // DkPrimitive (GL's modes, quads and polygons too)
+    uint32_t first;
+    uint32_t count;
+    uint64_t frameAddress;      // FrameBlock (binding 0): projection, lights, fog
+    uint64_t objectAddress;     // ObjectBlock (binding 3): the object's matrices
+    uint64_t matricesAddress;   // the animation matrices (binding 1)
+    uint32_t layout;            // a vertex layout registered with obns_dkw_layout
+    uint32_t texture;
+    uint32_t sampler;
+    uint32_t state;             // depth test, depth write << 1, compare << 2 (4 bits), blend << 6, source << 7 (4), destination << 11 (4), cull << 15 (2)
+    int32_t viewport[4];
+    float draw[24];             // DrawBlock (binding 4), pushed with the draw: material, flags, brightness, opacity, alpha test
+} WorldDraw;
+
+#define WORLD_LAYOUTS 64
+#define WORLD_ATTRIBUTES 5
+#define DRAW_BLOCK_SIZE 96
+static DkVtxAttribState worldLayouts[WORLD_LAYOUTS][WORLD_ATTRIBUTES];
+static DkMemBlock worldDrawMemory, worldConstantMemory;
+static WorldDraw lastWorld;
+
+static int initWorld(void)
+{
+    if (worldDrawMemory) return 1;
+    DkMemBlockMaker maker;
+    dkMemBlockMakerDefaults(&maker, device, DK_MEMBLOCK_ALIGNMENT);
+    worldDrawMemory = dkMemBlockCreate(&maker);
+    worldConstantMemory = dkMemBlockCreate(&maker);
+    if (!worldDrawMemory || !worldConstantMemory) return 0;
+    // The constant attributes, as GL reads an attribute without an array: (0, 0, 0, 1) as floats, zeros as integers.
+    float *constant = (float *)dkMemBlockGetCpuAddr(worldConstantMemory);
+    memset(constant, 0, 64);
+    constant[3] = 1.0f;
+    return 1;
+}
+
+// A vertex layout: for each of the world shader's five attributes, where it sits in the mesh's vertex (offset), its format
+// (DkVtxAttribSize | DkVtxAttribType << 8) and whether it comes from the mesh (buffer 0) or the constant (buffer 1).
+EXPORT int obns_dkw_layout(int id, const uint32_t *offsets, const uint32_t *formats, const uint32_t *buffers)
+{
+    if (id < 0 || id >= WORLD_LAYOUTS) return 1;
+    for (int i = 0; i < WORLD_ATTRIBUTES; i++) {
+        DkVtxAttribState a = { .bufferId = buffers[i], .isFixed = 0, .offset = offsets[i],
+            .size = (DkVtxAttribSize)(formats[i] & 0xFF), .type = (DkVtxAttribType)((formats[i] >> 8) & 0xFF), .isBgra = 0 };
+        worldLayouts[id][i] = a;
+    }
+    return 0;
+}
+
+static void world_state(uint32_t state, uint32_t last, int all)
+{
+    if (all || ((state ^ last) & (3u << 15))) {
+        DkRasterizerState rasterizer;
+        dkRasterizerStateDefaults(&rasterizer);
+        rasterizer.cullMode = (DkFace)((state >> 15) & 3);
+        rasterizer.frontFace = DkFrontFace_CCW;
+        dkCmdBufBindRasterizerState(commands3d, &rasterizer);
+    }
+    if (all || ((state ^ last) & (1u << 6))) {
+        DkColorState color;
+        dkColorStateDefaults(&color);
+        dkColorStateSetBlendEnable(&color, 0, ((state >> 6) & 1) != 0);
+        dkCmdBufBindColorState(commands3d, &color);
+    }
+    if (all || ((state ^ last) & (0xFFu << 7))) {
+        DkBlendState blend;
+        dkBlendStateDefaults(&blend);
+        DkBlendFactor source = (DkBlendFactor)((state >> 7) & 15), destination = (DkBlendFactor)((state >> 11) & 15);
+        dkBlendStateSetFactors(&blend, source, destination, source, destination);
+        dkCmdBufBindBlendState(commands3d, 0, &blend);
+    }
+    if (all || ((state ^ last) & 0x3Fu)) {
+        DkDepthStencilState depth;
+        dkDepthStencilStateDefaults(&depth);
+        depth.depthTestEnable = (state & 1) != 0;
+        depth.depthWriteEnable = ((state >> 1) & 1) != 0;
+        depth.depthCompareOp = (DkCompareOp)((state >> 2) & 15);
+        dkCmdBufBindDepthStencilState(commands3d, &depth);
+    }
+}
+
+// Records a batch of the world's faces into the frame: the world program, then for each face only what differs from the
+// one before it - its blocks' addresses, vertices, indices, texture, state, viewport - its material pushed, and the draw.
+EXPORT int obns_dkw_draws(const WorldDraw *draws, int count)
+{
+    if (!inFrame3d || !initWorld()) return 1;
+    DkGpuAddr drawBlock = dkMemBlockGetGpuAddr(worldDrawMemory);
+    for (int i = 0; i < count; i++) {
+        const WorldDraw *d = &draws[i];
+        if (d->count == 0) continue;
+        const WorldDraw *l = worldValid ? &lastWorld : NULL;
+        if (!l) {
+            DkShader const *bound[2] = { &shaders3d[5], &shaders3d[6] };
+            dkCmdBufBindShaders(commands3d, DkStageFlag_GraphicsMask, bound, 2);
+            dkCmdBufBindUniformBuffer(commands3d, DkStage_Vertex, 2, dkMemBlockGetGpuAddr(clipMemory), DK_UNIFORM_BUF_ALIGNMENT);
+            dkCmdBufBindUniformBuffer(commands3d, DkStage_Vertex, 4, drawBlock, DK_UNIFORM_BUF_ALIGNMENT);
+            dkCmdBufBindUniformBuffer(commands3d, DkStage_Fragment, 4, drawBlock, DK_UNIFORM_BUF_ALIGNMENT);
+            DkColorWriteState write;
+            dkColorWriteStateDefaults(&write);
+            dkCmdBufBindColorWriteState(commands3d, &write);
+        }
+        if (!l || l->frameAddress != d->frameAddress) {
+            dkCmdBufBindUniformBuffer(commands3d, DkStage_Vertex, 0, d->frameAddress, DK_UNIFORM_BUF_ALIGNMENT);
+            dkCmdBufBindUniformBuffer(commands3d, DkStage_Fragment, 0, d->frameAddress, DK_UNIFORM_BUF_ALIGNMENT);
+        }
+        if (!l || l->objectAddress != d->objectAddress)
+            dkCmdBufBindUniformBuffer(commands3d, DkStage_Vertex, 3, d->objectAddress, DK_UNIFORM_BUF_ALIGNMENT);
+        if (!l || l->matricesAddress != d->matricesAddress)
+            dkCmdBufBindUniformBuffer(commands3d, DkStage_Vertex, 1, d->matricesAddress, 128 * 64);
+        if (!l || l->layout != d->layout)
+            dkCmdBufBindVtxAttribState(commands3d, worldLayouts[d->layout < WORLD_LAYOUTS ? d->layout : 0], WORLD_ATTRIBUTES);
+        if (!l || l->stride != d->stride) {
+            DkVtxBufferState buffers[2] = { { d->stride, 0 }, { 0, 0 } };
+            dkCmdBufBindVtxBufferState(commands3d, buffers, 2);
+        }
+        if (!l || l->vertexAddress != d->vertexAddress || l->vertexSize != d->vertexSize) {
+            DkBufExtents extents[2] = { { d->vertexAddress, d->vertexSize }, { dkMemBlockGetGpuAddr(worldConstantMemory), 64 } };
+            dkCmdBufBindVtxBuffers(commands3d, 0, extents, 2);
+        }
+        if (!l || l->texture != d->texture || l->sampler != d->sampler)
+            dkCmdBufBindTexture(commands3d, DkStage_Fragment, 0, dkMakeTextureHandle(d->texture, d->sampler));
+        world_state(d->state, l ? l->state : 0, !l);
+        if (!l || memcmp(l->viewport, d->viewport, sizeof d->viewport) != 0) {
+            DkViewport viewport = { (float)d->viewport[0], (float)d->viewport[1], (float)d->viewport[2], (float)d->viewport[3], 0.0f, 1.0f };
+            dkCmdBufSetViewports(commands3d, 0, &viewport, 1);
+            DkScissor scissor = { (uint32_t)(d->viewport[0] > 0 ? d->viewport[0] : 0), (uint32_t)(d->viewport[1] > 0 ? d->viewport[1] : 0),
+                                  (uint32_t)d->viewport[2], (uint32_t)d->viewport[3] };
+            dkCmdBufSetScissors(commands3d, 0, &scissor, 1);
+        }
+        dkCmdBufPushConstants(commands3d, drawBlock, DK_UNIFORM_BUF_ALIGNMENT, 0, DRAW_BLOCK_SIZE, d->draw);
+        if (!l || l->indexAddress != d->indexAddress || l->indexFormat != d->indexFormat)
+            dkCmdBufBindIdxBuffer(commands3d, (DkIdxFormat)(d->indexFormat - 1), d->indexAddress);
+        dkCmdBufDrawIndexed(commands3d, (DkPrimitive)d->primitive, d->count, 1, d->first, 0, 0);
+        lastWorld = *d;
+        worldValid = 1;
+        draws3d++;
+    }
+    // A GL-path draw after these binds its own state again.
+    lastValid3d = 0;
+    return 0;
 }
 
 // The 2D layer's quads (obns_dk2d_begin and the drawing calls) over the 3D frame being recorded: the in-game interface,
@@ -442,6 +605,7 @@ EXPORT int obns_dk2d_overlay_end(void)
     record2d(commands3d);
     // The 3D bindings back, should more be drawn after: its state is set again at the next draw.
     lastValid3d = 0;
+    worldValid = 0;
     DkGpuAddr descriptors = dkMemBlockGetGpuAddr(descriptors3d);
     dkCmdBufBindImageDescriptorSet(commands3d, descriptors + DESCRIPTOR_IMAGES, TEXTURES3D);
     dkCmdBufBindSamplerDescriptorSet(commands3d, descriptors + DESCRIPTOR_SAMPLERS, SAMPLERS3D);
@@ -455,6 +619,8 @@ EXPORT int obns_dk3d_end(void)
     if (!inFrame3d) return 1;
     inFrame3d = 0;
     QUEUE_LOCK();
+    // Textures made during the frame: their uploads run first (the frame's barrier at its start waits for them).
+    flush_uploads(0);
     dkQueueSubmitCommands(queue, dkCmdBufFinishList(commands3d));
     dkQueuePresentImage(queue, swapchain, frameSlot3d);
     dkQueueWaitIdle(queue);

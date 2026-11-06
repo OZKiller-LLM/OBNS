@@ -52,7 +52,7 @@ namespace OpenBve.NX.Deko
 	 * the GPU used is still in use after it; frames in flight come with the CPU work of step 4. Not yet here: shadows
 	 * (framebuffers), the picking shader, VulkanGL's native face drawing.
 	 */
-	public sealed unsafe class DekoGL : IGLDevice, IDisposable
+	public sealed unsafe partial class DekoGL : IGLDevice, IDisposable
 	{
 		// GL's enum values used here.
 		private const int GL_TEXTURE_2D = 0x0DE1, GL_TEXTURE0 = 0x84C0;
@@ -141,7 +141,7 @@ namespace OpenBve.NX.Deko
 
 		/// <summary>Memory and counts, for the log.</summary>
 		public string Describe() =>
-			LastFrameDraws + " draws (" + LastFrameMilliseconds.ToString("0.0") + " ms preparing them), " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
+			LastFrameDraws + " draws, " + LastFrameFaces + " of them faces as world records (" + LastFrameMilliseconds.ToString("0.0") + " ms preparing them), " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
 			(imageHeap.ReservedBytes >> 20) + " MB reserved), " + glBuffers.Count + " buffers (" + (bufferHeap.UsedBytes >> 20) + " MB, " + (bufferHeap.ReservedBytes >> 20) + " MB reserved)";
 
 		// --- frames ---
@@ -181,6 +181,7 @@ namespace OpenBve.NX.Deko
 		{
 			if (inFrame)
 			{
+				FlushWorld();
 				LastFrameDraws = frameDraws;
 				LastFrameMilliseconds = frameTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 				frameDraws = 0;
@@ -192,6 +193,7 @@ namespace OpenBve.NX.Deko
 				}
 
 				completedSerial = serial;
+				WorldFrameEnded();
 				RunAfterGpu();
 			}
 			else if (stagingPending > 0)
@@ -289,6 +291,7 @@ namespace OpenBve.NX.Deko
 				return;
 			}
 
+			FlushWorld();
 			DekoNative.Clear(which, clearRed, clearGreen, clearBlue, clearAlpha);
 		}
 
@@ -660,6 +663,11 @@ namespace OpenBve.NX.Deko
 
 			uniformData = program.Data;
 			program.Dirty = true;
+			if (program.Kind == ProgramKind.Default)
+			{
+				// The world's frame block is made from this program's values (DekoGL.World).
+				worldFrameDirty = true;
+			}
 			if (program.Kind == ProgramKind.Default && offset < ModelViewOffset + 64 && offset + bytes > ModelViewOffset)
 			{
 				program.NormalDirty = true;
@@ -1779,6 +1787,7 @@ namespace OpenBve.NX.Deko
 
 		public void glDrawArrays(int mode, int first, int count)
 		{
+			FlushWorld();
 			long started = System.Diagnostics.Stopwatch.GetTimestamp();
 			Draw3D draw = default;
 			if (count > 0 && Prepare(mode, ref draw))
@@ -1794,6 +1803,7 @@ namespace OpenBve.NX.Deko
 
 		public void glDrawElements(int mode, int count, int type, IntPtr indices)
 		{
+			FlushWorld();
 			long started = System.Diagnostics.Stopwatch.GetTimestamp();
 			GLBuffer elements = CurrentVertexArray.Elements;
 			int indexBytes = type == GL_UNSIGNED_INT ? 4 : type == GL_UNSIGNED_SHORT ? 2 : type == GL_UNSIGNED_BYTE ? 1 : 0;

@@ -250,14 +250,17 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 
 **Step 3, begun:** deko3d opens on the console and draws (the loading bar, 2026-11-06). Built since, not yet on the console: the 2D
 layer (rounded rectangles, text from the console's shared fonts, images; `NX/runner/source/obns_dk2d.inc`), the loading screen as
-Android's, and **DekoGL**, the renderer's GL calls carried out with deko3d (`NX/OpenBve.NX/Deko`, `obns_dk3d.inc`).
+Android's, and the renderer on deko3d (`NX/OpenBve.NX/Deko`, `obns_dk3d.inc`), the alone way below.
 
-*For the user to decide:* step 3 above names the Vulkan alone path's structure (`VulkanWorld`). The Switch build runs Android's
-renderer, though, and Android already has the matching structure: its native Vulkan renderer, `VulkanGL`, takes the renderer's GL
-calls (`GL.Device`) and draws them with Vulkan, no OpenGL ES involved. DekoGL is that, on deko3d: the same programs recognised by
-their source (Android's own shaders, compiled by `uam` at build time), the same buffer, texture and uniform semantics, with no
-OpenGL, Mesa or fallback anywhere - deko3d draws the world, the cab and the overlays. It reuses Android's tested behaviour; the
-alone-path structure would mean rewriting what the renderer draws. Not yet in DekoGL: shadows, frames in flight, native face drawing.
+**The alone way** (the user, 2026-11-06: "go for alone mode for less rendering cost"). The world and the cab - nearly all of a
+frame's draws - don't go through GL calls: Android's renderer works out each face's state as upstream's RenderFace does (its native
+faces, `AndroidRenderer.DrawFace`, now behind `INativeFaceDevice`, which Android's VulkanGL also implements) and hands it to the
+world layer (`Deko/DekoGL.World.cs`), which keeps it as a 192-byte record and has the native side record them in batches
+(`obns_dkw_draws`) with its own program (`shaders/world.*`), the uniforms split by how often they change: the frame's (projection,
+lights, fog) written when they change, the object's (its matrices) once for all of its faces, the draw's (material, brightness,
+opacity, alpha test) pushed inline. No GL uniform call, no GL draw, no P/Invoke per face. DekoGL's GL side stays for what the
+renderer makes once (meshes and textures as it loads, which the records then use) and for the few draws left on it: the
+background, particles, upstream's overlays. Not yet: shadows, frames in flight.
 
 **Step 6, begun:** the menu in `NX/Game/Menu` (Android's, for buttons: rail, Start, Options, pickers, hints), drawn through
 `IMenuCanvas`; `NX/MenuPreview` draws it into PNG files on Windows. A first pass: once the 2D and 3D rendering are done, its GUI and
