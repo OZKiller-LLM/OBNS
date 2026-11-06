@@ -90,19 +90,38 @@ namespace OpenBveApi {
 				return -1;
 			}
 
-			Dictionary<string, string> names;
-			try
-			{
-				names = directory
-					? directoryNames.GetOrAdd(folder, f => NameMap(ListDirectories(f)))
-					: fileNames.GetOrAdd(folder, f => NameMap(ListFiles(f)));
-			}
-			catch (Exception)
+			Dictionary<string, string> names = directory
+				? directoryNames.GetOrAdd(folder, f => NameMapOrNull(f, true))
+				: fileNames.GetOrAdd(folder, f => NameMapOrNull(f, false));
+			if (names == null)
 			{
 				return -1;
 			}
 
 			return names.TryGetValue(name, out listedName) ? 1 : 0;
+		}
+
+		/// <summary>
+		/// A folder's names, or null if it can't be listed (no such folder): remembered either way while loading. Listing
+		/// a missing folder threw, and as nothing was kept every path beneath it threw again - two exceptions each time a
+		/// texture or object in a missing folder was looked for: TML's route, 39,786 of its load (the Switch, 2026-11-06),
+		/// where Mono ahead of time takes milliseconds for each.
+		/// </summary>
+		private static Dictionary<string, string> NameMapOrNull(string folder, bool directory)
+		{
+			if (!Directory.Exists(folder))
+			{
+				return null;
+			}
+
+			try
+			{
+				return NameMap(directory ? ListDirectories(folder) : ListFiles(folder));
+			}
+			catch (Exception)
+			{
+				return null;
+			}
 		}
 
 		/// <summary>

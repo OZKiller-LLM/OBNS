@@ -234,6 +234,41 @@ namespace OpenBveApi.Objects
 			}
 		}
 
+		/// <summary>
+		/// ANDROID PORT (OBNS 1.31N): the camera's pose for a cab overlay object, read without <c>dynamic</c>. Upstream
+		/// takes the camera as <c>dynamic</c> (OpenBveApi can't name LibRender2's CameraProperties), so every update of
+		/// every animated object - its <c>Camera != null</c> too - went through a dynamic call site. With a JIT that is a
+		/// compiled delegate; under the Switch's full AOT it is the expression interpreter and reflection, milliseconds
+		/// each, and the train's placement (thousands of fast-forward steps) never finished. The game sets this to read
+		/// CameraProperties directly; without it the reads are <c>dynamic</c> as upstream's.
+		/// </summary>
+		public delegate bool CameraPoseReader(object camera, out CameraRestrictionMode restriction, out Vector3 position, out Vector3 direction, out Vector3 up,
+			out Vector3 side, out double alignmentYaw, out double alignmentPitch, out Vector3 alignmentPosition);
+
+		/// <summary>Set by the game (AndroidRenderer): see <see cref="CameraPoseReader"/>.</summary>
+		public static CameraPoseReader CameraPose;
+
+		private static bool ReadCamera(object camera, out CameraRestrictionMode restriction, out Vector3 position, out Vector3 direction, out Vector3 up,
+			out Vector3 side, out double alignmentYaw, out double alignmentPitch, out Vector3 alignmentPosition)
+		{
+			CameraPoseReader reader = CameraPose;
+			if (reader != null)
+			{
+				return reader(camera, out restriction, out position, out direction, out up, out side, out alignmentYaw, out alignmentPitch, out alignmentPosition);
+			}
+
+			dynamic dynamicCamera = camera;
+			restriction = dynamicCamera.CurrentRestriction;
+			position = dynamicCamera.AbsolutePosition;
+			direction = dynamicCamera.AbsoluteDirection;
+			up = dynamicCamera.AbsoluteUp;
+			side = dynamicCamera.AbsoluteSide;
+			alignmentYaw = dynamicCamera.Alignment.Yaw;
+			alignmentPitch = dynamicCamera.Alignment.Pitch;
+			alignmentPosition = dynamicCamera.Alignment.Position;
+			return true;
+		}
+
 		/// <summary> Updates the position and state of the animated object</summary>
 		/// <param name="Train">The train, or a null reference otherwise</param>
 		/// <param name="CarIndex">If this object forms part of a train, the car index it refers to</param>
@@ -248,7 +283,7 @@ namespace OpenBveApi.Objects
 		/// <param name="EnableDamping">Whether damping is to be applied for this call</param>
 		/// <param name="IsTouch">Whether Animated Object belonging to TouchElement class.</param>
 		/// <param name="Camera"></param>
-		public void Update(AbstractTrain Train, int CarIndex, double TrackPosition, Vector3 Position, Vector3 Direction, Vector3 Up, Vector3 Side, bool UpdateFunctions, bool Show, double TimeElapsed, bool EnableDamping, bool IsTouch = false, dynamic Camera = null)
+		public void Update(AbstractTrain Train, int CarIndex, double TrackPosition, Vector3 Position, Vector3 Direction, Vector3 Up, Vector3 Side, bool UpdateFunctions, bool Show, double TimeElapsed, bool EnableDamping, bool IsTouch = false, object Camera = null)
 		{
 			// state change
 			if (StateFunction != null & UpdateFunctions)
@@ -712,16 +747,18 @@ namespace OpenBveApi.Objects
 				internalObject.Scale = scaleM;
 			}
 
-			if (Camera != null && Camera.CurrentRestriction != CameraRestrictionMode.NotAvailable && Camera.CurrentRestriction != CameraRestrictionMode.Restricted3D)
+			if (Camera != null && ReadCamera(Camera, out CameraRestrictionMode cameraRestriction, out Vector3 cameraPosition, out Vector3 cameraDirection, out Vector3 cameraUp,
+				    out Vector3 cameraSide, out double alignmentYaw, out double alignmentPitch, out Vector3 alignmentPosition) &&
+			    cameraRestriction != CameraRestrictionMode.NotAvailable && cameraRestriction != CameraRestrictionMode.Restricted3D)
 			{
 				internalObject.Rotate *= States[CurrentState].Translation * Matrix4D.CreateTranslation(-Position.X, -Position.Y, Position.Z);
-				internalObject.Rotate *= (Matrix4D)new Transformation((Vector3)Camera.AbsoluteDirection, (Vector3)Camera.AbsoluteUp, (Vector3)Camera.AbsoluteSide);
+				internalObject.Rotate *= (Matrix4D)new Transformation(cameraDirection, cameraUp, cameraSide);
 
 				// translate
-				double dx = -System.Math.Tan(Camera.Alignment.Yaw) - Camera.Alignment.Position.X;
-				double dy = -System.Math.Tan(Camera.Alignment.Pitch) - Camera.Alignment.Position.Y;
-				double dz = -Camera.Alignment.Position.Z;
-				Vector3 add = Camera.AbsolutePosition + dx * Camera.AbsoluteSide + dy * Camera.AbsoluteUp + dz * Camera.AbsoluteDirection;
+				double dx = -System.Math.Tan(alignmentYaw) - alignmentPosition.X;
+				double dy = -System.Math.Tan(alignmentPitch) - alignmentPosition.Y;
+				double dz = -alignmentPosition.Z;
+				Vector3 add = cameraPosition + dx * cameraSide + dy * cameraUp + dz * cameraDirection;
 				internalObject.Translation = Matrix4D.CreateTranslation(add.X, add.Y, -add.Z);
 				internalObject.WorldPosition = add;
 			}

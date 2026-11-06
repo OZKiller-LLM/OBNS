@@ -1,3 +1,118 @@
+diff --git a/src/libraries/System.Linq.Expressions/src/System/Dynamic/Utils/DelegateHelpers.cs b/src/libraries/System.Linq.Expressions/src/System/Dynamic/Utils/DelegateHelpers.cs
+index c90f2bdad..560307248 100644
+--- a/src/libraries/System.Linq.Expressions/src/System/Dynamic/Utils/DelegateHelpers.cs
++++ b/src/libraries/System.Linq.Expressions/src/System/Dynamic/Utils/DelegateHelpers.cs
+@@ -104,6 +104,68 @@ public static TReturn FuncThunk2<T1, T2, TReturn>(Func<object?[], object> handle
+             return (TReturn)handler(new object?[] { t1, t2 });
+         }
+ 
++        // OBNS: thunks for 3 to 8 parameters too, so that dynamic call sites (a CallSite and up to 7 arguments) need no
++        // Reflection.Emit: the Switch runs fully ahead-of-time compiled, where a DynamicMethod cannot run.
++        public static void ActionThunk3<T1, T2, T3>(Func<object?[], object?> handler, T1 t1, T2 t2, T3 t3)
++        {
++            handler(new object?[] { t1, t2, t3 });
++        }
++
++        public static TReturn FuncThunk3<T1, T2, T3, TReturn>(Func<object?[], object> handler, T1 t1, T2 t2, T3 t3)
++        {
++            return (TReturn)handler(new object?[] { t1, t2, t3 });
++        }
++
++        public static void ActionThunk4<T1, T2, T3, T4>(Func<object?[], object?> handler, T1 t1, T2 t2, T3 t3, T4 t4)
++        {
++            handler(new object?[] { t1, t2, t3, t4 });
++        }
++
++        public static TReturn FuncThunk4<T1, T2, T3, T4, TReturn>(Func<object?[], object> handler, T1 t1, T2 t2, T3 t3, T4 t4)
++        {
++            return (TReturn)handler(new object?[] { t1, t2, t3, t4 });
++        }
++
++        public static void ActionThunk5<T1, T2, T3, T4, T5>(Func<object?[], object?> handler, T1 t1, T2 t2, T3 t3, T4 t4, T5 t5)
++        {
++            handler(new object?[] { t1, t2, t3, t4, t5 });
++        }
++
++        public static TReturn FuncThunk5<T1, T2, T3, T4, T5, TReturn>(Func<object?[], object> handler, T1 t1, T2 t2, T3 t3, T4 t4, T5 t5)
++        {
++            return (TReturn)handler(new object?[] { t1, t2, t3, t4, t5 });
++        }
++
++        public static void ActionThunk6<T1, T2, T3, T4, T5, T6>(Func<object?[], object?> handler, T1 t1, T2 t2, T3 t3, T4 t4, T5 t5, T6 t6)
++        {
++            handler(new object?[] { t1, t2, t3, t4, t5, t6 });
++        }
++
++        public static TReturn FuncThunk6<T1, T2, T3, T4, T5, T6, TReturn>(Func<object?[], object> handler, T1 t1, T2 t2, T3 t3, T4 t4, T5 t5, T6 t6)
++        {
++            return (TReturn)handler(new object?[] { t1, t2, t3, t4, t5, t6 });
++        }
++
++        public static void ActionThunk7<T1, T2, T3, T4, T5, T6, T7>(Func<object?[], object?> handler, T1 t1, T2 t2, T3 t3, T4 t4, T5 t5, T6 t6, T7 t7)
++        {
++            handler(new object?[] { t1, t2, t3, t4, t5, t6, t7 });
++        }
++
++        public static TReturn FuncThunk7<T1, T2, T3, T4, T5, T6, T7, TReturn>(Func<object?[], object> handler, T1 t1, T2 t2, T3 t3, T4 t4, T5 t5, T6 t6, T7 t7)
++        {
++            return (TReturn)handler(new object?[] { t1, t2, t3, t4, t5, t6, t7 });
++        }
++
++        public static void ActionThunk8<T1, T2, T3, T4, T5, T6, T7, T8>(Func<object?[], object?> handler, T1 t1, T2 t2, T3 t3, T4 t4, T5 t5, T6 t6, T7 t7, T8 t8)
++        {
++            handler(new object?[] { t1, t2, t3, t4, t5, t6, t7, t8 });
++        }
++
++        public static TReturn FuncThunk8<T1, T2, T3, T4, T5, T6, T7, T8, TReturn>(Func<object?[], object> handler, T1 t1, T2 t2, T3 t3, T4 t4, T5 t5, T6 t6, T7 t7, T8 t8)
++        {
++            return (TReturn)handler(new object?[] { t1, t2, t3, t4, t5, t6, t7, t8 });
++        }
++
+         private static MethodInfo GetEmptyObjectArrayMethod() => ((Func<object[]>)Array.Empty<object>).GetMethodInfo();
+ 
+         private static MethodInfo[] GetActionThunks()
+@@ -111,7 +173,13 @@ private static MethodInfo[] GetActionThunks()
+             Type delHelpers = typeof(DelegateHelpers);
+             return new MethodInfo[]{delHelpers.GetMethod("ActionThunk")!,
+                                     delHelpers.GetMethod("ActionThunk1")!,
+-                                    delHelpers.GetMethod("ActionThunk2")!};
++                                    delHelpers.GetMethod("ActionThunk2")!,
++                                    delHelpers.GetMethod("ActionThunk3")!,
++                                    delHelpers.GetMethod("ActionThunk4")!,
++                                    delHelpers.GetMethod("ActionThunk5")!,
++                                    delHelpers.GetMethod("ActionThunk6")!,
++                                    delHelpers.GetMethod("ActionThunk7")!,
++                                    delHelpers.GetMethod("ActionThunk8")!};
+         }
+ 
+         private static MethodInfo[] GetFuncThunks()
+@@ -119,7 +187,13 @@ private static MethodInfo[] GetFuncThunks()
+             Type delHelpers = typeof(DelegateHelpers);
+             return new MethodInfo[]{delHelpers.GetMethod("FuncThunk")!,
+                                     delHelpers.GetMethod("FuncThunk1")!,
+-                                    delHelpers.GetMethod("FuncThunk2")!};
++                                    delHelpers.GetMethod("FuncThunk2")!,
++                                    delHelpers.GetMethod("FuncThunk3")!,
++                                    delHelpers.GetMethod("FuncThunk4")!,
++                                    delHelpers.GetMethod("FuncThunk5")!,
++                                    delHelpers.GetMethod("FuncThunk6")!,
++                                    delHelpers.GetMethod("FuncThunk7")!,
++                                    delHelpers.GetMethod("FuncThunk8")!};
+         }
+ 
+         [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2060:MakeGenericMethod",
+@@ -129,9 +203,9 @@ private static MethodInfo[] GetFuncThunks()
+         {
+             try
+             {
+-                if (parameters.Length > 2)
++                if (parameters.Length > 8)
+                 {
+-                    return null; // Don't use C# thunks for more than 2 parameters
++                    return null; // Don't use C# thunks for more than 8 parameters (OBNS: 2 upstream)
+                 }
+ 
+                 if (returnType.IsByRefLike || returnType.IsByRef || returnType.IsPointer)
 diff --git a/src/libraries/System.Net.Sockets/src/System/Net/Sockets/SocketAsyncEngine.Libnx.cs b/src/libraries/System.Net.Sockets/src/System/Net/Sockets/SocketAsyncEngine.Libnx.cs
 index d11838381..7051efcd1 100644
 --- a/src/libraries/System.Net.Sockets/src/System/Net/Sockets/SocketAsyncEngine.Libnx.cs
@@ -50,6 +165,36 @@ index 1da35c68e..0174989dc 100644
  else()
  set(llvm_runtime_sources)
  endif()
+diff --git a/src/mono/mono/utils/mono-mmap-libnx.c b/src/mono/mono/utils/mono-mmap-libnx.c
+index c12809f52..2efd110aa 100644
+--- a/src/mono/mono/utils/mono-mmap-libnx.c
++++ b/src/mono/mono/utils/mono-mmap-libnx.c
+@@ -294,7 +294,24 @@ mono_valloc_aligned (size_t size, size_t alignment, int flags, MonoMemAccountTyp
+ 
+ 	void* ptr = NULL;
+ 	BEGIN_CRITICAL_SECTION;
+-	ptr = alloc_range (size, page_alignment);
++	if (page_alignment) {
++		// OBNS: alloc_range aligns page indices from heap_start, which is aligned only as far as the heap's start
++		// happens to be (4 MB in one run, 8 in another): a larger nursery failed the check below. Allocate enough
++		// to hold an aligned block, keep that, and give back the pages before and after it.
++		size_t used = (size + MMAP_PAGE_SIZE - 1) / MMAP_PAGE_SIZE * MMAP_PAGE_SIZE;
++		size_t padded = used + alignment - MMAP_PAGE_SIZE;
++		char *raw = (char *)alloc_range (padded, 0);
++		if (raw) {
++			uintptr_t aligned = ((uintptr_t)raw + alignment - 1) & ~(uintptr_t)(alignment - 1);
++			size_t head = aligned - (uintptr_t)raw;
++			size_t tail = padded - head - used;
++			if (head) free_range (raw, head);
++			if (tail) free_range ((char *)aligned + used, tail);
++			ptr = (void *)aligned;
++		}
++	} else {
++		ptr = alloc_range (size, 0);
++	}
+ 	END_CRITICAL_SECTION;
+ 
+ 	if (!ptr) return NULL;
 diff --git a/src/mono/mono/utils/mono-tls.c b/src/mono/mono/utils/mono-tls.c
 index b72018775..e1ea6e374 100644
 --- a/src/mono/mono/utils/mono-tls.c

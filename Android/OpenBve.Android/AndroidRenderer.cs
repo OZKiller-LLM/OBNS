@@ -61,9 +61,34 @@ namespace OpenBve.Android
 			: base(host, options, fileSystem)
 		{
 			this.options = options;
+			AnimatedObject.CameraPose = ReadCameraPose;
 		}
 
 		private readonly BaseOptions options;
+
+		/// <summary>The camera's pose for the cab's overlay objects, read directly rather than through <c>dynamic</c>
+		/// (AnimatedObject.CameraPoseReader: under the Switch's full AOT each dynamic read took milliseconds).</summary>
+		private static bool ReadCameraPose(object camera, out CameraRestrictionMode restriction, out Vector3 position, out Vector3 direction, out Vector3 up,
+			out Vector3 side, out double alignmentYaw, out double alignmentPitch, out Vector3 alignmentPosition)
+		{
+			if (camera is LibRender2.Cameras.CameraProperties properties)
+			{
+				restriction = properties.CurrentRestriction;
+				position = properties.AbsolutePosition;
+				direction = properties.AbsoluteDirection;
+				up = properties.AbsoluteUp;
+				side = properties.AbsoluteSide;
+				alignmentYaw = properties.Alignment.Yaw;
+				alignmentPitch = properties.Alignment.Pitch;
+				alignmentPosition = properties.Alignment.Position;
+				return true;
+			}
+
+			restriction = CameraRestrictionMode.NotAvailable;
+			position = direction = up = side = alignmentPosition = Vector3.Zero;
+			alignmentYaw = alignmentPitch = 0;
+			return false;
+		}
 
 		/// <summary>
 		/// Prepares the camera and visibility structures once a route has been built, mirroring
