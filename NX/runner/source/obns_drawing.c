@@ -269,18 +269,57 @@ static FT_Face face_at(ObnsFont *font, int slot)
 }
 
 // The face with a glyph for a character: the font's own, else the first other shared font that has it.
-static FT_Face face_for(ObnsFont *font, uint32_t codepoint, FT_UInt *glyph)
+static FT_Face face_with(ObnsFont *font, uint32_t codepoint, FT_UInt *glyph)
 {
-    FT_Face fallback = NULL;
     for (int slot = 0; slot < FACES; slot++) {
         FT_Face face = face_at(font, slot);
         if (!face) continue;
-        if (!fallback) fallback = face;
         FT_UInt g = FT_Get_Char_Index(face, codepoint);
         if (g) { *glyph = g; return face; }
     }
+    return NULL;
+}
+
+// The menu's and the HUD's symbols, as the console draws them. The buttons are always the console's own glyphs (the
+// Nintendo extension font's, U+E0E0 on, as the system and hbmenu show them); the other symbols, where none of the shared
+// fonts has them (icons missing on the console, 2026-11-06), the nearest that one does - the last always does.
+typedef struct { uint32_t codepoint; bool console; uint32_t instead[3]; } ObnsSymbol;
+static const ObnsSymbol symbols[] = {
+    { 0x24B6, true,  { 0xE0E0, 'A' } },        // (A)
+    { 0x24B7, true,  { 0xE0E1, 'B' } },        // (B)
+    { 0x24CD, true,  { 0xE0E2, 'X' } },        // (X)
+    { 0x24CE, true,  { 0xE0E3, 'Y' } },        // (Y)
+    { 0x24C1, true,  { 0xE0E4, 'L' } },        // (L)
+    { 0x24C7, true,  { 0xE0E5, 'R' } },        // (R)
+    { 0x2295, true,  { 0xE0EF, '+' } },        // circled plus: the + button
+    { 0x2296, true,  { 0xE0F0, '-' } },        // circled minus: the - button
+    { 0x25B8, false, { 0x25B6, 0x25BA, '>' } }, // small right triangle
+    { 0x26A0, false, { 0x203C, '!' } },        // warning sign
+    { 0x2713, false, { 0x2714, 0x221A, '*' } }, // check mark
+    { 0x2039, false, { 0x3008, '<' } },        // single angle quotes
+    { 0x203A, false, { 0x3009, '>' } },
+    { 0x2460, false, { 0x2474, '1' } },        // circled 1, 2
+    { 0x2461, false, { 0x2475, '2' } },
+    { 0x25C6, false, { 0x25C7, '*' } },        // diamond
+    { 0x25A0, false, { 0x25AA, '#' } },        // square
+    { 0x25CF, false, { 0x2022, 0x00B7, '*' } }, // circle
+    { 0x2192, false, { 0x203A, '>' } },        // arrows
+    { 0x2191, false, { '^' } },
+};
+
+static FT_Face face_for(ObnsFont *font, uint32_t codepoint, FT_UInt *glyph)
+{
+    const ObnsSymbol *symbol = NULL;
+    for (size_t i = 0; i < sizeof symbols / sizeof symbols[0]; i++)
+        if (symbols[i].codepoint == codepoint) { symbol = &symbols[i]; break; }
+    FT_Face face;
+    if (symbol && symbol->console && symbol->instead[0] && (face = face_with(font, symbol->instead[0], glyph))) return face;
+    if ((face = face_with(font, codepoint, glyph))) return face;
+    if (symbol)
+        for (int k = 0; k < 3 && symbol->instead[k]; k++)
+            if ((face = face_with(font, symbol->instead[k], glyph))) return face;
     *glyph = 0;
-    return fallback;
+    return face_at(font, 0);
 }
 
 static uint32_t next_codepoint(const uint16_t *text, int length, int *i)
