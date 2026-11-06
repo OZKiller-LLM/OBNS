@@ -247,6 +247,7 @@ namespace OpenBve
 			trainSignature = -1;
 			worldPlanned = -1;
 			plannedCount = states.Count;
+			FilterVersion++;
 			staticStates = new HashSet<ObjectState>(states, ByReference<ObjectState>.Instance);
 			Dictionary<(float, float, byte), Group> groups = new Dictionary<(float, float, byte), Group>();
 			Dictionary<string, int> ineligible = new Dictionary<string, int>();
@@ -322,6 +323,7 @@ namespace OpenBve
 			}
 
 			trainSignature = signature;
+			FilterVersion++;
 			ReattachAll();
 			partSource.Clear();
 			carGroups.Clear();
@@ -436,6 +438,7 @@ namespace OpenBve
 			}
 
 			worldPlanned = used;
+			FilterVersion++;
 			StillWorldObjects = 0;
 			foreach (Group group in worldGroups)
 			{
@@ -679,18 +682,41 @@ namespace OpenBve
 		/// </summary>
 		public void Filter(List<FaceState> opaque, List<FaceState> alphaUnsorted, List<FaceState> alphaSorted)
 		{
-			visible.Clear();
+			if (Prepare())
+			{
+				FilterLists(opaque, alphaUnsorted, alphaSorted);
+			}
+			else
+			{
+				visible.Clear();
+			}
+		}
+
+		/*
+		 * The frame's work in two parts, so a renderer can keep last frame's filtered lists while nothing they depend on
+		 * changed (the visible faces, and FilterVersion here): Prepare every frame - plans, batches built, rebuilt and
+		 * evicted - then FilterLists on the fresh lists, or KeepLists to carry on with the last ones.
+		 */
+
+		/// <summary>Bumped whenever which faces the batches draw changes: a plan, a batch built or freed.</summary>
+		public int FilterVersion { get; private set; }
+
+		private double prepareNow;
+
+		/// <summary>The frame's housekeeping before the lists; false if there is nothing to batch (draw the lists as they are).</summary>
+		public bool Prepare()
+		{
 			frame++;
 			// The debug views draw face by face, through upstream's RenderFace.
 			if (!Enabled || host.Renderer.OptionWireFrame || host.Renderer.OptionNormals)
 			{
-				return;
+				return false;
 			}
 
 			Plan();
 			if (groupOf.Count == 0)
 			{
-				return;
+				return false;
 			}
 
 			PlanTrains();
@@ -700,7 +726,7 @@ namespace OpenBve
 				CullFarCars();
 			}
 
-			double now = clock.Elapsed.TotalSeconds;
+			double now = prepareNow = clock.Elapsed.TotalSeconds;
 			// Before the lists are filtered: a group freed here has its faces drawn one by one this frame, not lost.
 			if (now - lastRecheck > 2.0)
 			{
@@ -708,6 +734,21 @@ namespace OpenBve
 				Recheck();
 			}
 
+			BuildSome();
+			if (now - lastEvictionCheck > 2.0)
+			{
+				lastEvictionCheck = now;
+				Evict(now);
+			}
+
+			return true;
+		}
+
+		/// <summary>Takes the faces the batches draw out of this frame's fresh lists, and notes the batches in view.</summary>
+		public void FilterLists(List<FaceState> opaque, List<FaceState> alphaUnsorted, List<FaceState> alphaSorted)
+		{
+			visible.Clear();
+			double now = prepareNow;
 			keptStatic = keptOther = 0;
 			// Why faces are left out of batches is for the log: worked out one frame in 64, not for every face of every frame
 			// (on the Switch the strings it builds were a good part of the filter's 7 to 17 ms, 2026-11-06).
@@ -720,18 +761,29 @@ namespace OpenBve
 			FilterList(opaque, now);
 			FilterList(alphaUnsorted, now);
 			FilterList(alphaSorted, now);
+			Follow();
+		}
+
+		/// <summary>Carries on with last frame's filtered lists (nothing changed): the same batches in view.</summary>
+		public void KeepLists()
+		{
+			foreach (Group group in visible)
+			{
+				group.SeenFrame = frame;
+				group.LastSeen = prepareNow;
+			}
+
+			Follow();
+		}
+
+		private void Follow()
+		{
 			foreach (Group group in visible)
 			{
 				if (group.Reference != null)
 				{
 					Follow(group);
 				}
-			}
-			BuildSome();
-			if (now - lastEvictionCheck > 2.0)
-			{
-				lastEvictionCheck = now;
-				Evict(now);
 			}
 		}
 
@@ -928,6 +980,7 @@ namespace OpenBve
 				group.LastSeen = clock.Elapsed.TotalSeconds;
 				batchedVertices += group.Batch.Vertices;
 				built.Add(group);
+				FilterVersion++;
 				BatchesBuilt++;
 				if (group.Reference != null && DetachParts)
 				{
@@ -1511,6 +1564,7 @@ namespace OpenBve
 			(group.Batch.State.Prototype.Mesh.VAO as VertexArrayObject)?.Dispose();
 			batchedVertices -= group.Batch.Vertices;
 			group.Batch = null;
+			FilterVersion++;
 			group.Failed = false;
 			BatchesFreed++;
 		}

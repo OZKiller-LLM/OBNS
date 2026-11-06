@@ -54,6 +54,16 @@ namespace LibRender2.Objects
 			quadTree = new QuadTree(renderer.currentOptions.ViewingDistance);
 		}
 
+		/// <summary>ANDROID PORT: bumped (under LockObject) whenever the face lists change, so a renderer may keep last frame's
+		/// copies of them while it stays the same.</summary>
+		public int Version;
+
+		/// <summary>ANDROID PORT: faces sorted back to front as the alpha faces are, into a list the caller keeps.</summary>
+		public void SortInto(IList<FaceState> faces, List<FaceState> into)
+		{
+			SortPolygons(faces, into);
+		}
+
 		private bool AddObject(ObjectState state)
 		{
 			return state != null && state.Prototype != null && Objects.TryAdd(state, 0);
@@ -69,6 +79,7 @@ namespace LibRender2.Objects
 			{
 				if (Objects.TryRemove(state, out _))
 				{
+					Version++;
 					myOpaqueFaces.RemoveAll(x => x.Object == state);
 					myAlphaFaces.RemoveAll(x => x.Object == state);
 					myOverlayOpaqueFaces.RemoveAll(x => x.Object == state);
@@ -82,6 +93,7 @@ namespace LibRender2.Objects
 		{
 			lock (LockObject)
 			{
+				Version++;
 				Objects.Clear();
 				myOpaqueFaces.Clear();
 				myAlphaFaces.Clear();
@@ -182,6 +194,7 @@ namespace LibRender2.Objects
 
 				lock (LockObject)
 				{
+					Version++;
 					if (!alpha)
 					{
 						/*

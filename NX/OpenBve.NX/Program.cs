@@ -516,7 +516,7 @@ namespace OpenBve.NX
 					if (++windows % 6 == 1)
 					{
 						Log("frames: static batches " + renderer.BatchSummary);
-						Log("frames: passes " + renderer.PassSummary + "; emulated plugins " + OpenBve.NativePlugins.EmulatedWin32Plugin.TakeElapse());
+						Log("frames: passes " + renderer.PassSummary + "; lists kept in " + renderer.ReusedLists + " frames so far; emulated plugins " + OpenBve.NativePlugins.EmulatedWin32Plugin.TakeElapse());
 						if (compressedTextures != null)
 						{
 							Log("frames: " + compressedTextures.Describe());
@@ -631,6 +631,8 @@ namespace OpenBve.NX
 			AndroidTrainManager.CarUpdateLod = true;
 			// Content textures unused for 20 s unloaded (upstream's unloading never did: nothing is marked unloadable).
 			LibRender2.Textures.TextureManager.UnloadUnpinned = true;
+			// Last frame's filtered face lists kept while nothing they depend on changed (#2, 2026-11-07).
+			AndroidRenderer.ReuseFaceLists = true;
 			host.Renderer = renderer;
 			OpenBve.Program.CurrentHost = host;
 			OpenBve.Program.Renderer = renderer;

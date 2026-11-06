@@ -284,33 +284,70 @@ namespace OpenBve.Android
 			List<FaceState> unsortedAlphaFaces = frameUnsortedAlphaFaces;
 			List<FaceState> overlayOpaqueFaces = frameOverlayOpaqueFaces;
 			List<FaceState> overlayAlphaFaces;
+
+			// The batches' housekeeping first (built, rebuilt, evicted): it decides whether last frame's lists still hold.
+			batcher ??= new StaticBatcher(this);
+			bool batching = batcher.Prepare();
+			CheckKnownTransparency();
+			int classified = LibRender2.Textures.TextureManager.textureCache.Count;
+			bool quality = options.TransparencyMode == TransparencyMode.Quality;
+			bool reuse;
 			lock (VisibleObjects.LockObject)
 			{
-				opaqueFaces.Clear();
-				opaqueFaces.AddRange(VisibleObjects.OpaqueFaces);
-				// In the order objects were shown: each object's faces together, in index order.
-				unsortedAlphaFaces.Clear();
-				unsortedAlphaFaces.AddRange(VisibleObjects.AlphaFaces);
-				// In quality mode the colour-keyed faces are drawn unsorted (DrawAlphaFaces): only the others are sorted.
-				if (options.TransparencyMode == TransparencyMode.Quality)
+				/*
+				 * Last frame's filtered lists kept while nothing they depend on changed (ReuseFaceLists: the Switch's): the
+				 * faces shown, the batches, the textures' classification. Objects come and go only every few frames; copying
+				 * and filtering the lists every frame was 9 to 14 ms in a Tuen Ma Line station's exterior view (2026-11-07).
+				 * The blended faces are sorted afresh every frame (the camera moves); colour-keyed faces go unsorted in quality
+				 * mode, so only it keeps lists.
+				 */
+				reuse = ReuseFaceLists && quality && listsKept && batching == keptBatching && VisibleObjects.Version == keptListVersion &&
+				        batcher.FilterVersion == keptFilterVersion && classified == keptClassified;
+				if (!reuse)
 				{
-					VisibleObjects.GetSortedPolygons(alphaFaces, sortBlended);
+					opaqueFaces.Clear();
+					opaqueFaces.AddRange(VisibleObjects.OpaqueFaces);
+					// In the order objects were shown: each object's faces together, in index order.
+					unsortedAlphaFaces.Clear();
+					unsortedAlphaFaces.AddRange(VisibleObjects.AlphaFaces);
+					// In quality mode the colour-keyed faces are drawn unsorted (DrawAlphaFaces): only the others are sorted.
+					blendedFaces.Clear();
+					foreach (FaceState face in VisibleObjects.AlphaFaces)
+					{
+						if (!quality || sortBlended(face))
+						{
+							blendedFaces.Add(face);
+						}
+					}
 				}
-				else
-				{
-					VisibleObjects.GetSortedPolygons(alphaFaces);
-				}
+
+				VisibleObjects.SortInto(blendedFaces, alphaFaces);
 				overlayOpaqueFaces.Clear();
 				overlayOpaqueFaces.AddRange(VisibleObjects.OverlayOpaqueFaces);
 				overlayAlphaFaces = VisibleObjects.GetSortedPolygons(true);
+				keptListVersion = VisibleObjects.Version;
 			}
 
+			ReusedLists += reuse ? 1 : 0;
 			Profile.Mark("face lists");
-			CheckKnownTransparency();
 
 			// Faces the static batches draw come out of the lists (see StaticBatcher).
-			batcher ??= new StaticBatcher(this);
-			batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
+			if (batching)
+			{
+				if (reuse)
+				{
+					batcher.KeepLists();
+				}
+				else
+				{
+					batcher.FilterLists(opaqueFaces, unsortedAlphaFaces, alphaFaces);
+				}
+			}
+
+			keptFilterVersion = batcher.FilterVersion;
+			keptClassified = classified;
+			keptBatching = batching;
+			listsKept = true;
 			Profile.Mark("batch filter");
 			/*
 			 * 128 states a frame: each is two reflection reads, slow under the Switch's full AOT (at 1000 a frame they were
@@ -765,6 +802,16 @@ namespace OpenBve.Android
 		}
 
 		private StaticBatcher batcher;
+
+		/// <summary>Whether last frame's filtered face lists are kept while nothing they depend on changed (the Switch sets it).</summary>
+		public static bool ReuseFaceLists;
+
+		/// <summary>Frames that kept last frame's lists, for the log.</summary>
+		public int ReusedLists;
+
+		private readonly List<FaceState> blendedFaces = new List<FaceState>();
+		private bool listsKept, keptBatching;
+		private int keptListVersion, keptFilterVersion, keptClassified;
 
 		private static readonly System.Func<FaceState, bool> sortBlended = face => !IsColourKeyed(face);
 
