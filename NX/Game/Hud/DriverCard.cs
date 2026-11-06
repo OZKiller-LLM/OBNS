@@ -54,6 +54,17 @@ namespace OpenBve.Switch
 
 		private static float ChipWidth(IMenuCanvas canvas, string text) => canvas.TextWidth(text, ChipSize, true) + 2 * ChipPadding;
 
+		/// <summary>The card's top and height without a safety system warning in it (the touch controls' ATS mode lines its
+		/// bottom keys up with it).</summary>
+		public static float BaseHeight => Padding + SignSize + 6 + NextSize + Padding - 4;
+
+		public static float BaseTop => MenuStyle.Height - MenuStyle.SafeY - BaseHeight;
+
+		/// <summary>The card's left edge at its narrowest (its usual width).</summary>
+		public static float BaseLeft => (MenuStyle.Width - MinWidth) / 2;
+
+		private const float MinWidth = 480;
+
 		/// <summary>Draws the card for the status, centred at the bottom of the 1280x720 screen.</summary>
 		public static void Draw(IMenuCanvas canvas, DriverStatus status)
 		{
@@ -81,7 +92,7 @@ namespace OpenBve.Switch
 			}
 
 			float most = MenuStyle.Width - 2 * MenuStyle.SafeX;
-			float width = Math.Min(most, Math.Max(480, Math.Max(topWidth, nextWidth) + 2 * Padding));
+			float width = Math.Min(most, Math.Max(MinWidth, Math.Max(topWidth, nextWidth) + 2 * Padding));
 			float warningHeight = status.Warning != null ? WarningSize + 10 + 8 : 0;
 			float height = Padding + warningHeight + SignSize + 6 + NextSize + Padding - 4;
 			float x = (MenuStyle.Width - width) / 2, y = MenuStyle.Height - MenuStyle.SafeY - height;

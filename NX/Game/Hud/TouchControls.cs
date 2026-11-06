@@ -233,8 +233,9 @@ namespace OpenBve.Switch
 				new[] { (Translations.Command.SecurityA1, "A1", "Ins"), (Translations.Command.SecurityB1, "B1", "Home"), (Translations.Command.SecurityC1, "C1", "PgUp") },
 				new[] { (Translations.Command.SecurityA2, "A2", "Del"), (Translations.Command.SecurityB2, "B2", "End"), (Translations.Command.SecurityC2, "C2", "PgDn") }
 			};
-			float navWidth = 108, navHeight = 92, navGap = 10;
-			float navLeft = 1280 - edge - 3 * navWidth - 2 * navGap, navTop = 720 - edge - 2 * navHeight - navGap;
+			// The bottom row (and the space bar) level with the driving information's card, top and bottom.
+			float navWidth = 108, navHeight = DriverCard.BaseHeight, navGap = 10;
+			float navLeft = 1280 - edge - 3 * navWidth - 2 * navGap, navTop = DriverCard.BaseTop - navGap - navHeight;
 			for (int r = 0; r < navigation.Length; r++)
 			{
 				for (int c = 0; c < navigation[r].Length; c++)
@@ -248,10 +249,11 @@ namespace OpenBve.Switch
 			}
 
 			Key space = AtsKey("S", "Space", Translations.Command.SecurityS, Argb(190, 150, 100, 20));
-			space.X = edge;
-			space.Width = 1280 - 2 * edge - 3 * navWidth - 2 * navGap - 520;
+			// A little narrower than the navigation block, centred between the screen's edge and the driving information's.
+			space.Width = 300;
+			space.X = (DriverCard.BaseLeft - space.Width) / 2;
 			space.Height = navHeight;
-			space.Y = 720 - edge - navHeight;
+			space.Y = DriverCard.BaseTop;
 
 			numpadWidth = Dp(3 * 58);
 			numpadRightOfLevers = leversLeft - Dp(8);
