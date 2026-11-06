@@ -180,8 +180,11 @@ namespace OpenBve.Switch
 
 			// --- touch, handheld only ---
 			List.Add(new HeadingItem(T("switch", "touch", "Touch screen")));
-			List.Add(new ChoiceItem(T("switch", "touch_controls", "Touch controls in handheld mode:"), onOff,
-				SwitchSettings.GetTouchControls() ? 0 : 1, i => SwitchSettings.SetTouchControls(i == 0)));
+			// On (Android's buttons), ATS (the safety system's keys alone, for driving with the controllers), off.
+			int[] touchModes = { SwitchSettings.TouchFull, SwitchSettings.TouchAts, SwitchSettings.TouchOff };
+			List.Add(new ChoiceItem(T("switch", "touch_controls", "Touch controls in handheld mode:"),
+				new[] { onOff[0], T("switch", "touch_ats", "ATS keys only"), onOff[1] },
+				Array.IndexOf(touchModes, SwitchSettings.GetTouchMode()), i => SwitchSettings.SetTouchMode(touchModes[i])));
 			Func<bool> touchOn = SwitchSettings.GetTouchControls;
 			List.Add(new ChoiceItem(T("android", "touch_handles", "Touch the cab panel's handles:"), onOff,
 				SwitchSettings.GetTouchHandles() ? 0 : 1, i => SwitchSettings.SetTouchHandles(i == 0), touchOn));
@@ -192,7 +195,7 @@ namespace OpenBve.Switch
 				new[] { T("android", "opacity_solid", "Solid"), T("android", "opacity_translucent", "Translucent"), T("android", "opacity_faint", "Faint") },
 				SwitchSettings.GetTouchButtonOpacityIndex(), SwitchSettings.SetTouchButtonOpacity, touchOn));
 			List.Add(new InfoItem(T("switch", "touch_note",
-				"The on-screen buttons and the cab's touch areas, for playing on the console's screen. Docked there is no touch screen, so they are off whatever is chosen here.")));
+				"The on-screen buttons and the cab's touch areas, for playing on the console's screen. ATS keys only shows just the safety system's keys, larger, for driving with the controllers. Docked there is no touch screen, so they are off whatever is chosen here.")));
 
 			// --- content ---
 			List.Add(new HeadingItem(T("panel", "packages", "Package Management")));

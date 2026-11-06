@@ -36,7 +36,8 @@ namespace OpenBve.Switch
 	/// the camera row and the displays top left, the emergency brake top right, the levers bottom right (one combined
 	/// lever for a single-handle train), the reverser, horns and doors bottom left, the safety system's keys and the AI
 	/// above them, the camera numpad beside the levers - drawn by deko3d over the scene, Android's dp at 1.5 px each.
-	/// Handheld only, and off unless Options turn it on (SwitchSettings.GetTouchControls). Each finger to its own button,
+	/// Handheld only, and off unless Options turn it on (SwitchSettings.GetTouchMode); its ATS mode shows the safety
+	/// system's keys alone, all of them, larger, in the others' places, for driving with the controllers. Each finger to its own button,
 	/// as Android's split touches: a button sends its command while held; the safety keys latch when held for
 	/// LatchSeconds (some plugins' dead-man switches need a key held for the whole run), until tapped again.
 	/// </summary>
@@ -63,6 +64,10 @@ namespace OpenBve.Switch
 
 		private readonly AndroidControls controls;
 		private readonly List<Key> keys = new List<Key>();
+		/// <summary>ATS mode's keys: the safety system's alone, every one shown, larger, where the others would be.</summary>
+		private readonly List<Key> atsLayout = new List<Key>();
+		private List<Key> shown;
+		private int mode = -1;
 		private readonly List<Key> levers = new List<Key>(), unified = new List<Key>(), atsMore = new List<Key>(), numpad = new List<Key>();
 		private readonly Dictionary<uint, Key> fingers = new Dictionary<uint, Key>();
 		private readonly HashSet<uint> seen = new HashSet<uint>();
@@ -197,6 +202,31 @@ namespace OpenBve.Switch
 				}
 			}
 
+			/*
+			 * ATS mode: S, A1, B1 and A2 to P, as big as the levers, in two columns up each side - where the reverser, horns,
+			 * doors and the safety row are on the left, and the levers on the right - from the bottom, S nearest the left
+			 * thumb. The middle stays clear for the view and the driving information.
+			 */
+			Translations.Command[] all =
+			{
+				Translations.Command.SecurityS, Translations.Command.SecurityA1, Translations.Command.SecurityB1, Translations.Command.SecurityA2,
+				Translations.Command.SecurityB2, Translations.Command.SecurityC1, Translations.Command.SecurityC2, Translations.Command.SecurityD,
+				Translations.Command.SecurityE, Translations.Command.SecurityF, Translations.Command.SecurityG, Translations.Command.SecurityH,
+				Translations.Command.SecurityI, Translations.Command.SecurityJ, Translations.Command.SecurityK, Translations.Command.SecurityL,
+				Translations.Command.SecurityM, Translations.Command.SecurityN, Translations.Command.SecurityO, Translations.Command.SecurityP
+			};
+			for (int i = 0; i < all.Length; i++)
+			{
+				Key key = Command(all[i].ToString().Substring("Security".Length), all[i], i == 0 ? Argb(190, 150, 100, 20) : safety, latching: true);
+				keys.Remove(key);
+				key.TextSize = Math.Max(20, 14 * 1.5f * scale);
+				int band = i / 10, place = i % 10, row = place / 2, column = place % 2;
+				float pitchX = key.Width + Dp(8), pitchY = key.Height + Dp(8);
+				key.X = band == 0 ? Dp(12) + Dp(4) + column * pitchX : 1280 - Dp(12) - Dp(4) - key.Width - (1 - column) * pitchX;
+				key.Y = 720 - Dp(12) - (row + 1) * pitchY + Dp(4);
+				atsLayout.Add(key);
+			}
+
 			numpadWidth = Dp(3 * 58);
 			numpadRightOfLevers = leversLeft - Dp(8);
 			numpadRightOfSingle = singleLeft - Dp(8);
@@ -249,39 +279,18 @@ namespace OpenBve.Switch
 			float* ys = stackalloc float[max];
 			int docked;
 			int count = ReadTouches(max, ids, xs, ys, &docked);
-			bool active = SwitchSettings.GetTouchControls() && docked == 0;
-			if (active != Active)
+			int chosen = SwitchSettings.GetTouchMode();
+			bool active = chosen != SwitchSettings.TouchOff && docked == 0;
+			if (active != Active || chosen != mode)
 			{
+				// Off, docked, or the other set: nothing stays held.
+				ReleaseAll();
 				Active = active;
-				if (!active)
-				{
-					ReleaseAll();
-				}
+				mode = chosen;
+				shown = mode == SwitchSettings.TouchAts ? atsLayout : keys;
 			}
 
-			foreach (Key key in atsMore)
-			{
-				key.Visible = atsOpen;
-			}
-
-			moreKey.X = atsOpen ? moreOpenX : moreClosedX;
-			foreach (Key key in numpad)
-			{
-				key.Visible = numpadOpen;
-			}
-
-			// The numpad just left of whichever lever set shows.
-			float shift = (singleHandle ? numpadRightOfSingle : numpadRightOfLevers) - numpadWidth;
-			if (shift != numpadShift)
-			{
-				foreach (Key key in numpad)
-				{
-					key.X += shift - numpadShift;
-				}
-
-				numpadShift = shift;
-			}
-
+			Layout();
 			if (!Active || paused)
 			{
 				return;
@@ -329,11 +338,49 @@ namespace OpenBve.Switch
 			}
 		}
 
+		/// <summary>What shows of the optional parts: the rest of the safety keys, the numpad (beside the levers shown).</summary>
+		private void Layout()
+		{
+			foreach (Key key in atsMore)
+			{
+				key.Visible = atsOpen;
+			}
+
+			moreKey.X = atsOpen ? moreOpenX : moreClosedX;
+			foreach (Key key in numpad)
+			{
+				key.Visible = numpadOpen;
+			}
+
+			// The numpad just left of whichever lever set shows.
+			float shift = (singleHandle ? numpadRightOfSingle : numpadRightOfLevers) - numpadWidth;
+			if (shift != numpadShift)
+			{
+				foreach (Key key in numpad)
+				{
+					key.X += shift - numpadShift;
+				}
+
+				numpadShift = shift;
+			}
+		}
+
+		/// <summary>For NX/MenuPreview: shows a mode's buttons, without the touch screen.</summary>
+		public void Preview(int previewMode, bool safetyKeysOpen, bool numpadShown)
+		{
+			mode = previewMode;
+			shown = mode == SwitchSettings.TouchAts ? atsLayout : keys;
+			Active = mode != SwitchSettings.TouchOff;
+			atsOpen = safetyKeysOpen;
+			numpadOpen = numpadShown;
+			Layout();
+		}
+
 		private Key Hit(float x, float y)
 		{
-			for (int i = keys.Count - 1; i >= 0; i--)
+			for (int i = shown.Count - 1; i >= 0; i--)
 			{
-				Key key = keys[i];
+				Key key = shown[i];
 				if (key.Visible && x >= key.X && x < key.X + key.Width && y >= key.Y && y < key.Y + key.Height)
 				{
 					return key;
@@ -390,7 +437,7 @@ namespace OpenBve.Switch
 		/// <summary>Lets go of every held and latched button (docked, or the controls turned off).</summary>
 		public void ReleaseAll()
 		{
-			foreach (Key key in keys)
+			foreach (Key key in System.Linq.Enumerable.Concat(keys, atsLayout))
 			{
 				if (key.Command != null && (key.Pressed || key.Latched))
 				{
@@ -406,12 +453,12 @@ namespace OpenBve.Switch
 		/// <summary>Draws the buttons. Call inside the overlay, under the pause menu.</summary>
 		public void Draw(IMenuCanvas canvas)
 		{
-			if (!Active)
+			if (!Active || shown == null)
 			{
 				return;
 			}
 
-			foreach (Key key in keys)
+			foreach (Key key in shown)
 			{
 				if (!key.Visible)
 				{

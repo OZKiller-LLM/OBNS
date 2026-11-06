@@ -126,6 +126,35 @@ namespace OpenBve.NX.MenuPreview
 					continue;
 				}
 
+				if (parts[0] == "touch")
+				{
+					// The touch controls over the scene and the driving card: all of Android's buttons (then with the safety
+					// keys and the numpad open), and ATS mode.
+					string name = parts.Length > 1 ? parts[1] : "touch";
+					DriverStatus status = new DriverStatus(54, 60, "P2", HandleState.Power, "F", "10:05:22", "Gamma", "350 m", "10:05:10", "10:05:40", null,
+						Array.Empty<(string, OpenBveApi.Colors.MessageColor)>(), "Cab", false);
+					TouchControls touch = new TouchControls(new AndroidControls());
+					(int Mode, bool Keys, bool Pad, string File)[] touchShots =
+					{
+						(SwitchSettings.TouchFull, false, false, name + "-full.png"),
+						(SwitchSettings.TouchFull, true, true, name + "-full-open.png"),
+						(SwitchSettings.TouchAts, false, false, name + "-ats.png")
+					};
+					foreach ((int mode, bool keys, bool pad, string file) in touchShots)
+					{
+						touch.Preview(mode, keys, pad);
+						canvas.Begin();
+						canvas.Fill(0, 0, 1280, 360, 0xFF6E8FB4);
+						canvas.Fill(0, 360, 1280, 360, 0xFF4A4E44);
+						DriverCard.Draw(canvas, status);
+						touch.Draw(canvas);
+						canvas.Save(Path.Combine(output, file));
+						Console.WriteLine("wrote " + file);
+					}
+
+					continue;
+				}
+
 				if (parts[0] == "timetable")
 				{
 					// The timetable card over the scene and the driving card, from a sample snapshot.

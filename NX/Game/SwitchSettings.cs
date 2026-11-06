@@ -305,8 +305,17 @@ namespace OpenBve.Android
 
 		/// <summary>The touch controls (ControlOverlay's buttons and the cab's touch areas): off by default, and only ever
 		/// in handheld mode - docked there is no touch screen, whatever this says.</summary>
-		public static bool GetTouchControls() => GetBool(TouchControlsKey, false);
-		public static void SetTouchControls(bool value) => PutBool(TouchControlsKey, value);
+		public static bool GetTouchControls() => GetTouchMode() != TouchOff;
+		public static void SetTouchControls(bool value) => SetTouchMode(value ? TouchFull : TouchOff);
+
+		/// <summary>The touch controls' mode: off (the default), all of Android's buttons, or the safety system's keys alone
+		/// (ATS: every key shown, larger, where the other buttons would be - the train driven with the controllers).</summary>
+		public const int TouchOff = 0, TouchFull = 1, TouchAts = 2;
+
+		private const string TouchModeKey = "touch_mode";
+
+		public static int GetTouchMode() => Math.Clamp(GetInt(TouchModeKey, GetBool(TouchControlsKey, false) ? TouchFull : TouchOff), TouchOff, TouchAts);
+		public static void SetTouchMode(int mode) => PutInt(TouchModeKey, Math.Clamp(mode, TouchOff, TouchAts));
 
 		/// <summary>Upstream's panel2 extended mode (the 2D panel's handles touched), with the touch controls.</summary>
 		public static bool GetTouchHandles() => GetBool(TouchHandlesKey, true);
