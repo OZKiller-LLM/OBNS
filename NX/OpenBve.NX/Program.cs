@@ -274,6 +274,7 @@ namespace OpenBve.NX
 		{
 			Stage("frames: drawing for " + seconds.ToString("0") + " s" + (session == null ? " (no train: the camera travels the route)" : string.Empty));
 			Stopwatch clock = Stopwatch.StartNew();
+			DekoCanvas overlay = new DekoCanvas();
 			double last = 0, windowStart = 0, worst = 0, trackPosition = 0;
 			int frames = 0, total = 0;
 			while (clock.Elapsed.TotalSeconds < seconds)
@@ -300,6 +301,13 @@ namespace OpenBve.NX
 
 				host.BeginFrame();
 				renderer.RenderScene(elapsed);
+				if (session != null && overlay.BeginOverlay())
+				{
+					// The in-game interface over the scene (the driving information, as Android's).
+					OpenBve.Switch.DriverCard.Draw(overlay, session.Status(session.Camera.ModeName, false));
+					overlay.EndOverlay();
+				}
+
 				sounds.Update(elapsed);
 				deko.EndFrame();
 				frames++;

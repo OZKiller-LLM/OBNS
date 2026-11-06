@@ -431,6 +431,24 @@ EXPORT void obns_dk3d_draw(const Draw3D *d)
     draws3d++;
 }
 
+// The 2D layer's quads (obns_dk2d_begin and the drawing calls) over the 3D frame being recorded: the in-game interface,
+// drawn after the scene and before the present. 1 if there is no 3D frame.
+EXPORT int obns_dk2d_overlay_end(void)
+{
+    if (!inFrame3d || !ready2d) return 1;
+    QUEUE_LOCK();
+    submit_uploads2d();
+    QUEUE_UNLOCK();
+    record2d(commands3d);
+    // The 3D bindings back, should more be drawn after: its state is set again at the next draw.
+    lastValid3d = 0;
+    DkGpuAddr descriptors = dkMemBlockGetGpuAddr(descriptors3d);
+    dkCmdBufBindImageDescriptorSet(commands3d, descriptors + DESCRIPTOR_IMAGES, TEXTURES3D);
+    dkCmdBufBindSamplerDescriptorSet(commands3d, descriptors + DESCRIPTOR_SAMPLERS, SAMPLERS3D);
+    dkCmdBufBindUniformBuffer(commands3d, DkStage_Vertex, 2, dkMemBlockGetGpuAddr(clipMemory), DK_UNIFORM_BUF_ALIGNMENT);
+    return 0;
+}
+
 // Ends the frame: submitted, presented, and (for now) waited for, so everything it used is free again.
 EXPORT int obns_dk3d_end(void)
 {

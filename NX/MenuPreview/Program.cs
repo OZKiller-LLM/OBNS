@@ -99,6 +99,33 @@ namespace OpenBve.NX.MenuPreview
 					continue;
 				}
 
+				if (parts[0] == "card")
+				{
+					// The in-game driving card over a stand-in for the scene, with sample statuses.
+					string name = parts.Length > 1 ? parts[1] : "card";
+					DriverStatus[] samples =
+					{
+						new DriverStatus(42, 60, "P3", HandleState.Power, "F", "10:03:12", "Alpha", "350 m", "10:04:00", "10:05:00", null,
+							new[] { ("Sample message: the doors are closed", OpenBveApi.Colors.MessageColor.White) }, "Cab", false),
+						new DriverStatus(68, 60, "B5", HandleState.Brake, "F", "10:03:40", "Beta", "1.2 km", null, "10:09:30",
+							"ATS: brakes applied", Array.Empty<(string, OpenBveApi.Colors.MessageColor)>(), "Cab", false),
+						new DriverStatus(0, 0, "EB", HandleState.Emergency, "N", "10:04:02", null, null, null, null, null,
+							new[] { ("Signal at danger", OpenBveApi.Colors.MessageColor.Red), ("You have passed a red signal", OpenBveApi.Colors.MessageColor.Orange) }, "Cab", false)
+					};
+					for (int i = 0; i < samples.Length; i++)
+					{
+						canvas.Begin();
+						canvas.Fill(0, 0, 1280, 360, 0xFF6E8FB4);
+						canvas.Fill(0, 360, 1280, 360, 0xFF4A4E44);
+						DriverCard.Draw(canvas, samples[i]);
+						string file = Path.Combine(output, name + "-" + (i + 1) + ".png");
+						canvas.Save(file);
+						Console.WriteLine("wrote " + file);
+					}
+
+					continue;
+				}
+
 				if (parts[0] == "tap" && parts.Length >= 3)
 				{
 					float x = float.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);

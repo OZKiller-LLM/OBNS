@@ -77,6 +77,15 @@ namespace OpenBve.NX
 		/// <summary>Records, presents and waits for the frame; false if the GPU's queue failed.</summary>
 		public bool End() => EndFrame() == 0;
 
+		[DllImport("__Internal", EntryPoint = "obns_dk2d_overlay_end")]
+		private static extern int OverlayEnd();
+
+		/// <summary>Starts the in-game interface's drawing over the 3D frame DekoGL is recording (Begin's colour is unused).</summary>
+		public bool BeginOverlay() => BeginFrame(0) == 0;
+
+		/// <summary>Records the interface's quads into the 3D frame, after the scene; DekoGL's EndFrame presents both.</summary>
+		public bool EndOverlay() => OverlayEnd() == 0;
+
 		public void Fill(float x, float y, float width, float height, uint color, float radius = 0) => DkFill(x, y, width, height, color, radius);
 
 		public void Outline(float x, float y, float width, float height, uint color, float thickness, float radius = 0) =>

@@ -444,13 +444,10 @@ EXPORT int obns_dk2d_image(const char *path, float x, float y, float w, float h)
 
 // --- the frame ---
 
-EXPORT int obns_dk2d_end(void)
+// The uploads: the atlas's changed rows and the new image, submitted ahead of the drawing that reads them. The queue's
+// lock is held by the caller.
+static void submit_uploads2d(void)
 {
-    if (!ready2d || dkQueueIsInErrorState(queue))
-        return 1;
-
-    QUEUE_LOCK();
-    // The uploads: the atlas's changed rows and the new image.
     dkCmdBufClear(uploads);
     dkCmdBufAddMemory(uploads, uploadMemory, 0, COMMAND_MEMORY);
     int uploaded = 0;
@@ -478,45 +475,37 @@ EXPORT int obns_dk2d_end(void)
     }
     if (uploaded)
         dkQueueSubmitCommands(queue, dkCmdBufFinishList(uploads));
+}
 
-    int slot = dkQueueAcquireImage(queue, swapchain);
-    dkCmdBufClear(commands);
-    dkCmdBufAddMemory(commands, commandMemory, 0, COMMAND_MEMORY);
+// The frame's quads into a command list whose render target is bound: the 2D state, then the batches.
+static void record2d(DkCmdBuf cmd)
+{
     // What the uploads wrote, and the descriptors the CPU wrote, seen by the drawing.
-    dkCmdBufBarrier(commands, DkBarrier_Full, DkInvalidateFlags_Image | DkInvalidateFlags_Descriptors | DkInvalidateFlags_L2Cache);
-
-    DkImageView target;
-    dkImageViewDefaults(&target, &framebuffers[slot]);
-    dkCmdBufBindRenderTarget(commands, &target, NULL);
+    dkCmdBufBarrier(cmd, DkBarrier_Full, DkInvalidateFlags_Image | DkInvalidateFlags_Descriptors | DkInvalidateFlags_L2Cache);
     DkViewport viewport = { 0, 0, (float)width, (float)height, 0.0f, 1.0f };
-    dkCmdBufSetViewports(commands, 0, &viewport, 1);
-    DkScissor all = whole_screen();
-    dkCmdBufSetScissors(commands, 0, &all, 1);
-    dkCmdBufClearColorFloat(commands, 0, DkColorMask_RGBA, ((backgroundColor >> 16) & 255) / 255.0f,
-        ((backgroundColor >> 8) & 255) / 255.0f, (backgroundColor & 255) / 255.0f, 1.0f);
-
+    dkCmdBufSetViewports(cmd, 0, &viewport, 1);
     DkShader const *shaders[] = { &vertexShader, &fragmentShader };
-    dkCmdBufBindShaders(commands, DkStageFlag_GraphicsMask, shaders, 2);
+    dkCmdBufBindShaders(cmd, DkStageFlag_GraphicsMask, shaders, 2);
     DkRasterizerState rasterizer;
     dkRasterizerStateDefaults(&rasterizer);
     rasterizer.cullMode = DkFace_None;
-    dkCmdBufBindRasterizerState(commands, &rasterizer);
+    dkCmdBufBindRasterizerState(cmd, &rasterizer);
     DkColorState color;
     dkColorStateDefaults(&color);
     dkColorStateSetBlendEnable(&color, 0, true);
-    dkCmdBufBindColorState(commands, &color);
+    dkCmdBufBindColorState(cmd, &color);
     DkColorWriteState colorWrite;
     dkColorWriteStateDefaults(&colorWrite);
-    dkCmdBufBindColorWriteState(commands, &colorWrite);
+    dkCmdBufBindColorWriteState(cmd, &colorWrite);
     DkBlendState blend;
     dkBlendStateDefaults(&blend);
     dkBlendStateSetFactors(&blend, DkBlendFactor_SrcAlpha, DkBlendFactor_InvSrcAlpha, DkBlendFactor_One, DkBlendFactor_InvSrcAlpha);
-    dkCmdBufBindBlendState(commands, 0, &blend);
+    dkCmdBufBindBlendState(cmd, 0, &blend);
     DkDepthStencilState depth;
     dkDepthStencilStateDefaults(&depth);
     depth.depthTestEnable = false;
     depth.depthWriteEnable = false;
-    dkCmdBufBindDepthStencilState(commands, &depth);
+    dkCmdBufBindDepthStencilState(cmd, &depth);
 
     DkVtxAttribState attributes[] = {
         { .bufferId = 0, .isFixed = 0, .offset = offsetof(Vertex2D, x), .size = DkVtxAttribSize_2x32, .type = DkVtxAttribType_Float, .isBgra = 0 },
@@ -525,38 +514,63 @@ EXPORT int obns_dk2d_end(void)
         { .bufferId = 0, .isFixed = 0, .offset = offsetof(Vertex2D, radius), .size = DkVtxAttribSize_3x32, .type = DkVtxAttribType_Float, .isBgra = 0 },
         { .bufferId = 0, .isFixed = 0, .offset = offsetof(Vertex2D, color), .size = DkVtxAttribSize_4x8, .type = DkVtxAttribType_Unorm, .isBgra = 1 },
     };
-    dkCmdBufBindVtxAttribState(commands, attributes, 5);
+    dkCmdBufBindVtxAttribState(cmd, attributes, 5);
     DkVtxBufferState buffer = { sizeof(Vertex2D), 0 };
-    dkCmdBufBindVtxBufferState(commands, &buffer, 1);
+    dkCmdBufBindVtxBufferState(cmd, &buffer, 1);
     DkGpuAddr data = dkMemBlockGetGpuAddr(dataMemory);
-    dkCmdBufBindVtxBuffer(commands, 0, data + DATA_VERTICES, (uint32_t)(vertexCount * sizeof(Vertex2D)) + 1);
+    dkCmdBufBindVtxBuffer(cmd, 0, data + DATA_VERTICES, (uint32_t)(vertexCount * sizeof(Vertex2D)) + 1);
 
     float transform[4] = { 2.0f / UNITS_WIDTH, 2.0f / UNITS_HEIGHT, ySign, 0.0f };
     memcpy(dkMemBlockGetCpuAddr(dataMemory), transform, sizeof transform);
-    dkCmdBufBindUniformBuffer(commands, DkStage_Vertex, 0, data, 256);
-    dkCmdBufBindImageDescriptorSet(commands, data + DATA_DESCRIPTORS, 1 + IMAGES);
-    dkCmdBufBindSamplerDescriptorSet(commands, data + DATA_SAMPLERS, 1);
-    dkCmdBufBindTexture(commands, DkStage_Fragment, 0, dkMakeTextureHandle(0, 0));
+    dkCmdBufBindUniformBuffer(cmd, DkStage_Vertex, 0, data, 256);
+    dkCmdBufBindImageDescriptorSet(cmd, data + DATA_DESCRIPTORS, 1 + IMAGES);
+    dkCmdBufBindSamplerDescriptorSet(cmd, data + DATA_SAMPLERS, 1);
+    dkCmdBufBindTexture(cmd, DkStage_Fragment, 0, dkMakeTextureHandle(0, 0));
 
     int boundImage = -1;
     for (int i = 0; i < batchCount; i++) {
         Batch *b = &batches[i];
         if (b->count == 0 || b->scissor.width == 0 || b->scissor.height == 0) continue;
-        dkCmdBufSetScissors(commands, 0, &b->scissor, 1);
+        dkCmdBufSetScissors(cmd, 0, &b->scissor, 1);
         if (b->image != boundImage) {
-            dkCmdBufBindTexture(commands, DkStage_Fragment, 1, dkMakeTextureHandle((uint32_t)b->image, 0));
+            dkCmdBufBindTexture(cmd, DkStage_Fragment, 1, dkMakeTextureHandle((uint32_t)b->image, 0));
             boundImage = b->image;
         }
-        dkCmdBufDraw(commands, DkPrimitive_Triangles, (uint32_t)b->count, 1, (uint32_t)b->first, 0);
+        dkCmdBufDraw(cmd, DkPrimitive_Triangles, (uint32_t)b->count, 1, (uint32_t)b->first, 0);
     }
 
+    DkScissor all = whole_screen();
+    dkCmdBufSetScissors(cmd, 0, &all, 1);
+    if (droppedQuads)
+        printf("deko3d 2D: %d quads over the frame's limit were left out
+", droppedQuads);
+}
+
+// A frame of its own (the menu, the loading screen): cleared to the background, the quads, presented.
+EXPORT int obns_dk2d_end(void)
+{
+    if (!ready2d || dkQueueIsInErrorState(queue))
+        return 1;
+
+    QUEUE_LOCK();
+    submit_uploads2d();
+    int slot = dkQueueAcquireImage(queue, swapchain);
+    dkCmdBufClear(commands);
+    dkCmdBufAddMemory(commands, commandMemory, 0, COMMAND_MEMORY);
+    DkImageView target;
+    dkImageViewDefaults(&target, &framebuffers[slot]);
+    dkCmdBufBindRenderTarget(commands, &target, NULL);
+    DkScissor all = whole_screen();
+    dkCmdBufSetScissors(commands, 0, &all, 1);
+    dkCmdBufClearColorFloat(commands, 0, DkColorMask_RGBA, ((backgroundColor >> 16) & 255) / 255.0f,
+        ((backgroundColor >> 8) & 255) / 255.0f, (backgroundColor & 255) / 255.0f, 1.0f);
+    record2d(commands);
     dkQueueSubmitCommands(queue, dkCmdBufFinishList(commands));
     dkQueuePresentImage(queue, swapchain, slot);
     dkQueueWaitIdle(queue);
     QUEUE_UNLOCK();
     if (frames++ == 0)
-        printf("deko3d: first frame presented\n");
-    if (droppedQuads)
-        printf("deko3d 2D: %d quads over the frame's limit were left out\n", droppedQuads);
+        printf("deko3d: first frame presented
+");
     return dkQueueIsInErrorState(queue) ? 2 : 0;
 }

@@ -31,3 +31,6 @@ R
 L x4
 B
 shot 11-rail
+
+# The in-game driving card (DriverCard) over a stand-in scene.
+card 12-card
