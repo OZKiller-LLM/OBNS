@@ -402,6 +402,33 @@ namespace OpenBve
 			host.Log("train batches planned: " + trains.Count + " trains, " + parts + " still parts in " + trainGroups.Count + " groups, of " + elementsSeen + " parts in all", false);
 		}
 
+		/// <summary>For the log: what the animated world objects' parts are (whether they ever move), by their state.</summary>
+		private Dictionary<ObjectState, string> worldPartReason;
+		private int worldPartCount = -1;
+
+		private string WorldPartReason(ObjectState state)
+		{
+			OpenBveApi.Hosts.HostInterface api = host.Host;
+			int used = api.AnimatedWorldObjectsUsed;
+			if (worldPartReason == null || used != worldPartCount)
+			{
+				worldPartCount = used;
+				worldPartReason = new Dictionary<ObjectState, string>(ByReference<ObjectState>.Instance);
+				WorldObject[] objects = api.AnimatedWorldObjects;
+				for (int i = 0; i < used && objects != null && i < objects.Length; i++)
+				{
+					AnimatedObject animated = objects[i]?.Object;
+					if (animated?.internalObject != null)
+					{
+						string kind = objects[i] is TrackFollowingObject ? "track follower" : objects[i].GetType().Name;
+						worldPartReason[animated.internalObject] = "world " + kind + ": " + (NotStill(animated) ?? "still");
+					}
+				}
+			}
+
+			return worldPartReason.TryGetValue(state, out string why) ? why : "not a train or world part";
+		}
+
 		/// <summary>Why a train part is not batched, for the log.</summary>
 		private readonly Dictionary<ObjectState, string> trainPartReason = new Dictionary<ObjectState, string>();
 
@@ -648,7 +675,7 @@ namespace OpenBve
 					}
 
 					string why = trainPartReason.TryGetValue(face.Object, out string reason) ? "train part: " + reason :
-						!groupOf.TryGetValue(face.Object, out Group owner) ? "not a train part" :
+						!groupOf.TryGetValue(face.Object, out Group owner) ? WorldPartReason(face.Object) :
 						owner.Failed ? "train batch failed" :
 						owner.Batch == null ? "train batch not built" : "train batch: face left alone";
 					otherReasons[why] = otherReasons.TryGetValue(why, out int n) ? n + 1 : 1;
