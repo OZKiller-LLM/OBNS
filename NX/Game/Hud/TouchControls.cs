@@ -255,6 +255,33 @@ namespace OpenBve.Switch
 			space.Height = navHeight;
 			space.Y = DriverCard.BaseTop;
 
+			/*
+			 * The camera's arrow keys (upstream's CAMERA_ROTATE_*, on the keyboard's arrows): an inverted T over the space bar,
+			 * for the left thumb, turning the view while held - the user's, 2026-11-07, the other camera buttons being
+			 * the full set's.
+			 */
+			float arrowWidth = 84, arrowHeight = 72, arrowGap = 10;
+			float arrowLeft = space.X + (space.Width - (3 * arrowWidth + 2 * arrowGap)) / 2;
+			float arrowRow = space.Y - 20 - arrowHeight;
+			(Translations.Command Command, string Label, float X, float Y)[] arrows =
+			{
+				(Translations.Command.CameraRotateUp, "▲", arrowLeft + arrowWidth + arrowGap, arrowRow - arrowGap - arrowHeight),
+				(Translations.Command.CameraRotateLeft, "◀", arrowLeft, arrowRow),
+				(Translations.Command.CameraRotateDown, "▼", arrowLeft + arrowWidth + arrowGap, arrowRow),
+				(Translations.Command.CameraRotateRight, "▶", arrowLeft + 2 * (arrowWidth + arrowGap), arrowRow)
+			};
+			foreach ((Translations.Command command, string label, float ax, float ay) in arrows)
+			{
+				Key key = Command(label, command, camera);
+				keys.Remove(key);
+				key.TextSize = 22;
+				key.X = ax;
+				key.Y = ay;
+				key.Width = arrowWidth;
+				key.Height = arrowHeight;
+				atsLayout.Add(key);
+			}
+
 			numpadWidth = Dp(3 * 58);
 			numpadRightOfLevers = leversLeft - Dp(8);
 			numpadRightOfSingle = singleLeft - Dp(8);
