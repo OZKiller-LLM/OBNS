@@ -44,7 +44,7 @@ EXPORT int64_t obns_native_heap_used(void)
 //                 460.8 MHz handheld, memory 1,600 MHz; the fan at full;
 //   4 Overclock - each clock at the highest rate the console's clock table lists, up to the chip's ratings (the
 //                 overclocking guides for the first model, researched 2026-11-06: past them "unstable" or "very
-//                 dangerous"): plugged in, CPU 2,091 MHz, GPU 998.4 MHz (NVIDIA's T210 rating), memory 1,600 MHz (its
+//                 dangerous"): plugged in, CPU 2,091 MHz, GPU 921.6 MHz (998.4 only with Horizon OC's undervolt 2), memory 1,600 MHz (its
 //                 rating; with Horizon OC's kip, the highest listed up to 2,133 MHz - unstable memory clocks corrupt
 //                 the system storage and the SD card, so its rate is chosen and tested in Horizon OC); on battery, where over
 //                 8.6 W harms the battery, CPU 1,785 MHz and GPU 460.8 MHz. The stock table stops at CPU 1,785, GPU
@@ -85,19 +85,24 @@ static bool on_battery(void)
     return battery;
 }
 
+// Overclock's memory cap: raised to the rate stability-tested in Horizon OC (the user's), never past 2,133 MHz.
+#ifndef OVERCLOCK_MEMORY_HZ
+#define OVERCLOCK_MEMORY_HZ 1600000000u
+#endif
+
 static u32 target_rate(int mode, int clock)
 {
     bool docked = appletGetOperationMode() == AppletOperationMode_Console;
     if (mode == 4) {
         bool battery = !docked && on_battery();
         if (clock == 0) return battery ? 1785000000u : 2091000000u;
-        if (clock == 1) return battery ? 460800000u : 998400000u;
         /*
-         * Memory: the highest rate the table lists, up to 2,133 MHz (the top of the Erista guide's range at the rated
-         * 1,175 mV). The stock table stops at 1,600 MHz; Horizon OC's kip lists the rate chosen in its settings, after
-         * a stability test there (unstable memory clocks corrupt the system storage and the SD card).
+         * GPU 921.6 MHz: the Erista guide's safe rate (998.4 needs undervolt 2 under 950 mV, set and tested in Horizon
+         * OC). Memory 1,600 MHz, its rating, until a rate has been chosen and stability-tested in Horizon OC (unstable
+         * memory corrupts the system storage and the SD card); then this cap is raised to it (OVERCLOCK_MEMORY_HZ).
          */
-        return 2133000000u;
+        if (clock == 1) return battery ? 460800000u : 921600000u;
+        return OVERCLOCK_MEMORY_HZ;
     }
     if (mode == 3) {
         if (clock == 0) return 1785000000u;
