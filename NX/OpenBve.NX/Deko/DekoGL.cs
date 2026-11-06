@@ -207,6 +207,17 @@ namespace OpenBve.NX.Deko
 			return true;
 		}
 
+		/// <summary>Records the frame's 3D draws still held back (world records go to the GPU in blocks) into its command list now:
+		/// before the in-game interface's quads, which must come after the scene - in the cab view the cab's last draws were
+		/// still held back, and drawn over the interface at EndFrame (until 2026-11-07).</summary>
+		public void FlushDraws()
+		{
+			if (inFrame)
+			{
+				FlushWorld();
+			}
+		}
+
 		/// <summary>Ends and presents the frame (the swap); between frames (loading) runs the uploads recorded.</summary>
 		public void EndFrame()
 		{
@@ -1581,20 +1592,29 @@ namespace OpenBve.NX.Deko
 						return Blank(format, type, width, height, out dkFormat, swizzle);
 				}
 			}
+			/*
+			 * GL packs 16-bit texels with red in the high bits; deko3d's formats (Maxwell's B5G6R5, A4B4G4R4, A1B5G5R5) have
+			 * red in the low bits. 565 and 4444 are the same fields in reverse order, so a swizzle reads them right; 5551's
+			 * one-bit alpha sits at the other end, so its texels are repacked (OBNS 1.31N: red and blue swapped, 4444's
+			 * colours and alpha crossed, 5551 scrambled, until 2026-11-07).
+			 */
 			else if (type == GL_UNSIGNED_SHORT_5_6_5)
 			{
 				dkFormat = DekoNative.FormatRGB565;
 				sourceBytes = targetBytes = 2;
+				SetSwizzle(swizzle, DekoNative.SwizzleBlue, DekoNative.SwizzleGreen, DekoNative.SwizzleRed, DekoNative.SwizzleOne);
 			}
 			else if (type == GL_UNSIGNED_SHORT_4_4_4_4)
 			{
 				dkFormat = DekoNative.FormatRGBA4;
 				sourceBytes = targetBytes = 2;
+				SetSwizzle(swizzle, DekoNative.SwizzleAlpha, DekoNative.SwizzleBlue, DekoNative.SwizzleGreen, DekoNative.SwizzleRed);
 			}
 			else if (type == GL_UNSIGNED_SHORT_5_5_5_1)
 			{
 				dkFormat = DekoNative.FormatRGB5A1;
 				sourceBytes = targetBytes = 2;
+				conversion = 2;
 			}
 			else
 			{
@@ -1620,6 +1640,20 @@ namespace OpenBve.NX.Deko
 				if (conversion == 0)
 				{
 					System.Buffer.MemoryCopy(from, to, targetStride, targetStride);
+					continue;
+				}
+
+				if (conversion == 2)
+				{
+					// GL's R5G5B5A1 (red at bits 15-11, alpha at bit 0) to A1B5G5R5 (red at bits 4-0, alpha at bit 15).
+					ushort* gl16 = (ushort*)from;
+					ushort* dk16 = (ushort*)to;
+					for (int x = 0; x < width; x++)
+					{
+						int v = gl16[x];
+						dk16[x] = (ushort)((v >> 11) | ((v >> 6) & 31) << 5 | ((v >> 1) & 31) << 10 | (v & 1) << 15);
+					}
+
 					continue;
 				}
 

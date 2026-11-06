@@ -280,6 +280,8 @@ namespace OpenBve.NX
 		{
 			Stage("frames: drawing for " + seconds.ToString("0") + " s" + (session == null ? " (no train: the camera travels the route)" : string.Empty));
 			Stopwatch clock = Stopwatch.StartNew();
+			// The first frame's first phase would otherwise be charged the whole load.
+			renderer.Profile.Restart();
 			DekoCanvas overlay = new DekoCanvas();
 			// The frame's phases (input, simulation, RenderScene, overlay, sound, end of frame), summed over the 5 s window.
 			double[] phase = new double[6];
@@ -397,6 +399,8 @@ namespace OpenBve.NX
 				renderer.RenderScene(elapsed);
 				phase[2] += clock.Elapsed.TotalSeconds - mark;
 				mark = clock.Elapsed.TotalSeconds;
+				// The scene's draws all recorded first: the interface goes on top.
+				deko.FlushDraws();
 				if (session != null && overlay.BeginOverlay())
 				{
 					// The in-game interface over the scene (the driving information, as Android's).
