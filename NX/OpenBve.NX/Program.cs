@@ -321,7 +321,7 @@ namespace OpenBve.NX
 				timetable.Toggle();
 				snapshotAge = 1.0;
 			};
-			double last = 0, windowStart = 0, worst = 0, trackPosition = 0;
+			double last = 0, windowStart = 0, worst = 0, trackPosition = 0, unloadAge = 0;
 			int windows = 0;
 			int frames = 0, total = 0;
 			while (clock.Elapsed.TotalSeconds < seconds)
@@ -423,6 +423,18 @@ namespace OpenBve.NX
 				phase[1] += mark - now;
 				host.BeginFrame();
 				renderer.RenderScene(elapsed);
+				/*
+				 * Textures not drawn for 20 s unloaded, as upstream's GameWindow and Android's GameView do after drawing - here
+				 * once a second (the Tuen Ma Line registers some 31,000, too many to look through every frame). Missing until
+				 * 2026-11-07: every texture ever shown stayed, and 941 MB of them ran the native heap out after 19 minutes.
+				 */
+				unloadAge += elapsed;
+				if (unloadAge >= 1.0 && !paused)
+				{
+					renderer.TextureManager.UnloadUnusedTextures(unloadAge);
+					unloadAge = 0;
+				}
+
 				phase[2] += clock.Elapsed.TotalSeconds - mark;
 				mark = clock.Elapsed.TotalSeconds;
 				// The scene's draws all recorded first: the interface goes on top.
