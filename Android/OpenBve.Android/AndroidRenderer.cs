@@ -679,34 +679,8 @@ namespace OpenBve.Android
 			}
 			else
 			{
-				// Fully opaque texels of normal faces first, writing depth...
-				UnsetBlendFunc();
-				SetAlphaFunc(AlphaFunction.Equal, 1.0f);
-				GL.DepthMask(true);
-				calls += DrawRuns(unsorted, face =>
-				{
-					MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
-					return material.BlendMode == MeshMaterialBlendMode.Normal && material.GlowAttenuationData == 0 && material.Color.A == 255;
-				}, null);
-				// The batches' colour-keyed faces are all of that kind.
-				calls += batches?.DrawAlpha() ?? 0;
-				Profile.Mark("alpha texels");
-
-				// ...then everything partly transparent, blended on top without writing depth.
-				SetBlendFunc();
-				SetAlphaFunc(AlphaFunction.Less, 1.0f);
-				GL.DepthMask(false);
 				bool additive = false;
-				// Colour-keyed only: their blended texels are edge fringes, so they go first, unsorted.
-				calls += batches?.DrawAlpha() ?? 0;
-				/*
-				 * The same for every other colour-keyed face (quality mode puts them all in this
-				 * list): in object order, in runs. On the Tuen Ma Line's trains that is thousands of
-				 * the blended pass's calls. Only faces that really blend - alpha textures,
-				 * translucent colours, additive, glow - keep the back-to-front order.
-				 */
-				calls += DrawRuns(unsorted, IsColourKeyed, null);
-				calls += DrawRuns(sorted, face => !IsColourKeyed(face), face =>
+				void Blending(FaceState face)
 				{
 					if (face.Object.Prototype.Mesh.Materials[face.Face.Material].BlendMode == MeshMaterialBlendMode.Additive)
 					{
@@ -721,11 +695,72 @@ namespace OpenBve.Android
 						SetAlphaFunc();
 						additive = false;
 					}
-				});
+				}
+
+				if (CutoutKeyedFaces)
+				{
+					/*
+					 * Colour-keyed faces in one pass (the Switch, the user's choice 2026-11-07): their texels cut at half
+					 * alpha, writing depth, no blending - no second pass for their blended edge fringes, which in a Tuen Ma
+					 * Line station's exterior view were most of the 34 ms the two transparent passes took. Their edges are
+					 * a little harder. The batches' transparent faces are all colour-keyed.
+					 */
+					UnsetBlendFunc();
+					SetAlphaFunc(AlphaFunction.Greater, 0.5f);
+					GL.DepthMask(true);
+					calls += DrawRuns(unsorted, IsColourKeyed, null);
+					calls += batches?.DrawAlpha() ?? 0;
+					// The other normal faces (partly transparent textures): their fully opaque texels, writing depth...
+					SetAlphaFunc(AlphaFunction.Equal, 1.0f);
+					calls += DrawRuns(unsorted, face => !IsColourKeyed(face) && IsNormalOpaqueColour(face), null);
+					Profile.Mark("alpha texels");
+
+					// ...then what really blends, back to front, without writing depth.
+					SetBlendFunc();
+					SetAlphaFunc(AlphaFunction.Less, 1.0f);
+					GL.DepthMask(false);
+					calls += DrawRuns(sorted, face => !IsColourKeyed(face), Blending);
+				}
+				else
+				{
+					// Fully opaque texels of normal faces first, writing depth...
+					UnsetBlendFunc();
+					SetAlphaFunc(AlphaFunction.Equal, 1.0f);
+					GL.DepthMask(true);
+					calls += DrawRuns(unsorted, IsNormalOpaqueColour, null);
+					// The batches' colour-keyed faces are all of that kind.
+					calls += batches?.DrawAlpha() ?? 0;
+					Profile.Mark("alpha texels");
+
+					// ...then everything partly transparent, blended on top without writing depth.
+					SetBlendFunc();
+					SetAlphaFunc(AlphaFunction.Less, 1.0f);
+					GL.DepthMask(false);
+					// Colour-keyed only: their blended texels are edge fringes, so they go first, unsorted.
+					calls += batches?.DrawAlpha() ?? 0;
+					/*
+					 * The same for every other colour-keyed face (quality mode puts them all in this
+					 * list): in object order, in runs. On the Tuen Ma Line's trains that is thousands of
+					 * the blended pass's calls. Only faces that really blend - alpha textures,
+					 * translucent colours, additive, glow - keep the back-to-front order.
+					 */
+					calls += DrawRuns(unsorted, IsColourKeyed, null);
+					calls += DrawRuns(sorted, face => !IsColourKeyed(face), Blending);
+				}
 			}
 
 			GL.DepthMask(true);
 			return calls;
+		}
+
+		/// <summary>Colour-keyed faces drawn in one cut-out pass rather than two (see DrawAlphaFaces); the Switch sets it.</summary>
+		public static bool CutoutKeyedFaces;
+
+		/// <summary>A normal, fully opaque-coloured, non-glowing face: its opaque texels can be drawn writing depth.</summary>
+		private static bool IsNormalOpaqueColour(FaceState face)
+		{
+			MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
+			return material.BlendMode == MeshMaterialBlendMode.Normal && material.GlowAttenuationData == 0 && material.Color.A == 255;
 		}
 
 		private StaticBatcher batcher;

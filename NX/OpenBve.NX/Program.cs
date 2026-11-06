@@ -593,6 +593,8 @@ namespace OpenBve.NX
 			// As GameView: the renderer, sounds, trains, plugins.
 			DisplayDevice.Default = new DisplayDevice(width, height, 1.0f, 1.0f);
 			AndroidRenderer renderer = new AndroidRenderer(host, options, fileSystem);
+			// Colour-keyed faces in one cut-out pass (the user's choice, 2026-11-07: harder edges for a good part of the frame).
+			AndroidRenderer.CutoutKeyedFaces = true;
 			host.Renderer = renderer;
 			OpenBve.Program.CurrentHost = host;
 			OpenBve.Program.Renderer = renderer;
