@@ -475,11 +475,13 @@ namespace OpenBve.NX
 			// deko3d (OBNS/SWITCH.md, step 3): the renderer's GL calls go to DekoGL, which draws them with deko3d, as
 			// Android's native Vulkan renderer (VulkanGL) does with Vulkan. Without it they go to the stubs, as before.
 			Deko.DekoGL deko = null;
-			int opened = DekoCanvas.Open(1280, 720);
+			int opened = DekoCanvas.Open();
+			int width = DekoCanvas.Width, height = DekoCanvas.Height;
 			if (opened == 0)
 			{
 				Deko.DekoGL.Log = line => Log("deko3d: " + line);
-				deko = new Deko.DekoGL(1280, 720);
+				deko = new Deko.DekoGL(width, height);
+				Log($"deko3d: drawing at {width}x{height}");
 				OpenTK.Graphics.OpenGL.GL.Device = deko;
 			}
 			else
@@ -488,16 +490,18 @@ namespace OpenBve.NX
 			}
 
 			// As GameView: the renderer, sounds, trains, plugins.
-			DisplayDevice.Default = new DisplayDevice(1280, 720, 1.0f, 1.0f);
+			DisplayDevice.Default = new DisplayDevice(width, height, 1.0f, 1.0f);
 			AndroidRenderer renderer = new AndroidRenderer(host, options, fileSystem);
 			host.Renderer = renderer;
 			OpenBve.Program.CurrentHost = host;
 			OpenBve.Program.Renderer = renderer;
 			host.Options = options;
-			renderer.GameWindow = new GameWindow { Width = 1280, Height = 720 };
-			renderer.Screen.Width = 1280;
-			renderer.Screen.Height = 720;
-			renderer.Screen.AspectRatio = 1280.0 / 720.0;
+			renderer.GameWindow = new GameWindow { Width = width, Height = height };
+			renderer.Screen.Width = width;
+			renderer.Screen.Height = height;
+			renderer.Screen.AspectRatio = (double)width / height;
+			// Upstream's overlays are sized for 720 lines or so; 1080p docked scales them up, as Android's density does.
+			AndroidRenderer.OverlayScale = height / 720.0;
 
 			AndroidSounds sounds = new AndroidSounds(host, renderer, options);
 			sounds.Initialize(SoundRange.Low);

@@ -36,7 +36,32 @@ namespace OpenBve.NX
 	internal sealed unsafe class DekoCanvas : IMenuCanvas
 	{
 		[DllImport("__Internal", EntryPoint = "obns_dk_open")]
-		internal static extern int Open(int width, int height);
+		private static extern int OpenNative(int width, int height);
+
+		[DllImport("__Internal", EntryPoint = "obns_docked")]
+		private static extern int Docked();
+
+		/// <summary>The framebuffer's size, fixed at the first open: 1920x1080 docked, 1280x720 handheld (OBNS/SWITCH.md).
+		/// The 2D layer scales its 1280x720 units to it.</summary>
+		internal static int Width { get; private set; } = 1280;
+
+		internal static int Height { get; private set; } = 720;
+
+		private static bool sized;
+
+		/// <summary>Opens deko3d (once) at the console's size: docked or handheld. 0 when it worked.</summary>
+		internal static int Open()
+		{
+			if (!sized)
+			{
+				sized = true;
+				bool docked = Docked() != 0;
+				Width = docked ? 1920 : 1280;
+				Height = docked ? 1080 : 720;
+			}
+
+			return OpenNative(Width, Height);
+		}
 
 		[DllImport("__Internal", EntryPoint = "obns_dk_close")]
 		internal static extern void Close();
@@ -164,7 +189,7 @@ namespace OpenBve.NX
 
 		internal static unsafe SwitchLaunch Run(System.Action<string> log)
 		{
-			int opened = DekoCanvas.Open(1280, 720);
+			int opened = DekoCanvas.Open();
 			if (opened != 0)
 			{
 				log("deko3d did not open (" + opened + "): no menu");

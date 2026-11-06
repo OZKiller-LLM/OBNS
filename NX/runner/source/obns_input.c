@@ -17,6 +17,12 @@ enum {
     MenuPlus = 1 << 12, MenuMinus = 1 << 13
 };
 
+// Whether the console is docked (the TV): the game then draws at 1920x1080, handheld at 1280x720 (OBNS/SWITCH.md).
+EXPORT int obns_docked(void)
+{
+    return appletGetOperationMode() == AppletOperationMode_Console;
+}
+
 static void ensure_pad(void)
 {
     if (!ready) {

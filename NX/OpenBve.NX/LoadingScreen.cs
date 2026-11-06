@@ -48,7 +48,7 @@ namespace OpenBve.NX
 		/// <summary>Opens deko3d (if the menu hasn't) and starts drawing for the route; logs what failed.</summary>
 		internal static void Start(Action<string> log, string routeFile, string imageFile)
 		{
-			int result = DekoCanvas.Open(1280, 720);
+			int result = DekoCanvas.Open();
 			if (result != 0)
 			{
 				log("deko3d did not open (" + result + "): the screen stays black");
