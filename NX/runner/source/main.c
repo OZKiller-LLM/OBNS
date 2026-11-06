@@ -127,9 +127,8 @@ static void log_rates(void)
         PcvClockRatesListType type = PcvClockRatesListType_Invalid;
         if (R_SUCCEEDED(clkrstGetPossibleClockRates(&session, rates, 64, &type, &count)) && count > 0) {
             printf("OBNS: clocks: %s lists", names[i]);
-            for (s32 r = 0; r < count && r < 64; r++) printf(" %u", rates[r] / 100000u * 100u / 1000u);
-            printf(" MHz
-");
+            for (s32 r = 0; r < count && r < 64; r++) printf(" %u", rates[r] / 1000000u);
+            printf(" MHz\n");
         }
         clkrstCloseSession(&session);
     }
