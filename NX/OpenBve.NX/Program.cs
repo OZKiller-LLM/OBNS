@@ -633,6 +633,8 @@ namespace OpenBve.NX
 			LibRender2.Textures.TextureManager.UnloadUnpinned = true;
 			// Last frame's filtered face lists kept while nothing they depend on changed (#2, 2026-11-07).
 			AndroidRenderer.ReuseFaceLists = true;
+			// Faces completed on all three cores (#1, 2026-11-07); UserData/nx-serial-faces.txt keeps them on one.
+			AndroidRenderer.ParallelFaces = !File.Exists(Root + "/UserData/nx-serial-faces.txt");
 			host.Renderer = renderer;
 			OpenBve.Program.CurrentHost = host;
 			OpenBve.Program.Renderer = renderer;

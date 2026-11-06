@@ -1047,6 +1047,9 @@ namespace OpenBve.Android
 		{
 			int calls = 0;
 			int i = 0;
+			LibRender2.Shaders.Shader shader = CurrentShader as LibRender2.Shaders.Shader;
+			// The Switch: faces prepared in order here, completed on all cores at the end (AndroidRenderer.ParallelFaces).
+			IParallelFaceDevice parallel = QueueDevice(shader);
 			while (i < faces.Count)
 			{
 				FaceState first = faces[i];
@@ -1090,20 +1093,29 @@ namespace OpenBve.Android
 				}
 
 				beforeRun?.Invoke(first);
-				if (next == i + 1)
+				MeshFace drawn = face;
+				if (next != i + 1)
 				{
-					DrawFace(CurrentShader as LibRender2.Shaders.Shader, first.Object, first.Face);
+					drawn.IboStartIndex = low;
+					drawn.Vertices = VerticesOfLength(high - low);
+				}
+
+				if (parallel != null)
+				{
+					QueueFace(parallel, shader, first.Object, drawn);
 				}
 				else
 				{
-					MeshFace merged = face;
-					merged.IboStartIndex = low;
-					merged.Vertices = VerticesOfLength(high - low);
-					DrawFace(CurrentShader as LibRender2.Shaders.Shader, first.Object, merged);
+					DrawFace(shader, first.Object, drawn);
 				}
 
 				calls++;
 				i = next;
+			}
+
+			if (parallel != null)
+			{
+				FlushFaces();
 			}
 
 			return calls;

@@ -51,3 +51,44 @@ namespace OpenTK.Graphics.OpenGL
 		bool DrawFace(int vertexArrayName, int textureName, int mode, bool intIndices, int firstIndex, int count);
 	}
 }
+
+namespace OpenTK.Graphics.OpenGL
+{
+	/// <summary>A face's material and drawing values, as AndroidRenderer.DrawFace hands them to SetFaceMaterial and SetFaceDrawing.</summary>
+	public struct FaceValues
+	{
+		public int Flags;
+		public System.Numerics.Vector4 Ambient, Diffuse, Specular;
+		public System.Numerics.Vector3 Emission;
+		public float Shininess, Brightness, Opacity;
+		public bool NoFog;
+	}
+
+	/// <summary>
+	/// A device that takes a pass's faces in three steps, so the work between can be shared out over the cores (the
+	/// Switch's DekoGL; OBNS/SWITCH.md, step 4, #1): each face prepared in order on the render thread (everything that
+	/// reads or changes the device's state), then object blocks and records completed on any thread, then all of them
+	/// committed in order. Records are indexed 0 to MaxFaces - 1 between commits.
+	/// </summary>
+	public unsafe interface IParallelFaceDevice
+	{
+		/// <summary>The most faces prepared between two commits.</summary>
+		int MaxFaces { get; }
+
+		/// <summary>Render thread: record <paramref name="index"/> prepared from the device's current state, as DrawFace would
+		/// draw it; false if it can't be (the caller commits what it has and draws this one the usual way).</summary>
+		bool PrepareFace(int index, int vertexArrayName, int textureName, int mode, bool intIndices, int firstIndex, int count, bool alphaAboveZero);
+
+		/// <summary>Render thread: room for this many object blocks; false if there isn't (the caller draws the usual way).</summary>
+		bool ReserveObjects(int count);
+
+		/// <summary>Any thread: object block <paramref name="index"/> from its model view and texture matrices (16 floats each, rows).</summary>
+		void WriteObject(int index, float* modelView, float* texture);
+
+		/// <summary>Any thread: prepared record <paramref name="index"/> completed with its object block and values.</summary>
+		void CompleteFace(int index, int objectIndex, in FaceValues values);
+
+		/// <summary>Render thread: records 0 to count - 1, completed, drawn in order after anything drawn before.</summary>
+		void CommitFaces(int count);
+	}
+}
