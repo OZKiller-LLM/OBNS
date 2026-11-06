@@ -66,6 +66,12 @@ namespace OpenBve.Android
 			lastMark = now;
 		}
 
+		/// <summary>Starts timing afresh: what happened since the last mark (a load, a pause) is charged to no phase.</summary>
+		public void Restart()
+		{
+			lastMark = clock.Elapsed.TotalMilliseconds;
+		}
+
 		/// <summary>Records the end of a frame.</summary>
 		public void EndFrame()
 		{
