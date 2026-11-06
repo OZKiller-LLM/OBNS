@@ -279,6 +279,25 @@ namespace LibRender2.Objects
 			SortPolygons(AlphaFaces, into);
 		}
 
+		/// <summary>ANDROID PORT: only the alpha faces <paramref name="keep"/> chooses, sorted: the renderer draws colour-keyed
+		/// faces unsorted in any case, and on the Switch sorting them every frame was a good part of the face lists' 4 ms in
+		/// an exterior view (2026-11-07).</summary>
+		public void GetSortedPolygons(List<FaceState> into, Func<FaceState, bool> keep)
+		{
+			sortInput.Clear();
+			foreach (FaceState face in AlphaFaces)
+			{
+				if (keep(face))
+				{
+					sortInput.Add(face);
+				}
+			}
+
+			SortPolygons(sortInput, into);
+		}
+
+		private readonly List<FaceState> sortInput = new List<FaceState>();
+
 		/*
 		 * ANDROID PORT: the sort reuses its arrays and sorts indices (by distance, then by position in the list, which is
 		 * the stable order upstream's OrderBy gives) instead of a LINQ chain of an object per face: thousands of faces,
@@ -301,7 +320,7 @@ namespace LibRender2.Objects
 		private readonly DistanceOrder distanceOrder = new DistanceOrder();
 
 		/// <summary>Fills <see cref="sortOrder"/> with the faces' indices, back to front.</summary>
-		private void SortOrder(ReadOnlyCollection<FaceState> faces)
+		private void SortOrder(IList<FaceState> faces)
 		{
 			// calculate distance
 			int count = faces.Count;
@@ -362,7 +381,7 @@ namespace LibRender2.Objects
 			return sorted;
 		}
 
-		private void SortPolygons(ReadOnlyCollection<FaceState> faces, List<FaceState> sorted)
+		private void SortPolygons(IList<FaceState> faces, List<FaceState> sorted)
 		{
 			SortOrder(faces);
 			sorted.Clear();

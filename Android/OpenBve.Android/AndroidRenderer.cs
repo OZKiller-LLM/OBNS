@@ -291,7 +291,15 @@ namespace OpenBve.Android
 				// In the order objects were shown: each object's faces together, in index order.
 				unsortedAlphaFaces.Clear();
 				unsortedAlphaFaces.AddRange(VisibleObjects.AlphaFaces);
-				VisibleObjects.GetSortedPolygons(alphaFaces);
+				// In quality mode the colour-keyed faces are drawn unsorted (DrawAlphaFaces): only the others are sorted.
+				if (options.TransparencyMode == TransparencyMode.Quality)
+				{
+					VisibleObjects.GetSortedPolygons(alphaFaces, sortBlended);
+				}
+				else
+				{
+					VisibleObjects.GetSortedPolygons(alphaFaces);
+				}
 				overlayOpaqueFaces.Clear();
 				overlayOpaqueFaces.AddRange(VisibleObjects.OverlayOpaqueFaces);
 				overlayAlphaFaces = VisibleObjects.GetSortedPolygons(true);
@@ -721,6 +729,8 @@ namespace OpenBve.Android
 		}
 
 		private StaticBatcher batcher;
+
+		private static readonly System.Func<FaceState, bool> sortBlended = face => !IsColourKeyed(face);
 
 		// The static batcher's view of this renderer (OBNS/shared/StaticBatcher.cs, shared with the desktop build).
 		LibRender2.BaseRenderer IStaticBatchHost.Renderer => this;
