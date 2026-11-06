@@ -277,18 +277,23 @@ namespace OpenBve.Android
 			 * the scene (on native Vulkan, VulkanGL.Shadows carries it out, from the same lists as
 			 * the scene: see NativeShadowPass).
 			 */
-			List<FaceState> opaqueFaces;
-			List<FaceState> alphaFaces;
-			List<FaceState> unsortedAlphaFaces;
-			List<FaceState> overlayOpaqueFaces;
+			// The frame's lists are kept from frame to frame, filled again each time (thousands of faces: new lists each
+			// frame were a good part of the garbage the collector had to deal with).
+			List<FaceState> opaqueFaces = frameOpaqueFaces;
+			List<FaceState> alphaFaces = frameAlphaFaces;
+			List<FaceState> unsortedAlphaFaces = frameUnsortedAlphaFaces;
+			List<FaceState> overlayOpaqueFaces = frameOverlayOpaqueFaces;
 			List<FaceState> overlayAlphaFaces;
 			lock (VisibleObjects.LockObject)
 			{
-				opaqueFaces = VisibleObjects.OpaqueFaces.ToList();
+				opaqueFaces.Clear();
+				opaqueFaces.AddRange(VisibleObjects.OpaqueFaces);
 				// In the order objects were shown: each object's faces together, in index order.
-				unsortedAlphaFaces = VisibleObjects.AlphaFaces.ToList();
-				alphaFaces = VisibleObjects.GetSortedPolygons();
-				overlayOpaqueFaces = VisibleObjects.OverlayOpaqueFaces.ToList();
+				unsortedAlphaFaces.Clear();
+				unsortedAlphaFaces.AddRange(VisibleObjects.AlphaFaces);
+				VisibleObjects.GetSortedPolygons(alphaFaces);
+				overlayOpaqueFaces.Clear();
+				overlayOpaqueFaces.AddRange(VisibleObjects.OverlayOpaqueFaces);
 				overlayAlphaFaces = VisibleObjects.GetSortedPolygons(true);
 			}
 
@@ -490,6 +495,9 @@ namespace OpenBve.Android
 			OpenGlString.Update();
 			Profile.Mark("overlays");
 		}
+
+		private readonly List<FaceState> frameOpaqueFaces = new List<FaceState>(), frameAlphaFaces = new List<FaceState>(),
+			frameUnsortedAlphaFaces = new List<FaceState>(), frameOverlayOpaqueFaces = new List<FaceState>();
 
 		/// <summary>Runs upstream's overlay drawing on the overlays' virtual screen (Screen made OverlayScale times smaller while it runs).</summary>
 		private void OnOverlayScreen(Action action)

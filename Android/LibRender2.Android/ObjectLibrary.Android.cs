@@ -272,6 +272,13 @@ namespace LibRender2.Objects
 			return GetSortedPolygons(AlphaFaces);
 		}
 
+		/// <summary>ANDROID PORT: the alpha faces sorted as <see cref="GetSortedPolygons(bool)"/> sorts them, into a list the
+		/// caller keeps from frame to frame (no new list of thousands of faces each frame).</summary>
+		public void GetSortedPolygons(List<FaceState> into)
+		{
+			SortPolygons(AlphaFaces, into);
+		}
+
 		/*
 		 * ANDROID PORT: the sort reuses its arrays and sorts indices (by distance, then by position in the list, which is
 		 * the stable order upstream's OrderBy gives) instead of a LINQ chain of an object per face: thousands of faces,
@@ -293,7 +300,8 @@ namespace LibRender2.Objects
 
 		private readonly DistanceOrder distanceOrder = new DistanceOrder();
 
-		private List<FaceState> GetSortedPolygons(ReadOnlyCollection<FaceState> faces)
+		/// <summary>Fills <see cref="sortOrder"/> with the faces' indices, back to front.</summary>
+		private void SortOrder(ReadOnlyCollection<FaceState> faces)
 		{
 			// calculate distance
 			int count = faces.Count;
@@ -345,13 +353,25 @@ namespace LibRender2.Objects
 
 			distanceOrder.Distances = distances;
 			Array.Sort(order, 0, count, distanceOrder);
-			List<FaceState> sorted = new List<FaceState>(count);
+		}
+
+		private List<FaceState> GetSortedPolygons(ReadOnlyCollection<FaceState> faces)
+		{
+			List<FaceState> sorted = new List<FaceState>(faces.Count);
+			SortPolygons(faces, sorted);
+			return sorted;
+		}
+
+		private void SortPolygons(ReadOnlyCollection<FaceState> faces, List<FaceState> sorted)
+		{
+			SortOrder(faces);
+			sorted.Clear();
+			int count = faces.Count;
+			int[] order = sortOrder;
 			for (int i = 0; i < count; i++)
 			{
 				sorted.Add(faces[order[i]]);
 			}
-
-			return sorted;
 		}
 	}
 }
