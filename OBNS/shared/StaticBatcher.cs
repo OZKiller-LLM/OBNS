@@ -148,7 +148,7 @@ namespace OpenBve
 			public long Vertices;
 		}
 
-		private readonly Dictionary<ObjectState, Group> groupOf = new Dictionary<ObjectState, Group>();
+		private readonly Dictionary<ObjectState, Group> groupOf = new Dictionary<ObjectState, Group>(ByReference<ObjectState>.Instance);
 
 		/*
 		 * Taking train parts out of upstream's per-frame update. Upstream's CarBase.UpdateObjects
@@ -239,7 +239,7 @@ namespace OpenBve
 			groupOf.Clear();
 			trainSignature = -1;
 			plannedCount = states.Count;
-			staticStates = new HashSet<ObjectState>(states);
+			staticStates = new HashSet<ObjectState>(states, ByReference<ObjectState>.Instance);
 			Dictionary<(float, float, byte), Group> groups = new Dictionary<(float, float, byte), Group>();
 			Dictionary<string, int> ineligible = new Dictionary<string, int>();
 			foreach (ObjectState state in states)
@@ -578,15 +578,27 @@ namespace OpenBve
 		private int keptStatic, keptOther;
 		private bool sampleReasons;
 		private readonly Dictionary<string, int> otherReasons = new Dictionary<string, int>();
-		private HashSet<ObjectState> staticStates = new HashSet<ObjectState>();
+		private HashSet<ObjectState> staticStates = new HashSet<ObjectState>(ByReference<ObjectState>.Instance);
 
 		private void FilterList(List<FaceState> faces, double now)
 		{
 			int kept = 0;
+			// An object's faces lie together in the lists: its group and whether it is scenery are looked up once for them.
+			ObjectState lastObject = null;
+			Group lastGroup = null;
+			bool lastGrouped = false, lastStatic = false;
 			for (int i = 0; i < faces.Count; i++)
 			{
 				FaceState face = faces[i];
-				if (groupOf.TryGetValue(face.Object, out Group group))
+				if (!ReferenceEquals(face.Object, lastObject))
+				{
+					lastObject = face.Object;
+					lastGrouped = groupOf.TryGetValue(lastObject, out lastGroup);
+					lastStatic = staticStates.Contains(lastObject);
+				}
+
+				Group group = lastGroup;
+				if (lastGrouped)
 				{
 					if (group.Batch != null)
 					{
@@ -609,7 +621,7 @@ namespace OpenBve
 					}
 				}
 
-				if (staticStates.Contains(face.Object))
+				if (lastStatic)
 				{
 					keptStatic++;
 				}
@@ -868,7 +880,7 @@ namespace OpenBve
 		private Batch Build(Group group)
 		{
 			Dictionary<MaterialKey, Bucket> buckets = new Dictionary<MaterialKey, Bucket>();
-			HashSet<MeshFaceVertex[]> covered = new HashSet<MeshFaceVertex[]>();
+			HashSet<MeshFaceVertex[]> covered = new HashSet<MeshFaceVertex[]>(ByReference<MeshFaceVertex[]>.Instance);
 			HashSet<MeshFaceVertex[]> leftAlone = new HashSet<MeshFaceVertex[]>();
 
 			// The batch's origin: the first member's position, in the shader's (Z-flipped) space.
@@ -1244,5 +1256,16 @@ namespace OpenBve
 			toBuild.Clear();
 			visible.Clear();
 		}
+	}
+
+	/// <summary>Equality by reference, hashed by identity: the batcher's lookups of objects and vertex arrays, thousands a
+	/// frame, without the virtual Equals and GetHashCode calls of the default comparer.</summary>
+	internal sealed class ByReference<T> : IEqualityComparer<T> where T : class
+	{
+		public static readonly ByReference<T> Instance = new ByReference<T>();
+
+		public bool Equals(T x, T y) => ReferenceEquals(x, y);
+
+		public int GetHashCode(T obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
 	}
 }

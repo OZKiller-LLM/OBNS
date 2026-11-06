@@ -28,6 +28,7 @@ using LibRender2;
 using LibRender2.Objects;
 using LibRender2.Shaders;
 using OpenBve.Vulkan;
+using OpenBveApi;
 using OpenBveApi.Colors;
 using OpenBveApi.Math;
 using OpenBveApi.Objects;
@@ -57,6 +58,8 @@ namespace OpenBve.Android
 		private Matrix4D nativeModelMatrix;
 		private readonly float[] nativeModelView = new float[16];
 		private readonly float[] nativeTexture = new float[16];
+		private VertexArrayObject nativeLastVao;
+		private bool nativeIntIndices;
 
 		/// <summary>Index type per vertex array (upstream keeps its index buffer private): true for 32-bit indices.</summary>
 		private static readonly ConditionalWeakTable<VertexArrayObject, object> IntIndices = new ConditionalWeakTable<VertexArrayObject, object>();
@@ -147,20 +150,26 @@ namespace OpenBve.Android
 				? (float)Glow.GetDistanceFactor(nativeModelMatrix, state.Prototype.Mesh.Vertices, ref face, material.GlowAttenuationData)
 				: 1.0f;
 			float blendFactor = Math.Min(1.0f, inv255 * state.DaytimeNighttimeBlend + 1.0f - Lighting.OptionLightingResultingAmount);
-			bool intIndices = IntIndicesOf(vao);
+			if (vao != nativeLastVao)
+			{
+				nativeLastVao = vao;
+				nativeIntIndices = IntIndicesOf(vao);
+			}
+
+			bool intIndices = nativeIntIndices;
 			// Upstream reads the wrap mode only for a material with a texture; one without has none set.
 			OpenGlTextureWrapMode wrap = material.WrapMode ?? OpenGlTextureWrapMode.ClampClamp;
 
 			// Daytime polygon.
 			int texture;
-			if (material.DaytimeTexture != null && currentHost.LoadTexture(ref material.DaytimeTexture, wrap))
+			if (material.DaytimeTexture != null && FaceTexture(ref material.DaytimeTexture, wrap))
 			{
 				texture = material.DaytimeTexture.OpenGlTextures[(int)wrap].Name;
 			}
 			else
 			{
 				// Untextured: a single white pixel, as Shader.DisableTexturing.
-				currentHost.LoadTexture(ref whitePixel, OpenGlTextureWrapMode.ClampClamp);
+				FaceTexture(ref whitePixel, OpenGlTextureWrapMode.ClampClamp);
 				texture = whitePixel.OpenGlTextures[(int)OpenGlTextureWrapMode.ClampClamp].Name;
 			}
 
@@ -204,7 +213,7 @@ namespace OpenBve.Android
 			LastBoundTexture = null;
 
 			// Nighttime polygon, blended over it.
-			if (blendFactor != 0 && material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && currentHost.LoadTexture(ref material.NighttimeTexture, wrap))
+			if (blendFactor != 0 && material.NighttimeTexture != null && material.NighttimeTexture != material.DaytimeTexture && FaceTexture(ref material.NighttimeTexture, wrap))
 			{
 				GL.Enable(EnableCap.Blend);
 				device.SetFaceDrawing(factor, inv255 * material.Color.A * distanceFactor * blendFactor, additive, true);
@@ -216,6 +225,22 @@ namespace OpenBve.Android
 			{
 				RestoreBlendFunc();
 			}
+		}
+
+		/// <summary>
+		/// A face's texture, loaded: one already on the GPU only has its last use noted, as the texture manager would do
+		/// for it, without passing through the host's and the manager's layers (their profiling scopes and timers, for
+		/// every face of every frame); anything else - not loaded yet, animated, streamed - goes through the host.
+		/// </summary>
+		private bool FaceTexture(ref Texture texture, OpenGlTextureWrapMode wrap)
+		{
+			if (texture != null && !texture.MultipleFrames && texture.OpenGlTextures != null && texture.OpenGlTextures[(int)wrap].Valid)
+			{
+				texture.LastAccess = CPreciseTimer.GetClockTicks();
+				return true;
+			}
+
+			return currentHost.LoadTexture(ref texture, wrap);
 		}
 
 		private static NVector4 Colour(Color32 colour) => new NVector4(colour.R * inv255, colour.G * inv255, colour.B * inv255, colour.A * inv255);

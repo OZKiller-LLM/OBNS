@@ -293,6 +293,7 @@ namespace OpenBve.Android
 			}
 
 			Profile.Mark("face lists");
+			CheckKnownTransparency();
 
 			// Faces the static batches draw come out of the lists (see StaticBatcher).
 			batcher ??= new StaticBatcher(this);
@@ -754,9 +755,44 @@ namespace OpenBve.Android
 			return KeyedOrOpaque(material.DaytimeTexture) && KeyedOrOpaque(material.NighttimeTexture);
 		}
 
-		private static bool KeyedOrOpaque(OpenBveApi.Textures.Texture texture) =>
-			texture == null || LibRender2.Textures.TextureManager.textureCache.TryGetValue(texture.Origin, out OpenBveApi.Textures.TextureTransparencyType type) &&
-			type != OpenBveApi.Textures.TextureTransparencyType.Alpha;
+		private static bool KeyedOrOpaque(OpenBveApi.Textures.Texture texture)
+		{
+			if (texture == null)
+			{
+				return true;
+			}
+
+			// The type by the texture itself once it is known: the cache is keyed by the file's path, hashed and compared
+			// in full at every look - up to four for each transparent face, every frame.
+			if (!knownTransparency.TryGetValue(texture, out OpenBveApi.Textures.TextureTransparencyType type))
+			{
+				if (!LibRender2.Textures.TextureManager.textureCache.TryGetValue(texture.Origin, out type))
+				{
+					return false;
+				}
+
+				knownTransparency[texture] = type;
+			}
+
+			return type != OpenBveApi.Textures.TextureTransparencyType.Alpha;
+		}
+
+		private static readonly Dictionary<OpenBveApi.Textures.Texture, OpenBveApi.Textures.TextureTransparencyType> knownTransparency =
+			new Dictionary<OpenBveApi.Textures.Texture, OpenBveApi.Textures.TextureTransparencyType>(ByReference<OpenBveApi.Textures.Texture>.Instance);
+
+		private static int knownTransparencySource;
+
+		/// <summary>Forgets the types known by texture when the cache they came from lost entries (textures unloaded).</summary>
+		private static void CheckKnownTransparency()
+		{
+			int count = LibRender2.Textures.TextureManager.textureCache.Count;
+			if (count < knownTransparencySource || knownTransparency.Count > 65536)
+			{
+				knownTransparency.Clear();
+			}
+
+			knownTransparencySource = count;
+		}
 
 		/// <summary>The trains whose still parts are batched (set once the game is loaded).</summary>
 		public System.Func<IEnumerable<global::TrainManager.Trains.TrainBase>> TrainSource;

@@ -309,6 +309,7 @@ namespace OpenBve.NX
 			double snapshotAge = 1.0;
 			pause.QuitRequested += () => leave = true;
 			double last = 0, windowStart = 0, worst = 0, trackPosition = 0;
+			int windows = 0;
 			int frames = 0, total = 0;
 			while (clock.Elapsed.TotalSeconds < seconds)
 			{
@@ -455,6 +456,11 @@ namespace OpenBve.NX
 					gpuWait = 0;
 					Log(split.ToString());
 					Log("frames: renderer " + renderer.Profile.Report());
+					if (++windows % 6 == 1)
+					{
+						Log("frames: static batches " + renderer.BatchSummary);
+					}
+
 					frames = 0;
 					worst = 0;
 					windowStart = now;
@@ -629,6 +635,11 @@ namespace OpenBve.NX
 				try
 				{
 					string train = AndroidTrainSession.Load(host, trainManager, renderer, currentRoute, fileSystem, host.CurrentTrainFolder, null, out session);
+					// As GameView: the trains' vertex copies dropped once their buffers are made, and the trains handed to the
+					// static batcher, which merges each car's still parts into a few draws (without it every face of the
+					// Tuen Ma Line's cars was a draw of its own - most of the 10,900 a frame, 2026-11-06).
+					VertexCopyReleaser.ReleaseAll(renderer);
+					renderer.TrainSource = () => System.Linq.Enumerable.Concat(host.TrainList, System.Linq.Enumerable.OfType<global::TrainManager.Trains.TrainBase>(trainManager.TFOs));
 					Log("load profile, train: " + LoadProfile.End());
 					Log(Exceptions());
 					Stage("train: " + train.Replace("\n", "; "));
@@ -678,6 +689,8 @@ namespace OpenBve.NX
 				Stage($"frames: performance mode {performance} - CPU {cpuMhz} MHz, GPU {(gpuMhz > 0 ? gpuMhz + " MHz" : "the system's")}, memory {(memoryMhz > 0 ? memoryMhz + " MHz" : "the system's")}" +
 				      (performance == OpenBve.Android.PerformanceMode.Normal ? ", the system's fan control" : ", the fan at full"));
 				deko.Drawing = true;
+				// As GameView: textures first needed while driving are decoded in the background, not in the frame.
+				host.StreamTextures = true;
 				Frames(renderer, host, sounds, session, deko, 600.0);
 				deko.Dispose();
 				OpenTK.Graphics.OpenGL.GL.Device = null;

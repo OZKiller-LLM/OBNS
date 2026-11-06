@@ -195,7 +195,9 @@ namespace OpenBve.NX.Deko
 
 				if (texture.Pending)
 				{
+					long realizing = System.Diagnostics.Stopwatch.GetTimestamp();
 					Realize(texture);
+					realizeTicks += System.Diagnostics.Stopwatch.GetTimestamp() - realizing;
 				}
 
 				draw.Texture = (uint)texture.Slot;
@@ -320,10 +322,13 @@ namespace OpenBve.NX.Deko
 				return;
 			}
 
+			long recording = System.Diagnostics.Stopwatch.GetTimestamp();
 			fixed (WorldDraw* draws = world)
 			{
 				WorldDraws(draws, worldCount);
 			}
+
+			recordTicks += System.Diagnostics.Stopwatch.GetTimestamp() - recording;
 
 			frameDraws += worldCount;
 			worldCount = 0;

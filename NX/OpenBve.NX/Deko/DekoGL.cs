@@ -115,6 +115,14 @@ namespace OpenBve.NX.Deko
 		private int frameDraws;
 		private long frameTicks;
 
+		/// <summary>Of <see cref="LastFrameMilliseconds"/>: the native side recording the world records, and textures made
+		/// (uploads recorded) for them, in the last finished frame.</summary>
+		public double LastRecordMilliseconds { get; private set; }
+
+		public double LastRealizeMilliseconds { get; private set; }
+
+		private long recordTicks, realizeTicks;
+
 		/// <param name="width">The framebuffer's width (1280 handheld).</param>
 		/// <param name="height">Its height (720).</param>
 		public DekoGL(int width, int height)
@@ -144,7 +152,7 @@ namespace OpenBve.NX.Deko
 
 		/// <summary>Memory and counts, for the log.</summary>
 		public string Describe() =>
-			LastFrameDraws + " draws, " + LastFrameFaces + " of them faces as world records (" + LastFrameMilliseconds.ToString("0.0") + " ms preparing them), " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
+			LastFrameDraws + " draws, " + LastFrameFaces + " of them faces as world records (" + LastFrameMilliseconds.ToString("0.0") + " ms preparing them, " + LastRecordMilliseconds.ToString("0.0") + " ms of it recording, " + LastRealizeMilliseconds.ToString("0.0") + " ms textures made), " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
 			(imageHeap.ReservedBytes >> 20) + " MB reserved), " + glBuffers.Count + " buffers (" + (bufferHeap.UsedBytes >> 20) + " MB, " + (bufferHeap.ReservedBytes >> 20) + " MB reserved)";
 
 		// --- frames ---
@@ -187,6 +195,10 @@ namespace OpenBve.NX.Deko
 				FlushWorld();
 				LastFrameDraws = frameDraws;
 				LastFrameMilliseconds = frameTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+				LastRecordMilliseconds = recordTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+				LastRealizeMilliseconds = realizeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+				recordTicks = 0;
+				realizeTicks = 0;
 				frameDraws = 0;
 				frameTicks = 0;
 				inFrame = false;
