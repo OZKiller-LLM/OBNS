@@ -632,6 +632,19 @@ namespace OpenBve.NX
 			// As GameView: where the route's time goes, by category (parsing, objects, textures, sounds, file access).
 			// Parsed objects kept on the SD card for the next load of the route (ObjectDiskCache); the file keeps it off.
 			ObjectDiskCache.Folder = File.Exists(Root + "/UserData/nx-no-object-cache.txt") ? null : Root + "/UserData/ObjectCache";
+			/*
+			 * The textures' transparency, as Android keeps it in its cache folder: the next load of the same content decodes
+			 * none of them for it. Unset here until 2026-11-07, which cost the Tuen Ma Line 93 s of decoding on every load.
+			 */
+			try
+			{
+				Directory.CreateDirectory(Root + "/UserData/Cache");
+				TextureClassifier.CacheFolder = Root + "/UserData/Cache";
+			}
+			catch (Exception e)
+			{
+				Log("texture transparency: no cache folder (" + e.Message + ")");
+			}
 			LoadProfile.Begin("route parser");
 			string route = AndroidRouteLoader.LoadRoute(host, fileSystem, renderer, routeFile, null, out RouteManager2.CurrentRoute currentRoute);
 			Log("load profile, route: " + LoadProfile.End());
