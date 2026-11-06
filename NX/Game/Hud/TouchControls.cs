@@ -203,29 +203,55 @@ namespace OpenBve.Switch
 			}
 
 			/*
-			 * ATS mode: S, A1, B1 and A2 to P, as big as the levers, in two columns up each side - where the reverser, horns,
-			 * doors and the safety row are on the left, and the levers on the right - from the bottom, S nearest the left
-			 * thumb. The middle stays clear for the view and the driving information.
+			 * ATS mode: the keys where upstream's default keyboard has them (Data/Controls/Default.controls), each with that
+			 * key's name under its own. The number row along the top: D to L on 2 to 0, then M, N, O and P (no keys of their
+			 * own) on as -, = and the rest would be. The navigation block bottom right: A1, B1, C1 on Insert, Home, Page Up
+			 * over A2, B2, C2 on Delete, End, Page Down. S, the space bar, wide along the bottom left. The middle stays clear
+			 * for the view and the driving information.
 			 */
-			Translations.Command[] all =
+			(Translations.Command Command, string Name, string Key)[] numberRow =
 			{
-				Translations.Command.SecurityS, Translations.Command.SecurityA1, Translations.Command.SecurityB1, Translations.Command.SecurityA2,
-				Translations.Command.SecurityB2, Translations.Command.SecurityC1, Translations.Command.SecurityC2, Translations.Command.SecurityD,
-				Translations.Command.SecurityE, Translations.Command.SecurityF, Translations.Command.SecurityG, Translations.Command.SecurityH,
-				Translations.Command.SecurityI, Translations.Command.SecurityJ, Translations.Command.SecurityK, Translations.Command.SecurityL,
-				Translations.Command.SecurityM, Translations.Command.SecurityN, Translations.Command.SecurityO, Translations.Command.SecurityP
+				(Translations.Command.SecurityD, "D", "2"), (Translations.Command.SecurityE, "E", "3"), (Translations.Command.SecurityF, "F", "4"),
+				(Translations.Command.SecurityG, "G", "5"), (Translations.Command.SecurityH, "H", "6"), (Translations.Command.SecurityI, "I", "7"),
+				(Translations.Command.SecurityJ, "J", "8"), (Translations.Command.SecurityK, "K", "9"), (Translations.Command.SecurityL, "L", "0"),
+				(Translations.Command.SecurityM, "M", null), (Translations.Command.SecurityN, "N", null), (Translations.Command.SecurityO, "O", null),
+				(Translations.Command.SecurityP, "P", null)
 			};
-			for (int i = 0; i < all.Length; i++)
+			float edge = 18, gap = 8;
+			float rowWidth = (1280 - 2 * edge - (numberRow.Length - 1) * gap) / numberRow.Length;
+			for (int i = 0; i < numberRow.Length; i++)
 			{
-				Key key = Command(all[i].ToString().Substring("Security".Length), all[i], i == 0 ? Argb(190, 150, 100, 20) : safety, latching: true);
-				keys.Remove(key);
-				key.TextSize = Math.Max(20, 14 * 1.5f * scale);
-				int band = i / 10, place = i % 10, row = place / 2, column = place % 2;
-				float pitchX = key.Width + Dp(8), pitchY = key.Height + Dp(8);
-				key.X = band == 0 ? Dp(12) + Dp(4) + column * pitchX : 1280 - Dp(12) - Dp(4) - key.Width - (1 - column) * pitchX;
-				key.Y = 720 - Dp(12) - (row + 1) * pitchY + Dp(4);
-				atsLayout.Add(key);
+				Key key = AtsKey(numberRow[i].Name, numberRow[i].Key, numberRow[i].Command, safety);
+				key.X = edge + i * (rowWidth + gap);
+				key.Y = edge;
+				key.Width = rowWidth;
+				key.Height = 72;
 			}
+
+			(Translations.Command Command, string Name, string Key)[][] navigation =
+			{
+				new[] { (Translations.Command.SecurityA1, "A1", "Ins"), (Translations.Command.SecurityB1, "B1", "Home"), (Translations.Command.SecurityC1, "C1", "PgUp") },
+				new[] { (Translations.Command.SecurityA2, "A2", "Del"), (Translations.Command.SecurityB2, "B2", "End"), (Translations.Command.SecurityC2, "C2", "PgDn") }
+			};
+			float navWidth = 108, navHeight = 92, navGap = 10;
+			float navLeft = 1280 - edge - 3 * navWidth - 2 * navGap, navTop = 720 - edge - 2 * navHeight - navGap;
+			for (int r = 0; r < navigation.Length; r++)
+			{
+				for (int c = 0; c < navigation[r].Length; c++)
+				{
+					Key key = AtsKey(navigation[r][c].Name, navigation[r][c].Key, navigation[r][c].Command, safety);
+					key.X = navLeft + c * (navWidth + navGap);
+					key.Y = navTop + r * (navHeight + navGap);
+					key.Width = navWidth;
+					key.Height = navHeight;
+				}
+			}
+
+			Key space = AtsKey("S", "Space", Translations.Command.SecurityS, Argb(190, 150, 100, 20));
+			space.X = edge;
+			space.Width = 1280 - 2 * edge - 3 * navWidth - 2 * navGap - 520;
+			space.Height = navHeight;
+			space.Y = 720 - edge - navHeight;
 
 			numpadWidth = Dp(3 * 58);
 			numpadRightOfLevers = leversLeft - Dp(8);
@@ -487,6 +513,16 @@ namespace OpenBve.Switch
 
 		private Key Command(string label, Translations.Command command, uint color, bool wide = false, bool small = false, bool latching = false) =>
 			Add(new Key { Label = label, Command = command, Color = color, Latching = latching }, wide, small);
+
+		/// <summary>An ATS mode key: its letter over its keyboard key's name, latching.</summary>
+		private Key AtsKey(string name, string keyboard, Translations.Command command, uint color)
+		{
+			Key key = Command(keyboard == null ? name : name + "\n" + keyboard, command, color, latching: true);
+			keys.Remove(key);
+			key.TextSize = 20;
+			atsLayout.Add(key);
+			return key;
+		}
 
 		private Key Action(string label, uint color, Action action) => Add(new Key { Label = label, Action = action, Color = color }, false, true);
 
