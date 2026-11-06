@@ -22,6 +22,7 @@ typedef struct {
 // From obns_drawing.c: the console's shared fonts through FreeType, and the image decoders.
 void *obns_font_open(const char *family, int bold, int italic, float pixels);
 void obns_font_metrics(void *font, float *ascent, float *descent);
+void obns_font_close(void *font);
 int obns_font_glyph(void *font, uint32_t codepoint, ObnsGlyph *out);
 int obns_image_decode(const uint8_t *data, intptr_t length, int *w, int *h, void **pixels);
 void obns_image_free(void *pixels);
@@ -39,7 +40,7 @@ typedef struct {
 #define MAX_QUADS 16384
 #define MAX_BATCHES 2048
 #define IMAGES 8
-#define FONTS 12
+#define FONTS 32
 #define GLYPHS 8192
 #define STAGING (8 * 1024 * 1024)
 #define IMAGE_STAGING (4 * 1024 * 1024)
@@ -50,7 +51,7 @@ typedef struct {
 
 typedef struct { int first, count, image; DkScissor scissor; } Batch;
 typedef struct { char path[512]; DkMemBlock memory; DkImage image; int width, height, failed; uint64_t used; } Image2D;
-typedef struct { float pixels; int bold; void *font; float ascent; } Font2D;
+typedef struct { float pixels; int bold; void *font; float ascent; uint64_t used; } Font2D;
 typedef struct { void *font; uint32_t codepoint; int16_t x, y, w, h, left, top; float advance; int used; } Glyph2D;
 
 static int ready2d, failed2d;
@@ -67,6 +68,8 @@ static DkScissor clip;
 static Image2D images[IMAGES];
 static int imagePending = -1;
 static Font2D fonts[FONTS];
+// Frames drawn, for the fonts' least recently used (font_for).
+static uint64_t frame2d;
 static Glyph2D glyphs[GLYPHS];
 static float unitScale = 1.0f, ySign = 1.0f;
 static uint32_t backgroundColor;
@@ -193,6 +196,7 @@ EXPORT int obns_dk2d_begin(uint32_t background)
     unitScale = width / UNITS_WIDTH;
     backgroundColor = background;
     vertexCount = batchCount = droppedQuads = 0;
+    frame2d++;
     clip = whole_screen();
     if (atlasReset) {
         // The atlas filled up last frame: start it again (this frame's text is laid out anew).
@@ -258,14 +262,27 @@ EXPORT void obns_dk2d_unclip(void) { clip = whole_screen(); }
 
 // --- text ---
 
+/*
+ * The fonts in use, one per size and weight. Until 2026-11-07 there were 12 slots and, past them, the first was taken
+ * over by a newly opened font every time - the old one never closed, its cached glyphs never matching again - so with
+ * the touch controls' sizes on top of the driving card's, the timetable's and the menus' the glyph atlas filled and was
+ * reset frame after frame and text glitched and vanished. Now 32 slots; past them the least recently used font is
+ * closed and the atlas started again cleanly (its glyphs could otherwise match a new font opened at the same address).
+ */
 static Font2D *font_for(float pixels, int bold)
 {
-    int empty = -1;
+    int empty = -1, oldest = 0;
     for (int i = 0; i < FONTS; i++) {
-        if (fonts[i].font && fonts[i].pixels == pixels && fonts[i].bold == bold) return &fonts[i];
+        if (fonts[i].font && fonts[i].pixels == pixels && fonts[i].bold == bold) { fonts[i].used = frame2d; return &fonts[i]; }
         if (!fonts[i].font && empty < 0) empty = i;
+        if (fonts[i].font && fonts[i].used < fonts[oldest].used) oldest = i;
     }
-    if (empty < 0) empty = 0; // more sizes than slots: the first is replaced (its glyphs stay cached under its old handle)
+    if (empty < 0) {
+        empty = oldest;
+        obns_font_close(fonts[empty].font);
+        fonts[empty].font = NULL;
+        atlasReset = 1;
+    }
     void *font = obns_font_open(NULL, bold, 0, pixels);
     if (!font) return NULL;
     float ascent, descent;
@@ -274,6 +291,7 @@ static Font2D *font_for(float pixels, int bold)
     fonts[empty].pixels = pixels;
     fonts[empty].bold = bold;
     fonts[empty].ascent = -ascent;
+    fonts[empty].used = frame2d;
     return &fonts[empty];
 }
 
@@ -305,6 +323,8 @@ static Glyph2D *glyph_for(Font2D *font, uint32_t codepoint)
         if (h > shelfHeight) shelfHeight = h;
         return g;
     }
+    // No free entry within reach: the table is crowded; started again with the atlas next frame (it was left out for good).
+    atlasReset = 1;
     return NULL;
 }
 
