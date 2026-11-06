@@ -126,6 +126,46 @@ namespace OpenBve.NX.MenuPreview
 					continue;
 				}
 
+				if (parts[0] == "pause")
+				{
+					// The pause menu over the card: its top level, then the stations (the one after the last stop suggested).
+					string name = parts.Length > 1 ? parts[1] : "pause";
+					PauseMenu pause = new PauseMenu
+					{
+						Stations = () => new[] { (0, "Alpha"), (1, "Beta"), (2, "Gamma"), (3, "Delta Interchange") },
+						LastStation = () => 1
+					};
+					DriverStatus status = new DriverStatus(0, 60, "B3", HandleState.Brake, "F", "10:06:00", "Gamma", "2.4 km", "10:09:00", "10:09:30", null,
+						Array.Empty<(string, OpenBveApi.Colors.MessageColor)>(), "Cab", true);
+					MenuInput pauseInput = new MenuInput();
+					pause.Show();
+					void Shot(string file)
+					{
+						canvas.Begin();
+						canvas.Fill(0, 0, 1280, 360, 0xFF6E8FB4);
+						canvas.Fill(0, 360, 1280, 360, 0xFF4A4E44);
+						DriverCard.Draw(canvas, status);
+						pause.Draw(canvas, 1.0);
+						canvas.Save(Path.Combine(output, file));
+						Console.WriteLine("wrote " + file);
+					}
+
+					void Press(MenuButtons button)
+					{
+						pauseInput.Update(button, false, 0, 0, 1.0 / 60);
+						pause.Update(pauseInput);
+						pauseInput.Update(MenuButtons.None, false, 0, 0, 1.0 / 60);
+						pause.Update(pauseInput);
+					}
+
+					Press(MenuButtons.None);
+					Shot(name + "-top.png");
+					Press(MenuButtons.Down);
+					Press(MenuButtons.A);
+					Shot(name + "-stations.png");
+					continue;
+				}
+
 				if (parts[0] == "tap" && parts.Length >= 3)
 				{
 					float x = float.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);

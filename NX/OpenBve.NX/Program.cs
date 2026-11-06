@@ -275,15 +275,60 @@ namespace OpenBve.NX
 			Stage("frames: drawing for " + seconds.ToString("0") + " s" + (session == null ? " (no train: the camera travels the route)" : string.Empty));
 			Stopwatch clock = Stopwatch.StartNew();
 			DekoCanvas overlay = new DekoCanvas();
+			// The controllers drive the train (Android's controller layout, SwitchPad); + pauses.
+			AndroidControls controls = new AndroidControls();
+			OpenBve.Switch.SwitchPad pad = new OpenBve.Switch.SwitchPad();
+			bool paused = false, leave = false;
+			// The pause menu (Android's): + opens it, the simulation stands still while it's open.
+			OpenBve.Switch.MenuInput menuInput = new OpenBve.Switch.MenuInput();
+			OpenBve.Switch.PauseMenu pause = new OpenBve.Switch.PauseMenu
+			{
+				Stations = () => session?.JumpStations ?? (System.Collections.Generic.IReadOnlyList<(int, string)>)Array.Empty<(int, string)>(),
+				LastStation = () => session?.Train.LastStation ?? -1
+			};
+			pause.Resumed += () =>
+			{
+				paused = false;
+				sounds.SetPaused(false);
+			};
+			pause.JumpRequested += station => controls.Post(s => s.JumpToStation(station));
+			pause.ExitRequested += () => leave = true;
+			pause.QuitRequested += () => leave = true;
 			double last = 0, windowStart = 0, worst = 0, trackPosition = 0;
 			int frames = 0, total = 0;
 			while (clock.Elapsed.TotalSeconds < seconds)
 			{
 				int touching, docked;
-				float x, y;
-				if ((MenuLoop.ReadInput(&touching, &x, &y, &docked) & (uint)OpenBve.Switch.MenuButtons.Minus) != 0)
+				float touchX, touchY;
+				if (pause.Open)
 				{
-					Log("frames: left with −");
+					uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked);
+					menuInput.Update((OpenBve.Switch.MenuButtons)buttons, touching != 0, touchX, touchY, clock.Elapsed.TotalSeconds - last);
+					pause.Update(menuInput);
+				}
+				else
+				{
+					pad.Update(controls);
+					if ((pad.Held & (OpenBve.Switch.SwitchPad.Plus | OpenBve.Switch.SwitchPad.Minus)) == (OpenBve.Switch.SwitchPad.Plus | OpenBve.Switch.SwitchPad.Minus))
+					{
+						Log("frames: left with + and −");
+						break;
+					}
+
+					if (pad.Is(OpenBve.Switch.SwitchPad.Plus))
+					{
+						paused = true;
+						sounds.SetPaused(true);
+						pause.Show();
+						// The menu's input in step with the buttons held now.
+						uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked);
+						menuInput.Update((OpenBve.Switch.MenuButtons)buttons, touching != 0, touchX, touchY, 0);
+					}
+				}
+
+				if (leave)
+				{
+					Log("frames: left from the pause menu");
 					break;
 				}
 
@@ -291,7 +336,15 @@ namespace OpenBve.NX
 				last = now;
 				if (session != null)
 				{
-					session.Update(elapsed);
+					controls.Apply(session);
+					if (paused)
+					{
+						session.UpdateView(elapsed, 0.0);
+					}
+					else
+					{
+						session.Update(elapsed);
+					}
 				}
 				else
 				{
@@ -304,7 +357,8 @@ namespace OpenBve.NX
 				if (session != null && overlay.BeginOverlay())
 				{
 					// The in-game interface over the scene (the driving information, as Android's).
-					OpenBve.Switch.DriverCard.Draw(overlay, session.Status(session.Camera.ModeName, false));
+					OpenBve.Switch.DriverCard.Draw(overlay, session.Status(session.Camera.ModeName, paused));
+					pause.Draw(overlay, elapsed);
 					overlay.EndOverlay();
 				}
 
@@ -537,7 +591,7 @@ namespace OpenBve.NX
 				// The loading screen gives way to the game's frames on the same device.
 				LoadingScreen.Stop(false);
 				deko.Drawing = true;
-				Frames(renderer, host, sounds, session, deko, 30.0);
+				Frames(renderer, host, sounds, session, deko, 600.0);
 				deko.Dispose();
 				OpenTK.Graphics.OpenGL.GL.Device = null;
 				DekoCanvas.Close();

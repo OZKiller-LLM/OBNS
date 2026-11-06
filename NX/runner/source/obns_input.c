@@ -17,6 +17,31 @@ enum {
     MenuPlus = 1 << 12, MenuMinus = 1 << 13
 };
 
+static void ensure_pad(void)
+{
+    if (!ready) {
+        // Every controller, as player 1: handheld Joy-Cons, a pair, a Pro Controller.
+        padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+        padInitializeDefault(&pad);
+        hidInitializeTouchScreen();
+        ready = 1;
+    }
+}
+
+// For driving (NX/Game/SwitchPad.cs): libnx's own button bits (HidNpadButton: the face buttons, the stick clicks, L, R,
+// ZL, ZR, + and -, the D-pad), and both sticks from -1 to 1 (up positive).
+EXPORT uint64_t obns_input_pad(float *leftX, float *leftY, float *rightX, float *rightY)
+{
+    ensure_pad();
+    padUpdate(&pad);
+    HidAnalogStickState left = padGetStickPos(&pad, 0), right = padGetStickPos(&pad, 1);
+    *leftX = left.x / 32767.0f;
+    *leftY = left.y / 32767.0f;
+    *rightX = right.x / 32767.0f;
+    *rightY = right.y / 32767.0f;
+    return padGetButtons(&pad);
+}
+
 // The buttons held now, the touch screen's first finger (in 1280x720 screen units), and whether the console is docked
 // (1) or handheld (0).
 EXPORT uint32_t obns_input_read(int *touching, float *x, float *y, int *docked)

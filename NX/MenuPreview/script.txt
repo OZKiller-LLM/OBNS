@@ -34,3 +34,5 @@ shot 11-rail
 
 # The in-game driving card (DriverCard) over a stand-in scene.
 card 12-card
+# The pause menu (PauseMenu.Switch.cs) over the card.
+pause 13-pause
