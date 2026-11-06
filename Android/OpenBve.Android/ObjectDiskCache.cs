@@ -67,7 +67,23 @@ namespace OpenBve.Android
 		private static Dictionary<string, (long Offset, int Length)> index;
 		private static bool indexDirty;
 		private static int hits, misses, stored, notStorable, failures;
-		private static long hitTicks, storeTicks, packBytes;
+		private static long hitTicks, storeTicks, writeTicks, packBytes;
+
+		/*
+		 * Records go to the SD card from a writer thread of their own: the parsing threads only turn an object into bytes (it
+		 * may change once handed back) and queue them, rather than wait on the card and on each other for the pack. At most
+		 * QueueLimit bytes wait; a thread that would go beyond waits for the writer (the card is slower than the parsers at
+		 * times). Flush and Close wait for the queue to empty.
+		 */
+		private const long QueueLimit = 16L << 20;
+		private static readonly Queue<(string Key, byte[] Payload)> queue = new Queue<(string, byte[])>();
+		private static readonly HashSet<string> queuedKeys = new HashSet<string>(StringComparer.Ordinal);
+		private static long queuedBytes;
+		private static bool writing;
+		private static System.Threading.Thread writer;
+
+		/// <summary>The key TryLoad worked out for the file it didn't find, for Store to use rather than ask the card again.</summary>
+		[ThreadStatic] private static string lastMissPath, lastMissKey;
 
 		private static readonly FieldInfo OptimizedField = typeof(StaticObject).GetField("isOptimized", BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -95,7 +111,7 @@ namespace OpenBve.Android
 			{
 				CloseLocked();
 				hits = misses = stored = notStorable = failures = 0;
-				hitTicks = storeTicks = 0;
+				hitTicks = storeTicks = writeTicks = 0;
 				try
 				{
 					Directory.CreateDirectory(Folder);
@@ -118,6 +134,11 @@ namespace OpenBve.Android
 					pack.SetLength(Math.Min(pack.Length, packLength));
 					packBytes = pack.Length;
 					indexDirty = false;
+					if (writer == null)
+					{
+						writer = new System.Threading.Thread(WriteQueue) { IsBackground = true, Name = "object cache writer" };
+						writer.Start();
+					}
 				}
 				catch (Exception e)
 				{
@@ -132,6 +153,7 @@ namespace OpenBve.Android
 		{
 			lock (gate)
 			{
+				DrainLocked();
 				FlushLocked();
 			}
 		}
@@ -141,6 +163,7 @@ namespace OpenBve.Android
 		{
 			lock (gate)
 			{
+				DrainLocked();
 				FlushLocked();
 				CloseLocked();
 			}
@@ -151,7 +174,7 @@ namespace OpenBve.Android
 			lock (gate)
 			{
 				return "object cache: " + hits + " read back (" + (hitTicks * 1000 / Stopwatch.Frequency) + " ms), " + misses + " parsed, " + stored +
-				       " stored (" + (storeTicks * 1000 / Stopwatch.Frequency) + " ms), " + notStorable + " not storable, " + failures + " failures; " +
+				       " stored (" + (storeTicks * 1000 / Stopwatch.Frequency) + " ms made, " + (writeTicks * 1000 / Stopwatch.Frequency) + " ms written), " + notStorable + " not storable, " + failures + " failures; " +
 				       (index?.Count ?? 0) + " objects, " + (packBytes >> 20) + " MB";
 			}
 		}
@@ -190,6 +213,8 @@ namespace OpenBve.Android
 					if (pack == null || !index.TryGetValue(key, out (long Offset, int Length) entry))
 					{
 						misses++;
+						lastMissPath = path;
+						lastMissKey = key;
 						return false;
 					}
 
@@ -243,35 +268,33 @@ namespace OpenBve.Android
 			long started = Stopwatch.GetTimestamp();
 			try
 			{
-				string key = Key(path, encoding, preserveVertices, threshold, vertexCulling);
+				string key = lastMissPath == path && lastMissKey != null && lastMissKey == KeyWith(lastMissKey, encoding, preserveVertices, threshold, vertexCulling)
+					? lastMissKey
+					: Key(path, encoding, preserveVertices, threshold, vertexCulling);
+				lastMissPath = lastMissKey = null;
 				byte[] payload = Write(staticObject, key);
 				lock (gate)
 				{
+					storeTicks += Stopwatch.GetTimestamp() - started;
 					if (payload == null)
 					{
 						notStorable++;
 						return;
 					}
 
-					if (pack == null || index.ContainsKey(key))
+					if (pack == null || index.ContainsKey(key) || !queuedKeys.Add(key))
 					{
 						return;
 					}
 
-					long offset = pack.Length;
-					pack.Seek(offset, SeekOrigin.Begin);
-					using (BinaryWriter header = new BinaryWriter(pack, Encoding.UTF8, true))
+					while (queuedBytes > 0 && queuedBytes + payload.Length > QueueLimit && pack != null)
 					{
-						header.Write(RecordMagic);
-						header.Write(payload.Length);
+						System.Threading.Monitor.Wait(gate);
 					}
 
-					pack.Write(payload, 0, payload.Length);
-					index[key] = (offset + 8, payload.Length);
-					packBytes = pack.Length;
-					indexDirty = true;
-					stored++;
-					storeTicks += Stopwatch.GetTimestamp() - started;
+					queue.Enqueue((key, payload));
+					queuedBytes += payload.Length;
+					System.Threading.Monitor.PulseAll(gate);
 				}
 			}
 			catch (Exception e)
@@ -282,6 +305,97 @@ namespace OpenBve.Android
 				}
 
 				Trace("object cache: " + path + " not stored (" + e.GetType().Name + ": " + e.Message + ")");
+			}
+		}
+
+		/// <summary>The key with these settings, from a key's file part (path, size, date).</summary>
+		private static string KeyWith(string key, Encoding encoding, bool preserveVertices, int threshold, bool vertexCulling)
+		{
+			// The settings are the key's last four fields; the file part comes before them.
+			int bar = key.Length;
+			for (int i = 0; i < 4; i++)
+			{
+				bar = bar > 0 ? key.LastIndexOf('|', bar - 1) : -1;
+				if (bar < 0)
+				{
+					return null;
+				}
+			}
+
+			return key.Substring(0, bar + 1) + (encoding?.CodePage ?? 0) + "|" + (preserveVertices ? 1 : 0) + "|" + threshold + "|" + (vertexCulling ? 1 : 0);
+		}
+
+		/// <summary>The writer thread: appends the queued records to the pack.</summary>
+		private static void WriteQueue()
+		{
+			while (true)
+			{
+				(string Key, byte[] Payload) record;
+				lock (gate)
+				{
+					while (queue.Count == 0)
+					{
+						writing = false;
+						System.Threading.Monitor.PulseAll(gate);
+						System.Threading.Monitor.Wait(gate);
+					}
+
+					record = queue.Dequeue();
+					writing = true;
+				}
+
+				long started = Stopwatch.GetTimestamp();
+				bool done = false;
+				try
+				{
+					lock (gate)
+					{
+						// The pack is written under the lock (TryLoad reads it under the lock too); the parsers no longer wait for it.
+						if (pack != null && !index.ContainsKey(record.Key))
+						{
+							long offset = pack.Length;
+							pack.Seek(offset, SeekOrigin.Begin);
+							using (BinaryWriter header = new BinaryWriter(pack, Encoding.UTF8, true))
+							{
+								header.Write(RecordMagic);
+								header.Write(record.Payload.Length);
+							}
+
+							pack.Write(record.Payload, 0, record.Payload.Length);
+							index[record.Key] = (offset + 8, record.Payload.Length);
+							packBytes = pack.Length;
+							indexDirty = true;
+							stored++;
+							done = true;
+						}
+					}
+				}
+				catch (Exception e)
+				{
+					Trace("object cache: a record was not written (" + e.GetType().Name + ": " + e.Message + ")");
+				}
+
+				lock (gate)
+				{
+					if (!done && pack != null)
+					{
+						failures++;
+					}
+
+					queuedKeys.Remove(record.Key);
+					queuedBytes -= record.Payload.Length;
+					writeTicks += Stopwatch.GetTimestamp() - started;
+					System.Threading.Monitor.PulseAll(gate);
+				}
+			}
+		}
+
+		/// <summary>Waits (holding the lock between waits) until the writer has written everything queued.</summary>
+		private static void DrainLocked()
+		{
+			while (queue.Count > 0 || writing)
+			{
+				System.Threading.Monitor.Wait(gate);
 			}
 		}
 
