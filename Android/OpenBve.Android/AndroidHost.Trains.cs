@@ -176,6 +176,8 @@ namespace OpenBve.Android
 			Vector3 cameraPosition = renderer.Camera.Alignment.Position;
 			cameraPosition.Z += renderer.CameraTrackFollower.TrackPosition;
 			double extraViewingDistance = renderer.Camera.ExtraViewingDistance;
+			cameraAbsolute = renderer.Camera.AbsolutePosition;
+			cameraDirection = renderer.Camera.AbsoluteDirection;
 			int count = AnimatedWorldObjectsUsed;
 			if (!ParallelUpdates.Enabled || forceUpdate || count < 64)
 			{
@@ -223,11 +225,40 @@ namespace OpenBve.Android
 			}
 		}
 
+		private Vector3 cameraAbsolute, cameraDirection;
+
+		/*
+		 * Animated scenery the camera cannot see well updated less often (OBNS/SWITCH.md, step 4): inside upstream's
+		 * visibility window (a stretch of track either side of the camera) but behind it, every 0.25 s; beyond
+		 * FarUpdateDistance, every 0.05 s. Upstream's own RefreshRate does the throttling, so the time between is handed
+		 * to the next update and animations keep their pace; it is raised for the call and put back. The nearest train,
+		 * which only an update reads, is looked for only when one is due.
+		 */
+		private const double BehindUpdateSeconds = 0.25, FarUpdateSeconds = 0.05, FarUpdateDistance = 250.0;
+
 		private void UpdateAnimatedWorldObject(WorldObject worldObject, Vector3 cameraPosition, double backgroundDistance, double extraViewingDistance, double timeElapsed, bool forceUpdate)
 		{
 			bool visible = worldObject.IsVisible(cameraPosition, backgroundDistance, extraViewingDistance);
-			AbstractTrain train = visible || forceUpdate ? ClosestTrain(worldObject.Position) : null;
+			AnimatedObject animated = worldObject.Object;
+			double refresh = animated?.RefreshRate ?? 0.0;
+			if (visible && !forceUpdate && animated != null && (worldObject is OpenBveApi.Objects.AnimatedWorldObject || worldObject is OpenBveApi.Objects.KeyframeWorldObject))
+			{
+				Vector3 offset = worldObject.Position - cameraAbsolute;
+				double ahead = offset.X * cameraDirection.X + offset.Y * cameraDirection.Y + offset.Z * cameraDirection.Z;
+				double interval = ahead < -worldObject.Radius - 10.0 ? BehindUpdateSeconds : offset.NormSquared() > FarUpdateDistance * FarUpdateDistance ? FarUpdateSeconds : 0.0;
+				if (interval > refresh)
+				{
+					animated.RefreshRate = interval;
+				}
+			}
+
+			bool updating = forceUpdate || (visible && (animated == null || animated.SecondsSinceLastUpdate >= animated.RefreshRate));
+			AbstractTrain train = updating ? ClosestTrain(worldObject.Position) : null;
 			worldObject.Update(train, timeElapsed, forceUpdate, visible);
+			if (animated != null)
+			{
+				animated.RefreshRate = refresh;
+			}
 		}
 	}
 }
