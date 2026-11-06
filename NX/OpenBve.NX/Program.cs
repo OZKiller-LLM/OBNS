@@ -329,6 +329,8 @@ namespace OpenBve.NX
 					}
 
 					timetable.Update(pad.RightY, clock.Elapsed.TotalSeconds - last);
+					// The sticks move and turn the camera, as Android's controller (the right one scrolls the timetable when shown).
+					pad.Camera(controls, !timetable.Shown);
 					if (pad.Is(OpenBve.Switch.SwitchPad.Plus))
 					{
 						paused = true;

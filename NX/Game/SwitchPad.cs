@@ -118,5 +118,52 @@ namespace OpenBve.Switch
 
 		/// <summary>Whether the button went down at the last update.</summary>
 		public bool Is(ulong button) => (Pressed & button) != 0;
+
+		private readonly Dictionary<Translations.Command, double> analogHeld = new Dictionary<Translations.Command, double>();
+
+		/// <summary>
+		/// The sticks move the camera, as Android's controller input does (KeyboardInput.cs): the left stick moves it
+		/// (up forward), the right stick turns it - unless <paramref name="rightStickFree"/> is false (the timetable scrolls
+		/// with it then). Call after <see cref="Update"/>.
+		/// </summary>
+		public void Camera(AndroidControls controls, bool rightStickFree)
+		{
+			if (controls == null)
+			{
+				return;
+			}
+
+			Axis(controls, LeftX, Translations.Command.CameraMoveRight, Translations.Command.CameraMoveLeft);
+			Axis(controls, LeftY, Translations.Command.CameraMoveForward, Translations.Command.CameraMoveBackward);
+			Axis(controls, rightStickFree ? RightX : 0, Translations.Command.CameraRotateRight, Translations.Command.CameraRotateLeft);
+			Axis(controls, rightStickFree ? RightY : 0, Translations.Command.CameraRotateUp, Translations.Command.CameraRotateDown);
+		}
+
+		private void Axis(AndroidControls controls, float value, Translations.Command positive, Translations.Command negative)
+		{
+			// A resting stick rarely reads exactly zero.
+			const float deadZone = 0.15f;
+			double strength = Math.Abs(value) < deadZone ? 0.0 : (Math.Abs(value) - deadZone) / (1.0 - deadZone);
+			Set(controls, positive, value > 0 ? strength : 0.0);
+			Set(controls, negative, value < 0 ? strength : 0.0);
+		}
+
+		private void Set(AndroidControls controls, Translations.Command command, double strength)
+		{
+			analogHeld.TryGetValue(command, out double previous);
+			// Small changes are skipped so a hand's tremor doesn't flood the queue - but never the return to zero.
+			if (strength < 0.03)
+			{
+				strength = 0.0;
+			}
+
+			if (strength == previous || (strength != 0.0 && previous != 0.0 && Math.Abs(previous - strength) < 0.02))
+			{
+				return;
+			}
+
+			analogHeld[command] = strength;
+			controls.Analog(command, strength);
+		}
 	}
 }
