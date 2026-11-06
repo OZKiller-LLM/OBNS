@@ -61,6 +61,12 @@ namespace OpenBve.NX
 		[DllImport("__Internal", EntryPoint = "obns_set_cpu_boost")]
 		private static extern int SetCpuBoost(int mode);
 
+		[DllImport("__Internal", EntryPoint = "obns_hold_max_clocks")]
+		private static extern int HoldMaxClocks();
+
+		[DllImport("__Internal", EntryPoint = "obns_clock_rates")]
+		private static extern void ClockRates(out int cpu, out int gpu, out int memory);
+
 		private static readonly Stopwatch Clock = Stopwatch.StartNew();
 		private static StreamWriter logFile;
 
@@ -277,7 +283,8 @@ namespace OpenBve.NX
 			DekoCanvas overlay = new DekoCanvas();
 			// The frame's phases (input, simulation, RenderScene, overlay, sound, end of frame), summed over the 5 s window.
 			double[] phase = new double[6];
-			double gpuWait = 0, frameStart = 0;
+			double gpuWait = 0, frameStart = 0, clocksHeld = 0;
+			int lastGpuMhz = 0;
 			// The controllers drive the train (Android's controller layout, SwitchPad); + pauses.
 			AndroidControls controls = new AndroidControls();
 			OpenBve.Switch.SwitchPad pad = new OpenBve.Switch.SwitchPad();
@@ -349,6 +356,20 @@ namespace OpenBve.NX
 				}
 
 				double now = clock.Elapsed.TotalSeconds, elapsed = now - last;
+				// The highest clocks and the full fan, set again each second: docking and undocking set the system's clocks, and
+				// its thermal control its own fan level.
+				if (now - clocksHeld >= 1.0)
+				{
+					clocksHeld = now;
+					int gpuMhz = HoldMaxClocks();
+					if (gpuMhz != lastGpuMhz)
+					{
+						ClockRates(out int cpuMhz, out _, out int memoryMhz);
+						Log($"frames: clocks CPU {cpuMhz} MHz, GPU {gpuMhz} MHz, memory {memoryMhz} MHz");
+						lastGpuMhz = gpuMhz;
+					}
+				}
+
 				phase[0] += now - frameStart;
 				last = now;
 				if (session != null)
@@ -648,11 +669,12 @@ namespace OpenBve.NX
 			{
 				// The loading screen gives way to the game's frames on the same device.
 				LoadingScreen.Stop(false);
-				// Play's clocks (OBNS/SWITCH.md): FastLoad, the loading clock, holds the GPU at 76 MHz - on the console the first
-				// frames waited 120 ms a frame for it (2026-11-06). In play the CPU is set to 1,785 MHz through clkrst and the GPU
-				// is left at the system's own clock.
-				int playMhz = SetCpuBoost(2);
-				Stage($"frames: CPU at {playMhz} MHz through clkrst, FastLoad off (the GPU at the system's clock)");
+				// Play's clocks: FastLoad, the loading clock, holds the GPU at 76 MHz - on the console the first frames waited
+				// 120 ms a frame for it (2026-11-06). In play the CPU, the GPU and the memory run at the highest rates the system
+				// lists, the fan at full (the user, 2026-11-06), held there by the loop and put back when OBNS ends.
+				SetCpuBoost(3);
+				ClockRates(out int cpuMhz, out int gpuMhz, out int memoryMhz);
+				Stage($"frames: clocks at their highest - CPU {cpuMhz} MHz, GPU {gpuMhz} MHz, memory {memoryMhz} MHz - the fan at full");
 				deko.Drawing = true;
 				Frames(renderer, host, sounds, session, deko, 600.0);
 				deko.Dispose();

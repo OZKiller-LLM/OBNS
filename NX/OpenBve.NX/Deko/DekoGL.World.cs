@@ -355,6 +355,21 @@ namespace OpenBve.NX.Deko
 		/// </summary>
 		private bool VertexSource(GLVertexArray array, out GLBuffer vertices, out int layout, out uint stride)
 		{
+			// Per draw, so worked out once per change of the array's attributes (the key's hashing was a good part of a draw).
+			if (array.SourceVersion != array.Version)
+			{
+				array.SourceFound = FindVertexSource(array, out array.SourceVertices, out array.SourceLayout, out array.SourceStride);
+				array.SourceVersion = array.Version;
+			}
+
+			vertices = array.SourceVertices;
+			layout = array.SourceLayout;
+			stride = array.SourceStride;
+			return array.SourceFound && vertices != null && !vertices.Memory.IsNull;
+		}
+
+		private bool FindVertexSource(GLVertexArray array, out GLBuffer vertices, out int layout, out uint stride)
+		{
 			vertices = null;
 			layout = 0;
 			stride = 0;
@@ -393,7 +408,7 @@ namespace OpenBve.NX.Deko
 				buffers[i] = 0;
 			}
 
-			if (vertices == null || vertices.Memory.IsNull)
+			if (vertices == null)
 			{
 				return false;
 			}

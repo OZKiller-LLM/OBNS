@@ -43,6 +43,7 @@ namespace LibRender2.Textures
 
 		/// <summary>Time spent in texture upload requests, including cached-handle early exits (ms).</summary>
 		public static long UploadMs;
+		private static long uploadTicks;
 
 		private static Dictionary<TextureOrigin, Texture> animatedTextures;
 		// Reused buffer for paletted GIF to avoid per-frame new byte[] leak (Can get StackOverflow in glTexSubImage2D)
@@ -273,10 +274,13 @@ namespace LibRender2.Textures
 		/// <returns>Whether loading the texture was successful.</returns>
 		public bool LoadTexture(ref Texture handle, OpenGlTextureWrapMode wrap, int currentTicks, InterpolationMode Interpolation, int AnisotropicFilteringLevel)
 		{
-			Stopwatch uploadTimer = Stopwatch.StartNew();
+			// Called for every face drawn, every frame: timed without allocating (a Stopwatch per call was thousands of objects
+			// a frame for the collector).
+			long started = Stopwatch.GetTimestamp();
 			bool result = LoadTextureInternal(ref handle, wrap, currentTicks, Interpolation, AnisotropicFilteringLevel);
 			UploadCount++;
-			UploadMs += uploadTimer.ElapsedMilliseconds;
+			uploadTicks += Stopwatch.GetTimestamp() - started;
+			UploadMs = uploadTicks * 1000 / Stopwatch.Frequency;
 			return result;
 		}
 

@@ -826,6 +826,12 @@ namespace OpenBve.NX.Deko
 		{
 			internal readonly Attribute[] Attributes = new Attribute[DekoGL.Attributes];
 			internal GLBuffer Elements;
+
+			// The world program's view of the attributes (DekoGL.World's VertexSource), worked out again only when they change.
+			internal int Version, SourceVersion = -1, SourceLayout;
+			internal GLBuffer SourceVertices;
+			internal uint SourceStride;
+			internal bool SourceFound;
 		}
 
 		private readonly Dictionary<int, GLBuffer> glBuffers = new Dictionary<int, GLBuffer>();
@@ -1083,6 +1089,7 @@ namespace OpenBve.NX.Deko
 			if (index >= 0 && index < Attributes)
 			{
 				CurrentVertexArray.Attributes[index].Enabled = true;
+				CurrentVertexArray.Version++;
 			}
 		}
 
@@ -1091,6 +1098,7 @@ namespace OpenBve.NX.Deko
 			if (index >= 0 && index < Attributes)
 			{
 				CurrentVertexArray.Attributes[index].Enabled = false;
+				CurrentVertexArray.Version++;
 			}
 		}
 
@@ -1105,6 +1113,7 @@ namespace OpenBve.NX.Deko
 				return;
 			}
 
+			CurrentVertexArray.Version++;
 			ref Attribute attribute = ref CurrentVertexArray.Attributes[index];
 			attribute.Buffer = arrayBuffer;
 			attribute.Size = size;

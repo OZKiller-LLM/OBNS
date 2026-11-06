@@ -548,7 +548,14 @@ namespace OpenBve
 
 			double now = clock.Elapsed.TotalSeconds;
 			keptStatic = keptOther = 0;
-			otherReasons.Clear();
+			// Why faces are left out of batches is for the log: worked out one frame in 64, not for every face of every frame
+			// (on the Switch the strings it builds were a good part of the filter's 7 to 17 ms, 2026-11-06).
+			sampleReasons = (frame & 63) == 1;
+			if (sampleReasons)
+			{
+				otherReasons.Clear();
+			}
+
 			FilterList(opaque, now);
 			FilterList(alphaUnsorted, now);
 			FilterList(alphaSorted, now);
@@ -569,6 +576,7 @@ namespace OpenBve
 
 		/// <summary>Faces left in this frame's lists: of static scenery (batched or not) and of everything else (trains, animated objects).</summary>
 		private int keptStatic, keptOther;
+		private bool sampleReasons;
 		private readonly Dictionary<string, int> otherReasons = new Dictionary<string, int>();
 		private HashSet<ObjectState> staticStates = new HashSet<ObjectState>();
 
@@ -608,6 +616,12 @@ namespace OpenBve
 				else
 				{
 					keptOther++;
+					if (!sampleReasons)
+					{
+						faces[kept++] = face;
+						continue;
+					}
+
 					string why = trainPartReason.TryGetValue(face.Object, out string reason) ? "train part: " + reason :
 						!groupOf.TryGetValue(face.Object, out Group owner) ? "not a train part" :
 						owner.Failed ? "train batch failed" :

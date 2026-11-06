@@ -38,25 +38,94 @@ EXPORT int64_t obns_native_heap_used(void)
 }
 
 // Clocks (the user, 2026-11-04): 0 stock, 1 apm's FastLoad (CPU 1,785 MHz, GPU held low: loading), 2 the CPU at 1,785
-// MHz through clkrst (play on power). Returns the CPU's MHz afterwards.
-static u32 originalCpuHz;
+// MHz through clkrst (play on power), 3 everything at its highest (the user, 2026-11-06: "the CPU and GPUs ... at their
+// max clocks, with the fan at full RPM"): the CPU, the GPU and the memory each at the highest rate the system lists for
+// it - the console's own table, no clock beyond it - and the fan at full. For OBNS's run only: mode 0 puts back each
+// clock as it was and gives the fan back to the system. Returns the CPU's MHz afterwards.
+enum { CLOCKS = 3 };
+static const PcvModuleId clockModules[CLOCKS] = { PcvModuleId_CpuBus, PcvModuleId_GPU, PcvModuleId_EMC };
+static u32 originalHz[CLOCKS], highestHz[CLOCKS], setHz[CLOCKS];
+static bool fanHeld;
+static FanController fan;
+static float originalFan = -1.0f;
+
+// The highest rate the system lists for a clock (a list of rates, or a range's top); 0 if it gives none.
+static u32 highest_rate(ClkrstSession *session)
+{
+    u32 rates[64];
+    s32 count = 0;
+    PcvClockRatesListType type = PcvClockRatesListType_Invalid;
+    if (R_FAILED(clkrstGetPossibleClockRates(session, rates, 64, &type, &count)) || count <= 0) return 0;
+    u32 top = 0;
+    for (s32 i = 0; i < count && i < 64; i++) if (rates[i] > top) top = rates[i];
+    return top;
+}
+
+// Sets the clocks for a mode (see above); the rates each clock ended at go to setHz.
+static void apply_clocks(int mode, bool settle)
+{
+    if (!hosversionAtLeast(8, 0, 0) || R_FAILED(clkrstInitialize())) return;
+    for (int i = 0; i < CLOCKS; i++) {
+        // Only the CPU in modes 1 and 2; all three in 3; all three back in 0.
+        if (i > 0 && (mode == 1 || mode == 2)) continue;
+        ClkrstSession session;
+        if (R_FAILED(clkrstOpenSession(&session, clockModules[i], 3))) continue;
+        if (!originalHz[i]) clkrstGetClockRate(&session, &originalHz[i]);
+        if (mode == 3 && !highestHz[i]) highestHz[i] = highest_rate(&session);
+        if (mode == 3 && highestHz[i]) clkrstSetClockRate(&session, highestHz[i]);
+        else if (mode == 2 && i == 0) clkrstSetClockRate(&session, 1785000000);
+        else if (mode == 0 && originalHz[i]) clkrstSetClockRate(&session, originalHz[i]);
+        if (settle) svcSleepThread(20000000);
+        clkrstGetClockRate(&session, &setHz[i]);
+        clkrstCloseSession(&session);
+    }
+    clkrstExit();
+}
+
+static void set_fan(bool full)
+{
+    if (full && !fanHeld) {
+        if (R_FAILED(fanInitialize())) return;
+        // The fan's device code (as fan-control homebrew opens it).
+        if (R_FAILED(fanOpenController(&fan, 0x3D000001))) { fanExit(); return; }
+        if (originalFan < 0) fanControllerGetRotationSpeedLevel(&fan, &originalFan);
+        fanHeld = true;
+    }
+    if (!fanHeld) return;
+    if (full) {
+        fanControllerSetRotationSpeedLevel(&fan, 1.0f);
+        return;
+    }
+    // Back to the level it had; the system's thermal control carries on from there.
+    fanControllerSetRotationSpeedLevel(&fan, originalFan >= 0 ? originalFan : 0.5f);
+    fanControllerClose(&fan);
+    fanExit();
+    fanHeld = false;
+}
+
 EXPORT int obns_set_cpu_boost(int mode)
 {
     appletSetCpuBoostMode(mode == 1 ? ApmCpuBoostMode_FastLoad : ApmCpuBoostMode_Normal);
-    u32 now = 0;
-    if (hosversionAtLeast(8, 0, 0) && R_SUCCEEDED(clkrstInitialize())) {
-        ClkrstSession cpu;
-        if (R_SUCCEEDED(clkrstOpenSession(&cpu, PcvModuleId_CpuBus, 3))) {
-            if (!originalCpuHz) clkrstGetClockRate(&cpu, &originalCpuHz);
-            if (mode == 2) clkrstSetClockRate(&cpu, 1785000000);
-            else if (mode == 0 && originalCpuHz) clkrstSetClockRate(&cpu, originalCpuHz);
-            svcSleepThread(20000000);
-            clkrstGetClockRate(&cpu, &now);
-            clkrstCloseSession(&cpu);
-        }
-        clkrstExit();
-    }
-    return (int)(now / 1000000);
+    apply_clocks(mode, true);
+    set_fan(mode == 3);
+    return (int)(setHz[0] / 1000000);
+}
+
+// Mode 3 held: the system sets its own clocks again on docking and undocking, and its thermal control its own fan
+// level, so the game's loop calls this every few seconds. Quick (no settling). Returns the GPU's MHz.
+EXPORT int obns_hold_max_clocks(void)
+{
+    apply_clocks(3, false);
+    set_fan(true);
+    return (int)(setHz[1] / 1000000);
+}
+
+// The clocks as last set, in MHz: CPU, GPU, memory.
+EXPORT void obns_clock_rates(int *cpu, int *gpu, int *memory)
+{
+    *cpu = (int)(setHz[0] / 1000000);
+    *gpu = (int)(setHz[1] / 1000000);
+    *memory = (int)(setHz[2] / 1000000);
 }
 
 // An exception nothing caught: printed (to nxlink, or UserData/runner.log) before mono-nx's error screen, which alone
