@@ -136,6 +136,8 @@ namespace OpenBve
 			public int SeenFrame = -1;
 			/// <summary>Whether members were taken out of their car's update (see Detach).</summary>
 			public bool Detached;
+			/// <summary>A group of animated world objects that never move (see PlanWorld).</summary>
+			public bool World;
 		}
 
 		private sealed class Batch
@@ -147,6 +149,9 @@ namespace OpenBve
 			public HashSet<MeshFaceVertex[]> Covered;
 			/// <summary>Members whose faces it covers entirely: their faces leave the lists without a lookup each.</summary>
 			public HashSet<ObjectState> Whole;
+			/// <summary>Textures not yet classified when it was built (their faces were left out): once they all are, the
+			/// group is built again with those faces in (Recheck).</summary>
+			public Texture[] Unclassified;
 			public long Vertices;
 		}
 
@@ -211,7 +216,7 @@ namespace OpenBve
 		{
 			return (groupOf.Count == 0 ? "no groups" : CountGroups() + " groups of " + groupOf.Count + " objects") + ", " + built.Count + " batches (" +
 			       (batchedVertices / 1000) + "k vertices), " + visible.Count + " drawn; built " + BatchesBuilt + ", freed " + BatchesFreed +
-			       ", failed " + GroupsFailed + ", queued " + toBuild.Count + ", train parts detached: " + batchDetached.Count + " batched, " + farCars.Count + " cars out of range; faces still drawn singly: scenery " + keptStatic + ", other " + keptOther + " (" +
+			       ", failed " + GroupsFailed + ", rebuilt " + BatchesRebuilt + ", queued " + toBuild.Count + ", train parts detached: " + batchDetached.Count + " batched, " + farCars.Count + " cars out of range; faces still drawn singly: scenery " + keptStatic + ", other " + keptOther + " (" +
 			       string.Join(", ", System.Linq.Enumerable.Select(otherReasons, p => p.Key + " " + p.Value)) + ")" +
 			       "; faces left alone: " +
 			       string.Join(", ", System.Linq.Enumerable.Select(leftAloneReasons, p => p.Key + " " + p.Value));
@@ -240,6 +245,7 @@ namespace OpenBve
 			FreeAll();
 			groupOf.Clear();
 			trainSignature = -1;
+			worldPlanned = -1;
 			plannedCount = states.Count;
 			staticStates = new HashSet<ObjectState>(states, ByReference<ObjectState>.Instance);
 			Dictionary<(float, float, byte), Group> groups = new Dictionary<(float, float, byte), Group>();
@@ -400,6 +406,124 @@ namespace OpenBve
 			}
 
 			host.Log("train batches planned: " + trains.Count + " trains, " + parts + " still parts in " + trainGroups.Count + " groups, of " + elementsSeen + " parts in all", false);
+		}
+
+		/*
+		 * Animated world objects that never move: an .animated file placed in the route with no function that changes
+		 * anything - 871 faces drawn one by one in a Tuen Ma Line station's exterior view (2026-11-07). Upstream shows them
+		 * by their track position (AnimatedWorldObject.IsVisible: a window round the camera), so they are grouped in bins
+		 * of WorldBin metres of track: a bin's objects come into view within that distance of each other, and its batch is
+		 * drawn while any of them is. A batch is built once every member has been shown (placed by its first update).
+		 */
+		private const double WorldBin = 100.0;
+
+		/// <summary>A refresh interval never reached: the still objects' updates held off (forced updates still run).</summary>
+		private const double StillRefreshSeconds = 1.0e9;
+
+		/// <summary>Animated world objects found never to move, whose updates are held off (see PlanWorld).</summary>
+		public int StillWorldObjects { get; private set; }
+		private int worldPlanned = -1;
+		private readonly List<Group> worldGroups = new List<Group>();
+		private readonly Dictionary<ObjectState, AnimatedWorldObject> worldSource = new Dictionary<ObjectState, AnimatedWorldObject>(ByReference<ObjectState>.Instance);
+
+		private void PlanWorld()
+		{
+			OpenBveApi.Hosts.HostInterface api = host.Host;
+			int used = api.AnimatedWorldObjectsUsed;
+			if (used == worldPlanned)
+			{
+				return;
+			}
+
+			worldPlanned = used;
+			StillWorldObjects = 0;
+			foreach (Group group in worldGroups)
+			{
+				Free(group);
+				built.Remove(group);
+				foreach (ObjectState member in group.Members)
+				{
+					groupOf.Remove(member);
+				}
+			}
+
+			worldGroups.Clear();
+			worldSource.Clear();
+			Dictionary<(long, byte), Group> bins = new Dictionary<(long, byte), Group>();
+			WorldObject[] objects = api.AnimatedWorldObjects;
+			for (int i = 0; i < used && objects != null && i < objects.Length; i++)
+			{
+				if (!(objects[i] is AnimatedWorldObject world) || world.GetType() != typeof(AnimatedWorldObject))
+				{
+					continue;
+				}
+
+				ObjectState state = world.Object?.internalObject;
+				if (state == null || NotStill(world.Object) != null)
+				{
+					continue;
+				}
+
+				/*
+				 * Never moving, it needs no update once placed (the load's forced update places every object): upstream's
+				 * RefreshRate holds it off for good, batched or not. One not placed yet is left to update as usual.
+				 */
+				Matrix4D placed = state.ModelMatrix;
+				if (placed.Row0.X != 0 || placed.Row0.Y != 0 || placed.Row0.Z != 0)
+				{
+					world.Object.RefreshRate = Math.Max(world.Object.RefreshRate, StillRefreshSeconds);
+					StillWorldObjects++;
+				}
+
+				if (Ineligible(state) != null || groupOf.ContainsKey(state))
+				{
+					continue;
+				}
+
+				(long, byte) key = ((long)Math.Floor(world.TrackPosition / WorldBin), state.DaytimeNighttimeBlend);
+				if (!bins.TryGetValue(key, out Group group))
+				{
+					group = new Group { World = true, Start = (float)(key.Item1 * WorldBin), End = (float)((key.Item1 + 1) * WorldBin) };
+					bins[key] = group;
+				}
+
+				group.Members.Add(state);
+				worldSource[state] = world;
+			}
+
+			int parts = 0;
+			foreach (Group group in bins.Values)
+			{
+				if (group.Members.Count < 2)
+				{
+					continue;
+				}
+
+				foreach (ObjectState member in group.Members)
+				{
+					groupOf[member] = group;
+				}
+
+				parts += group.Members.Count;
+				worldGroups.Add(group);
+			}
+
+			host.Log("world batches planned: " + parts + " still animated objects in " + worldGroups.Count + " groups of " + WorldBin + " m; " +
+			         StillWorldObjects + " still ones updated no more", false);
+		}
+
+		/// <summary>Whether every member of a world group is shown, so placed (a hidden one has had no update yet).</summary>
+		private bool WorldReady(Group group)
+		{
+			foreach (ObjectState member in group.Members)
+			{
+				if (!worldSource.TryGetValue(member, out AnimatedWorldObject world) || !world.Visible || world.Object.CurrentState < 0)
+				{
+					return false;
+				}
+			}
+
+			return true;
 		}
 
 		/// <summary>For the log: what the animated world objects' parts are (whether they ever move), by their state.</summary>
@@ -570,12 +694,20 @@ namespace OpenBve
 			}
 
 			PlanTrains();
+			PlanWorld();
 			if (DetachParts)
 			{
 				CullFarCars();
 			}
 
 			double now = clock.Elapsed.TotalSeconds;
+			// Before the lists are filtered: a group freed here has its faces drawn one by one this frame, not lost.
+			if (now - lastRecheck > 2.0)
+			{
+				lastRecheck = now;
+				Recheck();
+			}
+
 			keptStatic = keptOther = 0;
 			// Why faces are left out of batches is for the log: worked out one frame in 64, not for every face of every frame
 			// (on the Switch the strings it builds were a good part of the filter's 7 to 17 ms, 2026-11-06).
@@ -770,6 +902,12 @@ namespace OpenBve
 			{
 				Group group = toBuild.Dequeue();
 				group.Queued = false;
+				if (group.World && !WorldReady(group))
+				{
+					// Built once every member has been shown and placed; queued again when its faces are next seen.
+					continue;
+				}
+
 				try
 				{
 					group.Batch = Build(group);
@@ -899,6 +1037,7 @@ namespace OpenBve
 				if (!host.TryGetTransparencyType(texture, out TextureTransparencyType type))
 				{
 					CountReason("texture not classified");
+					unclassified?.Add(texture);
 					return null;
 				}
 
@@ -917,8 +1056,12 @@ namespace OpenBve
 			return alpha;
 		}
 
+		/// <summary>The textures Classify found unclassified during the current Build.</summary>
+		private HashSet<Texture> unclassified;
+
 		private Batch Build(Group group)
 		{
+			unclassified = new HashSet<Texture>(ByReference<Texture>.Instance);
 			Dictionary<MaterialKey, Bucket> buckets = new Dictionary<MaterialKey, Bucket>();
 			HashSet<MeshFaceVertex[]> covered = new HashSet<MeshFaceVertex[]>(ByReference<MeshFaceVertex[]>.Instance);
 			HashSet<MeshFaceVertex[]> leftAlone = new HashSet<MeshFaceVertex[]>();
@@ -1085,6 +1228,7 @@ namespace OpenBve
 				FaceLengths = lengths,
 				Covered = covered,
 				Whole = WholeMembers(group, covered),
+				Unclassified = unclassified.Count == 0 ? null : System.Linq.Enumerable.ToArray(unclassified),
 				Vertices = vertices.Count
 			};
 		}
@@ -1267,6 +1411,79 @@ namespace OpenBve
 			{
 				group.Detached = false;
 			}
+		}
+
+		/*
+		 * A batch built before some of its textures were classified (the classifier runs ahead of the objects shown, but
+		 * not always far enough) left those faces to be drawn one by one for good: 567 of them in a Tuen Ma Line station's
+		 * exterior view (2026-11-07). Once every such texture is classified, the group is built again with them in - a
+		 * train group's parts first put back into their cars' update, to be taken out again by the new batch.
+		 */
+		private double lastRecheck;
+
+		private void Recheck()
+		{
+			for (int i = built.Count - 1; i >= 0; i--)
+			{
+				Group group = built[i];
+				Texture[] waiting = group.Batch?.Unclassified;
+				if (waiting == null)
+				{
+					continue;
+				}
+
+				bool ready = true;
+				foreach (Texture texture in waiting)
+				{
+					if (!host.TryGetTransparencyType(texture, out _))
+					{
+						ready = false;
+						break;
+					}
+				}
+
+				if (!ready)
+				{
+					continue;
+				}
+
+				if (group.Detached)
+				{
+					Reattach(group);
+				}
+
+				Free(group);
+				built.RemoveAt(i);
+				BatchesRebuilt++;
+				if (!group.Queued)
+				{
+					group.Queued = true;
+					toBuild.Enqueue(group);
+				}
+			}
+		}
+
+		/// <summary>Batches built again once their textures were classified (see Recheck), for the log.</summary>
+		public int BatchesRebuilt { get; private set; }
+
+		/// <summary>Puts a train group's detached parts back into their cars' update (shown again at its next pass).</summary>
+		private void Reattach(Group group)
+		{
+			HashSet<LibRender2.Trains.ElementsGroup> owners = new HashSet<LibRender2.Trains.ElementsGroup>();
+			foreach (ObjectState member in group.Members)
+			{
+				if (partSource.TryGetValue(member, out var source) && batchDetached.Remove(source.Element))
+				{
+					owners.Add(source.Owner);
+				}
+			}
+
+			foreach (LibRender2.Trains.ElementsGroup owner in owners)
+			{
+				Apply(owner);
+			}
+
+			group.Detached = false;
 		}
 
 		// --- freeing ---
