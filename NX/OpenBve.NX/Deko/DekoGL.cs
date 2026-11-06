@@ -1258,6 +1258,10 @@ namespace OpenBve.NX.Deko
 			internal bool HasMips;
 			// Its sampler's slot, kept between draws (-1: work it out again, after a parameter or its mipmaps changed).
 			internal int SamplerSlotCache = -1;
+			// A block-compressed image with its own mipmaps (CompressedImage): Levels of them in the staging, each padded
+			// to 256 bytes, uploaded level by level.
+			internal bool Compressed;
+			internal int Levels;
 		}
 
 		private const int TextureSlots = 32768, SamplerSlots = 256;
@@ -1530,6 +1534,45 @@ namespace OpenBve.NX.Deko
 			texture.Height = height;
 			texture.Pending = true;
 			texture.WantMips = false;
+			texture.Compressed = false;
+			waitingTextures.Add(texture);
+			waitingBytes += texture.Staging.Size;
+		}
+
+		/// <summary>
+		/// A block-compressed image (BC1 or BC3, deko3d's format numbers) with its mipmaps, for the bound texture: the
+		/// compressed texture cache's (CompressedTextures), each level padded to 256 bytes as obns_bc_compress lays them out.
+		/// </summary>
+		public unsafe void CompressedImage(int format, int width, int height, int levels, byte[] data)
+		{
+			GLTexture texture = units[activeUnit];
+			if (texture == null || width <= 0 || height <= 0 || levels <= 0 || data == null || data.Length == 0)
+			{
+				return;
+			}
+
+			RealizeWaiting();
+			if (texture.Pending)
+			{
+				bufferHeap.Free(texture.Staging);
+				texture.Staging = default;
+			}
+
+			DekoHeap.Allocation staging = bufferHeap.Allocate((ulong)data.Length, 256);
+			fixed (byte* source = data)
+			{
+				Buffer.MemoryCopy(source, staging.Pointer, data.Length, data.Length);
+			}
+
+			texture.Staging = staging;
+			texture.Format = format;
+			SetSwizzle(texture.Swizzle, DekoNative.SwizzleRed, DekoNative.SwizzleGreen, DekoNative.SwizzleBlue, DekoNative.SwizzleAlpha);
+			texture.Width = width;
+			texture.Height = height;
+			texture.Levels = levels;
+			texture.Compressed = true;
+			texture.Pending = true;
+			texture.WantMips = false;
 			waitingTextures.Add(texture);
 			waitingBytes += texture.Staging.Size;
 		}
@@ -1741,7 +1784,11 @@ namespace OpenBve.NX.Deko
 		{
 			ReleaseImage(texture);
 			int levels = 1;
-			if (texture.WantMips)
+			if (texture.Compressed)
+			{
+				levels = Math.Max(1, texture.Levels);
+			}
+			else if (texture.WantMips)
 			{
 				int largest = Math.Max(texture.Width, texture.Height);
 				while ((largest >>= 1) > 0)
@@ -1767,10 +1814,27 @@ namespace OpenBve.NX.Deko
 				DekoNative.ImageInit(slot, texture.Width, texture.Height, levels, texture.Format, texture.Image.Block.Handle, texture.Image.Offset, components);
 			}
 
-			DekoNative.ImageUpload(slot, texture.Staging.Gpu, texture.Width, texture.Height);
-			if (levels > 1)
+			if (texture.Compressed)
 			{
-				DekoNative.ImageMipmaps(slot, texture.Width, texture.Height, levels);
+				// Each level from its place in the staging (blocks of 4x4 texels, 8 or 16 bytes, padded to 256).
+				ulong offset = 0;
+				int w = texture.Width, h = texture.Height, blockBytes = texture.Format == DekoNative.FormatBC3 ? 16 : 8;
+				for (int level = 0; level < levels; level++)
+				{
+					ulong levelSize = (ulong)((w + 3) / 4) * (ulong)((h + 3) / 4) * (ulong)blockBytes;
+					DekoNative.ImageUploadLevel(slot, texture.Staging.Gpu + offset, level, w, h);
+					offset += (levelSize + 255) & ~255UL;
+					w = Math.Max(1, w / 2);
+					h = Math.Max(1, h / 2);
+				}
+			}
+			else
+			{
+				DekoNative.ImageUpload(slot, texture.Staging.Gpu, texture.Width, texture.Height);
+				if (levels > 1)
+				{
+					DekoNative.ImageMipmaps(slot, texture.Width, texture.Height, levels);
+				}
 			}
 
 			DekoHeap.Allocation staging = texture.Staging;

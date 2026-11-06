@@ -287,6 +287,22 @@ EXPORT void obns_dk3d_image_upload(int slot, uint64_t source, int w, int h)
     uploadsPending++;
 }
 
+// One level of the texture from tightly packed data at `source` (a compressed image's levels, made beforehand: the 2D
+// engine's blits can't write block-compressed formats).
+EXPORT void obns_dk3d_image_upload_level(int slot, uint64_t source, int level, int w, int h)
+{
+    if (!init3d() || slot < 0 || slot >= TEXTURES3D) return;
+    if (uploadsPending >= UPLOADS_BEFORE_FLUSH) flush_uploads(!inFrame3d);
+    DkImageView view;
+    dkImageViewDefaults(&view, &textures3d[slot]);
+    view.mipLevelOffset = (uint8_t)level;
+    view.mipLevelCount = 1;
+    DkCopyBuf copy = { source, 0, 0 };
+    DkImageRect rect = { 0, 0, 0, (uint32_t)w, (uint32_t)h, 1 };
+    dkCmdBufCopyBufferToImage(uploads3d, &copy, &view, &rect, 0);
+    uploadsPending++;
+}
+
 // The texture's mipmaps from level 0, each level blitted (filtered) from the one above.
 EXPORT void obns_dk3d_image_mipmaps(int slot, int w, int h, int levels)
 {

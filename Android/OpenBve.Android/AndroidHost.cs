@@ -214,12 +214,30 @@ namespace OpenBve.Android
 			}
 		}
 
+		/// <summary>The compressed texture cache, when the platform has one (the Switch's); null: off.</summary>
+		public static ICompressedTextureCache CompressedTextures { get; set; }
+
+		// Compressed textures read back on a decoding thread, for StreamTexture to upload (the task's result is the marker).
+		private static readonly System.Collections.Concurrent.ConcurrentDictionary<PathOrigin, CompressedTexture> compressedReady =
+			new System.Collections.Concurrent.ConcurrentDictionary<PathOrigin, CompressedTexture>();
+
+		private static readonly ApiTexture CompressedMarker = new ApiTexture(1, 1, PixelFormat.RGBAlpha, new byte[4], (OpenBveApi.Colors.Color24[])null);
+
 		private static ApiTexture DecodeForUploadNow(PathOrigin origin)
 		{
+			ICompressedTextureCache cache = CompressedTextures;
+			if (cache != null && cache.TryRead(origin, out CompressedTexture compressed))
+			{
+				compressedReady[origin] = compressed;
+				return CompressedMarker;
+			}
+
 			if (!origin.GetTexture(out ApiTexture decoded) || decoded == null)
 			{
 				return null;
 			}
+
+			cache?.Store(origin, decoded);
 
 			if (decoded.MultipleFrames || decoded.GetTransparencyType() != TextureTransparencyType.Opaque || decoded.PixelFormat != PixelFormat.RGBAlpha)
 			{
@@ -258,6 +276,16 @@ namespace OpenBve.Android
 			decoding.Remove(origin);
 			uploadsThisFrame++;
 			ApiTexture result = task.Status == TaskStatus.RanToCompletion ? task.Result : null;
+			if (ReferenceEquals(result, CompressedMarker))
+			{
+				if (compressedReady.TryRemove(origin, out CompressedTexture compressed) && UploadCompressed(texture, wrapMode, compressed))
+				{
+					return true;
+				}
+
+				result = null;
+			}
+
 			if (result == null)
 			{
 				// It failed in the background; let upstream try, and report, as it always would.
@@ -276,6 +304,72 @@ namespace OpenBve.Android
 			{
 				uploadClock.Stop();
 				handoff = null;
+			}
+		}
+
+		/// <summary>A compressed texture read back from the cache made the texture's image for the wrap mode, set up as
+		/// TextureManager.LoadTexture sets up an upload (filters, wrapping, then valid).</summary>
+		private bool UploadCompressed(ApiTexture texture, OpenGlTextureWrapMode wrapMode, CompressedTexture compressed)
+		{
+			uploadClock.Start();
+			try
+			{
+				int[] names = new int[1];
+				OpenTK.Graphics.OpenGL.GL.GenTextures(1, names);
+				OpenTK.Graphics.OpenGL.GL.BindTexture(OpenTK.Graphics.OpenGL.TextureTarget.Texture2D, names[0]);
+				bool mips = compressed.Levels > 1;
+				OpenTK.Graphics.OpenGL.TextureMinFilter min;
+				OpenTK.Graphics.OpenGL.TextureMagFilter mag = OpenTK.Graphics.OpenGL.TextureMagFilter.Linear;
+				switch (Options.Interpolation)
+				{
+					case InterpolationMode.NearestNeighbor:
+						min = OpenTK.Graphics.OpenGL.TextureMinFilter.Nearest;
+						mag = OpenTK.Graphics.OpenGL.TextureMagFilter.Nearest;
+						break;
+					case InterpolationMode.Bilinear:
+						min = OpenTK.Graphics.OpenGL.TextureMinFilter.Linear;
+						break;
+					case InterpolationMode.NearestNeighborMipmapped:
+						min = mips ? OpenTK.Graphics.OpenGL.TextureMinFilter.NearestMipmapNearest : OpenTK.Graphics.OpenGL.TextureMinFilter.Nearest;
+						mag = OpenTK.Graphics.OpenGL.TextureMagFilter.Nearest;
+						break;
+					case InterpolationMode.BilinearMipmapped:
+						min = mips ? OpenTK.Graphics.OpenGL.TextureMinFilter.NearestMipmapLinear : OpenTK.Graphics.OpenGL.TextureMinFilter.Linear;
+						break;
+					default:
+						min = mips ? OpenTK.Graphics.OpenGL.TextureMinFilter.LinearMipmapLinear : OpenTK.Graphics.OpenGL.TextureMinFilter.Linear;
+						break;
+				}
+
+				OpenTK.Graphics.OpenGL.GL.TexParameter(OpenTK.Graphics.OpenGL.TextureTarget.Texture2D, OpenTK.Graphics.OpenGL.TextureParameterName.TextureMinFilter, (float)min);
+				OpenTK.Graphics.OpenGL.GL.TexParameter(OpenTK.Graphics.OpenGL.TextureTarget.Texture2D, OpenTK.Graphics.OpenGL.TextureParameterName.TextureMagFilter, (float)mag);
+				OpenTK.Graphics.OpenGL.GL.TexParameter(OpenTK.Graphics.OpenGL.TextureTarget.Texture2D, OpenTK.Graphics.OpenGL.TextureParameterName.TextureWrapS,
+					(float)((wrapMode & OpenGlTextureWrapMode.RepeatClamp) != 0 ? OpenTK.Graphics.OpenGL.TextureWrapMode.Repeat : OpenTK.Graphics.OpenGL.TextureWrapMode.ClampToEdge));
+				OpenTK.Graphics.OpenGL.GL.TexParameter(OpenTK.Graphics.OpenGL.TextureTarget.Texture2D, OpenTK.Graphics.OpenGL.TextureParameterName.TextureWrapT,
+					(float)((wrapMode & OpenGlTextureWrapMode.ClampRepeat) != 0 ? OpenTK.Graphics.OpenGL.TextureWrapMode.Repeat : OpenTK.Graphics.OpenGL.TextureWrapMode.ClampToEdge));
+				if (Options.Interpolation == InterpolationMode.AnisotropicFiltering && Options.AnisotropicFilteringLevel > 0)
+				{
+					OpenTK.Graphics.OpenGL.GL.TexParameter(OpenTK.Graphics.OpenGL.TextureTarget.Texture2D,
+						(OpenTK.Graphics.OpenGL.TextureParameterName)OpenTK.Graphics.OpenGL.ExtTextureFilterAnisotropic.TextureMaxAnisotropyExt, Options.AnisotropicFilteringLevel);
+				}
+
+				if (!CompressedTextures.Upload(compressed))
+				{
+					OpenTK.Graphics.OpenGL.GL.BindTexture(OpenTK.Graphics.OpenGL.TextureTarget.Texture2D, 0);
+					OpenTK.Graphics.OpenGL.GL.DeleteTexture(names[0]);
+					return false;
+				}
+
+				texture.OpenGlTextures[(int)wrapMode].Name = names[0];
+				texture.OpenGlTextures[(int)wrapMode].Valid = true;
+				texture.Size = new OpenBveApi.Math.Vector2(compressed.Width, compressed.Height);
+				texture.Transparency = compressed.Transparency;
+				texture.LastAccess = CPreciseTimer.GetClockTicks();
+				return true;
+			}
+			finally
+			{
+				uploadClock.Stop();
 			}
 		}
 

@@ -76,6 +76,21 @@ namespace OpenBve.NX.Deko
 		[DllImport("__Internal", EntryPoint = "obns_dk3d_image_upload")]
 		public static extern void ImageUpload(int slot, ulong source, int width, int height);
 
+		[DllImport("__Internal", EntryPoint = "obns_dk3d_image_upload_level")]
+		public static extern void ImageUploadLevel(int slot, ulong source, int level, int width, int height);
+
+		// Block compression (NX/runner/source/obns_bc.c): the formats are deko3d's.
+		public const int FormatBC1 = 56, FormatBC1Alpha = 57, FormatBC3 = 59;
+
+		[DllImport("__Internal", EntryPoint = "obns_bc_levels")]
+		public static extern int BcLevels(int width, int height);
+
+		[DllImport("__Internal", EntryPoint = "obns_bc_size")]
+		public static extern long BcSize(int width, int height, int format, int levels);
+
+		[DllImport("__Internal", EntryPoint = "obns_bc_compress")]
+		public static extern unsafe int BcCompress(byte* rgba, int width, int height, int format, int levels, byte* output);
+
 		[DllImport("__Internal", EntryPoint = "obns_dk3d_image_mipmaps")]
 		public static extern void ImageMipmaps(int slot, int width, int height, int levels);
 

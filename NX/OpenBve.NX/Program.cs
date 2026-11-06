@@ -276,6 +276,8 @@ namespace OpenBve.NX
 		/// until − is pressed; the frame rate, the draws and the memory logged every 5 s. Without a train the camera travels
 		/// the route at 15 m/s, as on Android.
 		/// </summary>
+		private static Deko.CompressedTextures compressedTextures;
+
 		private static unsafe void Frames(AndroidRenderer renderer, AndroidHost host, AndroidSounds sounds, AndroidTrainSession session, Deko.DekoGL deko, double seconds)
 		{
 			Stage("frames: drawing for " + seconds.ToString("0") + " s" + (session == null ? " (no train: the camera travels the route)" : string.Empty));
@@ -502,6 +504,10 @@ namespace OpenBve.NX
 					if (++windows % 6 == 1)
 					{
 						Log("frames: static batches " + renderer.BatchSummary);
+						if (compressedTextures != null)
+						{
+							Log("frames: " + compressedTextures.Describe());
+						}
 					}
 
 					frames = 0;
@@ -584,6 +590,19 @@ namespace OpenBve.NX
 				deko = new Deko.DekoGL(width, height);
 				Log($"deko3d: drawing at {width}x{height}");
 				OpenTK.Graphics.OpenGL.GL.Device = deko;
+				// Streamed textures kept block-compressed on the SD card (item E); UserData/nx-no-texture-cache.txt keeps it off.
+				if (!File.Exists(Root + "/UserData/nx-no-texture-cache.txt"))
+				{
+					try
+					{
+						compressedTextures = new Deko.CompressedTextures(deko, Root + "/UserData/TextureCache");
+						AndroidHost.CompressedTextures = compressedTextures;
+					}
+					catch (Exception e)
+					{
+						Log("compressed textures: off (" + e.Message + ")");
+					}
+				}
 			}
 			else
 			{
