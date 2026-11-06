@@ -61,8 +61,8 @@ namespace OpenBve.NX
 		[DllImport("__Internal", EntryPoint = "obns_set_cpu_boost")]
 		private static extern int SetCpuBoost(int mode);
 
-		[DllImport("__Internal", EntryPoint = "obns_hold_max_clocks")]
-		private static extern int HoldMaxClocks();
+		[DllImport("__Internal", EntryPoint = "obns_hold_clocks")]
+		private static extern int HoldClocks();
 
 		[DllImport("__Internal", EntryPoint = "obns_clock_rates")]
 		private static extern void ClockRates(out int cpu, out int gpu, out int memory);
@@ -356,13 +356,13 @@ namespace OpenBve.NX
 				}
 
 				double now = clock.Elapsed.TotalSeconds, elapsed = now - last;
-				// The highest clocks and the full fan, set again each second: docking and undocking set the system's clocks, and
-				// its thermal control its own fan level.
+				// Turbo's and Overclock's clocks and the full fan, set again each second: docking and undocking set the system's
+				// clocks (and Turbo's GPU clock follows), its thermal control its own fan level. Nothing in Normal.
 				if (now - clocksHeld >= 1.0)
 				{
 					clocksHeld = now;
-					int gpuMhz = HoldMaxClocks();
-					if (gpuMhz != lastGpuMhz)
+					int gpuMhz = HoldClocks();
+					if (gpuMhz != 0 && gpuMhz != lastGpuMhz)
 					{
 						ClockRates(out int cpuMhz, out _, out int memoryMhz);
 						Log($"frames: clocks CPU {cpuMhz} MHz, GPU {gpuMhz} MHz, memory {memoryMhz} MHz");
@@ -670,11 +670,13 @@ namespace OpenBve.NX
 				// The loading screen gives way to the game's frames on the same device.
 				LoadingScreen.Stop(false);
 				// Play's clocks: FastLoad, the loading clock, holds the GPU at 76 MHz - on the console the first frames waited
-				// 120 ms a frame for it (2026-11-06). In play the CPU, the GPU and the memory run at the highest rates the system
-				// lists, the fan at full (the user, 2026-11-06), held there by the loop and put back when OBNS ends.
-				SetCpuBoost(3);
+				// 120 ms a frame for it (2026-11-06) - so it ends here, and the performance mode in Options sets the clocks and
+				// the fan (the user, 2026-11-06), held there by the loop and put back when OBNS ends.
+				OpenBve.Android.PerformanceMode performance = SwitchSettings.GetPerformanceMode();
+				SetCpuBoost((int)performance);
 				ClockRates(out int cpuMhz, out int gpuMhz, out int memoryMhz);
-				Stage($"frames: clocks at their highest - CPU {cpuMhz} MHz, GPU {gpuMhz} MHz, memory {memoryMhz} MHz - the fan at full");
+				Stage($"frames: performance mode {performance} - CPU {cpuMhz} MHz, GPU {(gpuMhz > 0 ? gpuMhz + " MHz" : "the system's")}, memory {(memoryMhz > 0 ? memoryMhz + " MHz" : "the system's")}" +
+				      (performance == OpenBve.Android.PerformanceMode.Normal ? ", the system's fan control" : ", the fan at full"));
 				deko.Drawing = true;
 				Frames(renderer, host, sounds, session, deko, 600.0);
 				deko.Dispose();

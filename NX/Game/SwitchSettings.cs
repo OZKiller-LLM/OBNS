@@ -45,6 +45,14 @@ namespace OpenBve.Android
 	/// Switch has no use for them: the graphics backend (deko3d alone), the native Vulkan texture switch, the desktop
 	/// interface style and storage access. Added: the touch controls, off by default (OBNS/SWITCH.md).
 	/// </remarks>
+	/// <summary>The clocks and fan in play (SwitchSettings.GetPerformanceMode; the runner's obns_set_cpu_boost modes 2 to 4).</summary>
+	public enum PerformanceMode
+	{
+		Normal = 2,
+		Turbo = 3,
+		Overclock = 4
+	}
+
 	public static class SwitchSettings
 	{
 		/// <summary>The settings file, under the SD card's UserData folder.</summary>
@@ -71,6 +79,7 @@ namespace OpenBve.Android
 		private const string TransitionTenthsKey = "camera_transition_tenths";
 		private const string TimeFactorKey = "time_acceleration_factor";
 		private const string GameModeKey = "game_mode";
+		private const string PerformanceKey = "performance_mode";
 		private const string TouchControlsKey = "touch_controls";
 		private const string TouchHandlesKey = "panel2_extended";
 		private const string ButtonSizeKey = "touch_button_size";
@@ -283,6 +292,11 @@ namespace OpenBve.Android
 
 		public static int GetTimeAccelerationFactor() => Math.Clamp(GetInt(TimeFactorKey, 5), 1, 5);
 		public static void SetTimeAccelerationFactor(int value) => PutInt(TimeFactorKey, value);
+
+		/// <summary>The clocks and fan in play (the user, 2026-11-06): Normal the system's; Turbo the highest Nintendo gives
+		/// games, the fan at full; Overclock the highest the console's clock table lists, the fan at full.</summary>
+		public static PerformanceMode GetPerformanceMode() => GetEnum(PerformanceKey, PerformanceMode.Turbo);
+		public static void SetPerformanceMode(PerformanceMode mode) => PutString(PerformanceKey, mode.ToString());
 
 		public static OpenBveApi.GameMode GetGameMode() => GetEnum(GameModeKey, OpenBveApi.GameMode.Normal);
 		public static void SetGameMode(OpenBveApi.GameMode mode) => PutString(GameModeKey, mode.ToString());

@@ -37,44 +37,69 @@ EXPORT int64_t obns_native_heap_used(void)
     return (int64_t)info.uordblks;
 }
 
-// Clocks (the user, 2026-11-04): 0 stock, 1 apm's FastLoad (CPU 1,785 MHz, GPU held low: loading), 2 the CPU at 1,785
-// MHz through clkrst (play on power), 3 everything at its highest (the user, 2026-11-06: "the CPU and GPUs ... at their
-// max clocks, with the fan at full RPM"): the CPU, the GPU and the memory each at the highest rate the system lists for
-// it - the console's own table, no clock beyond it - and the fan at full. For OBNS's run only: mode 0 puts back each
-// clock as it was and gives the fan back to the system. Returns the CPU's MHz afterwards.
+// Clocks. Loading: apm's FastLoad (mode 1: CPU 1,785 MHz, the GPU held low). Play, by the performance mode in Options
+// (the user, 2026-11-06):
+//   2 Normal    - the system's own clocks and fan control;
+//   3 Turbo     - the highest clocks Nintendo gives games: CPU 1,785 MHz (its boost clock), GPU 768 MHz docked and
+//                 460.8 MHz handheld, memory 1,600 MHz; the fan at full;
+//   4 Overclock - each clock at the highest rate the console's clock table lists (stock: the chip's rated limits - GPU
+//                 921.6 MHz, memory 1,600 MHz; an overclocking module that extends the table raises them); fan at full.
+// Each target is snapped to the highest listed rate not above it. Mode 0 (and OBNS's end) puts every clock back as it
+// was and gives the fan back to the system. Returns the CPU's MHz afterwards.
 enum { CLOCKS = 3 };
 static const PcvModuleId clockModules[CLOCKS] = { PcvModuleId_CpuBus, PcvModuleId_GPU, PcvModuleId_EMC };
-static u32 originalHz[CLOCKS], highestHz[CLOCKS], setHz[CLOCKS];
+static u32 originalHz[CLOCKS], setHz[CLOCKS];
+static bool clocksTouched[CLOCKS];
 static bool fanHeld;
 static FanController fan;
 static float originalFan = -1.0f;
 
-// The highest rate the system lists for a clock (a list of rates, or a range's top); 0 if it gives none.
-static u32 highest_rate(ClkrstSession *session)
+// The highest listed rate not above `target` (0: the highest of all); `target` itself if the system lists none.
+static u32 listed_rate(ClkrstSession *session, u32 target)
 {
     u32 rates[64];
     s32 count = 0;
     PcvClockRatesListType type = PcvClockRatesListType_Invalid;
-    if (R_FAILED(clkrstGetPossibleClockRates(session, rates, 64, &type, &count)) || count <= 0) return 0;
-    u32 top = 0;
-    for (s32 i = 0; i < count && i < 64; i++) if (rates[i] > top) top = rates[i];
-    return top;
+    if (R_FAILED(clkrstGetPossibleClockRates(session, rates, 64, &type, &count)) || count <= 0) return target;
+    u32 best = 0, lowest = 0xFFFFFFFFu;
+    for (s32 i = 0; i < count && i < 64; i++) {
+        if (rates[i] < lowest) lowest = rates[i];
+        if ((target == 0 || rates[i] <= target) && rates[i] > best) best = rates[i];
+    }
+    return best ? best : lowest;
 }
 
-// Sets the clocks for a mode (see above); the rates each clock ended at go to setHz.
+// What a mode asks of a clock: 0 leaves it to the system; ~0 the highest listed rate.
+static u32 target_rate(int mode, int clock)
+{
+    bool docked = appletGetOperationMode() == AppletOperationMode_Console;
+    if (mode == 4) return 0xFFFFFFFFu;
+    if (mode == 3) {
+        if (clock == 0) return 1785000000u;
+        if (clock == 1) return docked ? 768000000u : 460800000u;
+        return 1600000000u;
+    }
+    return 0;
+}
+
 static void apply_clocks(int mode, bool settle)
 {
     if (!hosversionAtLeast(8, 0, 0) || R_FAILED(clkrstInitialize())) return;
     for (int i = 0; i < CLOCKS; i++) {
-        // Only the CPU in modes 1 and 2; all three in 3; all three back in 0.
-        if (i > 0 && (mode == 1 || mode == 2)) continue;
+        u32 target = target_rate(mode, i);
+        // Clocks no mode has set are left alone, even when putting back.
+        if (!target && !clocksTouched[i]) continue;
         ClkrstSession session;
         if (R_FAILED(clkrstOpenSession(&session, clockModules[i], 3))) continue;
-        if (!originalHz[i]) clkrstGetClockRate(&session, &originalHz[i]);
-        if (mode == 3 && !highestHz[i]) highestHz[i] = highest_rate(&session);
-        if (mode == 3 && highestHz[i]) clkrstSetClockRate(&session, highestHz[i]);
-        else if (mode == 2 && i == 0) clkrstSetClockRate(&session, 1785000000);
-        else if (mode == 0 && originalHz[i]) clkrstSetClockRate(&session, originalHz[i]);
+        if (!clocksTouched[i]) {
+            clkrstGetClockRate(&session, &originalHz[i]);
+            clocksTouched[i] = true;
+        }
+        if (target) clkrstSetClockRate(&session, listed_rate(&session, target == 0xFFFFFFFFu ? 0 : target));
+        else if (originalHz[i]) {
+            clkrstSetClockRate(&session, originalHz[i]);
+            clocksTouched[i] = false;
+        }
         if (settle) svcSleepThread(20000000);
         clkrstGetClockRate(&session, &setHz[i]);
         clkrstCloseSession(&session);
@@ -103,29 +128,43 @@ static void set_fan(bool full)
     fanHeld = false;
 }
 
+static int heldMode;
+
 EXPORT int obns_set_cpu_boost(int mode)
 {
     appletSetCpuBoostMode(mode == 1 ? ApmCpuBoostMode_FastLoad : ApmCpuBoostMode_Normal);
+    heldMode = mode;
     apply_clocks(mode, true);
-    set_fan(mode == 3);
+    set_fan(mode == 3 || mode == 4);
+    if (!clocksTouched[0] && hosversionAtLeast(8, 0, 0) && R_SUCCEEDED(clkrstInitialize())) {
+        // The CPU's clock as the system has it, for the log.
+        ClkrstSession cpu;
+        if (R_SUCCEEDED(clkrstOpenSession(&cpu, PcvModuleId_CpuBus, 3))) {
+            clkrstGetClockRate(&cpu, &setHz[0]);
+            clkrstCloseSession(&cpu);
+        }
+        clkrstExit();
+    }
     return (int)(setHz[0] / 1000000);
 }
 
-// Mode 3 held: the system sets its own clocks again on docking and undocking, and its thermal control its own fan
-// level, so the game's loop calls this every few seconds. Quick (no settling). Returns the GPU's MHz.
-EXPORT int obns_hold_max_clocks(void)
+// Turbo and Overclock held: the system sets its own clocks again on docking and undocking (and Turbo's GPU clock
+// follows the mode), its thermal control its own fan level, so the game's loop calls this every second. Quick (no
+// settling). Returns the GPU's MHz (0 in Normal, the system's).
+EXPORT int obns_hold_clocks(void)
 {
-    apply_clocks(3, false);
+    if (heldMode != 3 && heldMode != 4) return 0;
+    apply_clocks(heldMode, false);
     set_fan(true);
     return (int)(setHz[1] / 1000000);
 }
 
-// The clocks as last set, in MHz: CPU, GPU, memory.
+// The clocks as last set, in MHz: CPU, GPU, memory (0 for one left to the system).
 EXPORT void obns_clock_rates(int *cpu, int *gpu, int *memory)
 {
     *cpu = (int)(setHz[0] / 1000000);
-    *gpu = (int)(setHz[1] / 1000000);
-    *memory = (int)(setHz[2] / 1000000);
+    *gpu = clocksTouched[1] ? (int)(setHz[1] / 1000000) : 0;
+    *memory = clocksTouched[2] ? (int)(setHz[2] / 1000000) : 0;
 }
 
 // An exception nothing caught: printed (to nxlink, or UserData/runner.log) before mono-nx's error screen, which alone

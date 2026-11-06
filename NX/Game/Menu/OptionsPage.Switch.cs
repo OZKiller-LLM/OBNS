@@ -128,6 +128,16 @@ namespace OpenBve.Switch
 					T("options", "quality_distance_motionblur_medium", "Medium"), T("options", "quality_distance_motionblur_high", "High")
 				}, Math.Max(0, Array.IndexOf(blurModes, SwitchSettings.GetMotionBlur())), i => SwitchSettings.SetMotionBlur(blurModes[i])));
 
+			// --- performance: the console's clocks and fan in play ---
+			List.Add(new HeadingItem(T("switch", "performance", "Performance")));
+			PerformanceMode[] performanceModes = { PerformanceMode.Normal, PerformanceMode.Turbo, PerformanceMode.Overclock };
+			List.Add(new ChoiceItem(T("switch", "performance_mode", "Performance mode:"), new[]
+				{
+					T("switch", "performance_normal", "Normal"), T("switch", "performance_turbo", "Turbo"), T("switch", "performance_overclock", "Overclock")
+				}, Math.Max(0, Array.IndexOf(performanceModes, SwitchSettings.GetPerformanceMode())), i => SwitchSettings.SetPerformanceMode(performanceModes[i])));
+			List.Add(new InfoItem(T("switch", "performance_note",
+				"Normal: the console's own clocks and fan control. Turbo: the highest clocks Nintendo allows games (CPU 1785 MHz, GPU 768 MHz docked or 460.8 MHz handheld, memory 1600 MHz), the fan at full speed. Overclock: the highest clocks the console's clock table lists for the CPU, GPU and memory, the fan at full speed - more heat and battery use. Clocks go back to normal when OBNS closes.")));
+
 			// --- shadows, as upstream's Options ---
 			List.Add(new HeadingItem(T("options", "shadows_header", "Shadows")));
 			ShadowMapResolution[] resolutions = { ShadowMapResolution.Off, ShadowMapResolution.Low, ShadowMapResolution.Medium, ShadowMapResolution.High };
