@@ -115,6 +115,7 @@ namespace OpenBve.Android
 			{
 				CloseLocked();
 				hits = misses = stored = notStorable = failures = 0;
+				fileSizes.Clear();
 				hitTicks = storeTicks = writeTicks = 0;
 				try
 				{
@@ -133,7 +134,7 @@ namespace OpenBve.Android
 						packLength = 0;
 					}
 
-					pack = new FileStream(packPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1 << 16);
+					pack = new FileStream(packPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 1 << 16);
 					// What the index doesn't know of (a load that stopped before writing it) is written over.
 					pack.SetLength(Math.Min(pack.Length, packLength));
 					packBytes = pack.Length;
@@ -191,9 +192,16 @@ namespace OpenBve.Android
 			       extension.Equals(".x", StringComparison.OrdinalIgnoreCase) || extension.Equals(".obj", StringComparison.OrdinalIgnoreCase);
 		}
 
+		/*
+		 * Each file's size, asked of the storage once per load (a stat on the SD card a time, and an object is looked up
+		 * twice, read back or stored): content doesn't change while loading. Cleared at Open.
+		 */
+		private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> fileSizes =
+			new System.Collections.Concurrent.ConcurrentDictionary<string, long>(StringComparer.Ordinal);
+
 		private static string Key(string path, Encoding encoding, bool preserveVertices, int threshold, bool vertexCulling)
 		{
-			long size = new FileInfo(path).Length;
+			long size = fileSizes.GetOrAdd(path, p => new FileInfo(p).Length);
 			return path.ToLowerInvariant() + "|" + size + "|" + OpenBveApi.Path.LastWriteTime(path).Ticks + "|" + (encoding?.CodePage ?? 0) + "|" +
 			       (preserveVertices ? 1 : 0) + "|" + threshold + "|" + (vertexCulling ? 1 : 0);
 		}
@@ -208,13 +216,15 @@ namespace OpenBve.Android
 			}
 
 			long started = Stopwatch.GetTimestamp();
-			byte[] payload;
+			byte[] payload = null;
 			try
 			{
 				string key = Key(path, encoding, preserveVertices, threshold, vertexCulling);
+				(long Offset, int Length) entry;
+				FileStream reader;
 				lock (gate)
 				{
-					if (pack == null || !index.TryGetValue(key, out (long Offset, int Length) entry))
+					if (pack == null || !index.TryGetValue(key, out entry))
 					{
 						misses++;
 						lastMissPath = path;
@@ -222,20 +232,16 @@ namespace OpenBve.Android
 						return false;
 					}
 
-					payload = new byte[entry.Length];
-					pack.Seek(entry.Offset, SeekOrigin.Begin);
-					int read = 0;
-					while (read < payload.Length)
+					reader = Reader();
+					if (reader == null)
 					{
-						int n = pack.Read(payload, read, payload.Length - read);
-						if (n <= 0)
-						{
-							throw new EndOfStreamException();
-						}
-
-						read += n;
+						// No handle of its own: read under the lock, from the pack's.
+						payload = ReadAt(pack, entry.Offset, entry.Length);
 					}
 				}
+
+				// From the thread's own handle, outside the lock: the loading threads no longer wait for each other.
+				payload ??= ReadAt(reader, entry.Offset, entry.Length);
 
 				staticObject = Read(host, payload, key);
 			}
@@ -408,6 +414,66 @@ namespace OpenBve.Android
 			}
 		}
 
+		/*
+		 * Each loading thread reads the pack through a handle of its own (the pack is opened sharing reads), so a read
+		 * back no longer queues behind the others' - on the Switch 4,810 of them took 420 s of the threads' time under one
+		 * lock (2026-11-07). Only records the index already lists are read, and the writer only appends past them.
+		 * A storage that refuses the second handle leaves the thread on the shared one, under the lock.
+		 */
+		[ThreadStatic] private static FileStream threadReader;
+		[ThreadStatic] private static bool threadReaderFailed;
+		[ThreadStatic] private static int threadReaderGeneration;
+		// Bumped whenever the handles are closed: a thread's handle from an earlier pack is not used again.
+		private static int readerGeneration = 1;
+		private static readonly List<FileStream> readers = new List<FileStream>();
+
+		/// <summary>The calling thread's read handle on the pack (null: none; read under the lock). Call under the lock.</summary>
+		private static FileStream Reader()
+		{
+			if (threadReaderGeneration != readerGeneration)
+			{
+				threadReader = null;
+				threadReaderFailed = false;
+				threadReaderGeneration = readerGeneration;
+			}
+
+			if (threadReader != null || threadReaderFailed || packPath == null)
+			{
+				return threadReader;
+			}
+
+			try
+			{
+				threadReader = new FileStream(packPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1 << 16);
+				readers.Add(threadReader);
+			}
+			catch (Exception)
+			{
+				threadReaderFailed = true;
+			}
+
+			return threadReader;
+		}
+
+		private static byte[] ReadAt(FileStream stream, long offset, int length)
+		{
+			byte[] payload = new byte[length];
+			stream.Seek(offset, SeekOrigin.Begin);
+			int read = 0;
+			while (read < length)
+			{
+				int n = stream.Read(payload, read, length - read);
+				if (n <= 0)
+				{
+					throw new EndOfStreamException();
+				}
+
+				read += n;
+			}
+
+			return payload;
+		}
+
 		// --- the index ---
 
 		private static Dictionary<string, (long, int)> ReadIndex(string path, string expectedSignature, out long packLength)
@@ -489,6 +555,14 @@ namespace OpenBve.Android
 
 		private static void CloseLocked()
 		{
+			// The threads' read handles (the loading is over: none is reading).
+			foreach (FileStream reader in readers)
+			{
+				reader.Dispose();
+			}
+
+			readers.Clear();
+			readerGeneration++;
 			if (pack != null)
 			{
 				try
