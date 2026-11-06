@@ -406,6 +406,29 @@ namespace OpenTK.Audio.OpenAL
 		[DllImport(AL.Library, EntryPoint = "alcDestroyContext")] private static extern void alcDestroyContext(IntPtr context);
 		[DllImport(AL.Library, EntryPoint = "alcGetString")] private static extern IntPtr alcGetString(IntPtr device, int param);
 		[DllImport(AL.Library, EntryPoint = "alcGetError")] private static extern int alcGetError(IntPtr device);
+		[DllImport(AL.Library, EntryPoint = "alcGetCurrentContext")] private static extern IntPtr alcGetCurrentContext();
+		[DllImport(AL.Library, EntryPoint = "alcGetContextsDevice")] private static extern IntPtr alcGetContextsDevice(IntPtr context);
+		[DllImport(AL.Library, EntryPoint = "alcIsExtensionPresent", CharSet = CharSet.Ansi)] private static extern bool alcIsExtensionPresent(IntPtr device, string name);
+		[DllImport(AL.Library, EntryPoint = "alcGetIntegerv")] private static extern void alcGetIntegerv(IntPtr device, int param, int size, out int value);
+
+		/// <summary>The device of the current context (zero for none).</summary>
+		public static IntPtr CurrentDevice()
+		{
+			IntPtr context = alcGetCurrentContext();
+			return context == IntPtr.Zero ? IntPtr.Zero : alcGetContextsDevice(context);
+		}
+
+		/// <summary>Whether a playback device is still connected (ALC_EXT_disconnect; true when it can't tell).</summary>
+		public static bool IsConnected(IntPtr device)
+		{
+			if (device == IntPtr.Zero || !alcIsExtensionPresent(device, "ALC_EXT_disconnect"))
+			{
+				return true;
+			}
+
+			alcGetIntegerv(device, 0x313, 1, out int connected); // ALC_CONNECTED
+			return connected != 0;
+		}
 
 		/// <summary>Opens a playback device. Pass a null reference for the default device.</summary>
 		public static IntPtr OpenDevice(string deviceName)

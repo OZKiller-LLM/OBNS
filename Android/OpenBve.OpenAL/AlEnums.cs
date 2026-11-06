@@ -81,6 +81,7 @@ namespace OpenTK.Audio.OpenAL
 		SourceState = 0x1010,
 		BuffersQueued = 0x1015,
 		BuffersProcessed = 0x1016,
+		SampleOffset = 0x1025,
 		SourceType = 0x1027
 	}
 

@@ -469,6 +469,12 @@ namespace OpenBve.NX
 				phase[3] += clock.Elapsed.TotalSeconds - mark;
 				mark = clock.Elapsed.TotalSeconds;
 				sounds.Update(elapsed);
+				string audio = sounds.Watch(elapsed, paused);
+				if (audio != null)
+				{
+					Log(audio);
+				}
+
 				renderer.Profile.EndFrame();
 				phase[4] += clock.Elapsed.TotalSeconds - mark;
 				mark = clock.Elapsed.TotalSeconds;

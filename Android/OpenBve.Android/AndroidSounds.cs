@@ -90,6 +90,149 @@ namespace OpenBve.Android
 			}
 		}
 
+		/*
+		 * The audio watchdog (the Switch's: its own sound stopped for good once a clock change upset it, while the system's
+		 * went on, 2026-11-07). Once a second: the output is lost if OpenAL Soft says the device is disconnected, or if every
+		 * looped sound meant to be playing hasn't moved on for two checks running. Then the device is opened afresh: the
+		 * OpenAL sources and buffers dropped (in the old context), the device and context closed and made again, looped
+		 * sounds started again where the update next places them, buffers loaded again on demand.
+		 */
+		private double watchAge;
+		private int stalledChecks;
+		private readonly Dictionary<int, int> lastOffsets = new Dictionary<int, int>();
+
+		private static readonly System.Reflection.FieldInfo DeviceField = typeof(SoundsBase).GetField("OpenAlDevice", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+		private static readonly System.Reflection.FieldInfo ContextField = typeof(SoundsBase).GetField("OpenAlContext", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+		private static readonly System.Reflection.FieldInfo BuffersField = typeof(SoundsBase).GetField("Buffers", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+		/// <summary>Resets of the audio output so far, for the log.</summary>
+		public int AudioResets { get; private set; }
+
+		/// <summary>Watches the audio output (call once a frame); returns a line for the log when it reopened it.</summary>
+		public string Watch(double elapsed, bool paused)
+		{
+			watchAge += elapsed;
+			if (watchAge < 1.0)
+			{
+				return null;
+			}
+
+			watchAge = 0;
+			if (paused)
+			{
+				stalledChecks = 0;
+				lastOffsets.Clear();
+				return null;
+			}
+
+			IntPtr device = OpenTK.Audio.OpenAL.Alc.CurrentDevice();
+			bool connected = OpenTK.Audio.OpenAL.Alc.IsConnected(device);
+			int checkedSources = 0, unmoved = 0;
+			Dictionary<int, int> offsets = new Dictionary<int, int>();
+			for (int i = 0; i < SourceCount; i++)
+			{
+				SoundSource source = Sources[i];
+				if (source == null || !source.Looped || source.State != SoundSourceState.Playing || source.OpenAlSourceName == 0)
+				{
+					continue;
+				}
+
+				if (AL.GetSourceState(source.OpenAlSourceName) != ALSourceState.Playing)
+				{
+					continue;
+				}
+
+				AL.GetSource(source.OpenAlSourceName, ALGetSourcei.SampleOffset, out int offset);
+				offsets[source.OpenAlSourceName] = offset;
+				checkedSources++;
+				if (lastOffsets.TryGetValue(source.OpenAlSourceName, out int last) && last == offset)
+				{
+					unmoved++;
+				}
+			}
+
+			lastOffsets.Clear();
+			foreach (KeyValuePair<int, int> pair in offsets)
+			{
+				lastOffsets[pair.Key] = pair.Value;
+			}
+
+			stalledChecks = checkedSources > 0 && unmoved == checkedSources ? stalledChecks + 1 : 0;
+			if (connected && stalledChecks < 2)
+			{
+				return null;
+			}
+
+			string why = !connected ? "the device was disconnected" : checkedSources + " looped sounds stood still for 2 s";
+			stalledChecks = 0;
+			lastOffsets.Clear();
+			return Reopen() ? "audio: output reopened (" + why + "; " + (++AudioResets) + " so far)" : "audio: output lost (" + why + ") and could not be reopened";
+		}
+
+		private bool Reopen()
+		{
+			if (DeviceField == null || ContextField == null)
+			{
+				return false;
+			}
+
+			// Sources and buffers dropped in the old context; looped sounds start again, one-shots are let go.
+			for (int i = 0; i < SourceCount; i++)
+			{
+				SoundSource source = Sources[i];
+				if (source == null)
+				{
+					continue;
+				}
+
+				if (source.OpenAlSourceName != 0)
+				{
+					AL.DeleteSources(1, ref source.OpenAlSourceName);
+					source.OpenAlSourceName = 0;
+				}
+
+				if (source.State == SoundSourceState.Playing)
+				{
+					source.State = source.Looped ? SoundSourceState.PlayPending : SoundSourceState.Stopped;
+				}
+			}
+
+			if (BuffersField?.GetValue(this) is List<SoundBuffer> buffers)
+			{
+				foreach (SoundBuffer buffer in buffers)
+				{
+					buffer.Unload();
+				}
+			}
+
+			OpenTK.ContextHandle context = (OpenTK.ContextHandle)ContextField.GetValue(this);
+			IntPtr device = (IntPtr)DeviceField.GetValue(this);
+			if (context != OpenTK.ContextHandle.Zero)
+			{
+				Alc.MakeContextCurrent(OpenTK.ContextHandle.Zero);
+				Alc.DestroyContext(context);
+			}
+
+			if (device != IntPtr.Zero)
+			{
+				Alc.CloseDevice(device);
+			}
+
+			device = Alc.OpenDevice(null);
+			context = device != IntPtr.Zero ? Alc.CreateContext(device, (int[])null) : OpenTK.ContextHandle.Zero;
+			DeviceField.SetValue(this, device);
+			ContextField.SetValue(this, context);
+			if (context == OpenTK.ContextHandle.Zero)
+			{
+				return false;
+			}
+
+			Alc.MakeContextCurrent(context);
+			AL.SpeedOfSound(343.0f);
+			AL.DistanceModel(ALDistanceModel.None);
+			return true;
+		}
+
 		/// <summary>Stops every sound attached to a train or any of its cars.</summary>
 		public override void StopAllSounds(object train)
 		{
