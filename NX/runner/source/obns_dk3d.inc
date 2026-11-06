@@ -126,8 +126,8 @@ static int init3d(void)
     }
     dkImageInitialize(&depthImage, &layout, depthMemory, 0);
     memset(dkMemBlockGetCpuAddr(descriptors3d), 0, DESCRIPTOR_SAMPLERS + SAMPLERS3D * 32);
-    // GL's clip space to deko3d's: Y flipped, as VulkanContext.ClipTransform does it unrotated.
-    float clip[4] = { 1.0f, 0.0f, 0.0f, -1.0f };
+    // GL's clip space is deko3d's as it stands (its +1 at the top of the screen: measured on the console, 2026-11-06).
+    float clip[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
     memcpy(dkMemBlockGetCpuAddr(clipMemory), clip, sizeof clip);
     dkCmdBufClear(uploads3d);
     dkCmdBufAddMemory(uploads3d, uploads3dMemory, 0, UPLOAD_COMMANDS);

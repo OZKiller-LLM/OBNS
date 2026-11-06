@@ -68,7 +68,7 @@ static Image2D images[IMAGES];
 static int imagePending = -1;
 static Font2D fonts[FONTS];
 static Glyph2D glyphs[GLYPHS];
-static float unitScale = 1.0f, ySign = -1.0f;
+static float unitScale = 1.0f, ySign = 1.0f;
 static uint32_t backgroundColor;
 
 static int load_shader(DkShader *shader, const uint8_t *code, uint32_t size, uint32_t *offset)
