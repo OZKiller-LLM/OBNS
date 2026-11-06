@@ -542,8 +542,7 @@ static void record2d(DkCmdBuf cmd)
     DkScissor all = whole_screen();
     dkCmdBufSetScissors(cmd, 0, &all, 1);
     if (droppedQuads)
-        printf("deko3d 2D: %d quads over the frame's limit were left out
-", droppedQuads);
+        printf("deko3d 2D: %d quads over the frame's limit were left out\n", droppedQuads);
 }
 
 // A frame of its own (the menu, the loading screen): cleared to the background, the quads, presented.
@@ -570,7 +569,6 @@ EXPORT int obns_dk2d_end(void)
     dkQueueWaitIdle(queue);
     QUEUE_UNLOCK();
     if (frames++ == 0)
-        printf("deko3d: first frame presented
-");
+        printf("deko3d: first frame presented\n");
     return dkQueueIsInErrorState(queue) ? 2 : 0;
 }
