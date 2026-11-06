@@ -51,6 +51,9 @@ namespace OpenBve.Android
 		/// <summary>Whether DrawRuns' faces are completed on all cores (the Switch sets it).</summary>
 		public static bool ParallelFaces;
 
+		/// <summary>Faces drawn through the queue, and left out of it (a full ring), since the start: for the log.</summary>
+		public long QueuedFacesDrawn, DroppedFaces;
+
 		private struct QueuedFace
 		{
 			public ObjectState State;
@@ -256,9 +259,13 @@ namespace OpenBve.Android
 
 			if (!device.ReserveObjects(queuedObjects.Count))
 			{
+				// For the log: faces left out (the device's ring full).
+				DroppedFaces += count;
 				queuedObjects.Clear();
 				return;
 			}
+
+			QueuedFacesDrawn += count;
 
 			writeObjects ??= WriteObjects;
 			completeFaces ??= CompleteFaces;

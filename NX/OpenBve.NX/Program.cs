@@ -516,7 +516,7 @@ namespace OpenBve.NX
 					if (++windows % 6 == 1)
 					{
 						Log("frames: static batches " + renderer.BatchSummary);
-						Log("frames: passes " + renderer.PassSummary + "; lists kept in " + renderer.ReusedLists + " frames so far; emulated plugins " + OpenBve.NativePlugins.EmulatedWin32Plugin.TakeElapse());
+						Log("frames: passes " + renderer.PassSummary + "; lists kept in " + renderer.ReusedLists + " frames so far; faces through the cores " + renderer.QueuedFacesDrawn + ", left out " + renderer.DroppedFaces + "; emulated plugins " + OpenBve.NativePlugins.EmulatedWin32Plugin.TakeElapse());
 						if (compressedTextures != null)
 						{
 							Log("frames: " + compressedTextures.Describe());
@@ -632,7 +632,9 @@ namespace OpenBve.NX
 			// Content textures unused for 20 s unloaded (upstream's unloading never did: nothing is marked unloadable).
 			LibRender2.Textures.TextureManager.UnloadUnpinned = true;
 			// Last frame's filtered face lists kept while nothing they depend on changed (#2, 2026-11-07).
-			AndroidRenderer.ReuseFaceLists = true;
+			// Each of the 2026-11-07 renderer changes can be turned off for a comparison by a file in UserData.
+			AndroidRenderer.ReuseFaceLists = !File.Exists(Root + "/UserData/nx-no-list-reuse.txt");
+			StaticBatcher.BatchWorldObjects = !File.Exists(Root + "/UserData/nx-no-world-batches.txt");
 			// Faces completed on all three cores (#1, 2026-11-07); UserData/nx-serial-faces.txt keeps them on one.
 			AndroidRenderer.ParallelFaces = !File.Exists(Root + "/UserData/nx-serial-faces.txt");
 			host.Renderer = renderer;

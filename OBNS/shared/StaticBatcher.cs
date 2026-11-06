@@ -428,10 +428,13 @@ namespace OpenBve
 		private readonly List<Group> worldGroups = new List<Group>();
 		private readonly Dictionary<ObjectState, AnimatedWorldObject> worldSource = new Dictionary<ObjectState, AnimatedWorldObject>(ByReference<ObjectState>.Instance);
 
+		/// <summary>Whether still animated world objects are batched (#4); the Switch's UserData/nx-no-world-batches.txt turns it off.</summary>
+		public static bool BatchWorldObjects = true;
+
 		private void PlanWorld()
 		{
 			OpenBveApi.Hosts.HostInterface api = host.Host;
-			int used = api.AnimatedWorldObjectsUsed;
+			int used = BatchWorldObjects ? api.AnimatedWorldObjectsUsed : 0;
 			if (used == worldPlanned)
 			{
 				return;
