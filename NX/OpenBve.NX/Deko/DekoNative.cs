@@ -85,6 +85,9 @@ namespace OpenBve.NX.Deko
 		[DllImport("__Internal", EntryPoint = "obns_dk3d_flush_uploads")]
 		public static extern void FlushUploads();
 
+		[DllImport("__Internal", EntryPoint = "obns_dk3d_frames_in_flight")]
+		public static extern void SetFramesInFlight(int enabled);
+
 		[DllImport("__Internal", EntryPoint = "obns_dk3d_begin")]
 		public static extern int Begin();
 

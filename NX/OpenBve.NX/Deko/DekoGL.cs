@@ -102,7 +102,24 @@ namespace OpenBve.NX.Deko
 		// Frames: the serial of the frame being recorded (if any), and of the last one finished (and waited for).
 		private bool inFrame;
 		private ulong serial, completedSerial;
-		private readonly List<Action> afterGpu = new List<Action>();
+
+		/*
+		 * Frames in flight (OBNS/SWITCH.md, step 4): the native end of a frame no longer waits for it, only for the frame
+		 * before, so the GPU draws one frame while the CPU records the next. What a frame used is let go of one frame later:
+		 * what is let go of while frame N is recorded (afterGpu) runs at the end of frame N + 1, when N is done. Between
+		 * frames nothing runs at once while a frame may still be drawing (inFlight). The ring's two halves take turns.
+		 * Off (UserData/nx-serial-frames.txt): each frame waited for, as before.
+		 */
+		public static bool FramesInFlight { get; private set; } = true;
+
+		/// <summary>Frames in flight on or off, native side included; before the game's frames start.</summary>
+		public static void SetFramesInFlight(bool enabled)
+		{
+			FramesInFlight = enabled;
+			DekoNative.SetFramesInFlight(enabled ? 1 : 0);
+		}
+		private List<Action> afterGpu = new List<Action>(), afterGpuNext = new List<Action>();
+		private bool inFlight;
 
 		/// <summary>Draws in the last finished frame, and the time spent preparing them, for the log.</summary>
 		public int LastFrameDraws { get; private set; }
@@ -183,7 +200,10 @@ namespace OpenBve.NX.Deko
 
 			inFrame = true;
 			serial++;
-			ringPosition = 0;
+			// The ring's half this frame writes: the other one may be read by the frame before, still drawing.
+			ringBase = FramesInFlight ? (uint)(serial & 1) * (ring.Size / 2) : 0;
+			ringLimit = FramesInFlight ? ringBase + ring.Size / 2 : ring.Size;
+			ringPosition = ringBase;
 			return true;
 		}
 
@@ -210,33 +230,58 @@ namespace OpenBve.NX.Deko
 
 				LastEndMilliseconds = (System.Diagnostics.Stopwatch.GetTimestamp() - ending) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
-				completedSerial = serial;
 				WorldFrameEnded();
-				RunAfterGpu();
+				// The uploads ran in the native end; the frame itself may still be drawing (with frames in flight), the one
+				// before it is done.
+				stagingPending = 0;
+				if (FramesInFlight)
+				{
+					completedSerial = serial - 1;
+					inFlight = true;
+					// What frames up to the one before let go of.
+					List<Action> done = afterGpuNext;
+					afterGpuNext = afterGpu;
+					afterGpu = done;
+					Run(done);
+				}
+				else
+				{
+					completedSerial = serial;
+					RunAfterGpu();
+				}
 			}
-			else if (stagingPending > 0)
+			else if (stagingPending > 0 || inFlight)
 			{
 				DekoNative.FlushUploads();
 				RunAfterGpu();
 			}
 		}
 
+		/// <summary>Everything let go of, run: the GPU is idle (the native flush waits for it).</summary>
 		private void RunAfterGpu()
 		{
-			foreach (Action action in afterGpu)
+			completedSerial = serial;
+			inFlight = false;
+			Run(afterGpuNext);
+			Run(afterGpu);
+			stagingPending = 0;
+		}
+
+		private static void Run(List<Action> actions)
+		{
+			foreach (Action action in actions)
 			{
 				action();
 			}
 
-			afterGpu.Clear();
-			stagingPending = 0;
+			actions.Clear();
 		}
 
 		/// <summary>Done once the GPU can no longer be using what it lets go of: now between frames with no uploads
-		/// waiting, else after the frame (or the uploads).</summary>
+		/// waiting and no frame drawing, else after the frame (or the uploads).</summary>
 		private void AfterGpu(Action action)
 		{
-			if (!inFrame && stagingPending == 0)
+			if (!inFrame && stagingPending == 0 && !inFlight)
 			{
 				action();
 			}
@@ -250,13 +295,13 @@ namespace OpenBve.NX.Deko
 
 		private const uint RingSize = 64u << 20, AnimationBlockSize = 128 * 64;
 		private readonly DekoHeap.Allocation ring, zeroBlock, defaultAttributes;
-		private uint ringPosition;
+		private uint ringPosition, ringBase, ringLimit = RingSize;
 
 		/// <summary>Copies a uniform block into the ring with room for <paramref name="range"/> bytes read from it; its GPU address, or 0 when the ring is full.</summary>
 		private ulong RingWrite(byte[] data, int length, uint range)
 		{
 			uint start = (ringPosition + 255u) & ~255u;
-			if (start + Math.Max(range, (uint)length) > ring.Size)
+			if (start + Math.Max(range, (uint)length) > ringLimit)
 			{
 				ReportOnce("deko3d: the frame's uniform ring is full; further draws are left out");
 				return 0;

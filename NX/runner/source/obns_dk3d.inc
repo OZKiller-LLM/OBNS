@@ -18,7 +18,7 @@
 
 #define TEXTURES3D 32768
 #define SAMPLERS3D 256
-#define FRAME_COMMANDS (32 * 1024 * 1024)
+#define FRAME_COMMANDS (24 * 1024 * 1024) // per frame in flight (a 10,900-draw frame records about 4 MB)
 #define UPLOAD_COMMANDS (4 * 1024 * 1024)
 #define UPLOADS_BEFORE_FLUSH 20000
 
@@ -59,8 +59,42 @@ static int lastValid3d;
 static int worldValid; // the world records' state is what is bound (see obns_dkw_draws)
 static uint64_t frames3d, draws3d;
 
+// Frames in flight (OBNS/SWITCH.md, step 4: the CPU and the GPU at once): the CPU records a frame while the GPU draws the
+// one before. Each frame has its half of the command memory and a fence; the end of a frame waits for the one before it,
+// so when it returns everything older is done (DekoGL frees what those frames used then, and writes the ring's other
+// half). 0 (UserData/nx-serial-frames.txt) waits for each frame instead, as before.
+static int framesInFlight = 1;
+static int commandHalf;          // the half the frame being recorded uses
+static DkFence frameFences[2];
+static int fenceSignaled[2];
+
+// Waits for every frame submitted so far: before the CPU writes memory a frame still drawing reads (the 2D layer's).
+static void wait_frames3d(void)
+{
+    for (int i = 0; i < 2; i++) {
+        if (fenceSignaled[i]) {
+            dkFenceWait(&frameFences[i], -1);
+            fenceSignaled[i] = 0;
+        }
+    }
+}
+
+EXPORT void obns_dk3d_frames_in_flight(int enabled)
+{
+    framesInFlight = enabled != 0;
+}
+
 #define DESCRIPTOR_IMAGES 0
 #define DESCRIPTOR_SAMPLERS (TEXTURES3D * 32)
+
+// A new upload list. It starts with a full barrier: with frames in flight the frame before may still be drawing when it
+// runs, sampling an image an upload writes again (an animated texture's frames).
+static void start_uploads(void)
+{
+    dkCmdBufClear(uploads3d);
+    dkCmdBufAddMemory(uploads3d, uploads3dMemory, 0, UPLOAD_COMMANDS);
+    dkCmdBufBarrier(uploads3d, DkBarrier_Full, DkInvalidateFlags_Image | DkInvalidateFlags_L2Cache);
+}
 
 static int init3d(void)
 {
@@ -98,7 +132,7 @@ static int init3d(void)
 
     dkMemBlockMakerDefaults(&maker, device, align_up(DESCRIPTOR_SAMPLERS + SAMPLERS3D * 32, DK_MEMBLOCK_ALIGNMENT));
     descriptors3d = dkMemBlockCreate(&maker);
-    dkMemBlockMakerDefaults(&maker, device, FRAME_COMMANDS);
+    dkMemBlockMakerDefaults(&maker, device, 2 * FRAME_COMMANDS);
     commands3dMemory = dkMemBlockCreate(&maker);
     dkMemBlockMakerDefaults(&maker, device, UPLOAD_COMMANDS);
     uploads3dMemory = dkMemBlockCreate(&maker);
@@ -129,8 +163,7 @@ static int init3d(void)
     // GL's clip space is deko3d's as it stands (its +1 at the top of the screen: measured on the console, 2026-11-06).
     float clip[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
     memcpy(dkMemBlockGetCpuAddr(clipMemory), clip, sizeof clip);
-    dkCmdBufClear(uploads3d);
-    dkCmdBufAddMemory(uploads3d, uploads3dMemory, 0, UPLOAD_COMMANDS);
+    start_uploads();
     ready3d = 1;
     failed3d = 0;
     printf("deko3d 3D: ready (%d texture slots, depth %dx%d)\n", TEXTURES3D, width, height);
@@ -183,15 +216,20 @@ static void flush_uploads(int wait)
     dkQueueSubmitCommands(queue, dkCmdBufFinishList(uploads3d));
     dkQueueWaitIdle(queue);
     QUEUE_UNLOCK();
-    dkCmdBufClear(uploads3d);
-    dkCmdBufAddMemory(uploads3d, uploads3dMemory, 0, UPLOAD_COMMANDS);
+    start_uploads();
     uploadsPending = 0;
 }
 
-// Uploads recorded so far, run now and waited for: their staging can then be reused.
+// Uploads recorded so far, run now, and everything waited for (frames in flight included): their staging, and whatever
+// the frames used, can then be reused.
 EXPORT void obns_dk3d_flush_uploads(void)
 {
-    if (ready3d) flush_uploads(1);
+    if (!ready3d) return;
+    flush_uploads(1);
+    wait_frames3d();
+    QUEUE_LOCK();
+    dkQueueWaitIdle(queue);
+    QUEUE_UNLOCK();
 }
 
 // How much memory, and at what alignment, an image of the size, levels and format needs.
@@ -305,7 +343,12 @@ EXPORT int obns_dk3d_begin(void)
     frameSlot3d = dkQueueAcquireImage(queue, swapchain);
     QUEUE_UNLOCK();
     dkCmdBufClear(commands3d);
-    dkCmdBufAddMemory(commands3d, commands3dMemory, 0, FRAME_COMMANDS);
+    // The half the frame two before used: its fence was waited for at the end of the frame before this one.
+    if (fenceSignaled[commandHalf]) {
+        dkFenceWait(&frameFences[commandHalf], -1);
+        fenceSignaled[commandHalf] = 0;
+    }
+    dkCmdBufAddMemory(commands3d, commands3dMemory, (uint32_t)commandHalf * FRAME_COMMANDS, FRAME_COMMANDS);
     // The uploads' images and the descriptors the CPU wrote, seen by the drawing.
     dkCmdBufBarrier(commands3d, DkBarrier_Full, DkInvalidateFlags_Image | DkInvalidateFlags_Descriptors | DkInvalidateFlags_L2Cache);
     DkImageView color, depth;
@@ -625,9 +668,22 @@ EXPORT int obns_dk3d_end(void)
     // Textures made during the frame: their uploads run first (the frame's barrier at its start waits for them).
     flush_uploads(0);
     dkQueueSubmitCommands(queue, dkCmdBufFinishList(commands3d));
+    if (framesInFlight)
+        dkQueueSignalFence(queue, &frameFences[commandHalf], false);
     dkQueuePresentImage(queue, swapchain, frameSlot3d);
-    dkQueueWaitIdle(queue);
+    if (!framesInFlight)
+        dkQueueWaitIdle(queue);
     QUEUE_UNLOCK();
+    if (framesInFlight) {
+        fenceSignaled[commandHalf] = 1;
+        // The frame before this one, done: from here on only this frame may still be drawing.
+        int before = commandHalf ^ 1;
+        if (fenceSignaled[before]) {
+            dkFenceWait(&frameFences[before], -1);
+            fenceSignaled[before] = 0;
+        }
+        commandHalf = before;
+    }
     if (frames3d++ == 0)
         printf("deko3d 3D: first frame presented, %llu draws\n", (unsigned long long)draws3d);
     return dkQueueIsInErrorState(queue) ? 2 : 0;
@@ -636,6 +692,7 @@ EXPORT int obns_dk3d_end(void)
 static void close3d(void)
 {
     if (!ready3d) return;
+    wait_frames3d();
     dkQueueWaitIdle(queue);
     dkCmdBufDestroy(commands3d);
     dkCmdBufDestroy(uploads3d);

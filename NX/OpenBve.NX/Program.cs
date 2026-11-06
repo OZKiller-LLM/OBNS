@@ -688,6 +688,9 @@ namespace OpenBve.NX
 				ClockRates(out int cpuMhz, out int gpuMhz, out int memoryMhz);
 				Stage($"frames: performance mode {performance} - CPU {cpuMhz} MHz, GPU {(gpuMhz > 0 ? gpuMhz + " MHz" : "the system's")}, memory {(memoryMhz > 0 ? memoryMhz + " MHz" : "the system's")}" +
 				      (performance == OpenBve.Android.PerformanceMode.Normal ? ", the system's fan control" : ", the fan at full"));
+				// The CPU records a frame while the GPU draws the one before (DekoGL); the file turns it off, for comparisons.
+				OpenBve.NX.Deko.DekoGL.SetFramesInFlight(!File.Exists(Root + "/UserData/nx-serial-frames.txt"));
+				Stage("frames: " + (OpenBve.NX.Deko.DekoGL.FramesInFlight ? "two in flight" : "one at a time (nx-serial-frames.txt)"));
 				deko.Drawing = true;
 				// As GameView: textures first needed while driving are decoded in the background, not in the frame.
 				host.StreamTextures = true;

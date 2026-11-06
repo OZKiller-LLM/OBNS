@@ -181,10 +181,15 @@ EXPORT void obns_dk2d_set_y(float sign) { ySign = sign < 0 ? -1.0f : 1.0f; }
 
 static DkScissor whole_screen(void) { DkScissor s = { 0, 0, (uint32_t)width, (uint32_t)height }; return s; }
 
+static void wait_frames3d(void); // obns_dk3d.inc
+
 EXPORT int obns_dk2d_begin(uint32_t background)
 {
     if (!device || !init2d())
         return 1;
+    // The quads are written straight into the GPU's memory, which the frame before (still drawing, with frames in
+    // flight) reads its own from.
+    wait_frames3d();
     unitScale = width / UNITS_WIDTH;
     backgroundColor = background;
     vertexCount = batchCount = droppedQuads = 0;
