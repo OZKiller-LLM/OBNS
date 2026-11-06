@@ -275,6 +275,9 @@ namespace OpenBve.NX
 			Stage("frames: drawing for " + seconds.ToString("0") + " s" + (session == null ? " (no train: the camera travels the route)" : string.Empty));
 			Stopwatch clock = Stopwatch.StartNew();
 			DekoCanvas overlay = new DekoCanvas();
+			// The frame's phases (input, simulation, RenderScene, overlay, sound, end of frame), summed over the 5 s window.
+			double[] phase = new double[6];
+			double gpuWait = 0, frameStart = 0;
 			// The controllers drive the train (Android's controller layout, SwitchPad); + pauses.
 			AndroidControls controls = new AndroidControls();
 			OpenBve.Switch.SwitchPad pad = new OpenBve.Switch.SwitchPad();
@@ -344,6 +347,7 @@ namespace OpenBve.NX
 				}
 
 				double now = clock.Elapsed.TotalSeconds, elapsed = now - last;
+				phase[0] += now - frameStart;
 				last = now;
 				if (session != null)
 				{
@@ -363,8 +367,12 @@ namespace OpenBve.NX
 					renderer.PlaceCamera(trackPosition);
 				}
 
+				double mark = clock.Elapsed.TotalSeconds;
+				phase[1] += mark - now;
 				host.BeginFrame();
 				renderer.RenderScene(elapsed);
+				phase[2] += clock.Elapsed.TotalSeconds - mark;
+				mark = clock.Elapsed.TotalSeconds;
 				if (session != null && overlay.BeginOverlay())
 				{
 					// The in-game interface over the scene (the driving information, as Android's).
@@ -385,8 +393,16 @@ namespace OpenBve.NX
 					overlay.EndOverlay();
 				}
 
+				phase[3] += clock.Elapsed.TotalSeconds - mark;
+				mark = clock.Elapsed.TotalSeconds;
 				sounds.Update(elapsed);
+				renderer.Profile.EndFrame();
+				phase[4] += clock.Elapsed.TotalSeconds - mark;
+				mark = clock.Elapsed.TotalSeconds;
 				deko.EndFrame();
+				phase[5] += clock.Elapsed.TotalSeconds - mark;
+				gpuWait += deko.LastEndMilliseconds;
+				frameStart = clock.Elapsed.TotalSeconds;
 				frames++;
 				total++;
 				double took = clock.Elapsed.TotalSeconds - now;
@@ -403,6 +419,19 @@ namespace OpenBve.NX
 				if (now - windowStart >= 5.0)
 				{
 					Stage($"frames: {frames / (now - windowStart):F1} fps, the slowest {worst * 1000:F1} ms, {renderer.VisibleFaceCount} visible faces; {deko.Describe()}");
+					// Where a frame's time goes, on average: the loop's phases, then the renderer's own (as Android's GameView logs it).
+					string[] names = { "input", "simulation", "RenderScene", "overlay", "sound", "end of frame" };
+					System.Text.StringBuilder split = new System.Text.StringBuilder("frames: per frame ");
+					for (int i = 0; i < phase.Length; i++)
+					{
+						split.Append(i == 0 ? string.Empty : ", ").Append(names[i]).Append(' ').Append((phase[i] * 1000 / Math.Max(1, frames)).ToString("0.0")).Append(" ms");
+						phase[i] = 0;
+					}
+
+					split.Append(" (of it submitting and waiting for the GPU ").Append((gpuWait / Math.Max(1, frames)).ToString("0.0")).Append(" ms)");
+					gpuWait = 0;
+					Log(split.ToString());
+					Log("frames: renderer " + renderer.Profile.Report());
 					frames = 0;
 					worst = 0;
 					windowStart = now;

@@ -109,6 +109,9 @@ namespace OpenBve.NX.Deko
 
 		public double LastFrameMilliseconds { get; private set; }
 
+		/// <summary>The last frame's submit, present and wait for the GPU (the native end), for the log.</summary>
+		public double LastEndMilliseconds { get; private set; }
+
 		private int frameDraws;
 		private long frameTicks;
 
@@ -187,10 +190,13 @@ namespace OpenBve.NX.Deko
 				frameDraws = 0;
 				frameTicks = 0;
 				inFrame = false;
+				long ending = System.Diagnostics.Stopwatch.GetTimestamp();
 				if (DekoNative.End() != 0)
 				{
 					ReportOnce("deko3d: the GPU's queue failed at the end of a frame");
 				}
+
+				LastEndMilliseconds = (System.Diagnostics.Stopwatch.GetTimestamp() - ending) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
 				completedSerial = serial;
 				WorldFrameEnded();
