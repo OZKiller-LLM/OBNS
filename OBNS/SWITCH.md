@@ -281,6 +281,10 @@ RenderScene). Done since, not yet on the console:
 - Less CPU per face: the alpha sort without LINQ, the batch filter's lookups once per object by reference, textures on the GPU
   without the host's layers, colour-key checks by texture, the frame's face lists kept from frame to frame.
 - The log gives DekoGL's recording and texture-making time apart from the rest, and the batcher's summary every 30 s.
+- Loading (steps 2 and 4): parsed objects kept on the SD card (`ObjectDiskCache`, `UserData/ObjectCache`, one pack and index
+  per route) and read back on the next load of the route instead of parsed - the parsers were ~590 s of TML's 680 s. Keyed by
+  file, size, date, encoding, optimisation settings and the parsers' assemblies; `UserData/nx-no-object-cache.txt` keeps it off.
+  The first load is as before; the gain is from the second on.
 
 **Step 6, begun:** the menu in `NX/Game/Menu` (Android's, for buttons: rail, Start, Options, pickers, hints), drawn through
 `IMenuCanvas`; `NX/MenuPreview` draws it into PNG files on Windows. A first pass: once the 2D and 3D rendering are done, its GUI and
