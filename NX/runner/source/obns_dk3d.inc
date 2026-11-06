@@ -173,12 +173,15 @@ EXPORT void obns_dk3d_memory_free(void *block)
 
 // --- textures ---
 
+// Always waited for: the list's command memory is recorded into again straight after, and the GPU must be done reading
+// it (a mid-frame flush that didn't wait let new car textures overwrite uploads still running - noise, 2026-11-06).
 static void flush_uploads(int wait)
 {
+    (void)wait;
     if (!uploadsPending) return;
     QUEUE_LOCK();
     dkQueueSubmitCommands(queue, dkCmdBufFinishList(uploads3d));
-    if (wait) dkQueueWaitIdle(queue);
+    dkQueueWaitIdle(queue);
     QUEUE_UNLOCK();
     dkCmdBufClear(uploads3d);
     dkCmdBufAddMemory(uploads3d, uploads3dMemory, 0, UPLOAD_COMMANDS);
@@ -261,8 +264,8 @@ EXPORT void obns_dk3d_image_mipmaps(int slot, int w, int h, int levels)
         target.mipLevelCount = 1;
         DkImageRect from = { 0, 0, 0, (uint32_t)w, (uint32_t)h, 1 };
         DkImageRect to = { 0, 0, 0, (uint32_t)nw, (uint32_t)nh, 1 };
-        // Each level reads the one just written.
-        dkCmdBufBarrier(uploads3d, DkBarrier_Fragments, DkInvalidateFlags_Image);
+        // Each level reads the one just written - by the copy for level 0, which a fragments barrier doesn't wait for.
+        dkCmdBufBarrier(uploads3d, DkBarrier_Full, DkInvalidateFlags_Image | DkInvalidateFlags_L2Cache);
         dkCmdBufBlitImage(uploads3d, &source, &from, &target, &to, DkBlitFlag_FilterLinear, 0);
         w = nw;
         h = nh;
