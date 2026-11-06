@@ -595,6 +595,8 @@ namespace OpenBve.NX
 			AndroidRenderer renderer = new AndroidRenderer(host, options, fileSystem);
 			// Colour-keyed faces in one cut-out pass (the user's choice, 2026-11-07: harder edges for a good part of the frame).
 			AndroidRenderer.CutoutKeyedFaces = true;
+			// Cars behind the camera or far away updated less often (the user's choice, 2026-11-07).
+			AndroidTrainManager.CarUpdateLod = true;
 			host.Renderer = renderer;
 			OpenBve.Program.CurrentHost = host;
 			OpenBve.Program.Renderer = renderer;

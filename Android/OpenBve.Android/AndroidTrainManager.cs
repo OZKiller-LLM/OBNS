@@ -51,9 +51,50 @@ namespace OpenBve.Android
 			: base(host, renderer, options, fileSystem)
 		{
 			profile = (renderer as AndroidRenderer)?.Profile;
+			cameraSource = renderer;
 		}
 
 		private readonly FrameProfile profile;
+		private readonly BaseRenderer cameraSource;
+
+		/*
+		 * Cars the camera doesn't see well, updated less often (#5, the user's choice 2026-11-07: half-rate far cars):
+		 * a car wholly behind the camera every BehindSeconds, one beyond FarDistance every other frame. Their objects'
+		 * update is upstream's CarBase.UpdateObjects - functions, rotations, a chain of matrix products for every part -
+		 * 7.8 ms a frame in a Tuen Ma Line station's exterior view. The time skipped is handed to the next update, so
+		 * wheels, doors and the rest keep their pace; a car back in view is updated the same frame.
+		 */
+		private const double BehindSeconds = 0.25, FarDistance = 150.0;
+
+		/// <summary>Whether cars behind the camera or far away are updated less often (the Switch sets it).</summary>
+		public static bool CarUpdateLod;
+		private readonly Dictionary<CarBase, double> carPending = new Dictionary<CarBase, double>();
+		private readonly List<double> carElapsed = new List<double>();
+		private int carFrame;
+
+		/// <summary>Whether a car's objects are updated this frame, and with how much time (the skipped frames' with it).</summary>
+		private bool CarDue(CarBase car, int index, double timeElapsed, out double elapsed)
+		{
+			carPending.TryGetValue(car, out double pending);
+			elapsed = pending + timeElapsed;
+			if (CarUpdateLod && cameraSource?.Camera != null)
+			{
+				OpenBveApi.Math.Vector3 middle = 0.5 * (car.FrontAxle.Follower.WorldPosition + car.RearAxle.Follower.WorldPosition);
+				OpenBveApi.Math.Vector3 offset = middle - cameraSource.Camera.AbsolutePosition;
+				OpenBveApi.Math.Vector3 direction = cameraSource.Camera.AbsoluteDirection;
+				double ahead = offset.X * direction.X + offset.Y * direction.Y + offset.Z * direction.Z;
+				bool behind = ahead < -0.5 * car.Length - 10.0;
+				bool far = offset.NormSquared() > FarDistance * FarDistance;
+				if ((behind && elapsed < BehindSeconds) || (!behind && far && ((carFrame + index) & 1) != 0 && pending == 0.0))
+				{
+					carPending[car] = elapsed;
+					return false;
+				}
+			}
+
+			carPending[car] = 0.0;
+			return true;
+		}
 
 		/// <summary>Advances every train by the given time.</summary>
 		/// <remarks>
@@ -175,9 +216,12 @@ namespace OpenBve.Android
 			trains.AddRange(Trains);
 			trains.AddRange(TFOs.OfType<ScriptedTrain>());
 			cars.Clear();
+			carElapsed.Clear();
+			carFrame++;
+			int index = 0;
 			foreach (TrainBase train in trains)
 			{
-				for (int i = 0; i < train.Cars.Length; i++)
+				for (int i = 0; i < train.Cars.Length; i++, index++)
 				{
 					CarBase car = train.Cars[i];
 					if (train.IsPlayerTrain && i == train.DriverCar && car.CarSections.TryGetValue(car.CurrentCarSection, out LibRender2.Trains.CarSection section) &&
@@ -185,9 +229,10 @@ namespace OpenBve.Android
 					{
 						UpdateCar(car, timeElapsed);
 					}
-					else
+					else if (CarDue(car, index, timeElapsed, out double elapsed))
 					{
 						cars.Add(car);
+						carElapsed.Add(elapsed);
 					}
 				}
 			}
@@ -200,7 +245,7 @@ namespace OpenBve.Android
 				{
 					for (int i = start; i < end; i++)
 					{
-						UpdateCar(cars[i], timeElapsed);
+						UpdateCar(cars[i], carElapsed[i]);
 					}
 				}, 4);
 			}
