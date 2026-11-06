@@ -48,6 +48,25 @@ EXPORT uint64_t obns_input_pad(float *leftX, float *leftY, float *rightX, float 
     return padGetButtons(&pad);
 }
 
+// For the touch controls (NX/Game/Hud/TouchControls.cs): every finger on the touch screen (up to max), each with its
+// id - the same while the finger stays down - and its place in 1280x720 screen units; and whether the console is
+// docked (1) or handheld (0). Returns how many.
+EXPORT int obns_input_touches(int max, uint32_t *ids, float *xs, float *ys, int *docked)
+{
+    ensure_pad();
+    *docked = appletGetOperationMode() == AppletOperationMode_Console;
+    HidTouchScreenState state = { 0 };
+    if (!hidGetTouchScreenStates(&state, 1))
+        return 0;
+    int count = state.count < max ? state.count : max;
+    for (int i = 0; i < count; i++) {
+        ids[i] = state.touches[i].finger_id;
+        xs[i] = (float)state.touches[i].x;
+        ys[i] = (float)state.touches[i].y;
+    }
+    return count;
+}
+
 // The buttons held now, the touch screen's first finger (in 1280x720 screen units), and whether the console is docked
 // (1) or handheld (0).
 EXPORT uint32_t obns_input_read(int *touching, float *x, float *y, int *docked)

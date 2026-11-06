@@ -310,6 +310,17 @@ namespace OpenBve.NX
 			TimetableSnapshot snapshot = null;
 			double snapshotAge = 1.0;
 			pause.QuitRequested += () => leave = true;
+			// Android's touch controls (handheld, when Options turn them on): the pause button opens the pause menu as + does.
+			OpenBve.Switch.TouchControls touch = new OpenBve.Switch.TouchControls(controls);
+			touch.SetSingleHandle(session?.Train.Handles.HandleType == global::TrainManager.Handles.HandleType.SingleHandle);
+			bool touchPause = false;
+			touch.PauseRequested += () => touchPause = true;
+			touch.ViewRequested += () => controls.Post(s => s.Camera.CycleView());
+			touch.TimetableRequested += () =>
+			{
+				timetable.Toggle();
+				snapshotAge = 1.0;
+			};
 			double last = 0, windowStart = 0, worst = 0, trackPosition = 0;
 			int windows = 0;
 			int frames = 0, total = 0;
@@ -317,6 +328,21 @@ namespace OpenBve.NX
 			{
 				int touching, docked;
 				float touchX, touchY;
+				touch.Update(pause.Open || session == null);
+				if (session != null)
+				{
+					touch.SetAiActive(session.Train.AI != null);
+				}
+
+				if (touchPause && !pause.Open)
+				{
+					paused = true;
+					sounds.SetPaused(true);
+					touch.ReleaseAll();
+					pause.Show();
+				}
+
+				touchPause = false;
 				if (pause.Open)
 				{
 					uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked);
@@ -405,6 +431,7 @@ namespace OpenBve.NX
 				{
 					// The in-game interface over the scene (the driving information, as Android's).
 					OpenBve.Switch.DriverCard.Draw(overlay, session.Status(session.Camera.ModeName, paused));
+					touch.Draw(overlay);
 					if (timetable.Shown)
 					{
 						snapshotAge += elapsed;
