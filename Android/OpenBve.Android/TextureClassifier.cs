@@ -125,7 +125,13 @@ namespace OpenBve.Android
 					}
 				}
 
-				System.IO.File.Move(temporary, cacheFile, true);
+				// Deleted first: the Switch's file system doesn't rename over an existing file.
+				if (System.IO.File.Exists(cacheFile))
+				{
+					System.IO.File.Delete(cacheFile);
+				}
+
+				System.IO.File.Move(temporary, cacheFile);
 			}
 			catch (Exception)
 			{

@@ -106,9 +106,11 @@ namespace OpenBve.Android
 			values = new Dictionary<string, string>(StringComparer.Ordinal);
 			try
 			{
-				if (System.IO.File.Exists(File))
+				// A save cut short between deleting the old file and renaming the new one leaves only the new one.
+				string source = System.IO.File.Exists(File) ? File : System.IO.File.Exists(File + ".new") ? File + ".new" : null;
+				if (source != null)
 				{
-					foreach (string line in System.IO.File.ReadAllLines(File, Encoding.UTF8))
+					foreach (string line in System.IO.File.ReadAllLines(source, Encoding.UTF8))
 					{
 						int equals = line.IndexOf('=');
 						if (equals > 0 && !line.StartsWith("#", StringComparison.Ordinal))
@@ -137,10 +139,20 @@ namespace OpenBve.Android
 					text.Append(pair.Key).Append(" = ").Append(Escape(pair.Value)).Append('\n');
 				}
 
-				// Written beside and moved over, so a power cut mid-write leaves the old file.
+				/*
+				 * Written beside, then put in the old file's place, so a power cut mid-write leaves the old file. The Switch's
+				 * file system doesn't rename over an existing file (File.Move's overwrite failed there and every change stayed
+				 * in the .new file, unread at the next start, until 2026-11-07): the old one is deleted first, and a start that
+				 * finds only the .new file reads that.
+				 */
 				string temporary = File + ".new";
 				System.IO.File.WriteAllText(temporary, text.ToString(), new UTF8Encoding(false));
-				System.IO.File.Move(temporary, File, true);
+				if (System.IO.File.Exists(File))
+				{
+					System.IO.File.Delete(File);
+				}
+
+				System.IO.File.Move(temporary, File);
 			}
 			catch (Exception)
 			{
