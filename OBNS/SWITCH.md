@@ -260,12 +260,27 @@ world layer (`Deko/DekoGL.World.cs`), which keeps it as a 192-byte record and ha
 lights, fog) written when they change, the object's (its matrices) once for all of its faces, the draw's (material, brightness,
 opacity, alpha test) pushed inline. No GL uniform call, no GL draw, no P/Invoke per face. DekoGL's GL side stays for what the
 renderer makes once (meshes and textures as it loads, which the records then use) and for the few draws left on it: the
-background, particles, upstream's overlays. Not yet: shadows, frames in flight.
+background, particles, upstream's overlays. Not yet: shadows (frames in flight since, step 4).
 
 *Next, after the first run on the console* (the user, 2026-11-06): no GL at all, as the desktop's full alone mode - the meshes
 and textures written straight into deko3d's memory by Switch versions of LibRender2's upload code (in `NX/`), the background
 and particles as world records, upstream's overlays replaced by the Switch's own interface, GL's calls stubbed, DekoGL removed.
 Until the world draws right on the console, DekoGL's GL side stays as the proven way meshes and textures reach deko3d.
+
+**Step 4, begun** (the user, 2026-11-06: "the frame rates are still very low"; the first runs gave 2 to 5 fps on TML at
+10,900 draws a frame, the GPU held at 76 MHz by the loading clock - 128 ms a frame waiting for it - and about 160 ms of CPU in
+RenderScene). Done since, not yet on the console:
+
+- The performance mode in Options (Normal, Turbo - the default - and Overclock), the fan at full in the last two; play no longer
+  runs at FastLoad's GPU clock.
+- The trains handed to the static batcher, as Android's GameView does: on the Switch it never had them, so every face of the
+  cars' still parts was a draw of its own.
+- Two frames in flight: the native end of a frame waits only for the frame before it; command memory and the uniform ring in two
+  halves; what a frame used freed a frame later; the 2D layer waits before it rewrites its quads; `UserData/nx-serial-frames.txt`
+  turns it off for comparisons.
+- Less CPU per face: the alpha sort without LINQ, the batch filter's lookups once per object by reference, textures on the GPU
+  without the host's layers, colour-key checks by texture, the frame's face lists kept from frame to frame.
+- The log gives DekoGL's recording and texture-making time apart from the rest, and the batcher's summary every 30 s.
 
 **Step 6, begun:** the menu in `NX/Game/Menu` (Android's, for buttons: rail, Start, Options, pickers, hints), drawn through
 `IMenuCanvas`; `NX/MenuPreview` draws it into PNG files on Windows. A first pass: once the 2D and 3D rendering are done, its GUI and
