@@ -1606,9 +1606,14 @@ namespace OpenBve.NX.Deko
 			}
 			else if (type == GL_UNSIGNED_SHORT_4_4_4_4)
 			{
-				dkFormat = DekoNative.FormatRGBA4;
-				sourceBytes = targetBytes = 2;
-				SetSwizzle(swizzle, DekoNative.SwizzleAlpha, DekoNative.SwizzleBlue, DekoNative.SwizzleGreen, DekoNative.SwizzleRed);
+				/*
+				 * Widened to RGBA8: the mipmaps are made by the 2D engine's blits, which have no 4-4-4-4 format - its smaller
+				 * levels came out as coloured noise, on everything partly transparent seen from a distance (2026-11-07).
+				 */
+				dkFormat = DekoNative.FormatRGBA8;
+				sourceBytes = 2;
+				targetBytes = 4;
+				conversion = 3;
 			}
 			else if (type == GL_UNSIGNED_SHORT_5_5_5_1)
 			{
@@ -1640,6 +1645,22 @@ namespace OpenBve.NX.Deko
 				if (conversion == 0)
 				{
 					System.Buffer.MemoryCopy(from, to, targetStride, targetStride);
+					continue;
+				}
+
+				if (conversion == 3)
+				{
+					// GL's R4G4B4A4 (red in the top nibble) to RGBA8, each nibble times 17.
+					ushort* gl16 = (ushort*)from;
+					for (int x = 0; x < width; x++, to += 4)
+					{
+						int v = gl16[x];
+						to[0] = (byte)(((v >> 12) & 15) * 17);
+						to[1] = (byte)(((v >> 8) & 15) * 17);
+						to[2] = (byte)(((v >> 4) & 15) * 17);
+						to[3] = (byte)((v & 15) * 17);
+					}
+
 					continue;
 				}
 
