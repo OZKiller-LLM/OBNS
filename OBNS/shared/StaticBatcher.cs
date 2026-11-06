@@ -145,6 +145,8 @@ namespace OpenBve
 			/// <summary>Each merged face's index count (its vertex array is dropped once uploaded).</summary>
 			public int[] FaceLengths;
 			public HashSet<MeshFaceVertex[]> Covered;
+			/// <summary>Members whose faces it covers entirely: their faces leave the lists without a lookup each.</summary>
+			public HashSet<ObjectState> Whole;
 			public long Vertices;
 		}
 
@@ -586,7 +588,7 @@ namespace OpenBve
 			// An object's faces lie together in the lists: its group and whether it is scenery are looked up once for them.
 			ObjectState lastObject = null;
 			Group lastGroup = null;
-			bool lastGrouped = false, lastStatic = false;
+			bool lastGrouped = false, lastStatic = false, lastWhole = false;
 			for (int i = 0; i < faces.Count; i++)
 			{
 				FaceState face = faces[i];
@@ -595,6 +597,24 @@ namespace OpenBve
 					lastObject = face.Object;
 					lastGrouped = groupOf.TryGetValue(lastObject, out lastGroup);
 					lastStatic = staticStates.Contains(lastObject);
+					lastWhole = false;
+					if (lastGrouped && lastGroup.Batch != null)
+					{
+						if (lastGroup.SeenFrame != frame)
+						{
+							lastGroup.SeenFrame = frame;
+							lastGroup.LastSeen = now;
+							visible.Add(lastGroup);
+						}
+
+						lastWhole = lastGroup.Batch.Whole.Contains(lastObject);
+					}
+				}
+
+				if (lastWhole)
+				{
+					// The batch draws all of this object's faces.
+					continue;
 				}
 
 				Group group = lastGroup;
@@ -602,13 +622,6 @@ namespace OpenBve
 				{
 					if (group.Batch != null)
 					{
-						if (group.SeenFrame != frame)
-						{
-							group.SeenFrame = frame;
-							group.LastSeen = now;
-							visible.Add(group);
-						}
-
 						if (group.Batch.Covered.Contains(face.Face.Vertices))
 						{
 							continue;
@@ -1044,6 +1057,7 @@ namespace OpenBve
 				AlphaFaces = alphaFaces.ToArray(),
 				FaceLengths = lengths,
 				Covered = covered,
+				Whole = WholeMembers(group, covered),
 				Vertices = vertices.Count
 			};
 		}
@@ -1182,6 +1196,20 @@ namespace OpenBve
 					Apply(owner);
 				}
 			}
+		}
+
+		private static HashSet<ObjectState> WholeMembers(Group group, HashSet<MeshFaceVertex[]> covered)
+		{
+			HashSet<ObjectState> whole = new HashSet<ObjectState>(ByReference<ObjectState>.Instance);
+			foreach (ObjectState member in group.Members)
+			{
+				if (FullyCovered(member, covered))
+				{
+					whole.Add(member);
+				}
+			}
+
+			return whole;
 		}
 
 		private static bool FullyCovered(ObjectState member, HashSet<MeshFaceVertex[]> covered)
