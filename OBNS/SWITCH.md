@@ -262,6 +262,11 @@ opacity, alpha test) pushed inline. No GL uniform call, no GL draw, no P/Invoke 
 renderer makes once (meshes and textures as it loads, which the records then use) and for the few draws left on it: the
 background, particles, upstream's overlays. Not yet: shadows, frames in flight.
 
+*Next, after the first run on the console* (the user, 2026-11-06): no GL at all, as the desktop's full alone mode - the meshes
+and textures written straight into deko3d's memory by Switch versions of LibRender2's upload code (in `NX/`), the background
+and particles as world records, upstream's overlays replaced by the Switch's own interface, GL's calls stubbed, DekoGL removed.
+Until the world draws right on the console, DekoGL's GL side stays as the proven way meshes and textures reach deko3d.
+
 **Step 6, begun:** the menu in `NX/Game/Menu` (Android's, for buttons: rail, Start, Options, pickers, hints), drawn through
 `IMenuCanvas`; `NX/MenuPreview` draws it into PNG files on Windows. A first pass: once the 2D and 3D rendering are done, its GUI and
 UX are to match Android's, with only the changes noted above (the user, 2026-11-06).
