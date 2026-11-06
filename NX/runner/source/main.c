@@ -45,7 +45,8 @@ EXPORT int64_t obns_native_heap_used(void)
 //   4 Overclock - each clock at the highest rate the console's clock table lists, up to the chip's ratings (the
 //                 overclocking guides for the first model, researched 2026-11-06: past them "unstable" or "very
 //                 dangerous"): plugged in, CPU 2,091 MHz, GPU 998.4 MHz (NVIDIA's T210 rating), memory 1,600 MHz (its
-//                 rating: unstable memory clocks corrupt the system storage and the SD card); on battery, where over
+//                 rating; with Horizon OC's kip, the highest listed up to 2,133 MHz - unstable memory clocks corrupt
+//                 the system storage and the SD card, so its rate is chosen and tested in Horizon OC); on battery, where over
 //                 8.6 W harms the battery, CPU 1,785 MHz and GPU 460.8 MHz. The stock table stops at CPU 1,785, GPU
 //                 921.6 and memory 1,600 MHz; an overclocking module extending it raises them, never past these. Fan
 //                 at full.
@@ -91,7 +92,12 @@ static u32 target_rate(int mode, int clock)
         bool battery = !docked && on_battery();
         if (clock == 0) return battery ? 1785000000u : 2091000000u;
         if (clock == 1) return battery ? 460800000u : 998400000u;
-        return 1600000000u;
+        /*
+         * Memory: the highest rate the table lists, up to 2,133 MHz (the top of the Erista guide's range at the rated
+         * 1,175 mV). The stock table stops at 1,600 MHz; Horizon OC's kip lists the rate chosen in its settings, after
+         * a stability test there (unstable memory clocks corrupt the system storage and the SD card).
+         */
+        return 2133000000u;
     }
     if (mode == 3) {
         if (clock == 0) return 1785000000u;
@@ -101,9 +107,33 @@ static u32 target_rate(int mode, int clock)
     return 0;
 }
 
+// Once: the rates each clock's table lists, in the log - what an overclocking module has unlocked shows there.
+static void log_rates(void)
+{
+    static bool logged;
+    if (logged) return;
+    logged = true;
+    static const char *names[CLOCKS] = { "CPU", "GPU", "memory" };
+    for (int i = 0; i < CLOCKS; i++) {
+        ClkrstSession session;
+        if (R_FAILED(clkrstOpenSession(&session, clockModules[i], 3))) continue;
+        u32 rates[64];
+        s32 count = 0;
+        PcvClockRatesListType type = PcvClockRatesListType_Invalid;
+        if (R_SUCCEEDED(clkrstGetPossibleClockRates(&session, rates, 64, &type, &count)) && count > 0) {
+            printf("OBNS: clocks: %s lists", names[i]);
+            for (s32 r = 0; r < count && r < 64; r++) printf(" %u", rates[r] / 100000u * 100u / 1000u);
+            printf(" MHz
+");
+        }
+        clkrstCloseSession(&session);
+    }
+}
+
 static void apply_clocks(int mode, bool settle)
 {
     if (!hosversionAtLeast(8, 0, 0) || R_FAILED(clkrstInitialize())) return;
+    log_rates();
     for (int i = 0; i < CLOCKS; i++) {
         u32 target = target_rate(mode, i);
         // Clocks no mode has set are left alone, even when putting back.
