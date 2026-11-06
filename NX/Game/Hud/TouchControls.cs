@@ -256,30 +256,29 @@ namespace OpenBve.Switch
 			space.Y = DriverCard.BaseTop;
 
 			/*
-			 * The camera's arrow keys (upstream's CAMERA_ROTATE_*, on the keyboard's arrows): an inverted T over the space bar,
-			 * for the left thumb, turning the view while held - the user's, 2026-11-07, the other camera buttons being
-			 * the full set's.
+			 * The camera numpad, the full set's (Android's): upstream's keypad camera keys in the keypad's own layout, always
+			 * shown, in the band between the number row and the keys along the bottom, over the navigation block on the
+			 * right, as Android has it beside the levers (the user's, 2026-11-07). Moves and zooms repeat while held.
 			 */
-			float arrowWidth = 84, arrowHeight = 72, arrowGap = 10;
-			float arrowLeft = space.X + (space.Width - (3 * arrowWidth + 2 * arrowGap)) / 2;
-			float arrowRow = space.Y - 20 - arrowHeight;
-			(Translations.Command Command, string Label, float X, float Y)[] arrows =
+			float padKey = 78, padHeight = 54, padGap = 8;
+			float padBlockWidth = 3 * padKey + 2 * padGap, padBlockHeight = pad.Length * padHeight + (pad.Length - 1) * padGap;
+			float padLeftAts = navLeft + (3 * navWidth + 2 * navGap - padBlockWidth) / 2;
+			float bandTop = edge + 72, padTopAts = bandTop + (navTop - bandTop - padBlockHeight) / 2;
+			for (int r = 0; r < pad.Length; r++)
 			{
-				(Translations.Command.CameraRotateUp, "▲", arrowLeft + arrowWidth + arrowGap, arrowRow - arrowGap - arrowHeight),
-				(Translations.Command.CameraRotateLeft, "◀", arrowLeft, arrowRow),
-				(Translations.Command.CameraRotateDown, "▼", arrowLeft + arrowWidth + arrowGap, arrowRow),
-				(Translations.Command.CameraRotateRight, "▶", arrowLeft + 2 * (arrowWidth + arrowGap), arrowRow)
-			};
-			foreach ((Translations.Command command, string label, float ax, float ay) in arrows)
-			{
-				Key key = Command(label, command, camera);
-				keys.Remove(key);
-				key.TextSize = 22;
-				key.X = ax;
-				key.Y = ay;
-				key.Width = arrowWidth;
-				key.Height = arrowHeight;
-				atsLayout.Add(key);
+				float padX = padLeftAts;
+				foreach ((string label, Translations.Command command) in pad[r])
+				{
+					Key key = Command(label, command, camera, small: true);
+					keys.Remove(key);
+					key.Width = label.StartsWith("0", StringComparison.Ordinal) ? 2 * padKey + padGap : padKey;
+					key.Height = padHeight;
+					key.TextSize = 16;
+					key.X = padX;
+					key.Y = padTopAts + r * (padHeight + padGap);
+					padX += key.Width + padGap;
+					atsLayout.Add(key);
+				}
 			}
 
 			numpadWidth = Dp(3 * 58);
