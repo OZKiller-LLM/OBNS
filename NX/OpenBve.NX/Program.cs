@@ -516,6 +516,7 @@ namespace OpenBve.NX
 					if (++windows % 6 == 1)
 					{
 						Log("frames: static batches " + renderer.BatchSummary);
+						Log("frames: passes " + renderer.PassSummary + "; emulated plugins " + OpenBve.NativePlugins.EmulatedWin32Plugin.TakeElapse());
 						if (compressedTextures != null)
 						{
 							Log("frames: " + compressedTextures.Describe());

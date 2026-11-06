@@ -408,6 +408,7 @@ namespace OpenBve.Android
 
 			ResetOpenGlState();
 			AlphaDrawCalls = DrawAlphaFaces(alphaFaces, unsortedAlphaFaces, batcher);
+			LastPasses = (opaqueFaces.Count, OpaqueDrawCalls, unsortedAlphaFaces.Count, alphaFaces.Count, AlphaDrawCalls);
 			Profile.Mark("alpha faces");
 
 			// Motion blur, where upstream's NewRenderer draws it: over the world, under the cab.
@@ -943,6 +944,13 @@ namespace OpenBve.Android
 
 		/// <summary>Draw calls issued for opaque faces in the last frame, for the performance log.</summary>
 		public int OpaqueDrawCalls { get; private set; }
+
+		/// <summary>The last frame's lists and calls, for the frame log: opaque faces and their calls, the transparent
+		/// faces (in object order, and those sorted to blend) and their calls.</summary>
+		public (int Opaque, int OpaqueCalls, int Transparent, int Blended, int TransparentCalls) LastPasses { get; private set; }
+
+		public string PassSummary => "opaque " + LastPasses.Opaque + " faces in " + LastPasses.OpaqueCalls + " calls, transparent " + LastPasses.Transparent +
+		                             " faces (" + LastPasses.Blended + " sorted to blend) in " + LastPasses.TransparentCalls + " calls";
 
 		/// <summary>
 		/// Draws the opaque faces, merging runs that can share one draw call.

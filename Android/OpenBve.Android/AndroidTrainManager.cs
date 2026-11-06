@@ -104,6 +104,8 @@ namespace OpenBve.Android
 		/// </remarks>
 		public void UpdateTrains(double timeElapsed)
 		{
+			// What came before the trains (the controls) charged to it, so the trains' marks below are theirs alone.
+			profile?.Mark("before trains");
 			foreach (TrainBase train in Trains)
 			{
 				/*
@@ -121,10 +123,13 @@ namespace OpenBve.Android
 				}
 			}
 
+			profile?.Mark("trains: player and preceding");
 			foreach (AbstractTrain train in TFOs)
 			{
 				train.Update(timeElapsed);
 			}
+
+			profile?.Mark("trains: scripted");
 
 			// Collisions between trains and with buffer stops, as upstream (whose option defaults on).
 			if (currentHost.SimulationState != SimulationState.MinimalisticSimulation)

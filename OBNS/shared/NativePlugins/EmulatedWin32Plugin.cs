@@ -47,6 +47,16 @@ namespace OpenBve.NativePlugins
 	/// </remarks>
 	internal sealed class EmulatedWin32Plugin : PluginBase
 	{
+		/// <summary>Time in the emulated plugins' Elapse, and how many calls, since last taken (TakeElapse).</summary>
+		internal static long ElapseTicks, ElapseCalls;
+
+		/// <summary>The emulated plugins' Elapse time since the last call, for the frame log: "N calls, M ms".</summary>
+		public static string TakeElapse()
+		{
+			long ticks = System.Threading.Interlocked.Exchange(ref ElapseTicks, 0), calls = System.Threading.Interlocked.Exchange(ref ElapseCalls, 0);
+			return calls + " calls, " + (ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency).ToString("0") + " ms";
+		}
+
 		/// <summary>Which of the layer's processors runs it, for the log.</summary>
 		private readonly string layer;
 
@@ -171,6 +181,7 @@ namespace OpenBve.NativePlugins
 			};
 
 			AtsHandles handles;
+			long elapseStarted = System.Diagnostics.Stopwatch.GetTimestamp();
 			try
 			{
 				handles = plugin.Elapse(state, Panel, Sound);
@@ -179,6 +190,12 @@ namespace OpenBve.NativePlugins
 			{
 				Fail(ex);
 				return;
+			}
+			finally
+			{
+				// For the frame log: the emulated plugin's share of the train update.
+				System.Threading.Interlocked.Add(ref ElapseTicks, System.Diagnostics.Stopwatch.GetTimestamp() - elapseStarted);
+				System.Threading.Interlocked.Increment(ref ElapseCalls);
 			}
 
 			LogPanelChanges();
