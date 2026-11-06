@@ -944,6 +944,18 @@ namespace LibRender2.Textures
 			}
 		}
 
+		/*
+		 * ANDROID PORT: upstream never sets AvailableToUnload, so its unloading of unused textures unloads nothing - on the
+		 * Switch every texture ever shown stayed, until the Tuen Ma Line's 948 MB of them ran the native heap out
+		 * (2026-11-07). With UnloadUnpinned (the Switch sets it), a content texture (from a file) that no animated object
+		 * keeps (OpenBveApi.Objects.AnimatedObject.PinnedTextures) is unloaded too, once unused for 20 s; it is loaded
+		 * again when next drawn.
+		 */
+		public static bool UnloadUnpinned;
+
+		private static bool Unpinned(Texture texture) =>
+			UnloadUnpinned && texture.Origin is PathOrigin && !OpenBveApi.Objects.AnimatedObject.PinnedTextures.TryGetValue(texture, out _);
+
 		/// <summary>Unloads any textures which have not been accessed</summary>
 		/// <param name="TimeElapsed">The time elapsed since the last call to this function</param>
 		public void UnloadUnusedTextures(double TimeElapsed)
@@ -968,7 +980,7 @@ namespace LibRender2.Textures
 				{
 					for (int i = 0; i < RegisteredTextures.Length; i++)
 					{
-						if (RegisteredTextures[i] != null && RegisteredTextures[i].AvailableToUnload && (CPreciseTimer.GetClockTicks() - RegisteredTextures[i].LastAccess) > 20000)
+						if (RegisteredTextures[i] != null && (RegisteredTextures[i].AvailableToUnload || Unpinned(RegisteredTextures[i])) && (CPreciseTimer.GetClockTicks() - RegisteredTextures[i].LastAccess) > 20000)
 						{
 							UnloadTexture(ref RegisteredTextures[i]);
 						}

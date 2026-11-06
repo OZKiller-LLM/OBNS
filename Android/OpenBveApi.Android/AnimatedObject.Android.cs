@@ -16,6 +16,14 @@ namespace OpenBveApi.Objects
 	/// <summary>The base type for an animated object</summary>
 	public class AnimatedObject
 	{
+		/// <summary>
+		/// ANDROID PORT: the textures animated objects keep loaded (every state's, so a change of state never waits for one):
+		/// upstream marks them AvailableToUnload = false, which is also every texture's default, so the texture manager's
+		/// unloading of unused textures (TextureManager.UnloadUnpinned) tells them apart by this.
+		/// </summary>
+		public static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Texture, object> PinnedTextures =
+			new System.Runtime.CompilerServices.ConditionalWeakTable<Texture, object>();
+
 		/// <summary>The filename</summary>
 		private readonly string FileName;
 		/// <summary>The array of states</summary>
@@ -1040,11 +1048,13 @@ namespace OpenBveApi.Objects
 						{
 							currentHost.LoadTexture(ref States[i].Prototype.Mesh.Materials[face.Material].DaytimeTexture, wrap);
 							States[i].Prototype.Mesh.Materials[face.Material].DaytimeTexture.AvailableToUnload = false;
+							PinnedTextures.AddOrUpdate(States[i].Prototype.Mesh.Materials[face.Material].DaytimeTexture, null);
 						}
 						if (States[i].Prototype.Mesh.Materials[face.Material].NighttimeTexture != null)
 						{
 							currentHost.LoadTexture(ref States[i].Prototype.Mesh.Materials[face.Material].NighttimeTexture, wrap);
 							States[i].Prototype.Mesh.Materials[face.Material].NighttimeTexture.AvailableToUnload = false;
+							PinnedTextures.AddOrUpdate(States[i].Prototype.Mesh.Materials[face.Material].NighttimeTexture, null);
 						}
 					}
 				}

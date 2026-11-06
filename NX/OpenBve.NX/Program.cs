@@ -622,6 +622,8 @@ namespace OpenBve.NX
 			AndroidRenderer.CutoutKeyedFaces = true;
 			// Cars behind the camera or far away updated less often (the user's choice, 2026-11-07).
 			AndroidTrainManager.CarUpdateLod = true;
+			// Content textures unused for 20 s unloaded (upstream's unloading never did: nothing is marked unloadable).
+			LibRender2.Textures.TextureManager.UnloadUnpinned = true;
 			host.Renderer = renderer;
 			OpenBve.Program.CurrentHost = host;
 			OpenBve.Program.Renderer = renderer;
