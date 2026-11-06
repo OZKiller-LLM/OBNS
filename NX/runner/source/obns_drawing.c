@@ -300,6 +300,33 @@ static FT_Error load_glyph(ObnsFont *font, FT_Face face, FT_UInt glyph, bool ren
     return render ? FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL) : 0;
 }
 
+// One character's glyph, rendered, for deko3d's glyph atlas (obns_dk.c): its coverage bitmap (FreeType's, valid until
+// the next call), where it sits from the pen (left, and top above the baseline) and the advance. 0 if there is none.
+typedef struct {
+    const uint8_t *bitmap;
+    int width, rows, pitch, left, top;
+    float advance;
+} ObnsGlyph;
+
+EXPORT int obns_font_glyph(ObnsFont *font, uint32_t codepoint, ObnsGlyph *out)
+{
+    if (!font) return 0;
+    FT_UInt glyph;
+    FT_Face face = face_for(font, codepoint, &glyph);
+    if (!face) return 0;
+    FT_Set_Transform(face, NULL, NULL);
+    if (load_glyph(font, face, glyph, true) != 0) return 0;
+    FT_GlyphSlot slot = face->glyph;
+    out->bitmap = slot->bitmap.buffer;
+    out->width = (int)slot->bitmap.width;
+    out->rows = (int)slot->bitmap.rows;
+    out->pitch = slot->bitmap.pitch;
+    out->left = slot->bitmap_left;
+    out->top = slot->bitmap_top;
+    out->advance = (float)slot->advance.x / 64.0f;
+    return 1;
+}
+
 EXPORT void obns_font_metrics(ObnsFont *font, float *ascent, float *descent)
 {
     FT_Face face = font ? face_at(font, 0) : NULL;

@@ -90,6 +90,34 @@ namespace OpenBve.NX
 			Log($"{Clock.Elapsed.TotalSeconds,7:F1} s  {what}  [{Memory()}]");
 		}
 
+		/// <summary>Exceptions thrown, caught or not, by type and the method that threw: on Mono ahead of time each costs
+		/// a stack walk, so a parser that throws on ordinary content is slow on the Switch where a JIT barely notices.</summary>
+		private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> Thrown = new System.Collections.Concurrent.ConcurrentDictionary<string, int>();
+
+		private static void OnThrown(object sender, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs e)
+		{
+			System.Reflection.MethodBase site = e.Exception.TargetSite;
+			string key = e.Exception.GetType().Name + " in " + (site == null ? "?" : site.DeclaringType?.Name + "." + site.Name);
+			Thrown.AddOrUpdate(key, 1, (_, n) => n + 1);
+		}
+
+		/// <summary>The exceptions since the last call, most thrown first, then forgotten.</summary>
+		private static string Exceptions()
+		{
+			System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, int>> list = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, int>>(Thrown);
+			Thrown.Clear();
+			list.Sort((a, b) => b.Value.CompareTo(a.Value));
+			int total = 0;
+			foreach (System.Collections.Generic.KeyValuePair<string, int> pair in list) total += pair.Value;
+			StringBuilder text = new StringBuilder("exceptions: " + total);
+			for (int i = 0; i < list.Count && i < 6; i++)
+			{
+				text.Append(i == 0 ? ": " : ", ").Append(list[i].Value).Append(' ').Append(list[i].Key);
+			}
+
+			return text.ToString();
+		}
+
 		private static int Main(string[] args)
 		{
 			Directory.CreateDirectory(Root + "/UserData");
@@ -106,6 +134,7 @@ namespace OpenBve.NX
 			}
 			finally
 			{
+				LoadingScreen.Stop();
 				SetCpuBoost(0);
 				logFile.Dispose();
 			}
@@ -150,10 +179,91 @@ namespace OpenBve.NX
 			renderer.DynamicObjectStates = new System.Collections.Generic.List<OpenBveApi.Objects.ObjectState>();
 			renderer.VisibleObjects = new LibRender2.Objects.VisibleObjectLibrary(renderer);
 			renderer.Lighting.Initialize();
+
+			// The default shader, never compiled: what the vertex arrays need of it is its vertex layout, whose handles
+			// all start at -1 (no attribute), so the objects' buffers are made, to the GL stubs, as GameView's scene
+			// preparation makes them - and the visibility thread gets its sorted lists. deko3d's shaders replace it.
+			LibRender2.Shaders.Shader shader = (LibRender2.Shaders.Shader)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(LibRender2.Shaders.Shader));
+			typeof(LibRender2.Shaders.Shader).GetField(nameof(LibRender2.Shaders.Shader.VertexLayout)).SetValue(shader, new LibRender2.VertexLayout());
+			typeof(LibRender2.Shaders.Shader).GetField(nameof(LibRender2.Shaders.Shader.UniformLayout)).SetValue(shader, new LibRender2.UniformLayout());
+			renderer.DefaultShader = shader;
+		}
+
+		/// <summary>
+		/// Where an object's load time goes on the Switch (TML's objects took 580 of the route's 669 s, and the
+		/// collector wasn't it): about 300 of the route's object files, spread over its folders, each timed through
+		/// reading its bytes, finding its encoding and the plugin's parse - the plugin called directly, past the
+		/// host's cache, single-threaded.
+		/// </summary>
+		private static void ObjectBenchmark(AndroidHost host, string objectFolder)
+		{
+			Stopwatch watch = Stopwatch.StartNew();
+			System.Collections.Generic.List<string> all = new System.Collections.Generic.List<string>();
+			foreach (string file in Directory.EnumerateFiles(objectFolder, "*", SearchOption.AllDirectories))
+			{
+				string extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
+				if (extension == ".csv" || extension == ".b3d" || extension == ".x" || extension == ".animated")
+				{
+					all.Add(file);
+				}
+			}
+
+			double listing = watch.Elapsed.TotalSeconds;
+			all.Sort(StringComparer.Ordinal);
+			int step = Math.Max(1, all.Count / 300);
+			double read = 0, detect = 0, parse = 0;
+			long bytes = 0;
+			int parsed = 0, failed = 0;
+			double worst = 0;
+			string worstFile = string.Empty;
+			for (int i = 0; i < all.Count; i += step)
+			{
+				string file = all[i];
+				watch.Restart();
+				bytes += File.ReadAllBytes(file).Length;
+				read += watch.Elapsed.TotalSeconds;
+				watch.Restart();
+				Encoding encoding = OpenBveApi.TextEncoding.GetSystemEncodingFromFile(file, Encoding.UTF8);
+				detect += watch.Elapsed.TotalSeconds;
+				watch.Restart();
+				bool ok = false;
+				foreach (OpenBveApi.ContentLoadingPlugin plugin in host.Plugins)
+				{
+					if (plugin.Object != null && plugin.Object.CanLoadObject(file))
+					{
+						try
+						{
+							ok = plugin.Object.LoadObject(file, encoding, out OpenBveApi.Objects.UnifiedObject loaded) && loaded != null;
+						}
+						catch (Exception)
+						{
+							ok = false;
+						}
+
+						break;
+					}
+				}
+
+				double seconds = watch.Elapsed.TotalSeconds;
+				parse += seconds;
+				if (seconds > worst)
+				{
+					worst = seconds;
+					worstFile = file.Substring(objectFolder.Length);
+				}
+
+				if (ok) parsed++; else failed++;
+			}
+
+			int count = parsed + failed;
+			Log($"object benchmark: {all.Count} object files listed in {listing:F1} s; {count} timed ({bytes >> 10} KiB): " +
+			    $"read {read:F2} s ({read * 1000 / count:F1} ms each), encoding {detect:F2} s, parse {parse:F2} s ({parse * 1000 / count:F1} ms each), " +
+			    $"{parsed} parsed, {failed} failed; slowest {worst * 1000:F0} ms ({worstFile})");
 		}
 
 		private static int Run()
 		{
+			AppDomain.CurrentDomain.FirstChanceException += OnThrown;
 			// Loading at the CPU's 1,785 MHz with the GPU held low: apm's FastLoad, the console's own loading clock.
 			int mhz = SetCpuBoost(1);
 			Stage($"OBNS for the Switch (1.31N): {RuntimeInformation.FrameworkDescription}, {Environment.ProcessorCount} cores, CPU {mhz} MHz");
@@ -178,7 +288,7 @@ namespace OpenBve.NX
 			fileSystem.LoksimDataDirectory = fileSystem.LoksimPackageInstallationDirectory;
 			fileSystem.RestartProcess = string.Empty;
 			fileSystem.RestartArguments = string.Empty;
-			Menu.Init(host, fileSystem, "en-US", "1.14.1.2-nx");
+			Menu.Init(host, fileSystem, SwitchSettings.GetLanguage(), "1.14.1.2-nx");
 			Stage("file system and translations");
 
 			string routeFile = null, trainFolder = null;
@@ -217,6 +327,21 @@ namespace OpenBve.NX
 			InitializeWithoutDrawing(renderer, host);
 			OpenBve.Program.FileSystem = fileSystem;
 			Stage("plugins: " + plugins.Replace("\n", "; "));
+			if (!File.Exists(choice))
+			{
+				// The menu (OBNS/SWITCH.md, step 6) chooses the route and the train; nx-load.txt skips it for measurements.
+				OpenBve.Switch.SwitchLaunch launch = MenuLoop.Run(Log);
+				if (launch == null)
+				{
+					Stage("menu: left without starting");
+					return 0;
+				}
+
+				routeFile = launch.RouteFile;
+				trainFolder = launch.TrainFolder;
+			}
+
+			LoadingScreen.Start(Log);
 
 			host.FileSystem = fileSystem;
 			host.CurrentTrainFolder = trainFolder ?? AndroidTrainSession.FindTrain(fileSystem.InitialTrainFolder, host) ?? string.Empty;
@@ -225,6 +350,7 @@ namespace OpenBve.NX
 			LoadProfile.Begin("route parser");
 			string route = AndroidRouteLoader.LoadRoute(host, fileSystem, renderer, routeFile, null, out RouteManager2.CurrentRoute currentRoute);
 			Log("load profile, route: " + LoadProfile.End());
+			Log(Exceptions());
 			string gaps = LoadProfile.GapReport();
 			if (gaps.Length != 0)
 			{
@@ -250,17 +376,20 @@ namespace OpenBve.NX
 				VertexCopyReleaser.ReleaseAll(renderer);
 				GC.Collect();
 				Log("load profile, scene: " + LoadProfile.End());
+				Log(Exceptions());
 				Stage("scene prepared: " + MeshSharing.Describe());
 				LoadProfile.Begin("train and placement");
 				try
 				{
 					string train = AndroidTrainSession.Load(host, trainManager, renderer, currentRoute, fileSystem, host.CurrentTrainFolder, null, out AndroidTrainSession session);
 					Log("load profile, train: " + LoadProfile.End());
+					Log(Exceptions());
 					Stage("train: " + train.Replace("\n", "; "));
 				}
 				catch (Exception e)
 				{
 					Log("load profile, train: " + LoadProfile.End());
+					Log(Exceptions());
 					Log("train failed: " + e);
 					Stage("train failed: " + e.GetType().Name);
 				}
@@ -273,6 +402,20 @@ namespace OpenBve.NX
 			GC.Collect();
 			Stage($"loaded; managed {before} MiB before the final collection; {host.ErrorCount} error(s)");
 			Stage(TextureCensus.DescribeMeshes(renderer));
+			try
+			{
+				ObjectBenchmark(host, content + "/Railway/Object");
+			}
+			catch (Exception e)
+			{
+				Log("object benchmark failed: " + e);
+			}
+
+			Log(Exceptions());
+			Stage("benchmark done");
+			LoadingScreen.Finish();
+			// The full bar for a few seconds, to be seen on the console.
+			System.Threading.Thread.Sleep(5000);
 			return 0;
 		}
 	}

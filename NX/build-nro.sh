@@ -78,6 +78,12 @@ rm -f "$OUT/runner/OBNS.elf" "$OUT/runner/OBNS.nro"
 link_nro() {
     echo "== linking"
     cp -r "$NX/runner/source" "$NX/runner/Makefile" "$OUT/runner/"
+    # deko3d's shaders: GLSL compiled by uam into .dksh, linked in through the Makefile's data folder (bin2o).
+    rm -rf "$OUT/runner/data" && mkdir -p "$OUT/runner/data"
+    for shader in "$NX"/runner/shaders/*.vert "$NX"/runner/shaders/*.frag; do
+        name=$(basename "$shader")
+        "$DEVKITPRO/tools/bin/uam" -s "${name##*.}" -o "$OUT/runner/data/${name%.*}_${name##*.}.dksh" "$shader" || { echo "uam failed: $name"; exit 1; }
+    done
 cp "$OUT/runner/mono_symbols.h" "$OUT/runner/source/"
 cp -r "$MONO_NX_ROOT/../native/shared" "$OUT/runner/nxshared"
 : > "$OUT/runner/source/obns_stubs.c"

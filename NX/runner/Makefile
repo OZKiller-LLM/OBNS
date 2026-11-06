@@ -105,7 +105,7 @@ LIBS	:=  \
 			$(MONO_NX_ROOT)/artifacts/obj/mono/libnx.arm64.Release/out/lib/libmono-component-marshal-ilgen-static.a \
 			$(MONO_NX_ROOT)/artifacts/obj/mono/libnx.arm64.Release/_deps/fetchzlibng-build/libz.a \
 			-lopenal -lSDL2 -lfreetype -lharfbuzz -lfreetype -lpng16 -lz -lbz2 -lturbojpeg \
-			-pthread -lnx -lm -lstdc++
+			-pthread -ldeko3d -lnx -lm -lstdc++
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
@@ -258,6 +258,11 @@ $(OFILES_SRC)	: $(HFILES_BIN)
 #---------------------------------------------------------------------------------
 %.bin.o	%_bin.h :	%.bin
 #---------------------------------------------------------------------------------
+	@echo $(notdir $<)
+	@$(bin2o)
+
+# deko3d's shaders, compiled by uam (NX/build-nro.sh), linked in as data.
+%.dksh.o	%_dksh.h :	%.dksh
 	@echo $(notdir $<)
 	@$(bin2o)
 
