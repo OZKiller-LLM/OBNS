@@ -78,7 +78,8 @@ namespace OpenBve.NX
 		private int taps, closeAttempts, departAttempts, station = -1, firstStation = -1;
 		private bool doorsLeft, doorsRight;
 		private double stoppedSince = -1;
-		private double aiOff = -10;
+		private double aiOff = -10, viewChecked;
+		private int viewFixes;
 
 		// The frames: each one's time, by section (between stations) and by standing or moving.
 		private readonly List<double> all = new List<double>(65536);
@@ -236,7 +237,22 @@ namespace OpenBve.NX
 				aiOff = now;
 				// Never OpenBVE's AI driver: the train's own plugin drives.
 				Event("OpenBVE's AI driver was on; turned off");
-				Tap(controls, Translations.Command.MiscAI);
+				controls.Press(Translations.Command.MiscAI);
+				controls.Release(Translations.Command.MiscAI);
+			}
+
+			// The exterior view throughout: checked each second once set, put back if anything changed it (counted in the
+			// summary - frames in another view would not be the exterior's).
+			if (step != Step.Settle && now - viewChecked >= 1.0)
+			{
+				viewChecked = now;
+				if (!session.Camera.IsExterior)
+				{
+					viewFixes++;
+					Event("the view was " + session.Camera.ModeName + "; back to the exterior");
+					controls.Press(Translations.Command.CameraExterior);
+					controls.Release(Translations.Command.CameraExterior);
+				}
 			}
 
 			double speed = Math.Abs(train.CurrentSpeed);
@@ -508,6 +524,7 @@ namespace OpenBve.NX
 			StringBuilder text = new StringBuilder();
 			text.AppendLine(Describe());
 			text.AppendLine("lowest clocks seen: CPU " + (cpuMin == int.MaxValue ? "?" : cpuMin.ToString()) + " MHz, GPU " + (gpuMin == int.MaxValue ? "?" : gpuMin.ToString()) + " MHz");
+			text.AppendLine("view: exterior throughout" + (viewFixes == 0 ? string.Empty : " (put back " + viewFixes + " time(s), see below)"));
 			text.AppendLine("whole drive: " + Stats(all));
 			foreach ((string name, List<double> movingFrames, List<double> standingFrames) in sections)
 			{
