@@ -86,13 +86,14 @@ static bool on_battery(void)
 }
 
 /*
- * Overclock's caps plugged in, by default the safe ones: CPU 1,785 MHz (the Erista guide: 2,091 MHz needs CPU undervolt 1
- * and a decent bin - without one the console lost its network service, then OBNS's audio, 2026-11-07), GPU 921.6 MHz
- * (998.4 needs undervolt 2 under 950 mV), memory 1,600 MHz (its rating: unstable memory corrupts the system storage and
- * the SD card). Raised to what the user has set and tested in Horizon OC by UserData/nx-overclock.ini - lines cpu_mhz=,
- * gpu_mhz=, memory_mhz= - never past the guide's ceilings: CPU 2,091, GPU 998.4, memory 2,133 MHz.
+ * Overclock's caps plugged in: CPU 2,091 and GPU 998.4 MHz, the Erista guide's ceilings (the user's choice; the guide wants
+ * CPU undervolt 1 and GPU undervolt 2 under 950 mV for them, set in Horizon OC - without one the console lost its
+ * network service, then OBNS's audio, 2026-11-07), memory 1,600 MHz (its rating: unstable memory corrupts the system
+ * storage and the SD card). UserData/nx-overclock.ini - lines cpu_mhz=, gpu_mhz=, memory_mhz= - sets them otherwise,
+ * never past the guide's ceilings: CPU 2,091, GPU 998.4, memory 2,133 MHz.
  */
-static u32 ocCpuHz = 1785000000u, ocGpuHz = 921600000u, ocMemoryHz = 1600000000u;
+// The user, 2026-11-07: "Allow the 2091 MHz / 998 MHz clocks" - the guide's ceilings plugged in, by default.
+static u32 ocCpuHz = 2091000000u, ocGpuHz = 998400000u, ocMemoryHz = 1600000000u;
 
 static void read_overclock_caps(void)
 {
