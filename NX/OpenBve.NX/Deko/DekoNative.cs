@@ -81,6 +81,8 @@ namespace OpenBve.NX.Deko
 
 		// Block compression (NX/runner/source/obns_bc.c): the formats are deko3d's.
 		public const int FormatBC1 = 56, FormatBC1Alpha = 57, FormatBC3 = 59;
+		/// <summary>With FormatBC3, for BcCompress: a cut-out (alpha 0 or 255), its hidden colours spread in and its mipmaps' alpha kept to 0 or 255.</summary>
+		public const int BcCutout = 0x100;
 
 		[DllImport("__Internal", EntryPoint = "obns_bc_levels")]
 		public static extern int BcLevels(int width, int height);

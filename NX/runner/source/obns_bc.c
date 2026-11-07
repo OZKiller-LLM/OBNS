@@ -37,13 +37,20 @@ static void from565(uint16_t v, int c[3])
 }
 
 // The colour block for 16 RGBA texels. `cutout`: texels with alpha under 128 become transparent (three-colour mode)
-// when any are; otherwise four colours. `force4`: always four colours (BC3's colour block).
+// when any are; otherwise four colours. `force4`: always four colours (BC3's colour block); its endpoints then come from
+// the texels that can be seen (alpha above 0), every texel still taking the nearest of the four.
 static void color_block(const uint8_t *texels, uint8_t *out, int cutout, int force4)
 {
     int used[16], n = 0, transparent = 0;
     for (int i = 0; i < 16; i++) {
-        if (cutout && texels[i * 4 + 3] < 128) transparent = 1;
+        if (force4 ? texels[i * 4 + 3] == 0 : cutout && texels[i * 4 + 3] < 128) transparent = 1;
         else used[n++] = i;
+    }
+    if (n == 0 && force4) {
+        // Nothing seen in the block: its colours from all of it (spread in from the edges, see bleed()).
+        for (int i = 0; i < 16; i++) used[i] = i;
+        n = 16;
+        transparent = 0;
     }
     if (n == 0) {
         // All transparent: three-colour mode, every index 3.
@@ -191,8 +198,8 @@ static void compress_level(const uint8_t *rgba, int w, int h, int format, uint8_
 }
 
 // Half size, each texel the average of four; colours weighted by alpha, so transparent texels' colours (a colour key's)
-// don't bleed into the edges.
-static void halve(const uint8_t *src, int w, int h, uint8_t *dst, int nw, int nh)
+// don't bleed into the edges. `binary`: alpha kept to 0 or 255 (a cut-out's, as GL's one-bit formats make its mipmaps).
+static void halve(const uint8_t *src, int w, int h, uint8_t *dst, int nw, int nh, int binary)
 {
     for (int y = 0; y < nh; y++)
         for (int x = 0; x < nw; x++) {
@@ -205,7 +212,53 @@ static void halve(const uint8_t *src, int w, int h, uint8_t *dst, int nw, int nh
                 o[c] = (uint8_t)(alpha > 0 ? (sum + alpha / 2) / alpha : (sum + 2) / 4);
             }
             o[3] = (uint8_t)((alpha + 2) / 4);
+            if (binary) o[3] = o[3] >= 128 ? 255 : 0;
         }
+}
+
+/*
+ * The colours of a cut-out's transparent texels (a colour key's, or black) spread in from the texels that can be seen,
+ * a texel at a time (up to `passes`), the rest given the image's average: filtering at the edges then blends in the
+ * leaves' own colours instead of dark ones (OBNS 1.31N: dark fringes and specks round the trees on the Switch, from BC1's
+ * transparent black, until 2026-11-07). Alpha is left as it is.
+ */
+static void bleed(uint8_t *rgba, int w, int h, int passes)
+{
+    size_t count = (size_t)w * h;
+    uint8_t *known = malloc(count), *next = malloc(count);
+    if (!known || !next) { free(known); free(next); return; }
+    long sum[3] = { 0, 0, 0 }, seen = 0;
+    for (size_t i = 0; i < count; i++) {
+        known[i] = rgba[i * 4 + 3] != 0;
+        if (known[i]) { for (int c = 0; c < 3; c++) sum[c] += rgba[i * 4 + c]; seen++; }
+    }
+    if (seen == 0 || seen == (long)count) { free(known); free(next); return; }
+    for (int pass = 0; pass < passes; pass++) {
+        int changed = 0;
+        memcpy(next, known, count);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                size_t i = (size_t)y * w + x;
+                if (known[i]) continue;
+                int s[3] = { 0, 0, 0 }, k = 0;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int nx = x + dx, ny = y + dy;
+                        if ((dx | dy) == 0 || nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        size_t j = (size_t)ny * w + nx;
+                        if (!known[j]) continue;
+                        for (int c = 0; c < 3; c++) s[c] += rgba[j * 4 + c];
+                        k++;
+                    }
+                if (k) { for (int c = 0; c < 3; c++) rgba[i * 4 + c] = (uint8_t)((s[c] + k / 2) / k); next[i] = 1; changed = 1; }
+            }
+        memcpy(known, next, count);
+        if (!changed) break;
+    }
+    for (size_t i = 0; i < count; i++)
+        if (!known[i]) for (int c = 0; c < 3; c++) rgba[i * 4 + c] = (uint8_t)(sum[c] / seen);
+    free(known);
+    free(next);
 }
 
 // The mipmap chain's level count for a size (down to 1x1).
@@ -229,12 +282,25 @@ EXPORT int64_t obns_bc_size(int w, int h, int format, int levels)
 }
 
 // Compresses tightly packed RGBA and its mipmaps into `out` (obns_bc_size bytes): each level padded to 256 bytes.
-// Returns 0, or 1 for a format it doesn't make, 2 for no memory.
+// `format` | OBNS_BC_CUTOUT (BC3 only): a cut-out's (alpha 0 or 255) - its hidden colours spread in from the edges, its
+// mipmaps' alpha kept to 0 or 255. Returns 0, or 1 for a format it doesn't make, 2 for no memory.
+#define OBNS_BC_CUTOUT 0x100
 EXPORT int obns_bc_compress(const uint8_t *rgba, int w, int h, int format, int levels, uint8_t *out)
 {
+    int cutout = format & OBNS_BC_CUTOUT;
+    format &= 0xFF;
     if (format != BC1_OPAQUE && format != BC1_ALPHA && format != BC3) return 1;
-    uint8_t *a = NULL, *b = NULL;
+    if (cutout && format != BC3) return 1;
+    uint8_t *a = NULL, *b = NULL, *own = NULL;
     const uint8_t *level = rgba;
+    if (format == BC3) {
+        // A copy whose hidden colours are spread in (the caller's is left as it is).
+        own = malloc((size_t)w * h * 4);
+        if (!own) return 2;
+        memcpy(own, rgba, (size_t)w * h * 4);
+        bleed(own, w, h, 16);
+        level = own;
+    }
     for (int l = 0; l < levels; l++) {
         size_t size = level_size(w, h, format);
         compress_level(level, w, h, format, out);
@@ -242,14 +308,15 @@ EXPORT int obns_bc_compress(const uint8_t *rgba, int w, int h, int format, int l
         out += (size + 255) & ~(size_t)255;
         if (l + 1 == levels) break;
         int nw = w > 1 ? w / 2 : 1, nh = h > 1 ? h / 2 : 1;
-        uint8_t *next = level == a || level == rgba ? (b ? b : (b = malloc((size_t)nw * nh * 4))) : (a ? a : (a = malloc((size_t)nw * nh * 4)));
-        if (!next) { free(a); free(b); return 2; }
-        halve(level, w, h, next, nw, nh);
+        uint8_t *next = level == a || level == rgba || level == own ? (b ? b : (b = malloc((size_t)nw * nh * 4))) : (a ? a : (a = malloc((size_t)nw * nh * 4)));
+        if (!next) { free(a); free(b); free(own); return 2; }
+        halve(level, w, h, next, nw, nh, cutout);
         level = next;
         w = nw;
         h = nh;
     }
     free(a);
     free(b);
+    free(own);
     return 0;
 }

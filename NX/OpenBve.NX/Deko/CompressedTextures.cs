@@ -40,8 +40,11 @@ namespace OpenBve.NX.Deko
 	 * texture decoded once - at the texture size limit, after its parameters (clip region, colour key) - is compressed on a
 	 * thread of its own into the GPU's block formats with its mipmaps (NX/runner/source/obns_bc.c) and kept in one file
 	 * under UserData/TextureCache; from then on it is read back instead of decoded, and takes 4 bits a texel (BC1:
-	 * opaque, and colour-keyed with one-bit alpha) or 8 (BC3: partly transparent) instead of 16 or 32. Kept for the same
-	 * file (path, size, date) read the same way (parameters, size limit); FormatVersion starts them all again.
+	 * opaque) or 8 (BC3: partly transparent, and cut-outs - colour-keyed or one-bit alpha - with their hidden colours
+	 * spread in from the edges and their mipmaps' alpha kept to 0 or 255) instead of 16 or 32. Kept for the same file
+	 * (path, size, date) read the same way (parameters, size limit); FormatVersion starts them all again.
+	 * Cut-outs were BC1 with one-bit alpha until 2026-11-07: its transparent texels are black, which filtering blended
+	 * into the edges (dark fringes and specks round the trees); such files are read as missing and made again.
 	 */
 	internal sealed unsafe class CompressedTextures : ICompressedTextureCache
 	{
@@ -153,6 +156,13 @@ namespace OpenBve.NX.Deko
 						Transparency = (TextureTransparencyType)reader.ReadInt32()
 					};
 					int length = reader.ReadInt32();
+					if (read.Format == DekoNative.FormatBC1Alpha)
+					{
+						// A cut-out kept the old way (see above): decoded, and kept again as BC3.
+						Interlocked.Increment(ref misses);
+						return false;
+					}
+
 					if (length <= 0 || length != DekoNative.BcSize(read.Width, read.Height, read.Format, read.Levels))
 					{
 						Interlocked.Increment(ref failures);
@@ -241,8 +251,9 @@ namespace OpenBve.NX.Deko
 			}
 
 			TextureTransparencyType transparency = decoded.GetTransparencyType();
+			// Partial: alpha only 0 or 255 (a cut-out) - BC3 with the cut-out flag (NX/runner/source/obns_bc.c).
 			int format = transparency == TextureTransparencyType.Opaque ? DekoNative.FormatBC1 :
-				transparency == TextureTransparencyType.Partial ? DekoNative.FormatBC1Alpha : DekoNative.FormatBC3;
+				transparency == TextureTransparencyType.Partial ? DekoNative.FormatBC3 | DekoNative.BcCutout : DekoNative.FormatBC3;
 			lock (queue)
 			{
 				if (!queued.Add(key))
@@ -281,7 +292,8 @@ namespace OpenBve.NX.Deko
 				{
 					long started = Stopwatch.GetTimestamp();
 					int levels = DekoNative.BcLevels(job.Width, job.Height);
-					long size = DekoNative.BcSize(job.Width, job.Height, job.Format, levels);
+					int stored = job.Format & 0xFF;
+					long size = DekoNative.BcSize(job.Width, job.Height, stored, levels);
 					byte[] data = new byte[size];
 					int result;
 					fixed (byte* rgba = job.Rgba)
@@ -301,7 +313,7 @@ namespace OpenBve.NX.Deko
 					{
 						writer.Write(Magic);
 						writer.Write(job.Key);
-						writer.Write(job.Format);
+						writer.Write(stored);
 						writer.Write(job.Width);
 						writer.Write(job.Height);
 						writer.Write(levels);
