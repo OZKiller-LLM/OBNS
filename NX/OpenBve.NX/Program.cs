@@ -65,6 +65,10 @@ namespace OpenBve.NX
 		private static extern long NativeHeapUsed();
 
 		/// <summary>A fault on purpose (the watchdog, a game stuck for good): Atmosphère's crash report then has every thread's stack.</summary>
+		/// <summary>The sound output's counts (obns_audio.c): buffers played, waits that timed out, restarts.</summary>
+		[DllImport("__Internal", EntryPoint = "obns_audio_stats")]
+		private static extern void AudioStats(out long played, out int timedOut, out int restarted);
+
 		[DllImport("__Internal", EntryPoint = "obns_watchdog_crash")]
 		private static extern void WatchdogCrash();
 
@@ -626,6 +630,8 @@ namespace OpenBve.NX
 					{
 						Log("frames: static batches " + renderer.BatchSummary);
 						Log("frames: passes " + renderer.PassSummary + "; lists kept in " + renderer.ReusedLists + " frames so far; faces through the cores " + renderer.QueuedFacesDrawn + ", left out " + renderer.DroppedFaces + "; emulated plugins " + OpenBve.NativePlugins.EmulatedWin32Plugin.TakeElapse());
+						AudioStats(out long played, out int timedOut, out int restarted);
+						Log("frames: audio output: " + played + " buffers played, " + timedOut + " waits timed out, " + restarted + " restarts");
 						if (compressedTextures != null)
 						{
 							Log("frames: " + compressedTextures.Describe());

@@ -84,7 +84,8 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=c++17
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) \
-			-Wl,--wrap=mkdir
+			-Wl,--wrap=mkdir \
+			-Wl,--wrap=alcOpenDevice -Wl,--wrap=alcCreateContext -Wl,--wrap=alcCloseDevice
 
 AOT_FILES := $(wildcard $(TOPDIR)/output/*.o)
 
