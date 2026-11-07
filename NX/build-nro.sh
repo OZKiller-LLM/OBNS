@@ -38,6 +38,7 @@ ILLINK=$MONO_NX_ROOT/artifacts/bin/Mono.Linker/$CONFIG/net9.0/illink.dll
 LIB_ROOT=$MONO_NX_ROOT/artifacts/bin/mono/libnx.arm64.$CONFIG/
 FRAMEWORK_ROOT=$MONO_NX_ROOT/artifacts/bin/runtime/net9.0-libnx-$CONFIG-arm64/
 keep=()
+roots=()
 for dll in "$BIN"/*.dll "$ATS"; do
     name=$(basename "$dll" .dll)
     # OpenBVE's and OBNS's own assemblies are kept whole. Third-party ones are trimmed to what's reached: AOT code a
@@ -49,12 +50,18 @@ for dll in "$BIN"/*.dll "$ATS"; do
         OpenBve*|OpenBveApi|OpenBveAts|LibRender2|RouteManager2|TrainManager|SoundManager|Route.*|Object.*|Train.*|Texture.*|Sound.*|Formats.*|AssimpParser*)
             keep+=(--action copy "$name") ;;
     esac
+    # The content plugins are found by name at start-up (AndroidPlugins): nothing references them, so they are roots of
+    # their own. Until 2026-11-08 they came through anyway, with the PDBs; without them the trimmer left all 18 out.
+    case "$name" in
+        Route.*|Object.*|Train.*|Texture.*|Sound.*) roots+=(-a "$dll") ;;
+    esac
 done
+echo "${#roots[@]} root arguments for the content plugins"
 $DOTNET "$ILLINK" -x "$MONO_NX_ROOT/src/mono/System.Private.CoreLib/src/ILLink/ILLink.Descriptors.xml" \
     -x "$MONO_NX_ROOT/src/mono/System.Private.CoreLib/src/ILLink/ILLink.LinkAttributes.xml" \
     --feature System.Resources.UseSystemResourceKeys true --feature System.Globalization.Invariant true \
     -d "$LIB_ROOT" -d "$FRAMEWORK_ROOT" -d "$BIN" -d "$(dirname "$ATS")" --trim-mode link --skip-unresolved true "${keep[@]}" \
-    -a "$BIN/OpenBve.NX.dll" -a "$ATS" -out "$OUT/managed" 2>&1 | grep -vE "Trim analysis|IL2[0-9]{3}" || true
+    -a "$BIN/OpenBve.NX.dll" -a "$ATS" "${roots[@]}" -out "$OUT/managed" 2>&1 | grep -vE "Trim analysis|IL2[0-9]{3}" || true
 count=$(ls "$OUT/managed"/*.dll 2>/dev/null | wc -l); echo "$count assemblies"; [ "$count" -gt 0 ] || { echo "trimming produced nothing"; exit 1; }
 
 echo "== AOT, with LLVM"
