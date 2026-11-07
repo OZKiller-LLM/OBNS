@@ -375,6 +375,13 @@ namespace OpenBve.Android
 		private static int backgroundGeneration;
 		private static string backgroundSummary = "not started";
 
+		/// <summary>
+		/// The background pass's thread priority: Lowest on Android (a time-sharing scheduler still runs it). The Switch sets
+		/// Normal - Horizon's scheduler never runs a lower-priority thread while a higher one on its core can run, so a Lowest
+		/// thread holding a lock (or one the garbage collector waits on) can hold up the whole game.
+		/// </summary>
+		public static System.Threading.ThreadPriority BackgroundPriority = System.Threading.ThreadPriority.Lowest;
+
 		/// <summary>What the background pass has done so far, for the log.</summary>
 		public static string BackgroundSummary => backgroundSummary;
 
@@ -395,7 +402,7 @@ namespace OpenBve.Android
 			{
 				IsBackground = true,
 				Name = "texture classification",
-				Priority = System.Threading.ThreadPriority.Lowest
+				Priority = BackgroundPriority
 			};
 			thread.Start();
 		}

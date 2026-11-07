@@ -581,6 +581,9 @@ namespace OpenBve.NX
 			fileSystem.RestartArguments = string.Empty;
 			Menu.Init(host, fileSystem, SwitchSettings.GetLanguage(), "1.14.1.2-nx");
 			Stage("file system and translations");
+			// Horizon runs a lower-priority thread only when nothing higher on its core can: the background texture pass at
+			// Lowest froze the game at Tuen Mun's start (2026-11-07), so here it runs at Normal, its own Sleep(1)s giving way.
+			OpenBve.Android.TextureClassifier.BackgroundPriority = System.Threading.ThreadPriority.Normal;
 
 			string routeFile = null, trainFolder = null, imageFile = null;
 			string choice = Root + "/UserData/nx-load.txt";
