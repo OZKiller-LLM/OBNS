@@ -51,6 +51,12 @@ namespace OpenBve.NX
 	internal static class Program
 	{
 		private const string Root = "/switch/OBNS";
+
+		/// <summary>The drive benchmark, when UserData/nx-drive-benchmark.txt asks for it; otherwise null.</summary>
+		private static DriveBenchmark driveBenchmark;
+
+		/// <summary>The clocks at the last 5 s window's end, for the drive benchmark.</summary>
+		private static int benchmarkCpu, benchmarkGpu;
 		private const string Tag = "OBNS";
 
 		/// <summary>The native heap in use (malloc's, mallinfo): libnx reserves title takeover's memory up front, so the
@@ -409,6 +415,16 @@ namespace OpenBve.NX
 				last = now;
 				if (session != null)
 				{
+					if (driveBenchmark != null && !paused)
+					{
+						driveBenchmark.Update(session, controls, now, elapsed, benchmarkCpu, benchmarkGpu);
+						if (driveBenchmark.Finished)
+						{
+							Log("frames: the drive benchmark is over");
+							break;
+						}
+					}
+
 					controls.Apply(session);
 					if (paused)
 					{
@@ -499,6 +515,8 @@ namespace OpenBve.NX
 				{
 					// The clocks as they are at the window's end (the user's, 2026-11-07: whether the overclock holds).
 					ClockNow(out int cpuNow, out int gpuNow, out int memoryNow);
+					benchmarkCpu = cpuNow;
+					benchmarkGpu = gpuNow;
 					Stage($"frames: {frames / (now - windowStart):F1} fps, the slowest {worst * 1000:F1} ms, clocks CPU {cpuNow} GPU {gpuNow} memory {memoryNow} MHz, {renderer.VisibleFaceCount} visible faces; {deko.Describe()}");
 					// Where a frame's time goes, on average: the loop's phases, then the renderer's own (as Android's GameView logs it).
 					string[] names = { "input", "simulation", "RenderScene", "overlay", "sound", "end of frame" };
@@ -566,14 +584,22 @@ namespace OpenBve.NX
 
 			string routeFile = null, trainFolder = null, imageFile = null;
 			string choice = Root + "/UserData/nx-load.txt";
-			if (File.Exists(choice))
+			// The drive benchmark (DriveBenchmark): its route and train, without the menu.
+			driveBenchmark = DriveBenchmark.FromFile(Root, Log);
+			if (driveBenchmark != null)
+			{
+				routeFile = driveBenchmark.RouteFile;
+				trainFolder = driveBenchmark.TrainFolder;
+				Stage(driveBenchmark.Describe());
+			}
+			else if (File.Exists(choice))
 			{
 				string[] lines = File.ReadAllLines(choice);
 				routeFile = lines.Length > 0 && lines[0].Trim().Length != 0 ? lines[0].Trim() : null;
 				trainFolder = lines.Length > 1 && lines[1].Trim().Length != 0 ? lines[1].Trim() : null;
 			}
 
-			if (!File.Exists(choice))
+			if (driveBenchmark == null && !File.Exists(choice))
 			{
 				// The menu (OBNS/SWITCH.md, step 6) chooses the route and the train; nx-load.txt skips it for measurements.
 				// Before the game's renderer and plugins: the menu's previews set up their own (RouteInfo), as Android's
@@ -805,7 +831,7 @@ namespace OpenBve.NX
 				deko.Drawing = true;
 				// As GameView: textures first needed while driving are decoded in the background, not in the frame.
 				host.StreamTextures = true;
-				Frames(renderer, host, sounds, session, deko, 600.0);
+				Frames(renderer, host, sounds, session, deko, driveBenchmark != null ? 7200.0 : 600.0);
 				deko.Dispose();
 				OpenTK.Graphics.OpenGL.GL.Device = null;
 				DekoCanvas.Close();
