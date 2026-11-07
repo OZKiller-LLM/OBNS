@@ -180,7 +180,13 @@ static void apply_clocks(int mode, bool settle)
             clkrstGetClockRate(&session, &originalHz[i]);
             clocksTouched[i] = true;
         }
-        if (target) clkrstSetClockRate(&session, listed_rate(&session, target));
+        if (target) {
+            // Set only when it differs (as sys-clk does): Turbo and Overclock hold the clocks every second, and setting
+            // even an unchanged rate - the memory's above all - stalled the audio renderer for good (2026-11-07: SDL's
+            // audio thread left waiting for its next frame in the drive benchmark at Tuen Mun, no sound from then on).
+            u32 wanted = listed_rate(&session, target), now = 0;
+            if (R_FAILED(clkrstGetClockRate(&session, &now)) || now != wanted) clkrstSetClockRate(&session, wanted);
+        }
         else if (originalHz[i]) {
             clkrstSetClockRate(&session, originalHz[i]);
             clocksTouched[i] = false;
