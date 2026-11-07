@@ -179,7 +179,7 @@ namespace OpenBve.Switch
 			 */
 			(string Label, Translations.Command Command)[][] pad =
 			{
-				new[] { ("/\n↺", Translations.Command.CameraRotateCCW), ("*\n↻", Translations.Command.CameraRotateCW) },
+				new[] { ("/\nROLL L", Translations.Command.CameraRotateCCW), ("*\nROLL R", Translations.Command.CameraRotateCW) },
 				new[] { ("7\nPOI ▶", Translations.Command.CameraPOINext), ("8\nUP", Translations.Command.CameraMoveUp), ("9\nFWD", Translations.Command.CameraMoveForward) },
 				new[] { ("4\nLEFT", Translations.Command.CameraMoveLeft), ("5\nRESET", Translations.Command.CameraReset), ("6\nRIGHT", Translations.Command.CameraMoveRight) },
 				new[] { ("1\n◀ POI", Translations.Command.CameraPOIPrevious), ("2\nDOWN", Translations.Command.CameraMoveDown), ("3\nBACK", Translations.Command.CameraMoveBackward) },
