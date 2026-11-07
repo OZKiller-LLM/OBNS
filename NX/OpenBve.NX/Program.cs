@@ -359,7 +359,7 @@ namespace OpenBve.NX
 
 		private static unsafe void Frames(AndroidRenderer renderer, AndroidHost host, AndroidSounds sounds, AndroidTrainSession session, Deko.DekoGL deko, double seconds)
 		{
-			Stage("frames: drawing for " + seconds.ToString("0") + " s" + (session == null ? " (no train: the camera travels the route)" : string.Empty));
+			Stage("frames: drawing " + (double.IsPositiveInfinity(seconds) ? "until the game is left" : "for " + seconds.ToString("0") + " s") + (session == null ? " (no train: the camera travels the route)" : string.Empty));
 			bool framesOver = false;
 			StartWatchdog(renderer, () => framesOver);
 			try
@@ -935,7 +935,9 @@ namespace OpenBve.NX
 				deko.Drawing = true;
 				// As GameView: textures first needed while driving are decoded in the background, not in the frame.
 				host.StreamTextures = true;
-				Frames(renderer, host, sounds, session, deko, driveBenchmark != null ? 7200.0 : 600.0);
+				// No time limit in play (the user, 2026-11-08: a 10-minute one was left from the first tests); the drive benchmark,
+				// which runs unattended, stops after 2 hours whatever happens.
+				Frames(renderer, host, sounds, session, deko, driveBenchmark != null ? 7200.0 : double.PositiveInfinity);
 				deko.Dispose();
 				OpenTK.Graphics.OpenGL.GL.Device = null;
 				DekoCanvas.Close();
