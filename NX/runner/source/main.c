@@ -219,10 +219,54 @@ static void set_fan(bool full)
     fanHeld = false;
 }
 
-static int heldMode;
+static volatile int heldMode;
+
+/*
+ * The clock hold on a thread of its own (2026-11-08). The game's loop called it every second, and it asks clkrst, psm,
+ * the applet and the fan service each time - IPC that can take seconds when a service is busy: the drive benchmark's
+ * worst frames (3.4 s before Long Ping) were the loop's input phase, where the call was. Now the loop only reads what
+ * the thread last found; mode changes (obns_set_cpu_boost) and the thread share clockLock.
+ */
+static Mutex clockLock;
+static Thread holdThread;
+static bool holdStarted;
+static volatile int nowMhz[CLOCKS];
+
+static void read_clocks_now(void)
+{
+    if (!hosversionAtLeast(8, 0, 0) || R_FAILED(clkrstInitialize())) return;
+    for (int i = 0; i < CLOCKS; i++) {
+        ClkrstSession session;
+        if (R_FAILED(clkrstOpenSession(&session, clockModules[i], 3))) continue;
+        u32 hz = 0;
+        if (R_SUCCEEDED(clkrstGetClockRate(&session, &hz))) nowMhz[i] = (int)(hz / 1000000u);
+        clkrstCloseSession(&session);
+    }
+    clkrstExit();
+}
+
+static void hold_main(void *argument)
+{
+    (void)argument;
+    for (;;) {
+        svcSleepThread(1000000000ull);
+        u64 started = armGetSystemTick();
+        mutexLock(&clockLock);
+        int mode = heldMode;
+        if (mode == 3 || mode == 4) {
+            apply_clocks(mode, false);
+            set_fan(true);
+        }
+        read_clocks_now();
+        mutexUnlock(&clockLock);
+        u64 ms = armTicksToNs(armGetSystemTick() - started) / 1000000ull;
+        if (ms >= 100) printf("OBNS: clocks: holding and reading them took %llu ms (off the game's thread)\n", (unsigned long long)ms);
+    }
+}
 
 EXPORT int obns_set_cpu_boost(int mode)
 {
+    mutexLock(&clockLock);
     appletSetCpuBoostMode(mode == 1 ? ApmCpuBoostMode_FastLoad : ApmCpuBoostMode_Normal);
     heldMode = mode;
     apply_clocks(mode, true);
@@ -236,17 +280,19 @@ EXPORT int obns_set_cpu_boost(int mode)
         }
         clkrstExit();
     }
-    return (int)(setHz[0] / 1000000);
+    read_clocks_now();
+    int mhz = (int)(setHz[0] / 1000000);
+    mutexUnlock(&clockLock);
+    if (!holdStarted && R_SUCCEEDED(threadCreate(&holdThread, hold_main, NULL, NULL, 0x4000, 0x2C, -2)) && R_SUCCEEDED(threadStart(&holdThread)))
+        holdStarted = true;
+    return mhz;
 }
 
-// Turbo and Overclock held: the system sets its own clocks again on docking and undocking (and Turbo's GPU clock
-// follows the mode), its thermal control its own fan level, so the game's loop calls this every second. Quick (no
-// settling). Returns the GPU's MHz (0 in Normal, the system's).
+// The clock hold's last result, without IPC (the thread above holds Turbo's and Overclock's clocks and the fan): the
+// GPU's MHz as last set, 0 in Normal (the system's).
 EXPORT int obns_hold_clocks(void)
 {
     if (heldMode != 3 && heldMode != 4) return 0;
-    apply_clocks(heldMode, false);
-    set_fan(true);
     return (int)(setHz[1] / 1000000);
 }
 
@@ -258,20 +304,13 @@ EXPORT void obns_clock_rates(int *cpu, int *gpu, int *memory)
     *memory = clocksTouched[2] ? (int)(setHz[2] / 1000000) : 0;
 }
 
-// The clocks as they are now, read back from the system (what another program may have set shows here), in MHz.
+// The clocks as they are now (what another program may have set shows here), in MHz: as the hold thread last read them
+// back from the system, at most a second ago - no IPC on the game's thread.
 EXPORT void obns_clock_now(int *cpu, int *gpu, int *memory)
 {
-    int *out[CLOCKS] = { cpu, gpu, memory };
-    for (int i = 0; i < CLOCKS; i++) *out[i] = 0;
-    if (!hosversionAtLeast(8, 0, 0) || R_FAILED(clkrstInitialize())) return;
-    for (int i = 0; i < CLOCKS; i++) {
-        ClkrstSession session;
-        if (R_FAILED(clkrstOpenSession(&session, clockModules[i], 3))) continue;
-        u32 hz = 0;
-        if (R_SUCCEEDED(clkrstGetClockRate(&session, &hz))) *out[i] = (int)(hz / 1000000u);
-        clkrstCloseSession(&session);
-    }
-    clkrstExit();
+    *cpu = nowMhz[0];
+    *gpu = nowMhz[1];
+    *memory = nowMhz[2];
 }
 
 // An exception nothing caught: printed (to nxlink, or UserData/runner.log) before mono-nx's error screen, which alone
