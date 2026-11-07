@@ -219,31 +219,43 @@ namespace OpenBve.Android
 			byte[] payload = null;
 			try
 			{
-				string key = Key(path, encoding, preserveVertices, threshold, vertexCulling);
-				(long Offset, int Length) entry;
-				FileStream reader;
-				lock (gate)
+				// Each step timed apart in the load profile (the Switch's read-backs took 85 ms each, 2026-11-07).
+				string key;
+				using (LoadProfile.Enter("object cache: key"))
 				{
-					if (pack == null || !index.TryGetValue(key, out entry))
-					{
-						misses++;
-						lastMissPath = path;
-						lastMissKey = key;
-						return false;
-					}
-
-					reader = Reader();
-					if (reader == null)
-					{
-						// No handle of its own: read under the lock, from the pack's.
-						payload = ReadAt(pack, entry.Offset, entry.Length);
-					}
+					key = Key(path, encoding, preserveVertices, threshold, vertexCulling);
 				}
 
-				// From the thread's own handle, outside the lock: the loading threads no longer wait for each other.
-				payload ??= ReadAt(reader, entry.Offset, entry.Length);
+				(long Offset, int Length) entry;
+				FileStream reader;
+				using (LoadProfile.Enter("object cache: read"))
+				{
+					lock (gate)
+					{
+						if (pack == null || !index.TryGetValue(key, out entry))
+						{
+							misses++;
+							lastMissPath = path;
+							lastMissKey = key;
+							return false;
+						}
 
-				staticObject = Read(host, payload, key);
+						reader = Reader();
+						if (reader == null)
+						{
+							// No handle of its own: read under the lock, from the pack's.
+							payload = ReadAt(pack, entry.Offset, entry.Length);
+						}
+					}
+
+					// From the thread's own handle, outside the lock: the loading threads no longer wait for each other.
+					payload ??= ReadAt(reader, entry.Offset, entry.Length);
+				}
+
+				using (LoadProfile.Enter("object cache: decode"))
+				{
+					staticObject = Read(host, payload, key);
+				}
 			}
 			catch (Exception e)
 			{

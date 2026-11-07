@@ -471,7 +471,7 @@ namespace OpenBve.Android
 		private ApiTexture[] indexedArray;
 		private int indexedCount;
 
-		private ApiTexture RegisterWithoutSearch(string path, TextureParameters parameters)
+		private ApiTexture UpstreamRegistration(string path, TextureParameters parameters)
 		{
 			ApiTexture[] array = LibRender2.Textures.TextureManager.RegisteredTextures;
 			int count = Math.Min(Renderer.TextureManager.RegisteredTexturesCount, array.Length);
@@ -507,19 +507,66 @@ namespace OpenBve.Android
 				}
 			}
 
-			// Upstream 1.14.1.2's Texture(path) keeps the decode it makes for the pixel format
-			// (DecodedTexture, to reuse at upload): dropped at once - the Android TextureManager
-			// never reuses it, and for the probed formats it is only the 1x1 stand-in.
-			ApiTexture texture = new ApiTexture(path, parameters, this);
-			texture.DecodedTexture?.ReleaseBytes();
+			return null;
+		}
+
+		/// <summary>A handle made by <see cref="MakeTexture"/> put in upstream's array. Called under the registeredTextures lock.</summary>
+		private void AddRegistration(ApiTexture texture)
+		{
 			lock (LibRender2.Textures.TextureManager.RegistrationLock)
 			{
 				int index = Renderer.TextureManager.GetNextFreeTexture();
 				LibRender2.Textures.TextureManager.RegisteredTextures[index] = texture;
 				Renderer.TextureManager.RegisteredTexturesCount++;
 			}
+		}
 
-			return texture;
+		/// <summary>A new handle for the path, as upstream's registration makes it; no lock needed.</summary>
+		private ApiTexture MakeTexture(string path, TextureParameters parameters)
+		{
+			probingFormat = true;
+			try
+			{
+				// Upstream 1.14.1.2's Texture(path) keeps the decode it makes for the pixel format
+				// (DecodedTexture, to reuse at upload): dropped at once - the Android TextureManager
+				// never reuses it, and for the probed formats it is only the 1x1 stand-in.
+				ApiTexture texture = new ApiTexture(path, parameters, this);
+				texture.DecodedTexture?.ReleaseBytes();
+				return texture;
+			}
+			finally
+			{
+				probingFormat = false;
+			}
+		}
+
+		/// <summary>The handle registered for the path and parameters here, or null. Called under the registeredTextures lock.</summary>
+		private ApiTexture KnownRegistration(string path, TextureParameters parameters)
+		{
+			if (registeredTextures.TryGetValue(path, out var known))
+			{
+				foreach (var entry in known)
+				{
+					if (entry.Parameters == parameters)
+					{
+						return entry.Handle;
+					}
+				}
+			}
+
+			return null;
+		}
+
+		/// <summary>Remembers the handle for the path and parameters. Called under the registeredTextures lock.</summary>
+		private void Remember(string path, TextureParameters parameters, ApiTexture handle)
+		{
+			if (!registeredTextures.TryGetValue(path, out var known))
+			{
+				known = new List<(TextureParameters, ApiTexture)>();
+				registeredTextures[path] = known;
+			}
+
+			known.Add((parameters, handle));
 		}
 
 		/// <inheritdoc />
@@ -532,40 +579,44 @@ namespace OpenBve.Android
 				return false;
 			}
 
-			ApiTexture data = null;
+			ApiTexture data;
 			lock (registeredTextures)
 			{
-				if (registeredTextures.TryGetValue(path, out var known))
-				{
-					foreach (var entry in known)
-					{
-						if (entry.Parameters == parameters)
-						{
-							data = entry.Handle;
-							break;
-						}
-					}
-				}
-
+				data = KnownRegistration(path, parameters);
 				if (data == null)
 				{
-					probingFormat = true;
-					try
+					data = UpstreamRegistration(path, parameters);
+					if (data != null)
 					{
-						data = RegisterWithoutSearch(path, parameters);
+						Remember(path, parameters, data);
 					}
-					finally
-					{
-						probingFormat = false;
-					}
+				}
+			}
 
-					if (!registeredTextures.TryGetValue(path, out known))
+			if (data == null)
+			{
+				/*
+				 * A new texture is made outside the lock: making it asks the storage about its file (and, for formats
+				 * the probe can't answer, decodes it), and the loading threads all register through here. Under the
+				 * lock, the Switch's ~9,200 new textures in a Tuen Ma Line load queued one behind another on the SD
+				 * card (73 s of the threads' time, 2026-11-07). Another thread may make the same one meanwhile: the
+				 * first registered is kept, so every caller still gets the one handle.
+				 */
+				ApiTexture made = MakeTexture(path, parameters);
+				lock (registeredTextures)
+				{
+					data = KnownRegistration(path, parameters);
+					if (data == null)
 					{
-						known = new List<(TextureParameters, ApiTexture)>();
-						registeredTextures[path] = known;
-					}
+						data = UpstreamRegistration(path, parameters);
+						if (data == null)
+						{
+							AddRegistration(made);
+							data = made;
+						}
 
-					known.Add((parameters, data));
+						Remember(path, parameters, data);
+					}
 				}
 			}
 

@@ -259,10 +259,19 @@ namespace LibRender2.Objects
 				return type;
 			}
 
+			// ANDROID PORT: an answer the host kept on disk costs no decode.
+			if (TextureManager.RememberedType != null && TextureManager.RememberedType(handle.Origin, out type))
+			{
+				TextureManager.StoreCachedType(handle.Origin, type);
+				return type;
+			}
+
 			Stopwatch sw = Stopwatch.StartNew();
 			bool ok = handle.Origin.GetTexture(out Texture fresh);
 			sw.Stop();
 			TextureManager.TextureDecodeTime += sw.ElapsedMilliseconds;
+			TextureManager.TypeDecodes++;
+			TextureManager.TypeDecodeTicks += sw.ElapsedTicks;
 			if (!ok || fresh == null)
 			{
 				// not cached: the file may be readable next time
@@ -271,6 +280,7 @@ namespace LibRender2.Objects
 
 			type = fresh.GetTransparencyType();
 			TextureManager.StoreCachedType(handle.Origin, type);
+			TextureManager.TypeWorkedOut?.Invoke(handle.Origin, type);
 			return type;
 		}
 

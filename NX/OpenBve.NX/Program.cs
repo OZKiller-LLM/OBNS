@@ -520,6 +520,8 @@ namespace OpenBve.NX
 						if (compressedTextures != null)
 						{
 							Log("frames: " + compressedTextures.Describe());
+							Log("frames: texture transparency in the background: " + OpenBve.Android.TextureClassifier.BackgroundSummary + "; decoded on the render thread: " +
+							    LibRender2.Textures.TextureManager.TypeDecodes + " (" + LibRender2.Textures.TextureManager.TypeDecodeTicks * 1000 / System.Diagnostics.Stopwatch.Frequency + " ms)");
 						}
 					}
 

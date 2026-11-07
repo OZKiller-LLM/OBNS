@@ -109,6 +109,11 @@ namespace OpenBve.Android
 		{
 			session = null;
 			encoding = encoding ?? Encoding.UTF8;
+			// The previous game's background classification ends; textures no one classified are looked up on disk, and
+			// what the render thread works out is kept there (TextureClassifier).
+			TextureClassifier.StopBackground();
+			LibRender2.Textures.TextureManager.RememberedType = TextureClassifier.Remembered;
+			LibRender2.Textures.TextureManager.TypeWorkedOut = TextureClassifier.Learn;
 			trainFolder = string.IsNullOrEmpty(trainFolder) ? FindTrain(fileSystem.InitialTrainFolder, host) : trainFolder;
 			if (trainFolder == null)
 			{
@@ -526,9 +531,35 @@ namespace OpenBve.Android
 			Step("visibility");
 			host.UpdateAnimatedWorldObjects(renderer, 0.0, true);
 			Step("animated scenery");
+			// The rest of the scenery's textures classified while the game runs, nearest the start first.
+			TextureClassifier.StartBackground(SceneryByDistance(startPosition));
+			Step("background classification started");
 			Log.Info(Tag, "placement steps: " + stepLog);
 			Log.Info(Tag, "player train placed at " + startPosition.ToString("0.0") + " m, driver car " + Train.DriverCar +
 			              ", view " + renderer.Camera.CurrentMode + ", camera restriction " + renderer.Camera.CurrentRestriction);
+		}
+
+		/// <summary>Every static object of the route, nearest the position first.</summary>
+		private IEnumerable<OpenBveApi.Objects.StaticObject> SceneryByDistance(double position)
+		{
+			List<(double Distance, OpenBveApi.Objects.StaticObject Prototype)> objects = new List<(double, OpenBveApi.Objects.StaticObject)>(renderer.StaticObjectStates.Count);
+			foreach (OpenBveApi.Objects.ObjectState state in renderer.StaticObjectStates)
+			{
+				if (state?.Prototype == null)
+				{
+					continue;
+				}
+
+				double distance = position < state.StartingDistance ? state.StartingDistance - position :
+					position > state.EndingDistance ? position - state.EndingDistance : 0.0;
+				objects.Add((distance, state.Prototype));
+			}
+
+			objects.Sort((a, b) => a.Distance.CompareTo(b.Distance));
+			foreach ((double _, OpenBveApi.Objects.StaticObject prototype) in objects)
+			{
+				yield return prototype;
+			}
 		}
 
 		/// <summary>The objects shown when play starts: every train's, the static scenery in view of the start, and all animated scenery.</summary>

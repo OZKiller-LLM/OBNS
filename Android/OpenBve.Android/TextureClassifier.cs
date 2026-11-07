@@ -105,7 +105,7 @@ namespace OpenBve.Android
 			}
 		}
 
-		private static void SaveDiskCache()
+		private static void SaveDiskCache(IEnumerable<KeyValuePair<string, (long Length, long Ticks, TextureTransparencyType Type)>> entries)
 		{
 			if (cacheFile == null)
 			{
@@ -117,7 +117,7 @@ namespace OpenBve.Android
 				string temporary = cacheFile + ".tmp";
 				using (System.IO.StreamWriter writer = new System.IO.StreamWriter(temporary, false, System.Text.Encoding.UTF8))
 				{
-					foreach (KeyValuePair<string, (long Length, long Ticks, TextureTransparencyType Type)> entry in diskCache)
+					foreach (KeyValuePair<string, (long Length, long Ticks, TextureTransparencyType Type)> entry in entries)
 					{
 						writer.Write(entry.Key);
 						writer.Write('\t');
@@ -153,65 +153,126 @@ namespace OpenBve.Android
 			       (key.HasValue ? key.Value.R + "," + key.Value.G + "," + key.Value.B : "-") + "|" + readMode;
 		}
 
+		/// <summary>Guards the disk cache: the loading thread, the background pass and the render thread's lookups.</summary>
+		private static readonly object diskLock = new object();
+
+		/// <summary>The read mode of the current game's textures (set by <see cref="Classify"/>), for the disk cache's keys.</summary>
+		private static string currentReadMode;
+
+		/// <summary>Answers learnt since the disk cache was last saved.</summary>
+		private static int unsaved;
+
+		/// <summary>
+		/// A file's size and modification time as its handle took them when registered (OBNS's PathOrigin asks once),
+		/// so no answer needs the storage asked again; false if the file couldn't be read.
+		/// </summary>
+		private static bool FileStamp(PathOrigin origin, out long length, out long ticks)
+		{
+			try
+			{
+				length = origin.FileSize;
+				ticks = origin.LastModificationTime.ToUniversalTime().Ticks;
+				return true;
+			}
+			catch (Exception)
+			{
+				length = ticks = 0;
+				return false;
+			}
+		}
+
+		/// <summary>The disk cache's answer for a texture of the current game, if it has one (call under diskLock).</summary>
+		private static bool RememberedLocked(TextureOrigin origin, out TextureTransparencyType type, out string key, out long length, out long ticks)
+		{
+			type = TextureTransparencyType.Opaque;
+			key = null;
+			length = ticks = 0;
+			if (!(origin is PathOrigin pathOrigin) || pathOrigin.Path == null || currentReadMode == null || !FileStamp(pathOrigin, out length, out ticks))
+			{
+				return false;
+			}
+
+			LoadDiskCache();
+			key = Key(pathOrigin, currentReadMode);
+			if (diskCache.TryGetValue(key, out var known) && known.Length == length && known.Ticks == ticks)
+			{
+				type = known.Type;
+				return true;
+			}
+
+			return false;
+		}
+
+		/// <summary>
+		/// The disk cache's answer for a texture, if it has one (TextureManager.RememberedType: ObjectLibrary asks before
+		/// decoding a texture no one classified).
+		/// </summary>
+		public static bool Remembered(TextureOrigin origin, out TextureTransparencyType type)
+		{
+			lock (diskLock)
+			{
+				return RememberedLocked(origin, out type, out _, out _, out _);
+			}
+		}
+
+		/// <summary>An answer worked out elsewhere (TextureManager.TypeWorkedOut: ObjectLibrary's own decodes), kept on disk.</summary>
+		public static void Learn(TextureOrigin origin, TextureTransparencyType type)
+		{
+			if (!(origin is PathOrigin pathOrigin) || pathOrigin.Path == null)
+			{
+				return;
+			}
+
+			lock (diskLock)
+			{
+				if (currentReadMode == null || !FileStamp(pathOrigin, out long length, out long ticks))
+				{
+					return;
+				}
+
+				LoadDiskCache();
+				diskCache[Key(pathOrigin, currentReadMode)] = (length, ticks, type);
+				unsaved++;
+			}
+		}
+
 		/// <summary>Classifies the textures of these objects' materials that are not classified yet; returns how many, and the time taken.</summary>
 		/// <param name="prototypes">The objects about to be shown.</param>
 		/// <param name="readMode">How textures are read here, for the disk cache's key (old-transparency option, texture size limit).</param>
 		public static string Classify(IEnumerable<StaticObject> prototypes, string readMode)
 		{
 			Stopwatch clock = Stopwatch.StartNew();
-			HashSet<TextureOrigin> seen = new HashSet<TextureOrigin>();
-			List<TextureOrigin> todo = new List<TextureOrigin>();
-			foreach (StaticObject prototype in prototypes)
+			lock (diskLock)
 			{
-				MeshMaterial[] materials = prototype?.Mesh?.Materials;
-				if (materials == null)
-				{
-					continue;
-				}
-
-				foreach (MeshMaterial material in materials)
-				{
-					Add(material.DaytimeTexture, seen, todo);
-					Add(material.NighttimeTexture, seen, todo);
-				}
+				currentReadMode = readMode;
 			}
 
+			List<TextureOrigin> todo = Textures(prototypes);
 			if (todo.Count == 0)
 			{
 				return "no textures to classify";
 			}
 
 			ConcurrentDictionary<TextureOrigin, TextureTransparencyType> results = new ConcurrentDictionary<TextureOrigin, TextureTransparencyType>();
-			LoadDiskCache();
 			List<TextureOrigin> decode = new List<TextureOrigin>(todo.Count);
 			Dictionary<TextureOrigin, (string Key, long Length, long Ticks)> files = new Dictionary<TextureOrigin, (string, long, long)>();
-			foreach (TextureOrigin origin in todo)
+			lock (diskLock)
 			{
-				if (origin is PathOrigin pathOrigin)
+				foreach (TextureOrigin origin in todo)
 				{
-					try
+					if (RememberedLocked(origin, out TextureTransparencyType known, out string key, out long length, out long ticks))
 					{
-						System.IO.FileInfo info = new System.IO.FileInfo(pathOrigin.Path);
-						if (info.Exists)
-						{
-							string key = Key(pathOrigin, readMode);
-							long length = info.Length, ticks = info.LastWriteTimeUtc.Ticks;
-							if (diskCache.TryGetValue(key, out var known) && known.Length == length && known.Ticks == ticks)
-							{
-								results[origin] = known.Type;
-								continue;
-							}
+						results[origin] = known;
+						continue;
+					}
 
-							files[origin] = (key, length, ticks);
-						}
-					}
-					catch (Exception)
+					if (key != null)
 					{
-						// Decoded below, as without the cache.
+						files[origin] = (key, length, ticks);
 					}
+
+					decode.Add(origin);
 				}
-
-				decode.Add(origin);
 			}
 
 			int fromCache = results.Count;
@@ -231,35 +292,194 @@ namespace OpenBve.Android
 				}
 			});
 
-			bool learnt = false;
-			foreach (KeyValuePair<TextureOrigin, (string Key, long Length, long Ticks)> file in files)
+			lock (diskLock)
 			{
-				if (results.TryGetValue(file.Key, out TextureTransparencyType type))
+				foreach (KeyValuePair<TextureOrigin, (string Key, long Length, long Ticks)> file in files)
 				{
-					diskCache[file.Value.Key] = (file.Value.Length, file.Value.Ticks, type);
-					learnt = true;
+					if (results.TryGetValue(file.Key, out TextureTransparencyType type))
+					{
+						diskCache[file.Value.Key] = (file.Value.Length, file.Value.Ticks, type);
+						unsaved++;
+					}
 				}
+
 			}
 
-			if (learnt)
-			{
-				SaveDiskCache();
-			}
-
+			SaveIfLearnt();
 			foreach (KeyValuePair<TextureOrigin, TextureTransparencyType> result in results)
 			{
-				if (!TextureManager.textureCache.ContainsKey(result.Key))
-				{
-					TextureManager.textureCache.Add(result.Key, result.Value);
-				}
+				TextureManager.AddCachedType(result.Key, result.Value);
 			}
 
 			return results.Count + " textures classified (" + fromCache + " remembered) in " + clock.Elapsed.TotalSeconds.ToString("0.0") + " s on " + threads + " threads";
 		}
 
+		/// <summary>The textures of these objects' materials not classified yet, each once, in the objects' order.</summary>
+		private static List<TextureOrigin> Textures(IEnumerable<StaticObject> prototypes)
+		{
+			HashSet<TextureOrigin> seen = new HashSet<TextureOrigin>();
+			List<TextureOrigin> todo = new List<TextureOrigin>();
+			foreach (StaticObject prototype in prototypes)
+			{
+				MeshMaterial[] materials = prototype?.Mesh?.Materials;
+				if (materials == null)
+				{
+					continue;
+				}
+
+				foreach (MeshMaterial material in materials)
+				{
+					Add(material.DaytimeTexture, seen, todo);
+					Add(material.NighttimeTexture, seen, todo);
+				}
+			}
+
+			return todo;
+		}
+
+		private static readonly object saveLock = new object();
+
+		/// <summary>
+		/// Saves the disk cache if anything was learnt since the last save: a copy taken under diskLock, written outside it
+		/// (the render thread's lookups don't wait for the SD card).
+		/// </summary>
+		private static void SaveIfLearnt()
+		{
+			lock (saveLock)
+			{
+				KeyValuePair<string, (long Length, long Ticks, TextureTransparencyType Type)>[] entries;
+				lock (diskLock)
+				{
+					if (unsaved == 0 || diskCache == null)
+					{
+						return;
+					}
+
+					entries = new KeyValuePair<string, (long, long, TextureTransparencyType)>[diskCache.Count];
+					((ICollection<KeyValuePair<string, (long, long, TextureTransparencyType)>>)diskCache).CopyTo(entries, 0);
+					unsaved = 0;
+				}
+
+				SaveDiskCache(entries);
+			}
+		}
+
+		/*
+		 * The rest of the scenery, classified on a thread of its own while the game runs (OBNS 1.31N). Only the textures
+		 * of what is in view at the start are classified while loading; every other static object's texture was decoded
+		 * by ObjectLibrary.ShowObject on the render thread when it first came into view - on the Switch, stalls of up to
+		 * 5.8 s on the Tuen Ma Line (2026-11-07). Nearest the start first; answers the disk cache has cost no decode, and
+		 * new ones are kept there (with those ObjectLibrary still works out itself, TextureManager.TypeWorkedOut), saved
+		 * every so often and when the game ends.
+		 */
+		private static int backgroundGeneration;
+		private static string backgroundSummary = "not started";
+
+		/// <summary>What the background pass has done so far, for the log.</summary>
+		public static string BackgroundSummary => backgroundSummary;
+
+		/// <summary>Starts classifying these objects' textures in the background (stopping any earlier pass).</summary>
+		/// <param name="prototypes">The objects, nearest first; listed now, on the calling thread.</param>
+		public static void StartBackground(IEnumerable<StaticObject> prototypes)
+		{
+			StopBackground();
+			List<TextureOrigin> todo = Textures(prototypes);
+			int generation = System.Threading.Interlocked.Increment(ref backgroundGeneration);
+			backgroundSummary = todo.Count + " to classify";
+			if (todo.Count == 0)
+			{
+				return;
+			}
+
+			System.Threading.Thread thread = new System.Threading.Thread(() => Background(todo, generation))
+			{
+				IsBackground = true,
+				Name = "texture classification",
+				Priority = System.Threading.ThreadPriority.Lowest
+			};
+			thread.Start();
+		}
+
+		/// <summary>Stops the background pass (a new game, or the end of this one), keeping what was learnt.</summary>
+		public static void StopBackground()
+		{
+			System.Threading.Interlocked.Increment(ref backgroundGeneration);
+			SaveIfLearnt();
+		}
+
+		private static void Background(List<TextureOrigin> todo, int generation)
+		{
+			Stopwatch clock = Stopwatch.StartNew();
+			int remembered = 0, decoded = 0, done = 0;
+			try
+			{
+				foreach (TextureOrigin origin in todo)
+				{
+					if (generation != System.Threading.Volatile.Read(ref backgroundGeneration))
+					{
+						return;
+					}
+
+					done++;
+					if (TextureManager.TryGetCachedType(origin, out _))
+					{
+						continue;
+					}
+
+					TextureTransparencyType type;
+					if (Remembered(origin, out type))
+					{
+						remembered++;
+					}
+					else
+					{
+						try
+						{
+							type = origin.GetTexture(out Texture texture) && texture != null ? texture.GetTransparencyType() : TextureTransparencyType.Opaque;
+						}
+						catch (Exception)
+						{
+							// Left for ShowObject, as it always would.
+							continue;
+						}
+
+						decoded++;
+						Learn(origin, type);
+						// Room for the game's own threads between decodes.
+						System.Threading.Thread.Sleep(1);
+					}
+
+					TextureManager.AddCachedType(origin, type);
+					if (decoded % 200 == 199)
+					{
+						SaveIfLearnt();
+					}
+
+					if ((done & 63) == 0)
+					{
+						backgroundSummary = done + " of " + todo.Count + " (" + remembered + " remembered, " + decoded + " decoded) in " +
+						                    clock.Elapsed.TotalSeconds.ToString("0") + " s";
+					}
+				}
+
+				backgroundSummary = "all " + todo.Count + " (" + remembered + " remembered, " + decoded + " decoded) in " +
+				                    clock.Elapsed.TotalSeconds.ToString("0") + " s";
+				// Then what ObjectLibrary still learns itself, saved every half minute until the game ends.
+				while (generation == System.Threading.Volatile.Read(ref backgroundGeneration))
+				{
+					SaveIfLearnt();
+					System.Threading.Thread.Sleep(30000);
+				}
+			}
+			catch (Exception e)
+			{
+				backgroundSummary = "stopped: " + e.GetType().Name + ": " + e.Message;
+			}
+		}
+
 		private static void Add(Texture texture, HashSet<TextureOrigin> seen, List<TextureOrigin> todo)
 		{
-			if (texture?.Origin == null || TextureManager.textureCache.ContainsKey(texture.Origin) || !seen.Add(texture.Origin))
+			if (texture?.Origin == null || TextureManager.TryGetCachedType(texture.Origin, out _) || !seen.Add(texture.Origin))
 			{
 				return;
 			}

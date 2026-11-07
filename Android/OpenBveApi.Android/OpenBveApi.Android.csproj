@@ -25,6 +25,9 @@
     <Compile Remove="$(UpstreamSource)OpenBveApi\Train\Axle.cs" />
     <Compile Include="..\..\OBNS\overrides\source\OpenBveApi\Train\Axle.cs" Link="OBNS\Axle.cs" />
     <Compile Remove="$(UpstreamSource)OpenBveApi\Properties\AssemblyInfo.cs" />
+    <!-- OBNS's copy, shared with the desktop build: a texture's file asked about once (one FileInfo) when registered. -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Textures\Textures.PathOrigin.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\OpenBveApi\Textures\Textures.PathOrigin.cs" Link="OBNS\Textures.PathOrigin.cs" />
     <!-- OBNS's copy, shared with the desktop build: removing materials in OptimizeObject takes one pass. -->
     <!-- OBNS's copy, shared with the desktop build: FinalizeMesh works out the wrap mode once. -->
     <Compile Remove="$(UpstreamSource)OpenBveApi\Objects\Mesh.cs" />

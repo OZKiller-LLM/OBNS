@@ -87,6 +87,32 @@ namespace LibRender2.Textures
 			}
 		}
 
+		/// <summary>Caches a texture's transparency type unless one is cached already (ANDROID PORT).</summary>
+		internal static void AddCachedType(TextureOrigin origin, TextureTransparencyType type)
+		{
+			if (origin == null) return;
+			lock (TextureLookupLock)
+			{
+				textureCache.TryAdd(origin, type);
+			}
+		}
+
+		/// <summary>Looks up an answer kept elsewhere (the host's disk cache) for a texture no one classified yet.</summary>
+		public delegate bool RememberedTypeHandler(TextureOrigin origin, out TextureTransparencyType type);
+
+		/// <summary>
+		/// ANDROID PORT: asked by ObjectLibrary before it decodes a texture to classify it on the render thread (the host's
+		/// TextureClassifier.Remembered); null: none.
+		/// </summary>
+		public static RememberedTypeHandler RememberedType;
+
+		/// <summary>ANDROID PORT: told of each answer ObjectLibrary worked out by decoding (the host keeps it: TextureClassifier.Learn).</summary>
+		public static Action<TextureOrigin, TextureTransparencyType> TypeWorkedOut;
+
+		/// <summary>ANDROID PORT: textures ObjectLibrary had to decode to classify (on the render thread), and the time taken.</summary>
+		public static int TypeDecodes;
+		public static long TypeDecodeTicks;
+
 		/// <summary>The lock guarding registration (ANDROID PORT: the Android host registers path textures itself, under it).</summary>
 		internal static object RegistrationLock => TextureLookupLock;
 
