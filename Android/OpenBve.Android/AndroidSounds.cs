@@ -108,6 +108,17 @@ namespace OpenBve.Android
 		/// <summary>Resets of the audio output so far, for the log.</summary>
 		public int AudioResets { get; private set; }
 
+		/// <summary>
+		/// Whether a stalled or lost output is closed and opened again (Android: a Bluetooth headset gone, a route change).
+		/// Not on the Switch (2026-11-07): there OpenAL Soft's SDL2 backend closes the device by joining SDL's audio thread,
+		/// which can be waiting in audout for a buffer back - the game stood still for good four times in the drive
+		/// benchmark at Tuen Mun. The stall is only logged there.
+		/// </summary>
+		public bool ReopenOutput = true;
+
+		/// <summary>Stalls seen without reopening (ReopenOutput off), for the log.</summary>
+		public int AudioStalls { get; private set; }
+
 		/// <summary>Watches the audio output (call once a frame); returns a line for the log when it reopened it.</summary>
 		public string Watch(double elapsed, bool paused)
 		{
@@ -166,6 +177,11 @@ namespace OpenBve.Android
 			string why = !connected ? "the device was disconnected" : checkedSources + " looped sounds stood still for 2 s";
 			stalledChecks = 0;
 			lastOffsets.Clear();
+			if (!ReopenOutput)
+			{
+				return "audio: " + why + " (" + (++AudioStalls) + " so far; the output is left open here)";
+			}
+
 			return Reopen() ? "audio: output reopened (" + why + "; " + (++AudioResets) + " so far)" : "audio: output lost (" + why + ") and could not be reopened";
 		}
 

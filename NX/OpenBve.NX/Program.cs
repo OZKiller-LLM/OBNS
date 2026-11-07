@@ -770,7 +770,11 @@ namespace OpenBve.NX
 			// Upstream's overlays are sized for 720 lines or so; 1080p docked scales them up, as Android's density does.
 			AndroidRenderer.OverlayScale = height / 720.0;
 
-			AndroidSounds sounds = new AndroidSounds(host, renderer, options);
+			AndroidSounds sounds = new AndroidSounds(host, renderer, options)
+			{
+				// Closing the device joins SDL's audio thread, which can be waiting in audout: a hang for good (2026-11-07).
+				ReopenOutput = false
+			};
 			sounds.Initialize(SoundRange.Low);
 			host.Sounds = sounds;
 			OpenBve.Program.Sounds = sounds;
