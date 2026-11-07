@@ -116,21 +116,22 @@ static void read_overclock_caps(void)
 static u32 target_rate(int mode, int clock)
 {
     bool docked = appletGetOperationMode() == AppletOperationMode_Console;
+    /*
+     * The user's clocks, 2026-11-07. Turbo: on battery CPU 1,581 and GPU 460.8 MHz (Horizon OC's Erista handheld caps),
+     * plugged in or docked CPU 1,785 and GPU 921.6 MHz. Overclock: CPU 2,091 and GPU 998.4 MHz whatever the power source
+     * (the ocCpuHz/ocGpuHz caps, nx-overclock.ini; on battery past the Erista guide's 8.6 W advice, the user's choice -
+     * where Horizon OC or the system holds a clock lower, the frame log's live clocks show it). Memory 1,600 MHz.
+     */
     if (mode == 4) {
-        bool battery = !docked && on_battery();
         read_overclock_caps();
-        if (clock == 0) return battery ? 1785000000u : ocCpuHz;
-        /*
-         * GPU 921.6 MHz: the Erista guide's safe rate (998.4 needs undervolt 2 under 950 mV, set and tested in Horizon
-         * OC). Memory 1,600 MHz, its rating, until a rate has been chosen and stability-tested in Horizon OC (unstable
-         * memory corrupts the system storage and the SD card); then this cap is raised to it (OVERCLOCK_MEMORY_HZ).
-         */
-        if (clock == 1) return battery ? 460800000u : ocGpuHz;
+        if (clock == 0) return ocCpuHz;
+        if (clock == 1) return ocGpuHz;
         return ocMemoryHz;
     }
     if (mode == 3) {
-        if (clock == 0) return 1785000000u;
-        if (clock == 1) return docked ? 768000000u : 460800000u;
+        bool powered = docked || !on_battery();
+        if (clock == 0) return powered ? 1785000000u : 1581000000u;
+        if (clock == 1) return powered ? 921600000u : 460800000u;
         return 1600000000u;
     }
     return 0;
