@@ -215,6 +215,12 @@ namespace OpenBve.NX
 			return false;
 		}
 
+		private static string TimeOfDay(double seconds)
+		{
+			TimeSpan t = TimeSpan.FromSeconds(Math.Max(0, seconds));
+			return t.Hours.ToString("00") + ":" + t.Minutes.ToString("00") + ":" + t.Seconds.ToString("00");
+		}
+
 		private string StationName(int index) => Route != null && index >= 0 && index < Route.Stations.Length ? Route.Stations[index].Name : "station " + index;
 
 		private void StartSection(string name)
@@ -331,8 +337,11 @@ namespace OpenBve.NX
 						}
 						else if (inStep >= 1.5)
 						{
-							Event("Delete pressed " + selectorPresses + " times");
-							Goto(Step.CloseDoors);
+							Event("Delete pressed " + selectorPresses + " times; waiting for the timetable's departure");
+							// As at every station: SelTrac counts down to the timetable's departure and ignores ATO start before it (07:43:00
+							// at Tuen Mun; Space at 07:40 never moved the train, 2026-11-08).
+							station = firstStation;
+							Goto(Step.Dwelling);
 						}
 					}
 
@@ -384,15 +393,15 @@ namespace OpenBve.NX
 						stoppedSince = -1;
 						Goto(Step.Running);
 					}
-					else if (inStep >= 20.0)
+					else if (inStep >= 15.0)
 					{
-						if (departAttempts >= 3)
+						if (departAttempts >= 5)
 						{
 							Fail("the train didn't move after Space " + departAttempts + " times (SelTrac's mode? selector_presses=" + selectorPresses + ")");
 							break;
 						}
 
-						Event("not moving 20 s after Space - pressing it again");
+						Event("not moving 15 s after Space - pressing it again");
 						taps = 0;
 						stepStarted = now;
 					}
@@ -454,11 +463,12 @@ namespace OpenBve.NX
 					break;
 				case Step.Dwelling:
 				{
-					// At least the dwell; then until the timetable's departure, at most a minute.
-					double departure = Route != null && station < Route.Stations.Length ? Route.Stations[station].DepartureTime : -1;
+					// At least the dwell; then until the timetable's departure (SelTrac won't start before it), at most 5 minutes.
+					double departure = Route != null && station >= 0 && station < Route.Stations.Length ? Route.Stations[station].DepartureTime : -1;
 					bool due = departure < 0 || Route.SecondsSinceMidnight >= departure;
-					if (inStep >= dwell && (due || inStep >= 60.0))
+					if (inStep >= dwell && (due || inStep >= 300.0))
 					{
+						Event("due at " + StationName(station) + (departure < 0 ? " (no departure time)" : " (departure " + TimeOfDay(departure) + ", now " + TimeOfDay(Route.SecondsSinceMidnight) + ")"));
 						Goto(Step.CloseDoors);
 					}
 

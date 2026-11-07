@@ -124,6 +124,7 @@ namespace OpenBve.Android
 					packPath = Path.Combine(Folder, name + ".pack");
 					indexPath = Path.Combine(Folder, name + ".index");
 					signature = Signature();
+					Trace("object cache: signed by " + SignatureParts);
 					index = ReadIndex(indexPath, signature, out long packLength);
 					if (index == null)
 					{
@@ -515,7 +516,7 @@ namespace OpenBve.Android
 
 					if (reader.ReadString() != expectedSignature)
 					{
-						Trace("object cache: the index is another parser build's - started again");
+						Trace("object cache: the index is another parser build's - started again (this build: " + SignatureParts + ")");
 						return null;
 					}
 
@@ -631,20 +632,37 @@ namespace OpenBve.Android
 		/// OptimizeObject included) and the parsers. A changed parser build starts the cache again.</summary>
 		private static string Signature()
 		{
+			// A fixed list, each loaded if it isn't yet (2026-11-08): the assemblies loaded so far were taken before, and
+			// some (AssimpParser, the Formats) load only when first used - so the same build could sign itself two ways.
 			List<string> parts = new List<string> { "v" + FormatVersion };
-			foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+			foreach (string name in SignatureAssemblies)
 			{
-				string name = assembly.GetName().Name ?? string.Empty;
-				if (name.StartsWith("OpenBveApi", StringComparison.Ordinal) || name.StartsWith("Object.", StringComparison.Ordinal) ||
-				    name.StartsWith("Formats.", StringComparison.Ordinal) || name.StartsWith("AssimpParser", StringComparison.Ordinal))
+				string identity;
+				try
 				{
-					parts.Add(name + ":" + assembly.ManifestModule.ModuleVersionId);
+					identity = Assembly.Load(new AssemblyName(name)).ManifestModule.ModuleVersionId.ToString("N").Substring(0, 8);
 				}
+				catch (Exception)
+				{
+					identity = "absent";
+				}
+
+				parts.Add(name + ":" + identity);
 			}
 
-			parts.Sort(StringComparer.Ordinal);
+			SignatureParts = string.Join(" ", parts);
 			return Hash(string.Join(";", parts));
 		}
+
+		/// <summary>The assemblies that make an object what it is: the API (its OptimizeObject included) and the parsers.</summary>
+		private static readonly string[] SignatureAssemblies =
+		{
+			"OpenBveApi", "Object.Animated", "Object.CsvB3d", "Object.DirectX", "Object.LokSim", "Object.Msts", "Object.Wavefront",
+			"Formats.OpenBve", "Formats.Msts", "Formats.DirectX", "AssimpParser"
+		};
+
+		/// <summary>The signature's parts (each assembly's identity, shortened), for the log.</summary>
+		public static string SignatureParts { get; private set; } = string.Empty;
 
 		/// <summary>FNV-1a over the text's UTF-16 units, as 16 hex digits (no cryptography: the Switch's runtime has no native
 		/// provider for it, and nothing here needs one).</summary>
