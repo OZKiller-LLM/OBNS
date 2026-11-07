@@ -163,6 +163,8 @@ namespace OpenBve.NX
 			{
 				LoadingScreen.Stop();
 				SetCpuBoost(0);
+				// The log's last lines written (they go through a writer thread) before its file is closed.
+				global::Android.Util.Log.Flush(3000);
 				logFile.Dispose();
 			}
 		}
@@ -344,7 +346,7 @@ namespace OpenBve.NX
 						// Stuck for good in a test drive: stopped with a fault on purpose, so Atmosphère's crash report has every
 						// thread's stack - where the game stands, natively, which the log cannot say.
 						Log("watchdog: stuck - stopping the game for a crash report (atmosphere/crash_reports: every thread's stack)");
-						System.Threading.Thread.Sleep(500);
+						global::Android.Util.Log.Flush(2000);
 						WatchdogCrash();
 					}
 				}

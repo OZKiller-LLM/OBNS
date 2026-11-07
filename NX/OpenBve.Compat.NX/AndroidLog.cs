@@ -36,11 +36,58 @@ namespace Android.Util
 		/// <summary>The lines written, for the runner's log file as well (set by the Switch entry).</summary>
 		public static Action<string> Sink;
 
+		/*
+		 * Written on a thread of their own (2026-11-08): the console is nxlink's socket over Wi-Fi when sent by nxlink, and
+		 * UserData's log files are flushed line by line to the SD card - either can block for seconds, and the game's thread
+		 * waited: frames of 3.2 s in the drive benchmark, at its 5-second reports. The game's thread only queues the line.
+		 */
+		private static readonly System.Collections.Concurrent.BlockingCollection<string> Pending = new System.Collections.Concurrent.BlockingCollection<string>();
+		private static readonly System.Threading.Thread Writer = StartWriter();
+		private static volatile int written, queued;
+
+		private static System.Threading.Thread StartWriter()
+		{
+			System.Threading.Thread thread = new System.Threading.Thread(() =>
+			{
+				foreach (string line in Pending.GetConsumingEnumerable())
+				{
+					try
+					{
+						System.Console.WriteLine(line);
+						Sink?.Invoke(line);
+					}
+					catch (Exception)
+					{
+						// A log line lost rather than the writer.
+					}
+
+					written++;
+				}
+			})
+			{
+				IsBackground = true,
+				Name = "log writer"
+			};
+			thread.Start();
+			return thread;
+		}
+
+		/// <summary>Waits until the lines queued so far are written, at most this long (before a deliberate crash, at the end).</summary>
+		public static void Flush(int milliseconds)
+		{
+			int target = queued;
+			System.Diagnostics.Stopwatch waited = System.Diagnostics.Stopwatch.StartNew();
+			while (written < target && waited.ElapsedMilliseconds < milliseconds)
+			{
+				System.Threading.Thread.Sleep(5);
+			}
+		}
+
 		private static int Write(string level, string tag, string message)
 		{
 			string line = level.Length == 0 ? tag + ": " + message : tag + " (" + level + "): " + message;
-			System.Console.WriteLine(line);
-			Sink?.Invoke(line);
+			System.Threading.Interlocked.Increment(ref queued);
+			Pending.Add(line);
 			return 0;
 		}
 

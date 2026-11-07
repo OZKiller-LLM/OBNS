@@ -58,7 +58,9 @@ namespace OpenBve.Android
 	/// </remarks>
 	internal static class TextureClassifier
 	{
-		private const string CacheFileName = "texture-transparency.v1.txt";
+		// v2 (2026-11-08): v1 could hold "opaque" for textures that had failed to decode in the background - drawn solid,
+		// their transparent parts black, in every game after. Failures are no longer kept, and v1 is left unread.
+		private const string CacheFileName = "texture-transparency.v2.txt";
 
 		/// <summary>Decodes at once while classifying, when set (the Switch: all three of its cores, the loading thread
 		/// waiting meanwhile); otherwise as many as streaming decodes (AndroidHost.ParallelDecodes).</summary>
@@ -284,7 +286,12 @@ namespace OpenBve.Android
 				try
 				{
 					// As ShowObject: a texture that fails to load counts as opaque.
-					results[origin] = origin.GetTexture(out Texture texture) && texture != null ? texture.GetTransparencyType() : TextureTransparencyType.Opaque;
+					// A texture that fails to load is left out: ShowObject tries it again (and reports it) as it always would.
+					// Counted opaque here, it was kept that way - and on disk.
+					if (origin.GetTexture(out Texture texture) && texture != null)
+					{
+						results[origin] = texture.GetTransparencyType();
+					}
 				}
 				catch (Exception)
 				{
@@ -417,7 +424,7 @@ namespace OpenBve.Android
 		private static void Background(List<TextureOrigin> todo, int generation)
 		{
 			Stopwatch clock = Stopwatch.StartNew();
-			int remembered = 0, decoded = 0, done = 0;
+			int remembered = 0, decoded = 0, done = 0, failed = 0;
 			try
 			{
 				foreach (TextureOrigin origin in todo)
@@ -442,7 +449,15 @@ namespace OpenBve.Android
 					{
 						try
 						{
-							type = origin.GetTexture(out Texture texture) && texture != null ? texture.GetTransparencyType() : TextureTransparencyType.Opaque;
+							// One that fails to load is left for ShowObject, never remembered as opaque (drawn solid, its
+							// transparent parts black, 2026-11-08).
+							if (!origin.GetTexture(out Texture texture) || texture == null)
+							{
+								failed++;
+								continue;
+							}
+
+							type = texture.GetTransparencyType();
 						}
 						catch (Exception)
 						{
@@ -464,12 +479,12 @@ namespace OpenBve.Android
 
 					if ((done & 63) == 0)
 					{
-						backgroundSummary = done + " of " + todo.Count + " (" + remembered + " remembered, " + decoded + " decoded) in " +
+						backgroundSummary = done + " of " + todo.Count + " (" + remembered + " remembered, " + decoded + " decoded, " + failed + " failed to load) in " +
 						                    clock.Elapsed.TotalSeconds.ToString("0") + " s";
 					}
 				}
 
-				backgroundSummary = "all " + todo.Count + " (" + remembered + " remembered, " + decoded + " decoded) in " +
+				backgroundSummary = "all " + todo.Count + " (" + remembered + " remembered, " + decoded + " decoded, " + failed + " failed to load) in " +
 				                    clock.Elapsed.TotalSeconds.ToString("0") + " s";
 				// Then what ObjectLibrary still learns itself, saved every half minute until the game ends.
 				while (generation == System.Threading.Volatile.Read(ref backgroundGeneration))
