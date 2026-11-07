@@ -51,8 +51,8 @@ namespace OpenBve.NX
 	 * The file's lines, all optional (key=value; # starts a comment):
 	 *   route=<file>              default: LegacyContent/Railway/Route/TMLDN 20144.csv
 	 *   train=<folder>            default: LegacyContent/Train/MTR TML SP1900 EMU ver2022
-	 *   selector_presses=<n>      Delete presses for SelTrac's mode, default 2
-	 *   last_station=<name part>  where the drive ends, default Long Ping
+	 *   selector_presses=<n>      Delete presses for SelTrac's mode (to Auto), default 5
+	 *   last_station=<name part>  where the drive ends (the route's station name, often a code), default LOP
 	 *   dwell=<s>                 the least time the doors stay open, default 20
 	 */
 	internal sealed class DriveBenchmark
@@ -65,8 +65,8 @@ namespace OpenBve.NX
 		/// <summary>The drive is over (finished or given up): the game ends.</summary>
 		public bool Finished { get; private set; }
 
-		private int selectorPresses = 2;
-		private string lastStation = "Long Ping";
+		private int selectorPresses = 5;
+		private string lastStation = "LOP";
 		private double dwell = 20.0;
 
 		private readonly Action<string> log;
