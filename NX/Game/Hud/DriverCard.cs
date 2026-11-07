@@ -65,6 +65,53 @@ namespace OpenBve.Switch
 
 		private const float MinWidth = 480;
 
+		/*
+		 * The card held still (2026-11-08: "the HUD bar is shaking like jelly", while the doors were open). Its width was the
+		 * text's every frame - the clock's seconds and the next stop's distance change all the time and digits differ in width,
+		 * the card centred - so it now grows at once (in steps) and shrinks only when the text has become well narrower. Its
+		 * height followed the safety system's warning, which a plugin can set and clear frame by frame (SelTrac, doors open):
+		 * a warning now stays a second after it was last given. The speed has a slot as wide as its digit count's widest.
+		 */
+		private const float WidthStep = 24, ShrinkSlack = 48;
+		private const double WarningHold = 1.0;
+		private static float heldWidth;
+		private static string heldWarning;
+		private static readonly System.Diagnostics.Stopwatch SinceWarning = System.Diagnostics.Stopwatch.StartNew();
+
+		private static float SteadyWidth(float needed)
+		{
+			if (needed > heldWidth || needed < heldWidth - ShrinkSlack)
+			{
+				heldWidth = (float)Math.Ceiling(needed / WidthStep) * WidthStep;
+			}
+
+			return heldWidth;
+		}
+
+		private static string SteadyWarning(string warning)
+		{
+			if (warning != null)
+			{
+				heldWarning = warning;
+				SinceWarning.Restart();
+				return warning;
+			}
+
+			return heldWarning != null && SinceWarning.Elapsed.TotalSeconds < WarningHold ? heldWarning : null;
+		}
+
+		/// <summary>The speed's slot: the widest digit times its digit count (the speed right-aligned in it).</summary>
+		private static float SpeedSlot(IMenuCanvas canvas, string speed)
+		{
+			float widest = 0;
+			for (char digit = '0'; digit <= '9'; digit++)
+			{
+				widest = Math.Max(widest, canvas.TextWidth(digit.ToString(), SpeedSize, true));
+			}
+
+			return widest * speed.Length;
+		}
+
 		/// <summary>Draws the card for the status, centred at the bottom of the 1280x720 screen.</summary>
 		public static void Draw(IMenuCanvas canvas, DriverStatus status)
 		{
@@ -81,7 +128,9 @@ namespace OpenBve.Switch
 			string clock = status.Clock ?? string.Empty;
 
 			// The top line's width, then the next-stop line's: the card as wide as the wider, within the safe area.
-			float topWidth = canvas.TextWidth(speed, SpeedSize, true) + canvas.TextWidth(unit, UnitSize) + Gap +
+			float speedSlot = SpeedSlot(canvas, speed);
+			string warning = SteadyWarning(status.Warning);
+			float topWidth = speedSlot + canvas.TextWidth(unit, UnitSize) + Gap +
 			                 (status.Limit != null ? SignSize + Gap : 0) + ChipWidth(canvas, handles) + 8 + ChipWidth(canvas, reverser) + 2 * Gap +
 			                 canvas.TextWidth(clock, ClockSize, true);
 			List<(string Text, uint Color, bool Bold)> next = NextLine(status);
@@ -92,8 +141,8 @@ namespace OpenBve.Switch
 			}
 
 			float most = MenuStyle.Width - 2 * MenuStyle.SafeX;
-			float width = Math.Min(most, Math.Max(MinWidth, Math.Max(topWidth, nextWidth) + 2 * Padding));
-			float warningHeight = status.Warning != null ? WarningSize + 10 + 8 : 0;
+			float width = Math.Min(most, SteadyWidth(Math.Max(MinWidth, Math.Max(topWidth, nextWidth) + 2 * Padding)));
+			float warningHeight = warning != null ? WarningSize + 10 + 8 : 0;
 			float height = Padding + warningHeight + SignSize + 6 + NextSize + Padding - 4;
 			float x = (MenuStyle.Width - width) / 2, y = MenuStyle.Height - MenuStyle.SafeY - height;
 
@@ -104,19 +153,19 @@ namespace OpenBve.Switch
 			float lineY = y + Padding - 4;
 			float left = x + Padding, right = x + width - Padding;
 
-			if (status.Warning != null)
+			if (warning != null)
 			{
-				string warning = MenuStyle.Fit(canvas, "⚠  " + status.Warning, WarningSize, width - 2 * Padding - 16, true);
+				string warningLine = MenuStyle.Fit(canvas, "⚠  " + warning, WarningSize, width - 2 * Padding - 16, true);
 				canvas.Fill(left, lineY, width - 2 * Padding, WarningSize + 10, WarningFill, 9);
-				canvas.Text(warning, left + 8, lineY + 5, WarningSize, WarningText, true);
+				canvas.Text(warningLine, left + 8, lineY + 5, WarningSize, WarningText, true);
 				lineY += warningHeight;
 			}
 
 			// The top line, its parts centred on the sign's height.
 			float middle = lineY + SignSize / 2;
 			float pen = left;
-			canvas.Text(speed, pen, middle - SpeedSize / 2 - 2, SpeedSize, over ? Over : Text, true);
-			pen += canvas.TextWidth(speed, SpeedSize, true);
+			canvas.Text(speed, pen + speedSlot - canvas.TextWidth(speed, SpeedSize, true), middle - SpeedSize / 2 - 2, SpeedSize, over ? Over : Text, true);
+			pen += speedSlot;
 			canvas.Text(unit, pen, middle - UnitSize / 2 + 4, UnitSize, Dim);
 			pen += canvas.TextWidth(unit, UnitSize) + Gap;
 
