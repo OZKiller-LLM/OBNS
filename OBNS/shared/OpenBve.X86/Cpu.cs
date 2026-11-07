@@ -93,6 +93,12 @@ namespace OpenBve.X86
 		/// <summary>Instructions executed, for diagnostics and runaway protection.</summary>
 		public long InstructionCount;
 
+		/// <summary>
+		/// The processor running emulated code now, null between calls: read by a watchdog (OBNS for the Switch) to tell a
+		/// plugin that never returns from a game that stopped elsewhere.
+		/// </summary>
+		public static volatile Cpu Running;
+
 		/// <summary>The most instructions one call into emulated code may take before it is abandoned.</summary>
 		public long InstructionBudget = 500_000_000;
 
@@ -178,12 +184,15 @@ namespace OpenBve.X86
 			uint savedEip = Eip;
 			Eip = function;
 			callFloors.Add(R[ESP]);
+			Cpu outer = Running;
+			Running = this;
 			try
 			{
 				Run();
 			}
 			finally
 			{
+				Running = outer;
 				callFloors.RemoveAt(callFloors.Count - 1);
 			}
 

@@ -74,6 +74,9 @@ namespace OpenBve.NX
 		private enum Step { Settle, Setup, Selector, CloseDoors, WaitClosed, Depart, Running, Arrived, Dwelling, Done }
 
 		private Step step = Step.Settle;
+
+		/// <summary>The drive's step, for the watchdog.</summary>
+		public string StepName => step.ToString();
 		private double stepStarted, now, lastTap;
 		private int taps, closeAttempts, departAttempts, station = -1, firstStation = -1;
 		private bool doorsLeft, doorsRight;

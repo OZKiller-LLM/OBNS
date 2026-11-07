@@ -288,9 +288,76 @@ namespace OpenBve.NX
 		/// </summary>
 		private static Deko.CompressedTextures compressedTextures;
 
+		// The frame loop's step, and frames finished: what the watchdog reads.
+		private static volatile int loopStep;
+		private static long framesFinished;
+		private static readonly string[] LoopSteps = { "input", "drive benchmark", "controls", "simulation", "RenderScene", "texture unload", "overlay", "sound", "end of frame" };
+
+		/*
+		 * The watchdog (2026-11-07: twice the game stood still at Tuen Mun a few seconds into the drive benchmark, no crash,
+		 * nothing in the log). No frame finished for 5 s: where the loop is - its step, the renderer's last phase, the
+		 * benchmark's step, and whether an emulated plugin is mid-call (its instruction count and address, which move if it
+		 * loops) - logged then, and every 10 s after while it stays stuck.
+		 */
+		private static System.Threading.Thread StartWatchdog(AndroidRenderer renderer, Func<bool> done)
+		{
+			System.Threading.Thread thread = new System.Threading.Thread(() =>
+			{
+				long seen = -1;
+				Stopwatch since = Stopwatch.StartNew();
+				double reported = 0;
+				while (!done())
+				{
+					System.Threading.Thread.Sleep(1000);
+					long now = System.Threading.Interlocked.Read(ref framesFinished);
+					if (now != seen)
+					{
+						seen = now;
+						since.Restart();
+						reported = 0;
+						continue;
+					}
+
+					double stuck = since.Elapsed.TotalSeconds;
+					if (stuck < 5.0 || stuck - reported < 10.0 && reported > 0)
+					{
+						continue;
+					}
+
+					reported = stuck;
+					OpenBve.X86.Cpu cpu = OpenBve.X86.Cpu.Running;
+					int step = loopStep;
+					Log("watchdog: no frame for " + stuck.ToString("0") + " s - the loop in " + (step >= 0 && step < LoopSteps.Length ? LoopSteps[step] : step.ToString()) +
+					    ", the renderer's last phase \"" + renderer.Profile.LastPhase + "\"" +
+					    (driveBenchmark != null ? ", the benchmark at " + driveBenchmark.StepName : string.Empty) +
+					    (cpu != null ? ", an emulated plugin mid-call: " + cpu.InstructionCount + " instructions, at 0x" + cpu.Eip.ToString("X8") : ", no emulated plugin running"));
+				}
+			})
+			{
+				IsBackground = true,
+				Name = "watchdog"
+			};
+			thread.Start();
+			return thread;
+		}
+
 		private static unsafe void Frames(AndroidRenderer renderer, AndroidHost host, AndroidSounds sounds, AndroidTrainSession session, Deko.DekoGL deko, double seconds)
 		{
 			Stage("frames: drawing for " + seconds.ToString("0") + " s" + (session == null ? " (no train: the camera travels the route)" : string.Empty));
+			bool framesOver = false;
+			StartWatchdog(renderer, () => framesOver);
+			try
+			{
+				FramesLoop(renderer, host, sounds, session, deko, seconds);
+			}
+			finally
+			{
+				framesOver = true;
+			}
+		}
+
+		private static unsafe void FramesLoop(AndroidRenderer renderer, AndroidHost host, AndroidSounds sounds, AndroidTrainSession session, Deko.DekoGL deko, double seconds)
+		{
 			Stopwatch clock = Stopwatch.StartNew();
 			// The first frame's first phase would otherwise be charged the whole load.
 			renderer.Profile.Restart();
@@ -338,6 +405,7 @@ namespace OpenBve.NX
 			int frames = 0, total = 0;
 			while (clock.Elapsed.TotalSeconds < seconds)
 			{
+				loopStep = 0;
 				int touching, docked;
 				float touchX, touchY;
 				touch.Update(pause.Open || session == null);
@@ -417,6 +485,7 @@ namespace OpenBve.NX
 				{
 					if (driveBenchmark != null && !paused)
 					{
+						loopStep = 1;
 						driveBenchmark.Update(session, controls, now, elapsed, benchmarkCpu, benchmarkGpu);
 						if (driveBenchmark.Finished)
 						{
@@ -425,7 +494,9 @@ namespace OpenBve.NX
 						}
 					}
 
+					loopStep = 2;
 					controls.Apply(session);
+					loopStep = 3;
 					if (paused)
 					{
 						session.UpdateView(elapsed, 0.0);
@@ -443,6 +514,7 @@ namespace OpenBve.NX
 
 				double mark = clock.Elapsed.TotalSeconds;
 				phase[1] += mark - now;
+				loopStep = 4;
 				host.BeginFrame();
 				renderer.RenderScene(elapsed);
 				/*
@@ -450,6 +522,7 @@ namespace OpenBve.NX
 				 * once a second (the Tuen Ma Line registers some 31,000, too many to look through every frame). Missing until
 				 * 2026-11-07: every texture ever shown stayed, and 941 MB of them ran the native heap out after 19 minutes.
 				 */
+				loopStep = 5;
 				unloadAge += elapsed;
 				if (unloadAge >= 1.0 && !paused)
 				{
@@ -460,6 +533,7 @@ namespace OpenBve.NX
 				phase[2] += clock.Elapsed.TotalSeconds - mark;
 				mark = clock.Elapsed.TotalSeconds;
 				// The scene's draws all recorded first: the interface goes on top.
+				loopStep = 6;
 				deko.FlushDraws();
 				if (session != null && overlay.BeginOverlay())
 				{
@@ -484,6 +558,7 @@ namespace OpenBve.NX
 
 				phase[3] += clock.Elapsed.TotalSeconds - mark;
 				mark = clock.Elapsed.TotalSeconds;
+				loopStep = 7;
 				sounds.Update(elapsed);
 				string audio = sounds.Watch(elapsed, paused);
 				if (audio != null)
@@ -494,12 +569,14 @@ namespace OpenBve.NX
 				renderer.Profile.EndFrame();
 				phase[4] += clock.Elapsed.TotalSeconds - mark;
 				mark = clock.Elapsed.TotalSeconds;
+				loopStep = 8;
 				deko.EndFrame();
 				phase[5] += clock.Elapsed.TotalSeconds - mark;
 				gpuWait += deko.LastEndMilliseconds;
 				frameStart = clock.Elapsed.TotalSeconds;
 				frames++;
 				total++;
+				System.Threading.Interlocked.Increment(ref framesFinished);
 				double took = clock.Elapsed.TotalSeconds - now;
 				if (total > 3)
 				{
