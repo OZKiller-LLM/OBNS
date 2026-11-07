@@ -24,6 +24,11 @@
     <!-- No commit hash in the assemblies' informational version: with it every commit gave every assembly a new identity
          (MVID), and the Switch's object cache, which goes by the parsers' identities, started again after each build. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- Nor Source Link (2026-11-07): its map in each PDB names the commit, the PE carries the PDB's ID, and deterministic
+         builds derive the MVID from both - so every commit still started the object cache again (a 13-minute first load
+         of the Tuen Ma Line on the Switch). No source control queries at all, so no commit reaches the build. -->
+    <EnableSourceLink>false</EnableSourceLink>
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!-- Upstream is a decade-old codebase: silence style/obsolete noise, keep real errors. -->
     <NoWarn>$(NoWarn);CS1591;CS0618;CS0612;CS0067;CS0649;CS0414;CS0169;CS0219;CA1416</NoWarn>
