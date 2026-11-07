@@ -18,6 +18,14 @@
     -->
     <LangVersion>13</LangVersion>
     <DefineConstants>$(DefineConstants);OBNS_SWITCH</DefineConstants>
+    <!--
+      No PDBs (2026-11-08): a portable PDB records the identity of every assembly it references, and a deterministic
+      build takes the assembly's own identity (MVID) from its PDB too - so a rebuilt dependency gave every parser a new
+      identity with its code unchanged, and the object cache, which goes by the parsers' identities, started again after
+      every build (13-minute loads of the Tuen Ma Line). Everything here is compiled ahead of time; nothing reads them.
+    -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>
