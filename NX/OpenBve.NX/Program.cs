@@ -64,6 +64,10 @@ namespace OpenBve.NX
 		[DllImport("__Internal", EntryPoint = "obns_native_heap_used")]
 		private static extern long NativeHeapUsed();
 
+		/// <summary>A fault on purpose (the watchdog, a game stuck for good): Atmosphère's crash report then has every thread's stack.</summary>
+		[DllImport("__Internal", EntryPoint = "obns_watchdog_crash")]
+		private static extern void WatchdogCrash();
+
 		[DllImport("__Internal", EntryPoint = "obns_set_cpu_boost")]
 		private static extern int SetCpuBoost(int mode);
 
@@ -291,7 +295,7 @@ namespace OpenBve.NX
 		// The frame loop's step, and frames finished: what the watchdog reads.
 		private static volatile int loopStep;
 		private static long framesFinished;
-		private static readonly string[] LoopSteps = { "input", "drive benchmark", "controls", "simulation", "RenderScene", "texture unload", "overlay", "sound", "end of frame" };
+		private static readonly string[] LoopSteps = { "input", "drive benchmark", "controls", "simulation", "RenderScene", "texture unload", "overlay", "sound: update", "end of frame", "sound: the output watch", "frame profile" };
 
 		/*
 		 * The watchdog (2026-11-07: twice the game stood still at Tuen Mun a few seconds into the drive benchmark, no crash,
@@ -331,6 +335,14 @@ namespace OpenBve.NX
 					    ", the renderer's last phase \"" + renderer.Profile.LastPhase + "\"" +
 					    (driveBenchmark != null ? ", the benchmark at " + driveBenchmark.StepName : string.Empty) +
 					    (cpu != null ? ", an emulated plugin mid-call: " + cpu.InstructionCount + " instructions, at 0x" + cpu.Eip.ToString("X8") : ", no emulated plugin running"));
+					if (stuck >= 40.0 && driveBenchmark != null)
+					{
+						// Stuck for good in a test drive: stopped with a fault on purpose, so Atmosphère's crash report has every
+						// thread's stack - where the game stands, natively, which the log cannot say.
+						Log("watchdog: stuck - stopping the game for a crash report (atmosphere/crash_reports: every thread's stack)");
+						System.Threading.Thread.Sleep(500);
+						WatchdogCrash();
+					}
 				}
 			})
 			{
@@ -560,12 +572,14 @@ namespace OpenBve.NX
 				mark = clock.Elapsed.TotalSeconds;
 				loopStep = 7;
 				sounds.Update(elapsed);
+				loopStep = 9;
 				string audio = sounds.Watch(elapsed, paused);
 				if (audio != null)
 				{
 					Log(audio);
 				}
 
+				loopStep = 10;
 				renderer.Profile.EndFrame();
 				phase[4] += clock.Elapsed.TotalSeconds - mark;
 				mark = clock.Elapsed.TotalSeconds;

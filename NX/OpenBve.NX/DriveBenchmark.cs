@@ -299,6 +299,12 @@ namespace OpenBve.NX
 					{
 						Tap(controls, Translations.Command.PowerDecrease);
 					}
+					else if (h.EmergencyBrake.Driver && taps < 40)
+					{
+						// The game starts the train in emergency, its brake notch already the highest: B8, not EMG (the user,
+						// 2026-11-07). One step towards power releases the emergency brake and leaves the notch where it is.
+						Tap(controls, h.HandleType == HandleType.SingleHandle ? Translations.Command.SinglePower : Translations.Command.BrakeDecrease);
+					}
 					else if (h.Brake.Driver < targetBrake && taps < 40)
 					{
 						Tap(controls, h.HandleType == HandleType.SingleHandle ? Translations.Command.SingleBrake : Translations.Command.BrakeIncrease);
@@ -309,7 +315,8 @@ namespace OpenBve.NX
 					}
 					else
 					{
-						Event("reverser " + h.Reverser.Driver + ", brake notch " + h.Brake.Driver + " (" + h.Brake.GetNotchDescription(out _) + "), power " + h.Power.Driver);
+						Event("reverser " + h.Reverser.Driver + ", brake notch " + h.Brake.Driver + " (" + h.Brake.GetNotchDescription(out _) + "), power " + h.Power.Driver +
+						      (h.EmergencyBrake.Driver ? ", the emergency brake still on" : ", the emergency brake off"));
 						Goto(Step.Selector);
 					}
 

@@ -30,6 +30,13 @@ EXPORT int64_t obns_memory_used(void)
     return (int64_t)used;
 }
 
+// The watchdog's way out of a game stuck for good (OBNS 1.31N, the drive benchmark): a fault on purpose, so Atmosphère's
+// crash report records every thread's registers and stack - where the game stands natively, which its log cannot say.
+EXPORT void obns_watchdog_crash(void)
+{
+    *(volatile u32 *)0 = 0x0B05DEADu;
+}
+
 // The native heap in use: malloc's, which the process's used memory can't show (libnx reserves it all up front).
 EXPORT int64_t obns_native_heap_used(void)
 {

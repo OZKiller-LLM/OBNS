@@ -493,15 +493,29 @@ namespace OpenBve.Android
 			packLength = 0;
 			if (!File.Exists(path))
 			{
-				return null;
+				// A game stopped between the old index's deletion and the new one's rename leaves only the new one.
+				if (!File.Exists(path + ".new"))
+				{
+					Trace("object cache: no index - started again");
+					return null;
+				}
+
+				path += ".new";
 			}
 
 			try
 			{
 				using (BinaryReader reader = new BinaryReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16), Encoding.UTF8))
 				{
-					if (reader.ReadUInt32() != IndexMagic || reader.ReadString() != expectedSignature)
+					if (reader.ReadUInt32() != IndexMagic)
 					{
+						Trace("object cache: the index is not one - started again");
+						return null;
+					}
+
+					if (reader.ReadString() != expectedSignature)
+					{
+						Trace("object cache: the index is another parser build's - started again");
 						return null;
 					}
 
@@ -515,6 +529,7 @@ namespace OpenBve.Android
 						int length = reader.ReadInt32();
 						if (offset < 0 || length < 0 || offset + length > packLength)
 						{
+							Trace("object cache: the index points past its pack - started again");
 							return null;
 						}
 
@@ -524,8 +539,9 @@ namespace OpenBve.Android
 					return entries;
 				}
 			}
-			catch (Exception)
+			catch (Exception e)
 			{
+				Trace("object cache: the index could not be read (" + e.GetType().Name + ") - started again");
 				return null;
 			}
 		}
