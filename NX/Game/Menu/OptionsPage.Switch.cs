@@ -115,6 +115,10 @@ namespace OpenBve.Switch
 				SwitchSettings.GetCompressedTextures() ? 0 : 1, i => SwitchSettings.SetCompressedTextures(i == 0)));
 			List.Add(new InfoItem(T("switch", "compressed_textures_note",
 				"The Switch's GPU reads compressed textures directly, in a quarter to an eighth of the memory, with slightly less detail.")));
+			List.Add(new ChoiceItem(T("android", "unload_textures", "Unload unused textures:"), onOff,
+				SwitchSettings.GetUnloadTextures() ? 0 : 1, i => SwitchSettings.SetUnloadTextures(i == 0)));
+			List.Add(new InfoItem(T("android", "unload_textures_note",
+				"Textures not drawn for 20 seconds are freed and loaded again when they come back into view, so long drives on heavy routes do not run out of memory. Turn it off to keep every texture loaded.")));
 			List.Add(new SliderItem(T("options", "quality_distance_viewingdistance", "Viewing distance:"), 100, 2000, 50,
 				SwitchSettings.GetViewingDistance(), v => v + " " + T("options", "quality_distance_viewingdistance_meters", "m"), SwitchSettings.SetViewingDistance));
 			LibRender2.MotionBlurs.MotionBlurMode[] blurModes =

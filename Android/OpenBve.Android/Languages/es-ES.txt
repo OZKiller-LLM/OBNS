@@ -69,6 +69,8 @@ timetable_terminal = terminal
 vulkan_small_textures = Texturas más pequeñas con Vulkan nativo:
 vulkan_small_textures_note = En teléfonos con unos 6 GB de RAM o menos, Vulkan nativo limita las texturas a 1024 px y color de 16 bits (donde esas opciones son automáticas), para que las rutas pesadas no agoten la memoria. Desactívelo para texturas más nítidas.
 vulkan_small_textures_large = (Este dispositivo tiene más memoria: aquí no tiene efecto.)
+unload_textures = Descargar texturas sin usar:
+unload_textures_note = Las texturas que no se dibujan durante 20 segundos se liberan y se vuelven a cargar cuando vuelven a verse, para que los viajes largos en rutas pesadas no se queden sin memoria. Desactívalo para mantener todas las texturas cargadas.
 microphone_denied = Los sonidos de micrófono necesitan permiso para usar el micrófono.
 
 # The switch map (SwitchMapPanel).

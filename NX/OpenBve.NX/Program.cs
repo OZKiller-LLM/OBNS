@@ -759,8 +759,9 @@ namespace OpenBve.NX
 			AndroidRenderer.CutoutKeyedFaces = true;
 			// Cars behind the camera or far away updated less often (the user's choice, 2026-11-07).
 			AndroidTrainManager.CarUpdateLod = true;
-			// Content textures unused for 20 s unloaded (upstream's unloading never did: nothing is marked unloadable).
-			LibRender2.Textures.TextureManager.UnloadUnpinned = true;
+			// Content textures unused for 20 s unloaded (upstream's unloading never did: nothing is marked unloadable) - the Options'
+			// "Unload unused textures", on by default.
+			LibRender2.Textures.TextureManager.UnloadUnpinned = SwitchSettings.GetUnloadTextures();
 			// Last frame's filtered face lists kept while nothing they depend on changed (#2, 2026-11-07).
 			// Each of the 2026-11-07 renderer changes can be turned off for a comparison by a file in UserData.
 			AndroidRenderer.ReuseFaceLists = !File.Exists(Root + "/UserData/nx-no-list-reuse.txt");

@@ -69,6 +69,8 @@ timetable_terminal = 終着
 vulkan_small_textures = ネイティブ Vulkan でテクスチャを縮小:
 vulkan_small_textures_note = RAM が約 6 GB 以下の端末では、ネイティブ Vulkan はテクスチャを 1024 px・16 ビットカラーに抑え（これらの設定が自動の場合）、重い路線でメモリ不足にならないようにします。より鮮明なテクスチャにするにはオフにしてください。
 vulkan_small_textures_large = （この端末はメモリが多いため、ここでは効果がありません。）
+unload_textures = 未使用のテクスチャを解放:
+unload_textures_note = 20秒間描画されていないテクスチャを解放し、再び表示されたときに読み込み直します。重い路線での長い運転でもメモリ不足になりません。オフにするとすべてのテクスチャを読み込んだままにします。
 microphone_denied = マイク音声にはマイクの使用許可が必要です。
 
 # The switch map (SwitchMapPanel).

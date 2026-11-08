@@ -421,6 +421,22 @@ namespace OpenBve.Android
 			editor?.Apply();
 		}
 
+		/*
+		 * Content textures unused for 20 s unloaded (TextureManager.UnloadUnpinned), on by default (2026-11-09): with every
+		 * texture ever shown kept, a Galaxy A71 was closed by the low-memory killer leaving Tuen Mun on the Tuen Ma Line.
+		 * Off keeps them all, as upstream does, for no reloading when the view comes back.
+		 */
+		private const string UnloadTexturesKey = "unload_unused_textures";
+
+		public static bool GetUnloadTextures(Context context) => Prefs(context)?.GetBoolean(UnloadTexturesKey, true) ?? true;
+
+		public static void SetUnloadTextures(Context context, bool value)
+		{
+			ISharedPreferencesEditor editor = Prefs(context)?.Edit();
+			editor?.PutBoolean(UnloadTexturesKey, value);
+			editor?.Apply();
+		}
+
 		/// <summary>Whether a phone is small enough for the smaller Vulkan textures: about 6 GB of RAM or less.</summary>
 		public static bool SmallTexturesPhone(long totalRamBytes) => totalRamBytes > 0 && totalRamBytes <= 6656L << 20;
 

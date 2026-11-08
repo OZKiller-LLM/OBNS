@@ -119,6 +119,13 @@ namespace OpenBve.Android
 				Info(Menu.T("android", "vulkan_small_textures_note",
 					"On phones with about 6 GB of RAM or less, native Vulkan keeps textures to 1024 px and 16-bit colour (where those options are automatic), so heavy routes do not run out of memory. Turn it off for sharper textures.") +
 					(AndroidSettings.SmallTexturesPhone(AndroidSettings.TotalRam(activity)) ? string.Empty : " " + Menu.T("android", "vulkan_small_textures_large", "(This device has more memory: it has no effect here.)")));
+				// Unused textures unloaded (AndroidSettings.GetUnloadTextures; TextureManager.UnloadUnpinned).
+				Dropdown(Menu.T("android", "unload_textures", "Unload unused textures:"),
+					new[] { Menu.T("android", "on", "On"), Menu.T("android", "off", "Off") },
+					AndroidSettings.GetUnloadTextures(activity) ? 0 : 1,
+					i => AndroidSettings.SetUnloadTextures(activity, i == 0));
+				Info(Menu.T("android", "unload_textures_note",
+					"Textures not drawn for 20 seconds are freed and loaded again when they come back into view, so long drives on heavy routes do not run out of memory. Turn it off to keep every texture loaded."));
 				// Texture colour depth (GL.Texture16Bit): 16 bits halve the textures' memory.
 				int[] depths = { -1, 32, 16 };
 				long ram = AndroidSettings.TotalRam(activity);

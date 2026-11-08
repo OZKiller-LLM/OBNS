@@ -69,6 +69,8 @@ timetable_terminal = eindstation
 vulkan_small_textures = Kleinere texturen met native Vulkan:
 vulkan_small_textures_note = Op telefoons met ongeveer 6 GB RAM of minder houdt native Vulkan texturen op 1024 px en 16-bits kleur (waar die opties automatisch zijn), zodat zware routes niet zonder geheugen komen. Zet het uit voor scherpere texturen.
 vulkan_small_textures_large = (Dit apparaat heeft meer geheugen: hier geen effect.)
+unload_textures = Ongebruikte texturen vrijgeven:
+unload_textures_note = Texturen die 20 seconden niet zijn getekend worden vrijgegeven en opnieuw geladen zodra ze weer in beeld komen, zodat lange ritten op zware lijnen het geheugen niet uitputten. Zet het uit om alle texturen geladen te houden.
 microphone_denied = Microfoongeluiden hebben toestemming nodig om de microfoon te gebruiken.
 
 # The switch map (SwitchMapPanel).

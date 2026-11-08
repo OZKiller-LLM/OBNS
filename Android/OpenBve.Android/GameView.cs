@@ -76,6 +76,9 @@ namespace OpenBve.Android
 
 		private readonly System.Diagnostics.Stopwatch benchmarkClock = System.Diagnostics.Stopwatch.StartNew();
 
+		/// <summary>Time since unused textures were last looked for.</summary>
+		private double unloadAge;
+
 		/// <summary>
 		/// Whether the demo driver takes the controls instead of the player, for unattended tests
 		/// (the <c>autodrive</c> intent extra).
@@ -621,10 +624,13 @@ namespace OpenBve.Android
 							Controls.Cab.Update(session, renderer, width, height);
 						}
 
-						// As upstream's GameWindow, after drawing.
-						if (options.UnloadUnusedTextures)
+						// As upstream's GameWindow, after drawing - once a second (2026-11-09): the Tuen Ma Line registers some 31,000
+						// textures, too many to look through every frame (the Switch does the same).
+						unloadAge += elapsed;
+						if (options.UnloadUnusedTextures && unloadAge >= 1.0)
 						{
-							renderer.TextureManager.UnloadUnusedTextures(elapsed);
+							renderer.TextureManager.UnloadUnusedTextures(unloadAge);
+							unloadAge = 0.0;
 						}
 						// After the scene, as upstream does: the listener follows the camera just placed.
 						sounds.Update(elapsed);

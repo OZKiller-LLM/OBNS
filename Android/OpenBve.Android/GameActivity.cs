@@ -274,6 +274,12 @@ namespace OpenBve.Android
 			AndroidRenderer.MergeOpaqueFaces = Intent?.GetBooleanExtra("merge_faces", true) ?? true;
 			AndroidRenderer.CheckMerging = Intent?.GetBooleanExtra("merge_check", false) ?? false;
 			// For comparisons: --ez static_batching false draws every object on its own, as upstream.
+			// Content textures unused for 20 s really unloaded, as on the Switch (2026-11-09): the A71 was killed for low memory
+			// leaving Tuen Mun on the Tuen Ma Line, every texture ever shown kept. The Options' "Unload unused textures"; the extra
+			// "unload_unpinned" overrides it for tests.
+			LibRender2.Textures.TextureManager.UnloadUnpinned = Intent != null && Intent.HasExtra("unload_unpinned")
+				? Intent.GetBooleanExtra("unload_unpinned", true)
+				: AndroidSettings.GetUnloadTextures(this);
 			StaticBatcher.Enabled = Intent?.GetBooleanExtra("static_batching", true) ?? true;
 			StaticBatcher.DetachParts = Intent?.GetBooleanExtra("detach_parts", true) ?? true;
 			VertexCopyReleaser.Enabled = Intent?.GetBooleanExtra("release_vertex_copies", true) ?? true;

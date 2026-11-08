@@ -69,6 +69,8 @@ timetable_terminal = 종착
 vulkan_small_textures = 네이티브 Vulkan에서 텍스처 축소:
 vulkan_small_textures_note = RAM이 약 6GB 이하인 휴대전화에서 네이티브 Vulkan은 텍스처를 1024px, 16비트 색상으로 제한하여(해당 옵션이 자동인 경우) 무거운 노선에서 메모리가 부족하지 않게 합니다. 더 선명한 텍스처를 원하면 끄십시오.
 vulkan_small_textures_large = (이 기기는 메모리가 더 많아 여기서는 효과가 없습니다.)
+unload_textures = 사용하지 않는 텍스처 해제:
+unload_textures_note = 20초 동안 그려지지 않은 텍스처를 해제하고 다시 보일 때 다시 불러옵니다. 무거운 노선에서 오래 운전해도 메모리가 부족해지지 않습니다. 끄면 모든 텍스처를 계속 불러온 채로 둡니다.
 microphone_denied = 마이크 소리를 사용하려면 마이크 사용 권한이 필요합니다.
 
 # The switch map (SwitchMapPanel).
