@@ -324,6 +324,16 @@ namespace OpenBve.Android
 				SkipTrackFollowingObjects = Intent?.GetBooleanExtra("skip_tfo", false) ?? false,
 				Launch = launch
 			};
+			// The drive benchmark: its settings in one extra ("selector_presses=5;last_station=LOP"), the summary to the log
+			// (" OpenBVE") and to a file in the app's files folder.
+			string driveBenchmark = Intent?.GetStringExtra("drive_benchmark");
+			if (driveBenchmark != null)
+			{
+				view.Benchmark = DriveBenchmark.FromSettings(driveBenchmark, line => global::Android.Util.Log.Info("OpenBVE", line));
+				view.Benchmark.SummaryFolder = GetExternalFilesDir(null)?.AbsolutePath;
+				global::Android.Util.Log.Info("OpenBVE", view.Benchmark.Describe());
+			}
+
 			view.Started += message => RunOnUiThread(() => OnStarted(message));
 			view.Failed += error => RunOnUiThread(() => OnFailed(error.Message));
 			view.InfoChanged += status => RunOnUiThread(() =>

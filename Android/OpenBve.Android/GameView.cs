@@ -71,6 +71,11 @@ namespace OpenBve.Android
 		/// <summary>The driver's commands, fed by the on-screen controls.</summary>
 		public AndroidControls Controls { get; } = new AndroidControls();
 
+		/// <summary>The drive benchmark (launch extra "drive_benchmark"), or null: it drives the train as a driver would.</summary>
+		public DriveBenchmark Benchmark { get; set; }
+
+		private readonly System.Diagnostics.Stopwatch benchmarkClock = System.Diagnostics.Stopwatch.StartNew();
+
 		/// <summary>
 		/// Whether the demo driver takes the controls instead of the player, for unattended tests
 		/// (the <c>autodrive</c> intent extra).
@@ -548,6 +553,12 @@ namespace OpenBve.Android
 
 						if (session != null)
 						{
+							// The drive benchmark presses what a driver would, before the controls are applied (as on the Switch).
+							if (Benchmark != null && !paused && !Benchmark.Finished)
+							{
+								Benchmark.Update(session, Controls, benchmarkClock.Elapsed.TotalSeconds, elapsed, 0, 0);
+							}
+
 							Controls.Apply(session);
 							if (paused != soundsPaused)
 							{

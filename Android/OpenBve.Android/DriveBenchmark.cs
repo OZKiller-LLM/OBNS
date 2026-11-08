@@ -27,7 +27,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using OpenBve.Android;
 using OpenBveApi.Interface;
 using OpenBveApi.Trains;
 using RouteManager2;
@@ -36,7 +35,7 @@ using TrainManager.Car;
 using TrainManager.Handles;
 using TrainBase = TrainManager.Trains.TrainBase;
 
-namespace OpenBve.NX
+namespace OpenBve.Android
 {
 	/*
 	 * The drive benchmark (the user, 2026-11-07): UserData/nx-drive-benchmark.txt loads the desktop benchmark's route and
@@ -55,7 +54,7 @@ namespace OpenBve.NX
 	 *   last_station=<name part>  where the drive ends (the route's station name, often a code), default LOP
 	 *   dwell=<s>                 the least time the doors stay open, default 20
 	 */
-	internal sealed class DriveBenchmark
+	public sealed class DriveBenchmark
 	{
 		public const string FileName = "nx-drive-benchmark.txt";
 
@@ -91,9 +90,58 @@ namespace OpenBve.NX
 		private readonly StringBuilder events = new StringBuilder();
 		private int cpuMin = int.MaxValue, gpuMin = int.MaxValue;
 
+		/// <summary>Where the summary file goes (the Switch: UserData; Android: the app's files folder); null: the log only.</summary>
+		public string SummaryFolder { get; set; }
+
 		private DriveBenchmark(Action<string> log)
 		{
 			this.log = log;
+		}
+
+		/// <summary>
+		/// The benchmark from settings given in one line - Android's launch extra "drive_benchmark" (2026-11-08, the
+		/// user: the Galaxy S24 Ultra driven to Long Ping as the Switch is): "selector_presses=5;last_station=LOP;dwell=20",
+		/// the file's keys separated by ';'. The route and the train are the launch's own.
+		/// </summary>
+		public static DriveBenchmark FromSettings(string settings, Action<string> log)
+		{
+			DriveBenchmark benchmark = new DriveBenchmark(log);
+			foreach (string part in (settings ?? string.Empty).Split(';'))
+			{
+				benchmark.Apply(part, null);
+			}
+
+			return benchmark;
+		}
+
+		private void Apply(string raw, string root)
+		{
+			string line = raw.Split('#')[0].Trim();
+			int equals = line.IndexOf('=');
+			if (equals <= 0)
+			{
+				return;
+			}
+
+			string key = line.Substring(0, equals).Trim().ToLowerInvariant(), value = line.Substring(equals + 1).Trim();
+			switch (key)
+			{
+				case "route":
+					RouteFile = value.StartsWith("/") || root == null ? value : root + "/LegacyContent/Railway/Route/" + value;
+					break;
+				case "train":
+					TrainFolder = value.StartsWith("/") || root == null ? value : root + "/LegacyContent/Train/" + value;
+					break;
+				case "selector_presses":
+					int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out selectorPresses);
+					break;
+				case "last_station":
+					lastStation = value;
+					break;
+				case "dwell":
+					double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out dwell);
+					break;
+			}
 		}
 
 		/// <summary>The benchmark the file asks for, or null without the file.</summary>
@@ -108,36 +156,12 @@ namespace OpenBve.NX
 			DriveBenchmark benchmark = new DriveBenchmark(log)
 			{
 				RouteFile = root + "/LegacyContent/Railway/Route/TMLDN 20144.csv",
-				TrainFolder = root + "/LegacyContent/Train/MTR TML SP1900 EMU ver2022"
+				TrainFolder = root + "/LegacyContent/Train/MTR TML SP1900 EMU ver2022",
+				SummaryFolder = root + "/UserData"
 			};
 			foreach (string raw in File.ReadAllLines(path))
 			{
-				string line = raw.Split('#')[0].Trim();
-				int equals = line.IndexOf('=');
-				if (equals <= 0)
-				{
-					continue;
-				}
-
-				string key = line.Substring(0, equals).Trim().ToLowerInvariant(), value = line.Substring(equals + 1).Trim();
-				switch (key)
-				{
-					case "route":
-						benchmark.RouteFile = value.StartsWith("/") ? value : root + "/LegacyContent/Railway/Route/" + value;
-						break;
-					case "train":
-						benchmark.TrainFolder = value.StartsWith("/") ? value : root + "/LegacyContent/Train/" + value;
-						break;
-					case "selector_presses":
-						int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out benchmark.selectorPresses);
-						break;
-					case "last_station":
-						benchmark.lastStation = value;
-						break;
-					case "dwell":
-						double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out benchmark.dwell);
-						break;
-				}
+				benchmark.Apply(raw, root);
 			}
 
 			return benchmark;
@@ -564,7 +588,12 @@ namespace OpenBve.NX
 
 			try
 			{
-				string file = "/switch/OBNS/UserData/drive-benchmark-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".txt";
+				if (SummaryFolder == null)
+				{
+					return;
+				}
+
+				string file = Path.Combine(SummaryFolder, "drive-benchmark-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".txt");
 				File.WriteAllText(file, text.ToString());
 				log("benchmark: summary written to " + file);
 			}
