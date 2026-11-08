@@ -631,7 +631,7 @@ namespace OpenBve.NX
 					if (++windows % 6 == 1)
 					{
 						Log("frames: static batches " + renderer.BatchSummary);
-						Log("frames: passes " + renderer.PassSummary + "; lists kept in " + renderer.ReusedLists + " frames so far; faces through the cores " + renderer.QueuedFacesDrawn + ", left out " + renderer.DroppedFaces + "; emulated plugins " + OpenBve.NativePlugins.EmulatedWin32Plugin.TakeElapse());
+						Log("frames: passes " + renderer.PassSummary + "; lists kept in " + renderer.ReusedLists + " frames so far; faces through the cores " + renderer.QueuedFacesDrawn + ", left out " + renderer.DroppedFaces + "; emulated plugins " + OpenBve.NativePlugins.EmulatedWin32Plugin.TakeElapse() + "; scripted trains far along the line, not placed: " + OpenBve.Android.AndroidTrainManager.FarTrainsSkipped);
 						AudioStats(out long played, out int timedOut, out int restarted);
 						Log("frames: audio output: " + played + " buffers played, " + timedOut + " waits timed out, " + restarted + " restarts");
 						if (compressedTextures != null)

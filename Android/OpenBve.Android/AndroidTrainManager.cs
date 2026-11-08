@@ -173,11 +173,21 @@ namespace OpenBve.Android
 			 * still positioned) this is the most expensive part of the simulation step.
 			 */
 			TrainBase[] all = Trains.Concat(TFOs.OfType<ScriptedTrain>()).ToArray();
+			double here = PlayerTrain != null && PlayerTrain.Cars.Length > 0 ? PlayerTrain.Cars[PlayerTrain.DriverCar].FrontAxle.Follower.TrackPosition : double.NaN;
+			int skipped = 0;
 			Parallel.For(0, all.Length, i =>
 			{
 				TrainBase train = all[i];
 				if (train.State >= TrainState.DisposePending)
 				{
+					return;
+				}
+
+				// A scripted train far along the line from the player's: its place on the track (signals, timetable) is kept
+				// above; its world coordinates and springs, for drawing it, wait until it comes nearer.
+				if (CarUpdateLod && train is ScriptedTrain && !double.IsNaN(here) && FarAlongTheLine(train, here))
+				{
+					System.Threading.Interlocked.Increment(ref skipped);
 					return;
 				}
 
@@ -201,6 +211,31 @@ namespace OpenBve.Android
 					car.RearBogie.UpdateTopplingCantAndSpring();
 				}
 			});
+			FarTrainsSkipped = skipped;
+		}
+
+		/*
+		 * Scripted trains far from the player's (OBNS 1.31N, 2026-11-08): the world-coordinate and suspension pass ran for
+		 * all 36 of the Tuen Ma Line's, most kilometres away and not drawn - part of the 3.1 ms "trains" phase on the
+		 * Switch. Beyond FarTrainDistance along the line (twice the longest viewing distance and more) they wait; their track
+		 * positions, which signals and timetables go by, are updated every frame as before.
+		 */
+		private const double FarTrainDistance = 1500.0;
+
+		/// <summary>Scripted trains whose world pass was skipped last frame, for the log.</summary>
+		public static int FarTrainsSkipped;
+
+		private static bool FarAlongTheLine(TrainBase train, double here)
+		{
+			foreach (CarBase car in train.Cars)
+			{
+				if (System.Math.Abs(car.FrontAxle.Follower.TrackPosition - here) < FarTrainDistance || System.Math.Abs(car.RearAxle.Follower.TrackPosition - here) < FarTrainDistance)
+				{
+					return false;
+				}
+			}
+
+			return train.Cars.Length > 0;
 		}
 
 		/// <summary>
