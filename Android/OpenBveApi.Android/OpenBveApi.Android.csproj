@@ -28,6 +28,15 @@
     <!-- OBNS's copy, shared with the desktop build: a texture's file asked about once (one FileInfo) when registered. -->
     <Compile Remove="$(UpstreamSource)OpenBveApi\Textures\Textures.PathOrigin.cs" />
     <Compile Include="..\..\OBNS\overrides\source\OpenBveApi\Textures\Textures.PathOrigin.cs" Link="OBNS\Textures.PathOrigin.cs" />
+    <!--
+      OBNS's copies, shared with the desktop build (2026-11-09): a texture that is clear or solid but for a sliver of
+      anti-aliased edge pixels is a cut-out, not translucent (Texture.CutoutEdgeShare) - the SP1900's seat ends and grab
+      handles no longer drawn in the blended pass, through each other. ByteArrayOrigin comes along for ObnsDropPixels.
+    -->
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Textures\Textures.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\OpenBveApi\Textures\Textures.cs" Link="OBNS\Textures.cs" />
+    <Compile Remove="$(UpstreamSource)OpenBveApi\Textures\Textures.ByteArrayOrigin.cs" />
+    <Compile Include="..\..\OBNS\overrides\source\OpenBveApi\Textures\Textures.ByteArrayOrigin.cs" Link="OBNS\Textures.ByteArrayOrigin.cs" />
     <!-- OBNS's copy, shared with the desktop build: removing materials in OptimizeObject takes one pass. -->
     <!-- OBNS's copy, shared with the desktop build: FinalizeMesh works out the wrap mode once. -->
     <Compile Remove="$(UpstreamSource)OpenBveApi\Objects\Mesh.cs" />

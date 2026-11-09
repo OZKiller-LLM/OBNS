@@ -542,35 +542,43 @@ namespace OpenBveApi.Textures {
 						}
 						return released.GetTransparencyType();
 					}
+					/*
+					 * OBNS (2026-11-09): a texture whose alpha is 0 or 255 but for a sliver of anti-aliased edge pixels is a cut-out
+					 * (Partial), not translucent (Alpha). Upstream made it Alpha for one pixel between 1 and 254, so every face using it
+					 * was drawn in the sorted, blended pass, which writes no depth: the SP1900's seat ends (sit_end.png, 1.7% of its
+					 * pixels in between) and seat grab handles (handle_sit.png, 0.9%) showed through each other, in upstream as in OBNS.
+					 * Up to CutoutEdgeShare of the pixels may lie in between; real glass and tinted panels have far more.
+					 */
+					int zero = 0, full = 0, between = 0;
 					for (int i = 3; i < frameBytes.Length; i += 4)
 					{
-
-						switch (frameBytes[i])
+						byte a = frameBytes[i];
+						if (a == 0)
 						{
-							case 0:
-								if (i == 3)
-								{
-									transparencyType = TextureTransparencyType.Transparent;
-								}
-								else
-								{
-									if (transparencyType == TextureTransparencyType.Opaque)
-									{
-										transparencyType = TextureTransparencyType.Partial;
-									}
-								}
-								break;
-							case 255:
-								if (transparencyType != TextureTransparencyType.Opaque)
-								{
-									transparencyType = TextureTransparencyType.Partial;
-								}
-								// nothing
-								break;
-							default:
-								transparencyType = TextureTransparencyType.Alpha;
-								return transparencyType;
+							zero++;
 						}
+						else if (a == 255)
+						{
+							full++;
+						}
+						else
+						{
+							between++;
+						}
+					}
+
+					int pixels = zero + full + between;
+					if (between > 0 && (zero == 0 || full == 0 || between > pixels * CutoutEdgeShare))
+					{
+						transparencyType = TextureTransparencyType.Alpha;
+					}
+					else if (zero > 0 && full + between > 0)
+					{
+						transparencyType = TextureTransparencyType.Partial;
+					}
+					else if (zero > 0)
+					{
+						transparencyType = TextureTransparencyType.Transparent;
 					}
 
 					return transparencyType;
@@ -578,6 +586,10 @@ namespace OpenBveApi.Textures {
 			}
 			return TextureTransparencyType.Opaque;
 		}
+
+		/// <summary>OBNS: the largest share of pixels with alpha between 1 and 254 for which a texture with transparent and
+		/// opaque pixels still counts as a cut-out (Partial) rather than translucent (Alpha): anti-aliased edges.</summary>
+		public static double CutoutEdgeShare = 0.03;
 
 		private bool knownTransparencyType;
 		private TextureTransparencyType transparencyType;

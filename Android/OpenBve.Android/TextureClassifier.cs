@@ -60,7 +60,9 @@ namespace OpenBve.Android
 	{
 		// v2 (2026-11-08): v1 could hold "opaque" for textures that had failed to decode in the background - drawn solid,
 		// their transparent parts black, in every game after. Failures are no longer kept, and v1 is left unread.
-		private const string CacheFileName = "texture-transparency.v2.txt";
+		// v3 (2026-11-09): a texture clear or solid but for anti-aliased edges is now a cut-out (Texture.CutoutEdgeShare), not
+		// translucent; v2's answers for those are stale.
+		private const string CacheFileName = "texture-transparency.v3.txt";
 
 		/// <summary>Decodes at once while classifying, when set (the Switch: all three of its cores, the loading thread
 		/// waiting meanwhile); otherwise as many as streaming decodes (AndroidHost.ParallelDecodes).</summary>
