@@ -428,6 +428,22 @@ namespace OpenBve.Android
 		 */
 		private const string UnloadTexturesKey = "unload_unused_textures";
 
+		/*
+		 * Potato mode (the user, 2026-11-09): the Switch's performance measures on a phone - Sharp transparency, colour-keyed
+		 * faces in one cut-out pass, cars and timetabled trains far from the camera updated less often, textures at 1024 px
+		 * and 16 bits - and Android's performance hints asking for 33 ms frames. Off by default.
+		 */
+		private const string PotatoModeKey = "potato_mode";
+
+		public static bool GetPotatoMode(Context context) => Prefs(context)?.GetBoolean(PotatoModeKey, false) ?? false;
+
+		public static void SetPotatoMode(Context context, bool value)
+		{
+			ISharedPreferencesEditor editor = Prefs(context)?.Edit();
+			editor?.PutBoolean(PotatoModeKey, value);
+			editor?.Apply();
+		}
+
 		public static bool GetUnloadTextures(Context context) => Prefs(context)?.GetBoolean(UnloadTexturesKey, true) ?? true;
 
 		public static void SetUnloadTextures(Context context, bool value)

@@ -71,6 +71,8 @@ vulkan_small_textures_note = Sur les téléphones d'environ 6 Go de RAM ou moins
 vulkan_small_textures_large = (Cet appareil a plus de mémoire : sans effet ici.)
 unload_textures = Décharger les textures inutilisées :
 unload_textures_note = Les textures non affichées depuis 20 secondes sont libérées puis rechargées quand elles reviennent à l'écran, pour que les longs trajets sur les lignes lourdes ne manquent pas de mémoire. Désactivez pour garder toutes les textures chargées.
+potato_mode = Mode patate :
+potato_mode_note = Tout pour la vitesse sur les téléphones modestes, comme sur la Nintendo Switch : transparence nette, textures plus petites en 16 bits, trains lointains mis à jour moins souvent, et Android invité à tenir chaque image en 33 ms (Android 12 et plus). Les arbres et les clôtures ont des bords plus durs. Tant qu'il est activé, il remplace ces options.
 microphone_denied = Les sons du microphone nécessitent l'autorisation d'utiliser le microphone.
 
 # The switch map (SwitchMapPanel).

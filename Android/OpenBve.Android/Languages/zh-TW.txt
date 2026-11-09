@@ -71,6 +71,8 @@ vulkan_small_textures_note = 在記憶體約 6 GB 或以下的手機上，原生
 vulkan_small_textures_large = （此裝置記憶體較多：此處無效。）
 unload_textures = 釋放未使用的材質：
 unload_textures_note = 20 秒未繪製的材質會被釋放，再次出現在視野中時重新載入，以免在大型路線上長時間駕駛時記憶體不足。關閉則保留所有已載入的材質。
+potato_mode = 馬鈴薯模式：
+potato_mode_note = 為低階手機全力提速，與 Nintendo Switch 相同：銳利透明、更小的 16 位元材質、遠處列車降低更新頻率，並要求 Android 將每格畫面維持在 33 毫秒內（Android 12 以上）。樹木和圍欄的邊緣會較硬。開啟時會取代這些選項。
 microphone_denied = 麥克風聲音需要使用麥克風的權限。
 
 # The switch map (SwitchMapPanel).

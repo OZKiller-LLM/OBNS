@@ -71,6 +71,8 @@ vulkan_small_textures_note = 在内存约 6 GB 或以下的手机上，原生 Vu
 vulkan_small_textures_large = （此设备内存较多：此处无效。）
 unload_textures = 释放未使用的纹理：
 unload_textures_note = 20 秒未绘制的纹理会被释放，再次出现在视野中时重新加载，以免在大型路线上长时间驾驶时内存不足。关闭则保留所有已加载的纹理。
+potato_mode = 土豆模式：
+potato_mode_note = 为低端手机全力提速，与 Nintendo Switch 相同：锐利透明、更小的 16 位纹理、远处列车降低更新频率，并请求 Android 将每帧保持在 33 毫秒内（Android 12 及以上）。树木和围栏的边缘会更硬。开启时会取代这些选项。
 microphone_denied = 麦克风声音需要使用麦克风的权限。
 
 # The switch map (SwitchMapPanel).

@@ -71,6 +71,8 @@ vulkan_small_textures_note = RAM が約 6 GB 以下の端末では、ネイテ�
 vulkan_small_textures_large = （この端末はメモリが多いため、ここでは効果がありません。）
 unload_textures = 未使用のテクスチャを解放:
 unload_textures_note = 20秒間描画されていないテクスチャを解放し、再び表示されたときに読み込み直します。重い路線での長い運転でもメモリ不足になりません。オフにするとすべてのテクスチャを読み込んだままにします。
+potato_mode = ポテトモード:
+potato_mode_note = 低性能のスマートフォンで速度を最優先します（Nintendo Switch と同様）：シャープな透過、16ビットの小さなテクスチャ、遠くの列車の更新頻度を下げ、Android にフレームを 33 ms 以内に保つよう要求します（Android 12 以降）。木やフェンスの縁が硬くなります。オンの間はこれらのオプションより優先されます。
 microphone_denied = マイク音声にはマイクの使用許可が必要です。
 
 # The switch map (SwitchMapPanel).

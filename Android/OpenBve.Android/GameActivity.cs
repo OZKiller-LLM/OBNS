@@ -312,6 +312,19 @@ namespace OpenBve.Android
 			string transparency = Intent?.GetStringExtra("transparency");
 			AndroidSettings.TransparencyOverride = transparency == "performance" ? OpenBveApi.Graphics.TransparencyMode.Performance
 				: transparency == "quality" ? OpenBveApi.Graphics.TransparencyMode.Quality : (OpenBveApi.Graphics.TransparencyMode?)null;
+			// Potato mode (Options; the extra "potato_mode" overrides it for tests): the Switch's performance measures. An extra
+			// above that sets one of these for this game still wins.
+			bool potato = Intent != null && Intent.HasExtra("potato_mode") ? Intent.GetBooleanExtra("potato_mode", false) : AndroidSettings.GetPotatoMode(this);
+			if (potato)
+			{
+				AndroidSettings.TransparencyOverride ??= OpenBveApi.Graphics.TransparencyMode.Performance;
+				AndroidSettings.TextureLimitOverride ??= 1024;
+				AndroidSettings.TextureDepthOverride ??= 16;
+				AndroidRenderer.CutoutKeyedFaces = true;
+				AndroidTrainManager.CarUpdateLod = true;
+				global::Android.Util.Log.Info("OpenBVE", "potato mode: sharp transparency, textures 1024 px 16-bit, far cars and trains updated less often, performance hints");
+			}
+
 			// For measurements: --ei render_scale 50 draws the scene at half the screen's resolution.
 			GameView.RenderScale = Math.Clamp(Intent?.GetIntExtra("render_scale", 100) ?? 100, 25, 100) / 100.0f;
 			// For diagnosing a Win32 plugin: record its calls for replay in OpenBve.X86.Tests.
@@ -328,7 +341,8 @@ namespace OpenBve.Android
 			{
 				AutoDrive = Intent?.GetBooleanExtra(AutoDriveExtra, false) ?? false,
 				SkipTrackFollowingObjects = Intent?.GetBooleanExtra("skip_tfo", false) ?? false,
-				Launch = launch
+				Launch = launch,
+				PotatoMode = potato
 			};
 			// The drive benchmark: its settings in one extra ("selector_presses=5;last_station=LOP"), the summary to the log
 			// (" OpenBVE") and to a file in the app's files folder.

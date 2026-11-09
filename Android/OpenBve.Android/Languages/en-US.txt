@@ -73,6 +73,8 @@ vulkan_small_textures_note = On phones with about 6 GB of RAM or less, native Vu
 vulkan_small_textures_large = (This device has more memory: it has no effect here.)
 unload_textures = Unload unused textures:
 unload_textures_note = Textures not drawn for 20 seconds are freed and loaded again when they come back into view, so long drives on heavy routes do not run out of memory. Turn it off to keep every texture loaded.
+potato_mode = Potato mode:
+potato_mode_note = Everything for speed on low-end phones, as on the Nintendo Switch: sharp transparency, smaller 16-bit textures, distant trains updated less often, and Android asked to keep the game's frames within 33 ms (Android 12 and later). Trees and fences get harder edges. It overrides those options while on.
 microphone_denied = Microphone sounds need permission to use the microphone.
 
 # The switch map (SwitchMapPanel).

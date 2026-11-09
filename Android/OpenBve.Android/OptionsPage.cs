@@ -119,6 +119,13 @@ namespace OpenBve.Android
 				Info(Menu.T("android", "vulkan_small_textures_note",
 					"On phones with about 6 GB of RAM or less, native Vulkan keeps textures to 1024 px and 16-bit colour (where those options are automatic), so heavy routes do not run out of memory. Turn it off for sharper textures.") +
 					(AndroidSettings.SmallTexturesPhone(AndroidSettings.TotalRam(activity)) ? string.Empty : " " + Menu.T("android", "vulkan_small_textures_large", "(This device has more memory: it has no effect here.)")));
+				// Potato mode (AndroidSettings.GetPotatoMode): the Switch's performance measures, for low-end phones.
+				Dropdown(Menu.T("android", "potato_mode", "Potato mode:"),
+					new[] { Menu.T("android", "off", "Off"), Menu.T("android", "on", "On") },
+					AndroidSettings.GetPotatoMode(activity) ? 1 : 0,
+					i => AndroidSettings.SetPotatoMode(activity, i == 1));
+				Info(Menu.T("android", "potato_mode_note",
+					"Everything for speed on low-end phones, as on the Nintendo Switch: sharp transparency, smaller 16-bit textures, distant trains updated less often, and Android asked to keep the game's frames within 33 ms (Android 12 and later). Trees and fences get harder edges. It overrides those options while on."));
 				// Unused textures unloaded (AndroidSettings.GetUnloadTextures; TextureManager.UnloadUnpinned).
 				Dropdown(Menu.T("android", "unload_textures", "Unload unused textures:"),
 					new[] { Menu.T("android", "on", "On"), Menu.T("android", "off", "Off") },

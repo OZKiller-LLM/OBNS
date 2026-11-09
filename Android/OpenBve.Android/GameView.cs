@@ -76,6 +76,13 @@ namespace OpenBve.Android
 
 		private readonly System.Diagnostics.Stopwatch benchmarkClock = System.Diagnostics.Stopwatch.StartNew();
 
+		/// <summary>Potato mode: Android's performance hints asked for 33 ms frames (PerformanceHints).</summary>
+		public bool PotatoMode { get; set; }
+
+		private PerformanceHints hints;
+		private bool hintsTried;
+		private readonly System.Diagnostics.Stopwatch frameWork = new System.Diagnostics.Stopwatch();
+
 		/// <summary>Time since unused textures were last looked for.</summary>
 		private double unloadAge;
 
@@ -684,7 +691,24 @@ namespace OpenBve.Android
 						DrawFrame(renderer, width, height);
 					}
 
+					// Potato mode: the frame's work so far (since the last swap) reported against 33 ms, on the render thread.
+					if (PotatoMode)
+					{
+						if (!hintsTried)
+						{
+							hintsTried = true;
+							hints = PerformanceHints.TryCreate(Context, 33_333_333L, out string why);
+							Log.Info(Tag, hints != null ? "performance hints: a session for the render thread, 33.3 ms frames" : "performance hints: none (" + why + ")");
+						}
+
+						if (frameWork.IsRunning)
+						{
+							hints?.Report(frameWork.Elapsed.Ticks * 100);
+						}
+					}
+
 					egl.SwapBuffers();
+					frameWork.Restart();
 					if (framesToTrust > 0 && --framesToTrust == 0)
 					{
 						VulkanStartup.Done(Context);
@@ -705,6 +729,9 @@ namespace OpenBve.Android
 			finally
 			{
 				AndroidGraphicsContext.RenderThreadId = -1;
+				hints?.Dispose();
+				hints = null;
+				hintsTried = false;
 				sounds?.DeInitialize();
 				egl?.Dispose();
 			}

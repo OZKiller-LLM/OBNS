@@ -71,6 +71,8 @@ vulkan_small_textures_note = Op telefoons met ongeveer 6 GB RAM of minder houdt 
 vulkan_small_textures_large = (Dit apparaat heeft meer geheugen: hier geen effect.)
 unload_textures = Ongebruikte texturen vrijgeven:
 unload_textures_note = Texturen die 20 seconden niet zijn getekend worden vrijgegeven en opnieuw geladen zodra ze weer in beeld komen, zodat lange ritten op zware lijnen het geheugen niet uitputten. Zet het uit om alle texturen geladen te houden.
+potato_mode = Aardappelmodus:
+potato_mode_note = Alles voor snelheid op eenvoudige telefoons, zoals op de Nintendo Switch: scherpe transparantie, kleinere 16-bits texturen, verre treinen minder vaak bijgewerkt, en Android gevraagd elk beeld binnen 33 ms te houden (Android 12 en later). Bomen en hekken krijgen hardere randen. Zolang hij aan staat, vervangt hij die opties.
 microphone_denied = Microfoongeluiden hebben toestemming nodig om de microfoon te gebruiken.
 
 # The switch map (SwitchMapPanel).
