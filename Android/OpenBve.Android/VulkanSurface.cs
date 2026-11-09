@@ -73,6 +73,7 @@ namespace OpenBve.Android
 			{
 				vulkan = new VulkanContext(window);
 				VulkanGL.Log = message => Log.Warn("OpenBVE", "vulkan: " + message);
+				vulkan.Log = VulkanGL.Log;
 				// The frame's draws are recorded on threads of the renderer's own (VulkanGL.Records): half the
 				// cores, at most 4 with the submitting thread - the frame workers update the next frame meanwhile.
 				VulkanGL.RecordThreads = RecordOnWorkers ? Math.Max(1, Math.Min(3, Environment.ProcessorCount / 2 - 1)) : 0;
@@ -93,7 +94,9 @@ namespace OpenBve.Android
 		}
 
 		/// <summary>The swapchain and the renderer's objects, for the log.</summary>
-		public string Describe() => "swapchain " + vulkan.Width + "x" + vulkan.Height + ", pre-rotation " + vulkan.Rotation + "°, rebuilt " + vulkan.Rebuilds + " times; " + device.Describe();
+		public string Describe() => "swapchain " + vulkan.Width + "x" + vulkan.Height + ", pre-rotation " + vulkan.Rotation + "°, rebuilt " + vulkan.Rebuilds + " times" +
+		                            (vulkan.WindowLosses == 0 ? string.Empty : ", window lost " + vulkan.WindowLosses + " times") +
+		                            (device.SkippedFrames == 0 ? string.Empty : ", " + device.SkippedFrames + " frames skipped") + "; " + device.Describe();
 
 		/// <summary>Presents the frame.</summary>
 		public void SwapBuffers()
@@ -102,12 +105,42 @@ namespace OpenBve.Android
 		}
 
 		/// <inheritdoc />
+		// Not waiting for the submitter: a loss its present reports is taken up when the next frame begins (VulkanContext.BeginFrame), which is then skipped.
+		public bool WindowLost => vulkan.WindowLost;
+
+		/// <inheritdoc />
+		public void WindowResized()
+		{
+			vulkan.WindowResized();
+		}
+
+		/// <inheritdoc />
 		public void DetachWindow()
 		{
-			// The last frame's submission first: it presents to this window.
-			device.WaitSubmitter();
+			ReleaseWindow();
 			// The game may not come back (the app closed from the background): keep what was compiled.
 			device.SavePipelineCache();
+		}
+
+		/// <summary>Lets go of the window: the frame in progress, the swapchain, the surface and the ANativeWindow.</summary>
+		private void ReleaseWindow()
+		{
+			/*
+			 * A frame begun and not yet swapped holds an image of this window's swapchain. Left open,
+			 * it would be finished after the swapchain was replaced and present that image's index to
+			 * the new one - which never handed it out: VK_ERROR_SURFACE_LOST_KHR, a few seconds into the
+			 * game on a Galaxy A36 and a Z Flip5 (2026-11-09; the old swapchain was destroyed with one
+			 * image still dequeued). Finish it on this window now; if the window has gone, present only
+			 * says so (VulkanContext) and the frame is lost, which is all that is lost.
+			 */
+			if (vulkan.InFrame)
+			{
+				Log.Warn("OpenBVE", "vulkan: a frame was open when the window went: presented to the old window first");
+				device.EndFrame();
+			}
+
+			// The last frame's submission first: it presents to this window.
+			device.WaitSubmitter();
 			vulkan.DetachWindow();
 			if (window != IntPtr.Zero)
 			{
@@ -119,8 +152,19 @@ namespace OpenBve.Android
 		/// <inheritdoc />
 		public void AttachWindow(Surface target)
 		{
-			window = ANativeWindow_fromSurface(JNIEnv.Handle, target.Handle);
-			vulkan.AttachWindow(window);
+			ReleaseWindow();
+			window = target == null ? IntPtr.Zero : ANativeWindow_fromSurface(JNIEnv.Handle, target.Handle);
+			if (window == IntPtr.Zero || !vulkan.AttachWindow(window))
+			{
+				// Not usable (gone again already): WindowLost says so, and the owner tries again later.
+				if (window != IntPtr.Zero)
+				{
+					ANativeWindow_release(window);
+					window = IntPtr.Zero;
+				}
+
+				vulkan.MarkWindowLost();
+			}
 		}
 
 		/// <inheritdoc />

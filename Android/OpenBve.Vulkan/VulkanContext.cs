@@ -77,7 +77,53 @@ namespace OpenBve.Vulkan
 		private uint instanceVersion;
 		private uint imageIndex;
 		private bool frameStarted;
-		private bool rebuild;
+
+		/*
+		 * Swapchain rebuilds, asked for by the submitter thread (present) or the window's owner and
+		 * carried out by the render thread before its next frame: RebuildIfChanged when the driver
+		 * calls the swapchain suboptimal or the window was resized (rebuilt only if the surface's size or
+		 * rotation really differ, so a driver that keeps saying suboptimal does not cost a rebuild a
+		 * frame), RebuildAlways when it is out of date.
+		 */
+		private const int RebuildNone = 0, RebuildIfChanged = 1, RebuildAlways = 2;
+		private volatile int rebuild;
+
+		/*
+		 * The window lost under the swapchain (VK_ERROR_SURFACE_LOST_KHR): the ANativeWindow was
+		 * destroyed - a foldable folded or unfolded, the app sent to the background - before the
+		 * render thread had let go of it. Set by present on the submitter thread or by acquire; the
+		 * render thread then drops the swapchain and the VkSurfaceKHR (WindowLost) and draws nothing
+		 * until the owner attaches a window again (AttachWindow). The device and everything loaded stay.
+		 */
+		private volatile bool surfaceLost;
+
+		/// <summary>How long a frame waits for a swapchain image before it is skipped (the window may be going).</summary>
+		private const ulong AcquireTimeout = 500_000_000UL;
+
+		/// <summary>
+		/// The window was lost (see surfaceLost): there is no swapchain and no surface, and frames are
+		/// skipped until <see cref="AttachWindow"/>.
+		/// </summary>
+		public bool WindowLost { get; private set; }
+
+		/// <summary>A result that means the window has gone from under the swapchain.</summary>
+		private sealed class WindowGoneException : Exception
+		{
+			internal WindowGoneException(string what, Result result) : base(what + " failed: " + result)
+			{
+			}
+		}
+
+		/// <summary>As Check, but a lost or busy window is a WindowGoneException: the frame is skipped, not the game ended.</summary>
+		private static void CheckWindow(Result result, string what)
+		{
+			if (result == Result.ErrorSurfaceLostKhr || result == Result.ErrorNativeWindowInUseKhr || result == Result.ErrorOutOfDateKhr)
+			{
+				throw new WindowGoneException(what, result);
+			}
+
+			Check(result, what);
+		}
 
 		/// <summary>
 		/// Whether a Vulkan 1.3 device may use its 1.3 path (dynamic rendering, synchronization2 and
@@ -396,7 +442,13 @@ namespace OpenBve.Vulkan
 
 		private void CreateSwapchain()
 		{
-			Check(khrSurface.GetPhysicalDeviceSurfaceCapabilities(physicalDevice, surface, out SurfaceCapabilitiesKHR capabilities), "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+			CheckWindow(khrSurface.GetPhysicalDeviceSurfaceCapabilities(physicalDevice, surface, out SurfaceCapabilitiesKHR capabilities), "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+			if (capabilities.CurrentExtent.Width == 0 || capabilities.CurrentExtent.Height == 0)
+			{
+				// A window with no size (going away): nothing can be presented to it.
+				throw new WindowGoneException("the window's size", Result.ErrorOutOfDateKhr);
+			}
+
 			uint formatCount = 0;
 			khrSurface.GetPhysicalDeviceSurfaceFormats(physicalDevice, surface, ref formatCount, null);
 			SurfaceFormatKHR[] formats = new SurfaceFormatKHR[formatCount];
@@ -474,11 +526,15 @@ namespace OpenBve.Vulkan
 				Clipped = true,
 				OldSwapchain = old
 			};
-			Check(khrSwapchain.CreateSwapchain(device, in info, null, out swapchain), "vkCreateSwapchainKHR");
+			Result made = khrSwapchain.CreateSwapchain(device, in info, null, out SwapchainKHR created);
+			// The old swapchain is retired whether or not the new one could be made.
 			if (old.Handle != 0)
 			{
 				khrSwapchain.DestroySwapchain(device, old, null);
 			}
+
+			swapchain = made == Result.Success ? created : default;
+			CheckWindow(made, "vkCreateSwapchainKHR");
 
 			uint count = 0;
 			khrSwapchain.GetSwapchainImages(device, swapchain, ref count, null);
@@ -686,12 +742,59 @@ namespace OpenBve.Vulkan
 
 		private void RebuildSwapchain()
 		{
+			int reason = rebuild;
+			rebuild = RebuildNone;
+			if (reason == RebuildIfChanged && swapchain.Handle != 0)
+			{
+				// Suboptimal, or resized: only when the surface's size or rotation differ from the swapchain's.
+				CheckWindow(khrSurface.GetPhysicalDeviceSurfaceCapabilities(physicalDevice, surface, out SurfaceCapabilitiesKHR capabilities), "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+				SurfaceTransformFlagsKHR transform = capabilities.CurrentTransform;
+				int rotation = transform == SurfaceTransformFlagsKHR.Rotate90BitKhr ? 90 : transform == SurfaceTransformFlagsKHR.Rotate180BitKhr ? 180 : transform == SurfaceTransformFlagsKHR.Rotate270BitKhr ? 270 : 0;
+				if ((capabilities.SupportedTransforms & transform) == 0)
+				{
+					rotation = 0;
+				}
+
+				Extent2D current = capabilities.CurrentExtent;
+				Extent2D wanted = rotation % 180 != 0 ? new Extent2D(current.Height, current.Width) : current;
+				if (current.Width == uint.MaxValue || (rotation == Rotation && wanted.Width == extent.Width && wanted.Height == extent.Height))
+				{
+					return;
+				}
+			}
+
 			WaitIdle();
 			DestroySwapchainResources(false);
 			CreateSwapchain();
-			rebuild = false;
 			Rebuilds++;
 		}
+
+		/// <summary>
+		/// The window has gone from under the swapchain: lets go of the swapchain and the surface, and
+		/// skips frames until a window is attached again. The device and everything on it stay.
+		/// </summary>
+		private void DropWindow(string why)
+		{
+			WaitIdle();
+			DestroySwapchainResources(true);
+			if (surface.Handle != 0)
+			{
+				khrSurface.DestroySurface(instance, surface, null);
+				surface = default;
+			}
+
+			surfaceLost = false;
+			rebuild = RebuildNone;
+			WindowLost = true;
+			WindowLosses++;
+			Log?.Invoke("the window was lost (" + why + "): frames skipped until a window is attached again");
+		}
+
+		/// <summary>How many times the window was lost from under the swapchain, for the log.</summary>
+		public int WindowLosses { get; private set; }
+
+		/// <summary>Where the context reports what happens to the window (the device's log), or null.</summary>
+		public Action<string> Log { get; set; }
 
 		/// <summary>How many times the swapchain was rebuilt (size or rotation changed), for the log.</summary>
 		public int Rebuilds { get; private set; }
@@ -830,7 +933,8 @@ namespace OpenBve.Vulkan
 		/// <summary>
 		/// Starts a frame: waits for this frame slot and takes a swapchain image. The frame is drawn
 		/// and submitted after DetachFrame (SubmitFrame). False when there is nothing to draw on (no
-		/// window, or it was rebuilt); try again later then.
+		/// window, the window lost, or the swapchain rebuilt); skip the frame and try again at the next.
+		/// Must not run while a frame is being submitted (VulkanGL waits for the submitter first).
 		/// </summary>
 		public bool BeginFrame()
 		{
@@ -839,27 +943,56 @@ namespace OpenBve.Vulkan
 				return true;
 			}
 
+			if (surfaceLost)
+			{
+				DropWindow("present: " + Result.ErrorSurfaceLostKhr);
+			}
+
 			if (surface.Handle == 0)
 			{
 				return false;
 			}
 
-			if (rebuild)
+			try
 			{
-				RebuildSwapchain();
-			}
+				if (rebuild != RebuildNone || swapchain.Handle == 0)
+				{
+					if (swapchain.Handle == 0)
+					{
+						rebuild = RebuildAlways;
+					}
 
-			EnsureSlotReady();
-			Result acquired = khrSwapchain.AcquireNextImage(device, swapchain, ulong.MaxValue, imageAvailable[frame], default, ref imageIndex);
-			if (acquired == Result.ErrorOutOfDateKhr)
+					RebuildSwapchain();
+				}
+
+				EnsureSlotReady();
+				Result acquired = khrSwapchain.AcquireNextImage(device, swapchain, AcquireTimeout, imageAvailable[frame], default, ref imageIndex);
+				if (acquired == Result.ErrorOutOfDateKhr)
+				{
+					rebuild = RebuildAlways;
+					return false;
+				}
+
+				if (acquired == Result.Timeout || acquired == Result.NotReady)
+				{
+					// No image within the timeout: the window is probably going. Not this frame.
+					return false;
+				}
+
+				if (acquired == Result.SuboptimalKhr)
+				{
+					// Usable for this frame; rebuilt before the next if the window really changed.
+					rebuild = Math.Max(rebuild, RebuildIfChanged);
+				}
+				else
+				{
+					CheckWindow(acquired, "vkAcquireNextImageKHR");
+				}
+			}
+			catch (WindowGoneException gone)
 			{
-				RebuildSwapchain();
+				DropWindow(gone.Message);
 				return false;
-			}
-
-			if (acquired != Result.Success && acquired != Result.SuboptimalKhr)
-			{
-				Check(acquired, "vkAcquireNextImageKHR");
 			}
 
 			CommandBuffer commands = commandBuffers[frame];
@@ -994,10 +1127,20 @@ namespace OpenBve.Vulkan
 				PImageIndices = &index
 			};
 			Result presented = khrSwapchain.QueuePresent(queue, in present);
-			if (presented == Result.ErrorOutOfDateKhr || presented == Result.SuboptimalKhr)
+			// Present's waits still happen when it fails (the frame's semaphore is free again). What
+			// follows is the render thread's, before its next frame (BeginFrame).
+			if (presented == Result.ErrorOutOfDateKhr)
 			{
-				// Rebuilt by the render thread before its next frame.
-				rebuild = true;
+				rebuild = RebuildAlways;
+			}
+			else if (presented == Result.SuboptimalKhr)
+			{
+				rebuild = Math.Max(rebuild, RebuildIfChanged);
+			}
+			else if (presented == Result.ErrorSurfaceLostKhr)
+			{
+				// The window went before the render thread let go of it (a fold during a long frame or the load).
+				surfaceLost = true;
 			}
 			else if (presented != Result.Success)
 			{
@@ -1159,11 +1302,18 @@ namespace OpenBve.Vulkan
 				khrSurface.DestroySurface(instance, surface, null);
 				surface = default;
 			}
+
+			surfaceLost = false;
+			rebuild = RebuildNone;
 		}
 
-		/// <summary>Draws on a new window (ANativeWindow*) from now on.</summary>
-		public void AttachWindow(IntPtr nativeWindow)
+		/// <summary>
+		/// Draws on a new window (ANativeWindow*) from now on. False, with nothing attached, if the window
+		/// is not usable (already gone again, or no size yet): let go of it and try again later.
+		/// </summary>
+		public bool AttachWindow(IntPtr nativeWindow)
 		{
+			DetachWindow();
 			CreateSurface(nativeWindow);
 			khrSurface.GetPhysicalDeviceSurfaceSupport(physicalDevice, queueFamily, surface, out Bool32 present);
 			if (!present)
@@ -1171,13 +1321,39 @@ namespace OpenBve.Vulkan
 				throw new InvalidOperationException("the Vulkan queue cannot present to the new window");
 			}
 
-			CreateSwapchain();
+			try
+			{
+				CreateSwapchain();
+			}
+			catch (WindowGoneException gone)
+			{
+				if (!WindowLost)
+				{
+					Log?.Invoke("the new window could not be drawn on yet (" + gone.Message + ")");
+				}
+
+				DetachWindow();
+				WindowLost = true;
+				return false;
+			}
+
+			WindowLost = false;
+			return true;
 		}
 
-		/// <summary>Asks for the swapchain to be rebuilt before the next frame (the window changed size).</summary>
+		/// <summary>The owner has no usable window to attach (none yet, or gone again): frames are skipped until AttachWindow succeeds.</summary>
+		public void MarkWindowLost()
+		{
+			WindowLost = true;
+		}
+
+		/// <summary>Asks for the swapchain to be rebuilt before the next frame if the window's size or rotation changed.</summary>
 		public void WindowResized()
 		{
-			rebuild = true;
+			if (rebuild == RebuildNone)
+			{
+				rebuild = RebuildIfChanged;
+			}
 		}
 
 		public void Dispose()

@@ -65,22 +65,48 @@ namespace OpenBve.Android
 		public void DetachWindow()
 		{
 			eglMakeCurrent(display, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-			eglDestroySurface(display, surface);
-			surface = IntPtr.Zero;
-			ANativeWindow_release(window);
-			window = IntPtr.Zero;
+			if (surface != IntPtr.Zero)
+			{
+				eglDestroySurface(display, surface);
+				surface = IntPtr.Zero;
+			}
+
+			if (window != IntPtr.Zero)
+			{
+				ANativeWindow_release(window);
+				window = IntPtr.Zero;
+			}
+		}
+
+		/// <inheritdoc />
+		public bool WindowLost { get; private set; }
+
+		/// <inheritdoc />
+		public void WindowResized()
+		{
+			// ANGLE checks the window's size at every swap and rebuilds its swapchain itself.
 		}
 
 		/// <inheritdoc />
 		public void AttachWindow(Surface target)
 		{
-			window = ANativeWindow_fromSurface(JNIEnv.Handle, target.Handle);
+			DetachWindow();
+			window = target == null ? IntPtr.Zero : ANativeWindow_fromSurface(JNIEnv.Handle, target.Handle);
 			surface = window == IntPtr.Zero ? IntPtr.Zero : eglCreateWindowSurface(display, config, window, new[] { EGL_NONE });
 			if (surface == IntPtr.Zero || !eglMakeCurrent(display, surface, surface, context))
 			{
-				throw new Exception("ANGLE could not attach the context to the new window (0x" + eglGetError().ToString("x") + ")");
+				// Gone again already: tried again later (GameView), with the context and the game kept.
+				if (!WindowLost)
+				{
+					Log.Warn(Tag, "ANGLE could not attach the context to the new window (0x" + eglGetError().ToString("x") + "): trying again later");
+				}
+
+				DetachWindow();
+				WindowLost = true;
+				return;
 			}
 
+			WindowLost = false;
 			eglSwapInterval(display, 1);
 		}
 
@@ -157,7 +183,13 @@ namespace OpenBve.Android
 		/// <inheritdoc />
 		public void SwapBuffers()
 		{
-			eglSwapBuffers(display, surface);
+			// ANGLE rebuilds its own swapchain when the window is resized or rotated; a window gone from
+			// under it fails the swap with EGL_BAD_SURFACE or EGL_BAD_NATIVE_WINDOW.
+			if (!eglSwapBuffers(display, surface) && EglWindowErrors.MeansWindowLost(eglGetError()))
+			{
+				Log.Warn(Tag, "ANGLE eglSwapBuffers: the window was lost");
+				WindowLost = true;
+			}
 		}
 
 		/// <inheritdoc />

@@ -295,10 +295,82 @@ namespace OpenBve.Android
 			GL.ResetStateCache();
 			// No simulated time passes while there is no window.
 			last = DateTime.UtcNow;
+			if (egl.WindowLost)
+			{
+				// Gone again before it could be drawn on: WaitForLostWindow takes over.
+				Log.Info(Tag, "window back, but not usable yet");
+				return true;
+			}
+
 			WindowBack?.Invoke();
 			sounds?.SetPaused(paused);
 			Log.Info(Tag, "window back: carrying on");
 			return true;
+		}
+
+		/// <summary>How long a valid window may refuse to be drawn on before the game gives up.</summary>
+		private static readonly TimeSpan LostWindowLimit = TimeSpan.FromSeconds(30.0);
+
+		/// <summary>
+		/// On the render thread, once the renderer has lost its window - destroyed before the render
+		/// thread let go of it (a foldable folded or unfolded, or the window replaced, during the load or
+		/// a long frame): waits, keeping the loaded game, until the window can be drawn on again. A
+		/// window the holder's callbacks replace is followed as usual (FollowWindow); otherwise the
+		/// holder's own surface is tried every quarter second. Returns false if the game ended meanwhile.
+		/// </summary>
+		private bool WaitForLostWindow(IRenderSurface egl, ISurfaceHolder holder, AndroidSounds sounds, ref DateTime last)
+		{
+			Log.Warn(Tag, "the window was lost under the renderer: waiting for it, with the game kept");
+			sounds?.SetPaused(true);
+			waitingForWindow = true;
+			bool back = false;
+			TimeSpan refused = TimeSpan.Zero;
+			try
+			{
+				while (running && !detachRequested)
+				{
+					Surface current = holder.Surface;
+					if (current != null && current.IsValid)
+					{
+						egl.AttachWindow(current);
+						if (!egl.WindowLost)
+						{
+							back = true;
+							break;
+						}
+
+						// A window that is there and still cannot be drawn on, for long: not something waiting fixes.
+						refused += TimeSpan.FromMilliseconds(250);
+						if (refused > LostWindowLimit)
+						{
+							throw new InvalidOperationException("the window was lost, and the renderer could not draw on it again for " + LostWindowLimit.TotalSeconds + " s");
+						}
+					}
+
+					Thread.Sleep(250);
+				}
+			}
+			finally
+			{
+				waitingForWindow = false;
+				if (profile != null)
+				{
+					System.Threading.Interlocked.Exchange(ref profile.LastMarkTicks, DateTime.UtcNow.Ticks);
+				}
+			}
+
+			// No simulated time passes while there is no window.
+			last = DateTime.UtcNow;
+			if (back)
+			{
+				GL.ResetStateCache();
+				WindowBack?.Invoke();
+				sounds?.SetPaused(paused);
+				Log.Info(Tag, "window back after it was lost: carrying on");
+			}
+
+			// Otherwise the holder's callbacks are replacing it: FollowWindow, at the top of the loop.
+			return running;
 		}
 
 		/// <summary>
@@ -530,6 +602,16 @@ namespace OpenBve.Android
 						break;
 					}
 
+					if (egl.WindowLost)
+					{
+						if (!WaitForLostWindow(egl, holder, sounds, ref last))
+						{
+							break;
+						}
+
+						continue;
+					}
+
 					int newWidth = surfaceWidth > 0 ? surfaceWidth : width;
 					int newHeight = surfaceHeight > 0 ? surfaceHeight : height;
 					if (newWidth != width || newHeight != height)
@@ -542,6 +624,8 @@ namespace OpenBve.Android
 						renderer.GameWindow.Height = height;
 						renderer.Camera.HorizontalViewingAngle = 2.0 * Math.Atan(Math.Tan(0.5 * renderer.Camera.VerticalViewingAngle) * renderer.Screen.AspectRatio);
 						Log.Info(Tag, "surface now " + width + " x " + height);
+						// Native Vulkan rebuilds its swapchain for the new size before the next frame.
+						egl.WindowResized();
 						renderer.Screen.Width = width;
 						renderer.Screen.Height = height;
 						// As upstream's window resize: the 2D shaders keep the projection they were given.
@@ -859,8 +943,30 @@ namespace OpenBve.Android
 		/// </summary>
 		void DetachWindow();
 
-		/// <summary>Makes the kept context current again on a new window.</summary>
+		/// <summary>
+		/// Makes the kept context current again on a new window. If the window cannot be drawn on
+		/// (gone again already), <see cref="WindowLost"/> is set instead, to be tried again later.
+		/// </summary>
 		void AttachWindow(Surface window);
+
+		/// <summary>
+		/// The window went from under the context without DetachWindow (destroyed before the render
+		/// thread let go of it): nothing is drawn until AttachWindow succeeds. Asked after the swap.
+		/// </summary>
+		bool WindowLost { get; }
+
+		/// <summary>The window changed size (the swapchain may need rebuilding).</summary>
+		void WindowResized();
+	}
+
+	/// <summary>The EGL errors that mean the window has gone from under its EGL surface.</summary>
+	internal static class EglWindowErrors
+	{
+		private const int EGL_BAD_NATIVE_WINDOW = 0x300B;
+		private const int EGL_BAD_SURFACE = 0x300D;
+
+		/// <summary>Whether a failed eglSwapBuffers's error means the window was lost.</summary>
+		public static bool MeansWindowLost(int error) => error == EGL_BAD_SURFACE || error == EGL_BAD_NATIVE_WINDOW;
 	}
 
 	/// <summary>An EGL context from the system OpenGL ES driver.</summary>
@@ -883,18 +989,42 @@ namespace OpenBve.Android
 		public void DetachWindow()
 		{
 			EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
-			EGL14.EglDestroySurface(display, surface);
+			if (surface != EGL14.EglNoSurface)
+			{
+				EGL14.EglDestroySurface(display, surface);
+			}
+
 			surface = EGL14.EglNoSurface;
+		}
+
+		/// <inheritdoc />
+		public bool WindowLost { get; private set; }
+
+		/// <inheritdoc />
+		public void WindowResized()
+		{
+			// EGL window surfaces follow the window's size by themselves.
 		}
 
 		/// <inheritdoc />
 		public void AttachWindow(Surface window)
 		{
-			surface = EGL14.EglCreateWindowSurface(display, config, window, new[] { EGL14.EglNone }, 0);
+			DetachWindow();
+			surface = window == null || !window.IsValid ? EGL14.EglNoSurface : EGL14.EglCreateWindowSurface(display, config, window, new[] { EGL14.EglNone }, 0);
 			if (surface == EGL14.EglNoSurface || !EGL14.EglMakeCurrent(display, surface, surface, context))
 			{
-				throw new Exception("could not attach the context to the new window (0x" + EGL14.EglGetError().ToString("x") + ")");
+				// Gone again already: tried again later (GameView), with the context and the game kept.
+				if (!WindowLost)
+				{
+					Log.Warn("OpenBVE", "could not attach the context to the new window (0x" + EGL14.EglGetError().ToString("x") + "): trying again later");
+				}
+
+				DetachWindow();
+				WindowLost = true;
+				return;
 			}
+
+			WindowLost = false;
 		}
 
 		/// <summary>Creates a GLES 3 context on the given surface and makes it current.</summary>
@@ -957,7 +1087,12 @@ namespace OpenBve.Android
 		/// <summary>Presents the back buffer.</summary>
 		public void SwapBuffers()
 		{
-			EGL14.EglSwapBuffers(display, surface);
+			if (!EGL14.EglSwapBuffers(display, surface) && EglWindowErrors.MeansWindowLost(EGL14.EglGetError()))
+			{
+				// The window went before the render thread let go of it: the game waits for it (GameView).
+				Log.Warn("OpenBVE", "eglSwapBuffers: the window was lost");
+				WindowLost = true;
+			}
 		}
 
 		/// <inheritdoc />

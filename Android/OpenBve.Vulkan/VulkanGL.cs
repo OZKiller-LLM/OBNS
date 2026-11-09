@@ -199,6 +199,8 @@ namespace OpenBve.Vulkan
 		/// <summary>Ends and presents the frame (the swap).</summary>
 		public void EndFrame()
 		{
+			// The next frame asks for a swapchain image again.
+			frameSkipped = false;
 			if (context.InFrame)
 			{
 				LastFrameDraws = frameDraws;

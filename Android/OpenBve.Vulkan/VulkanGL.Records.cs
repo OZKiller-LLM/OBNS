@@ -141,6 +141,15 @@ namespace OpenBve.Vulkan
 			endCommandBuffer = (delegate* unmanaged<CommandBuffer, Result>)DeviceProc("vkEndCommandBuffer");
 		}
 
+		/// <summary>
+		/// Set when a frame could not begin (no window, the window lost, the swapchain rebuilt, no image in
+		/// time): the rest of the frame's draws are dropped without asking again, until the swap.
+		/// </summary>
+		private bool frameSkipped;
+
+		/// <summary>Frames skipped for want of a window or a swapchain image, for the log.</summary>
+		public int SkippedFrames { get; private set; }
+
 		/// <summary>Ensures a frame is being made (the swapchain image taken). False when there is no window to draw on.</summary>
 		private bool EnsureFrame()
 		{
@@ -149,10 +158,17 @@ namespace OpenBve.Vulkan
 				return true;
 			}
 
+			if (frameSkipped)
+			{
+				return false;
+			}
+
 			// The last frame's submission must be done before the device is used for the next.
 			WaitSubmitter();
 			if (!context.BeginFrame())
 			{
+				frameSkipped = true;
+				SkippedFrames++;
 				return false;
 			}
 
