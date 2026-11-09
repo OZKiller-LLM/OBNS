@@ -1,6 +1,7 @@
 ﻿// OBNS: a copy of upstream's source/OpenBVE/System/Host.cs (OpenBVE 1.14.1.2), laid over the desktop build's mirror
 // (OBNS/build-desktop.ps1): safe for animated objects updated on several cores (OBNS/shared/ParallelUpdates.cs) -
-// function scripts on per-thread stacks, shows and hides queued, a thread-safe Random.
+// function scripts on per-thread stacks, shows and hides queued, a thread-safe Random; textures capped in Potato mode
+// (OBNS/shared/TextureSizeLimit.cs).
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 using LibRender2.Screens;
 using OpenBveApi;
@@ -171,7 +172,9 @@ namespace OpenBve {
 										}
 										
 										texture.CompatibleTransparencyMode = oldTransparencyMode;
-										texture = texture.ApplyParameters(parameters);
+										// OBNS: within Potato mode's cap (none otherwise), after the parameters, so clip regions and
+										// colour keys work in the file's own pixels - one place for every renderer, as on Android.
+										texture = TextureSizeLimit.Apply(texture.ApplyParameters(parameters));
 										return true;
 									}
 									if (ReportFailure(FailedTextures, path))

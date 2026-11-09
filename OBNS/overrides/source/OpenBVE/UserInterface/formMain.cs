@@ -1189,6 +1189,8 @@ namespace OpenBve {
 
 			
 			ApplyToolTips();
+			// OBNS: OBNS's rows (formMain.Obns.cs).
+			ObnsApplyLanguage();
 		}
 
 		/// <summary>Applies tooltips to the various controls on the form</summary>

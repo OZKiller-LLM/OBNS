@@ -539,6 +539,7 @@ namespace OpenBve.Graphics
 		internal void Prepare()
 		{
 			SceneTextures.StartBudget();
+			accessTicks = Environment.TickCount;
 			ObjectState last = null;
 			for (int i = 0; i < itemCount; i++)
 			{
@@ -842,6 +843,9 @@ namespace OpenBve.Graphics
 		/// made. The place is kept per face, for as long as it is the same texture and nothing has moved; an animated
 		/// texture is asked for every frame (which advances it).
 		/// </summary>
+		/// <summary>The time this frame's textures are marked used at (CPreciseTimer's clock).</summary>
+		private int accessTicks;
+
 		private int TextureIndex(Texture texture, OpenGlTextureWrapMode wrap, TextureSlot[] slots, int slot)
 		{
 			if (texture == null)
@@ -852,6 +856,8 @@ namespace OpenBve.Graphics
 			TextureSlot cached = slots[slot];
 			if (cached != null && ReferenceEquals(cached.Texture, texture) && cached.Generation == SceneTextures.Generation)
 			{
+				// Drawn this frame: not unused (upstream's UnloadUnusedTextures goes by the time a texture was last used).
+				texture.LastAccess = accessTicks;
 				return cached.Index;
 			}
 

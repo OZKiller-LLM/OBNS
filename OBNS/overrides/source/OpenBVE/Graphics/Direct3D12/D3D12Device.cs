@@ -149,13 +149,24 @@ namespace OpenBve.Graphics.Direct3D12
 			IntPtr factory = Dx.Factory();
 			IntPtr chosen = IntPtr.Zero;
 			string name = null;
+			// Potato mode, drawing alone (no OpenGL GPU to be on): the adapter with the most memory of its own - a laptop's
+			// high-performance GPU - rather than the first, which is the one Windows drives the screen with.
+			bool fastest = !shared && Potato.Active;
+			ulong most = 0;
 			try
 			{
 				for (uint i = 0; Dx.EnumAdapters1(factory, i, out IntPtr adapter); i++)
 				{
 					Dx.AdapterDesc1 desc = Dx.GetDesc1(adapter);
 					bool software = (desc.Flags & 2) != 0; // DXGI_ADAPTER_FLAG_SOFTWARE
-					if (chosen == IntPtr.Zero && !software && (!shared || BitConverter.ToUInt32(luid, 0) == desc.LuidLow && BitConverter.ToInt32(luid, 4) == desc.LuidHigh))
+					if (fastest && !software && (chosen == IntPtr.Zero || (ulong)desc.DedicatedVideoMemory > most))
+					{
+						Dx.Release(chosen);
+						chosen = adapter;
+						most = (ulong)desc.DedicatedVideoMemory;
+						name = Dx.Name(desc).TrimEnd('\0');
+					}
+					else if (!fastest && chosen == IntPtr.Zero && !software && (!shared || BitConverter.ToUInt32(luid, 0) == desc.LuidLow && BitConverter.ToInt32(luid, 4) == desc.LuidHigh))
 					{
 						chosen = adapter;
 						name = Dx.Name(desc).TrimEnd('\0');

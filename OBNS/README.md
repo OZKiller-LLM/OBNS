@@ -70,10 +70,13 @@ DetailManager.dll plugin through the proxy.
 | `source/OpenBveApi/Objects/Mesh.cs` | `FinalizeMesh` works out the wrap mode once, not over all the faces for each material, with the same result | Android (`OpenBveApi.Android.csproj`) |
 | `source/Plugins/Route.CsvRw/CsvRwRouteParser.ObjectLoader.cs` | workers take one route object at a time: `Parallel.For`'s ranges left one thread alone with a route's heavy objects | Android (`Route.CsvRw.Android.csproj`) |
 | `source/OpenBveApi/Objects/ObjectTypes/StaticObject.cs` | `OptimizeObject` removes unused and duplicate materials in one pass each, with the same result | Android (`OpenBveApi.Android.csproj`) |
+| `source/OpenBVE/System/Options.cs` | while Potato mode sets a game's transparency, the options' own is the one saved | - |
+| `source/OpenBVE/Game/TrainManager.cs` | in Potato mode, scripted trains far along the line skip the world-coordinate pass (as Android's) | - |
 
 Shared libraries (moving here from `Android/` as each is taken up): the x86 plugin layer
 (`shared/OpenBve.X86`, with its harness `shared/OpenBve.X86.Tests`) and plugin bridge
-(`shared/NativePlugins`), the BVE5 train plugin, the parallel-update helpers, the static batcher.
+(`shared/NativePlugins`), the BVE5 train plugin, the parallel-update helpers, the static batcher, the texture size cap
+(`shared/TextureSizeLimit.cs`).
 
 ## Backports to the desktop
 
@@ -268,3 +271,45 @@ OpenGL at all are a later project.
 | Median of the worst frames | 19 ms | 21 ms | 18 ms | 26 ms |
 
 On an M1 Mac, Metal ran at 34.4 fps against OpenGL's 20.5 without shadows, and 16.4 against about 9 with them.
+
+### 9. Potato mode
+
+Android's Potato mode (3beb50a) on the desktop, less its 16-bit textures: an option in OBNS's `obns.cfg`
+(`potatomode = true`, off by default), shown under Renderer in the options of every desktop menu (`formMain.Obns.cs`,
+which the OpenGL and native Mac menus are too) with a short note, in the 14 languages of the Android port
+(`ObnsText.cs`, by the menu's language). It takes effect when a game starts (`PotatoMode.cs`), and the debug overlay
+says whether it is on. `OBNS_POTATO=1` or `0` overrides the option for tests.
+
+- **Performance (Sharp) transparency**, unless `OBNS_TRANSPARENCY=quality` or `performance` sets it for the game. The
+  options keep their own: OBNS's copy of `Options.cs` saves that one, not the game's.
+- **Unused textures unloaded** (upstream's option, turned on), looked for once a second rather than every frame. The
+  Vulkan, Direct3D and Metal layers now mark a texture used when they draw it: they never went through upstream's
+  `LoadTexture`, so with the option on each was taken for unused 20 s after it was made, and made again. Each layer's
+  copy is destroyed when upstream unloads a texture (Direct3D and Metal release theirs; Vulkan's space goes back to its
+  256 MB block, and a block left empty goes back to the system - the ARM64 laptop that ran out of memory after a TML
+  drive had 17 of them, 4.1 GB).
+- **Textures at most 1024 px**, as they are decoded (OBNS's `Host.cs`), so every renderer has the smaller ones.
+  `TextureSizeLimit` is Android's, now in `shared/`. A cut-out texture (OpenBveApi's rule, at most 3% of its pixels
+  partly clear, a37be5a) stays a cut-out: each texel comes out clear or solid, so it isn't classed translucent and drawn
+  without depth (the seats showing through each other in Sharp transparency).
+- **Colour-keyed faces in one pass** where the transparency is Quality: cut at half alpha writing depth, not drawn twice
+  (`NewRenderer.CutoutKeyedFaces`, OpenGL's pass and the layers' alike).
+- **Cars and trains updated less often**, Android's thresholds: a car wholly behind the camera every 0.25 s, one beyond
+  150 m every other frame (`TrainManagerBase.CarUpdateLod`); a scripted train with no car within 1.5 km of the player's
+  along the line, or twice the viewing distance where that is more, skips the world-coordinate pass
+  (`FarAlongTheLine`, in OBNS's copy of the program's `TrainManager.cs`).
+- **Asked for full speed:** on Windows, the process opted out of power throttling (`SetProcessInformation`,
+  `ProcessPowerThrottling`), and Direct3D 11 and 12 drawing alone take the adapter with the most memory of its own (a
+  laptop's high-performance GPU; Vulkan takes the discrete GPU there already; OpenGL's is the system's choice). On
+  macOS, an `NSProcessInfo` activity, user-initiated and latency-critical. On Linux, nothing.
+
+| Tuen Ma Line, SP1900, Vulkan, 1920x1080 window without vsync, RTX 2060 SUPER | Off | Potato |
+|---|---|---|
+| Standing in the cab | 7.85 ms (127.4 fps) | 6.37 ms (156.9 fps) |
+| Drive, median | 6.93 ms (144.4 fps) | 6.15 ms (162.6 fps) |
+| Drive, worst frame | 45.7 ms | 31.6 ms |
+| Vulkan's textures | 1,346 MB in 6 blocks | 1,196 MB in 5 blocks |
+| Process private memory | 4.35 GB | 3.97 GB |
+
+1,494 textures were reduced at the load (235 of them cut-outs, kept so), and 34-35 of the route's scripted trains waited
+far along the line.

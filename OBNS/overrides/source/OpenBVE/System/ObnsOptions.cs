@@ -60,6 +60,27 @@ namespace OpenBve
 		private static string lastNote;
 		private static bool openGLHudFallback;
 		private static bool lastHybrid;
+		private static bool potatoMode;
+
+		/// <summary>
+		/// Potato mode (the user's choice, 2026-11-09; off by default): Android's Potato mode on the desktop, less its 16-bit
+		/// textures - Performance transparency, unused textures unloaded, textures at most 1024 px, colour-keyed faces in one
+		/// pass, far cars and scripted trains updated less often, and the system asked for full speed (PotatoMode.cs). Takes
+		/// effect when a game starts.
+		/// </summary>
+		internal static bool PotatoMode
+		{
+			get
+			{
+				Load();
+				return potatoMode;
+			}
+			set
+			{
+				Load();
+				potatoMode = value;
+			}
+		}
 
 		/// <summary>
 		/// Whether OpenGL draws the HUD, menus and cab panel over the renderer's world, as before 1.3 (off: the renderer draws the
@@ -264,6 +285,10 @@ namespace OpenBve
 					{
 						openGLHudFallback = value == "true";
 					}
+					else if (key == "potatomode")
+					{
+						potatoMode = value == "true";
+					}
 				}
 
 				// Files from before "chosen": only Vulkan was the default, but for macOS's menu, which saved OpenGL unasked.
@@ -296,6 +321,11 @@ namespace OpenBve
 				if (openGLHudFallback)
 				{
 					builder.AppendLine("openglhudfallback = true");
+				}
+
+				if (potatoMode)
+				{
+					builder.AppendLine("potatomode = true");
 				}
 
 				if (lastDrawn != null)

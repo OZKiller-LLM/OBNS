@@ -308,6 +308,14 @@ namespace OpenBve.Graphics
 				return -1;
 			}
 
+			// Used now, as upstream's LoadTexture marks a texture it binds: with unused textures unloaded (the option, or
+			// Potato mode), one the layer draws is not taken for unused 20 s after OpenGL last saw it. (Not an animated one:
+			// upstream's load, below, advances its frames by the time since then.)
+			if (!texture.MultipleFrames)
+			{
+				texture.LastAccess = Environment.TickCount;
+			}
+
 			if (entries.TryGetValue(texture, out Entry entry) && !entry.Animated)
 			{
 				return entry.Failed ? -1 : entry.Index;

@@ -1,5 +1,6 @@
 ﻿// OBNS: a copy of upstream's source/OpenBVE/System/GameWindow.cs (OpenBVE 1.14.1.2), laid over the desktop build's
-// mirror (OBNS/build-desktop.ps1): frame time statistics in the log with OBNS_FRAMESTATS=1 (FrameStats).
+// mirror (OBNS/build-desktop.ps1): frame time statistics in the log with OBNS_FRAMESTATS=1 (FrameStats); unused textures
+// looked for once a second, and in Potato mode too (PotatoMode.cs).
 // On an upstream update: copy the file again and reapply the parts marked OBNS (FrameStats calls).
 using System;
 using System.Collections.Generic;
@@ -383,9 +384,16 @@ namespace OpenBve
 			MainLoop.CheckForOpenGlError("MainLoop");
 			 
 #endif
-			if (Interface.CurrentOptions.UnloadUnusedTextures)
+			// OBNS: in Potato mode too, and once a second rather than every frame (as Android: a route may register some
+			// 31,000 textures, and one unused for 20 s may as well wait another second).
+			if (Potato.UnloadUnusedTextures)
 			{
-				Program.Renderer.TextureManager.UnloadUnusedTextures(TimeElapsed);
+				obnsUnloadAge += RealTimeElapsed;
+				if (obnsUnloadAge >= 1.0)
+				{
+					Program.Renderer.TextureManager.UnloadUnusedTextures(obnsUnloadAge);
+					obnsUnloadAge = 0.0;
+				}
 			}
 			if (!textureStatsLogged && simulationSetup && Environment.TickCount - setupTickCount > 10000)
 			{
@@ -1323,6 +1331,9 @@ namespace OpenBve
 		private int setupTickCount;
 		private bool textureStatsLogged;
 
+		/// <summary>OBNS: time since unused textures were last looked for.</summary>
+		private double obnsUnloadAge;
+
 		/// <summary>OBNS: runs the OpenGL work the loader's threads are waiting on (BaseRenderer.RunInRenderThread).</summary>
 		private static void ObnsRunRenderThreadJobs()
 		{
@@ -1548,16 +1559,30 @@ namespace OpenBve
 				double ms(long ticks) => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames;
 				double span = (now - windowStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 				Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms ({17}); world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms ({12}), swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}; Vulkan world layer {11}; {13}; {14}; managed heap {15:0} MB, process private {16:0} MB",
+					"OBNS frame stats: {0} frames, {1:0.00} ms a frame ({2:0.0} fps), worst {3:0.0} ms ({17}); world objects {4:0.00} ms, train objects {5:0.00} ms, render {6:0.00} ms ({12}), swap {7:0.00} ms, other {8:0.00} ms; parallel updates {9}; GL state filter {10}; Vulkan world layer {11}; {13}; {14}; managed heap {15:0} MB, process private {16:0} MB; Potato mode {18}",
 					frames, span / frames, frames * 1000.0 / span, worstFrame * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
 					ms(totals[(int)Part.WorldObjects]), ms(totals[(int)Part.TrainObjects]), ms(totals[(int)Part.Render]), ms(totals[(int)Part.Swap]), ms(totals[(int)Part.Other]),
 					ParallelUpdates.Enabled ? "on (" + FrameWorkers.Shared.Threads + " threads)" : "off", GLFilterSummary(), OpenBve.Graphics.WorldLayer.Summary, NewRenderer.SceneParts.Take(), GpuStats.Take(), NewRenderer.SceneLaps.Take(),
-					GC.GetTotalMemory(false) / 1048576.0, ProcessPrivateMegabytes(), WorstFrame()));
+					GC.GetTotalMemory(false) / 1048576.0, ProcessPrivateMegabytes(), WorstFrame(), PotatoSummary()));
 				Array.Clear(totals, 0, totals.Length);
 				frames = 0;
 				worstFrame = 0;
 				windowStart = now;
 			}
+		}
+
+		/// <summary>OBNS: Potato mode, and what its updates left for later a frame (since the last stats), for the frame stats.</summary>
+		private static string PotatoSummary()
+		{
+			if (!Potato.Active)
+			{
+				return "off";
+			}
+
+			string text = string.Format(System.Globalization.CultureInfo.InvariantCulture, "on ({0} far scripted trains waiting, {1:0.0} car updates deferred a frame; {2})",
+				global::TrainManager.TrainManagerBase.FarTrainsSkipped, (double)global::TrainManager.TrainManagerBase.CarsDeferred / frames, TextureSizeLimit.Describe());
+			global::TrainManager.TrainManagerBase.CarsDeferred = 0;
+			return text;
 		}
 
 		/// <summary>The worst frame's parts in ms and the garbage collections during it, for the frame stats.</summary>

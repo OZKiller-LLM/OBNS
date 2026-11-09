@@ -1,5 +1,6 @@
 // OBNS: a copy of upstream's source/OpenBVE/Graphics/NewRenderer.cs (OpenBVE 1.14.1.2), laid over the desktop build's
-// mirror (OBNS/build-desktop.ps1): static scenery and trains' still parts drawn in batches (OBNS/shared/StaticBatcher.cs).
+// mirror (OBNS/build-desktop.ps1): static scenery and trains' still parts drawn in batches (OBNS/shared/StaticBatcher.cs);
+// in Potato mode, colour-keyed faces in one cut-out pass (CutoutKeyedFaces).
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 using LibRender2;
 using LibRender2.MotionBlurs;
@@ -309,6 +310,58 @@ namespace OpenBve.Graphics
 
 				foreach (FaceState face in alphaFaces)
 				{
+					face.Draw();
+				}
+			}
+			else if (CutoutKeyedFaces)
+			{
+				// OBNS: Potato mode's colour-keyed faces in one cut-out pass, then the rest as upstream (see CutoutKeyedFaces).
+				UnsetBlendFunc();
+				SetAlphaFunc(AlphaFunction.Greater, 0.5f);
+				GL.DepthMask(true);
+				foreach (FaceState face in alphaFaces)
+				{
+					if (IsColourKeyed(face))
+					{
+						face.Draw();
+					}
+				}
+
+				batcher.DrawAlpha();
+				SetAlphaFunc(AlphaFunction.Equal, 1.0f);
+				foreach (FaceState face in alphaFaces)
+				{
+					if (IsNormalOpaqueColour(face) && !IsColourKeyed(face))
+					{
+						face.Draw();
+					}
+				}
+
+				SetBlendFunc();
+				SetAlphaFunc(AlphaFunction.Less, 1.0f);
+				GL.DepthMask(false);
+				bool additive = false;
+				foreach (FaceState face in alphaFaces)
+				{
+					if (IsColourKeyed(face))
+					{
+						continue;
+					}
+
+					if (face.Object.Prototype.Mesh.Materials[face.Face.Material].BlendMode == MeshMaterialBlendMode.Additive)
+					{
+						if (!additive)
+						{
+							UnsetAlphaFunc();
+							additive = true;
+						}
+					}
+					else if (additive)
+					{
+						SetAlphaFunc();
+						additive = false;
+					}
+
 					face.Draw();
 				}
 			}
@@ -914,6 +967,54 @@ namespace OpenBve.Graphics
 						scene.Face(face.Object, face.Face);
 					}
 				}
+				else if (CutoutKeyedFaces)
+				{
+					// Potato mode's colour-keyed faces in one cut-out pass, as in OpenGL's world pass.
+					scene.Pass(WorldBlend.None, WorldLayer.AlphaGreater, 0.5f, true, false);
+					foreach (FaceState face in alphaFaces)
+					{
+						if (IsColourKeyed(face))
+						{
+							scene.Face(face.Object, face.Face);
+						}
+					}
+
+					batcher.DrawAlpha();
+					scene.Pass(WorldBlend.None, WorldLayer.AlphaEqual, 1.0f, true, false);
+					foreach (FaceState face in alphaFaces)
+					{
+						if (IsNormalOpaqueColour(face) && !IsColourKeyed(face))
+						{
+							scene.Face(face.Object, face.Face);
+						}
+					}
+
+					scene.Pass(WorldBlend.Normal, WorldLayer.AlphaLess, 1.0f, false, true);
+					bool additive = false;
+					foreach (FaceState face in alphaFaces)
+					{
+						if (IsColourKeyed(face))
+						{
+							continue;
+						}
+
+						if (face.Object.Prototype.Mesh.Materials[face.Face.Material].BlendMode == MeshMaterialBlendMode.Additive)
+						{
+							if (!additive)
+							{
+								scene.SetAlphaFunction(WorldLayer.AlphaNever, 0.0f);
+								additive = true;
+							}
+						}
+						else if (additive)
+						{
+							scene.SetAlphaFunction(WorldLayer.AlphaLess, 1.0f);
+							additive = false;
+						}
+
+						scene.Face(face.Object, face.Face);
+					}
+				}
 				else
 				{
 					scene.Pass(WorldBlend.None, WorldLayer.AlphaEqual, 1.0f, true, false);
@@ -1080,6 +1181,40 @@ namespace OpenBve.Graphics
 			lastVAO = -1;
 			LastBoundTexture = null;
 			ResetOpenGlState();
+		}
+
+		/*
+		 * OBNS: colour-keyed faces in one pass (Potato mode; Android's CutoutKeyedFaces, the Switch's since 2026-11-07). In
+		 * Quality transparency upstream draws every colour-keyed face twice - its opaque texels writing depth, then blended
+		 * for its edge fringes. Here they are cut at half alpha, writing depth, with no blending and no second pass: their
+		 * edges are a little harder. Faces with real alpha, translucent colours, glow or additive blending are drawn as
+		 * upstream draws them. (Performance transparency, Potato mode's own, has one pass for everything already.)
+		 */
+		internal static bool CutoutKeyedFaces;
+
+		/// <summary>OBNS: a normal, fully opaque-coloured, non-glowing face: its opaque texels can be drawn writing depth.</summary>
+		private static bool IsNormalOpaqueColour(FaceState face)
+		{
+			MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
+			return material.BlendMode == MeshMaterialBlendMode.Normal && material.GlowAttenuationData == 0 && material.Color.A == 255;
+		}
+
+		/// <summary>OBNS: such a face whose textures are opaque or colour-keyed (fully opaque or fully transparent texels only).</summary>
+		private bool IsColourKeyed(FaceState face)
+		{
+			if (!IsNormalOpaqueColour(face))
+			{
+				return false;
+			}
+
+			MeshMaterial material = face.Object.Prototype.Mesh.Materials[face.Face.Material];
+			return KeyedOrOpaque(material.DaytimeTexture) && KeyedOrOpaque(material.NighttimeTexture);
+		}
+
+		private bool KeyedOrOpaque(Texture texture)
+		{
+			// A texture not classified yet counts as having alpha: drawn as upstream draws it until it is.
+			return texture == null || ((IStaticBatchHost)this).TryGetTransparencyType(texture, out TextureTransparencyType type) && type != TextureTransparencyType.Alpha;
 		}
 
 		/// <summary>OBNS: the static batcher's state, for the log.</summary>

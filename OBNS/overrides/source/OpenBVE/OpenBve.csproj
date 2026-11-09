@@ -187,6 +187,8 @@
     <Compile Include="Game\SwitchChange\SwitchChangeDialog.cs" />
     <!-- OBNS: the static batcher shared with the Android port (OBNS/shared), from the mirror's place in OBNS/build. -->
     <Compile Include="..\..\..\..\shared\StaticBatcher.cs" Link="OBNS\StaticBatcher.cs" />
+    <!-- OBNS: the texture size cap shared with the Android port (Potato mode's 1024 px). -->
+    <Compile Include="..\..\..\..\shared\TextureSizeLimit.cs" Link="OBNS\TextureSizeLimit.cs" />
     <Compile Include="Graphics\HUD\HUD.cs" />
     <Compile Include="Graphics\HUD\HUD.Element.cs">
       <DependentUpon>HUD.cs</DependentUpon>
@@ -204,6 +206,8 @@
     <Compile Include="Graphics\GpuStats.cs" />
     <!-- OBNS: OBNS's options, and their rows in the options. -->
     <Compile Include="System\ObnsOptions.cs" />
+    <Compile Include="System\PotatoMode.cs" />
+    <Compile Include="System\ObnsText.cs" />
     <Compile Include="System\MemoryCensus.cs" />
     <Compile Include="UserInterface\formMain.Obns.cs">
       <SubType>Form</SubType>

@@ -1,6 +1,6 @@
 ﻿// OBNS: a copy of upstream's source/OpenBVE/System/MainLoop.cs (OpenBVE 1.14.1.2), laid over the desktop build's
 // mirror (OBNS/build-desktop.ps1): a screen reader library that can't be loaded (Tolk has no ARM64 build) means none,
-// and the log names the sound device.
+// the log names the sound device, and Potato mode is put in force for the game (PotatoMode.cs).
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 using System;
 using System.ComponentModel;
@@ -37,6 +37,8 @@ namespace OpenBve
 
 		internal static void StartLoopEx(LaunchParameters result)
 		{
+			// OBNS: Potato mode, or not, for this game (its transparency before anything is loaded).
+			Potato.Apply();
 			Program.Sounds.Initialize(Interface.CurrentOptions.SoundRange);
 
 			Program.FileSystem.AppendToLogFile(@"Attached Joysticks:", false);

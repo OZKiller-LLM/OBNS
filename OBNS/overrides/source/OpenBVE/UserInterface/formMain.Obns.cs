@@ -22,9 +22,10 @@
 //(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// OBNS: not an upstream file. OBNS's rows in the options (OBNS/VULKAN.md, OBNS/RENDERERS.md): the renderer and the OpenGL
-// HUD fallback, added below the display group's own rows when the form loads (the groups below are moved down to make
-// room), saved with the options.
+// OBNS: not an upstream file. OBNS's rows in the options (OBNS/VULKAN.md, OBNS/RENDERERS.md): the renderer, the OpenGL
+// HUD fallback and Potato mode (PotatoMode.cs), added below the display group's own rows when the form loads (the groups
+// below are moved down to make room), saved with the options. The same rows are in the OpenGL and native (macOS) menus,
+// which are this form (OBNS/GLFORMS.md).
 
 using System.Drawing;
 using System.Windows.Forms;
@@ -37,6 +38,9 @@ namespace OpenBve
 		private ComboBox comboboxObnsRenderer;
 		private Label labelObnsRendererDrawn;
 		private CheckBox checkboxObnsHudFallback;
+		private CheckBox checkboxObnsPotato;
+		private Label labelObnsPotatoNote;
+		private ToolTip obnsTips;
 		private ObnsOptions.RendererKind obnsRendererShown;
 
 		/// <summary>The renderer each of the list's items chooses.</summary>
@@ -77,6 +81,7 @@ namespace OpenBve
 			};
 			ObnsAddRenderer("OpenGL", ObnsOptions.RendererKind.OpenGL);
 			ToolTip tip = new ToolTip();
+			obnsTips = tip;
 			if (System.Environment.OSVersion.Platform == System.PlatformID.Win32NT)
 			{
 				ObnsAddRenderer("Vulkan", ObnsOptions.RendererKind.Vulkan);
@@ -139,13 +144,35 @@ namespace OpenBve
 				fallbackHeight = rowHeight;
 			}
 
+			// Potato mode (on every system), with a short note below it; the whole note as its tip.
+			// Three lines of the menu's font: the note is about 130 characters in English, in a column about 300 px wide.
+			const int noteHeight = 44;
+			checkboxObnsPotato = new CheckBox
+			{
+				Anchor = comboboxVSync.Anchor,
+				AutoEllipsis = true,
+				Checked = ObnsOptions.PotatoMode,
+				Location = new Point(comboboxVSync.Left, top + rowHeight + fallbackHeight),
+				Size = new Size(comboboxVSync.Width, rowHeight - 2)
+			};
+			labelObnsPotatoNote = new Label
+			{
+				Anchor = comboboxVSync.Anchor,
+				AutoEllipsis = true,
+				Location = new Point(labelVSync.Left, top + 2 * rowHeight + fallbackHeight),
+				Size = new Size(comboboxVSync.Right - labelVSync.Left, noteHeight),
+				TextAlign = ContentAlignment.TopLeft
+			};
+			ObnsApplyLanguage();
+			int potatoHeight = rowHeight + noteHeight;
+
 			// What drew the last game, and why if it isn't what was asked for, on a row below.
 			string drawn = ObnsOptions.LastDrawnText;
 			labelObnsRendererDrawn = new Label
 			{
 				Anchor = comboboxVSync.Anchor,
 				AutoEllipsis = true,
-				Location = new Point(labelVSync.Left, top + rowHeight + fallbackHeight),
+				Location = new Point(labelVSync.Left, top + rowHeight + fallbackHeight + potatoHeight),
 				Size = new Size(comboboxVSync.Right - labelVSync.Left, statusHeight),
 				Text = drawn ?? "Last game: none yet",
 				TextAlign = ContentAlignment.TopLeft
@@ -154,12 +181,12 @@ namespace OpenBve
 
 			// Room for the rows: the group grows, and what is below it in the panel moves down.
 			int groupBottom = groupboxDisplayMode.Bottom;
-			groupboxDisplayMode.Height += rowHeight + fallbackHeight + statusHeight + 6;
+			groupboxDisplayMode.Height += rowHeight + fallbackHeight + potatoHeight + statusHeight + 6;
 			foreach (Control control in groupboxDisplayMode.Parent.Controls)
 			{
 				if (control != groupboxDisplayMode && control.Top >= groupBottom)
 				{
-					control.Top += rowHeight + fallbackHeight + statusHeight + 6;
+					control.Top += rowHeight + fallbackHeight + potatoHeight + statusHeight + 6;
 				}
 			}
 
@@ -170,7 +197,23 @@ namespace OpenBve
 				groupboxDisplayMode.Controls.Add(checkboxObnsHudFallback);
 			}
 
+			groupboxDisplayMode.Controls.Add(checkboxObnsPotato);
+			groupboxDisplayMode.Controls.Add(labelObnsPotatoNote);
 			groupboxDisplayMode.Controls.Add(labelObnsRendererDrawn);
+		}
+
+		/// <summary>OBNS's rows in the menu's language (from ApplyLanguage, when it changes).</summary>
+		private void ObnsApplyLanguage()
+		{
+			if (checkboxObnsPotato == null)
+			{
+				return;
+			}
+
+			checkboxObnsPotato.Text = ObnsText.Get("potato_mode");
+			labelObnsPotatoNote.Text = ObnsText.Get("potato_mode_note");
+			obnsTips?.SetToolTip(checkboxObnsPotato, ObnsText.Get("potato_mode_detail"));
+			obnsTips?.SetToolTip(labelObnsPotatoNote, ObnsText.Get("potato_mode_detail"));
 		}
 
 		private void ObnsAddRenderer(string name, ObnsOptions.RendererKind kind)
@@ -193,6 +236,11 @@ namespace OpenBve
 				if (checkboxObnsHudFallback != null)
 				{
 					ObnsOptions.OpenGLHudFallback = checkboxObnsHudFallback.Checked;
+				}
+
+				if (checkboxObnsPotato != null)
+				{
+					ObnsOptions.PotatoMode = checkboxObnsPotato.Checked;
 				}
 
 				ObnsOptions.Save();

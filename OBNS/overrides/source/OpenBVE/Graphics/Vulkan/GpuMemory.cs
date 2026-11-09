@@ -61,13 +61,20 @@ namespace OpenBve.Graphics.Vulkan
 		internal string Describe()
 		{
 			ulong total = 0, used = 0;
+			int blocks = 0;
 			foreach (RangeAllocator allocator in allocators)
 			{
+				if (allocator == null)
+				{
+					continue;
+				}
+
 				total += allocator.Size;
 				used += allocator.Used;
+				blocks++;
 			}
 
-			return name + " " + (used >> 20) + " of " + (total >> 20) + " MB in " + allocators.Count + " blocks";
+			return name + " " + (used >> 20) + " of " + (total >> 20) + " MB in " + blocks + " blocks" + (BlocksReleased > 0 ? " (" + BlocksReleased + " released when empty)" : "");
 		}
 
 		/// <summary>A range of the pool, with the memory type bits a resource allows (images), making a block when none has room.</summary>
@@ -80,7 +87,7 @@ namespace OpenBve.Graphics.Vulkan
 
 			for (int i = 0; i < allocators.Count; i++)
 			{
-				if ((typeBits & (1u << (int)memoryTypes[i])) == 0)
+				if (allocators[i] == null || (typeBits & (1u << (int)memoryTypes[i])) == 0)
 				{
 					// (An image may only go in some memory types: on NVIDIA, mipmapped images and others differ.)
 					continue;
@@ -102,9 +109,29 @@ namespace OpenBve.Graphics.Vulkan
 		{
 			if (range.Valid)
 			{
-				allocators[range.Block].Free(range.Start, range.Taken);
+				RangeAllocator allocator = allocators[range.Block];
+				allocator.Free(range.Start, range.Taken);
+				/*
+				 * A block of images left empty is given back (a pool of images only: a buffer pool's blocks are bound to
+				 * buffers the meshes name). Freed ranges are reused as they are, but a block lived for the rest of the game:
+				 * on a 16 GB Windows ARM64 laptop (Adreno X1-45, memory shared with the CPU) the Tuen Ma Line's textures grew
+				 * to 17 blocks, 4.1 GB, and the driver ran out of host memory (2026-11-09). With unused textures unloaded
+				 * (Potato mode, or the option), what a stretch of the line no longer needs can go back to the system. The
+				 * first block is kept, for the textures every game has. The images in it are destroyed already (Destroy),
+				 * after the frames that drew them.
+				 */
+				if (bufferUsage == 0 && allocator.Used == 0 && range.Block > 0)
+				{
+					Vk.vkFreeMemory(device.Device, memories[range.Block], null);
+					memories[range.Block] = 0;
+					allocators[range.Block] = null;
+					BlocksReleased++;
+				}
 			}
 		}
+
+		/// <summary>Blocks of images given back to the system because they were left empty, for the log.</summary>
+		internal int BlocksReleased;
 
 		private int AddBlock(ulong size, uint typeBits)
 		{
@@ -134,6 +161,17 @@ namespace OpenBve.Graphics.Vulkan
 				Vk.Check(Vk.vkBindBufferMemory(device.Device, buffer, memory, 0), "vkBindBufferMemory");
 			}
 
+			// A slot a released block left (images only, which name their block by its index) is taken again.
+			int slot = bufferUsage == 0 ? allocators.IndexOf(null) : -1;
+			if (slot >= 0)
+			{
+				memories[slot] = memory;
+				memoryTypes[slot] = memoryType;
+				Buffers[slot] = buffer;
+				allocators[slot] = new RangeAllocator(size);
+				return slot;
+			}
+
 			memories.Add(memory);
 			memoryTypes.Add(memoryType);
 			Buffers.Add(buffer);
@@ -150,7 +188,11 @@ namespace OpenBve.Graphics.Vulkan
 					Vk.vkDestroyBuffer(device.Device, Buffers[i], null);
 				}
 
-				Vk.vkFreeMemory(device.Device, memories[i], null);
+				// (A block released when it was left empty is 0.)
+				if (memories[i] != 0)
+				{
+					Vk.vkFreeMemory(device.Device, memories[i], null);
+				}
 			}
 
 			memories.Clear();

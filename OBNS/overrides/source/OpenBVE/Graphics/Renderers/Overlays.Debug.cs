@@ -1,5 +1,6 @@
 // OBNS: a copy of upstream's source/OpenBVE/Graphics/Renderers/Overlays.Debug.cs (OpenBVE 1.14.1.2), laid over the
-// desktop build's mirror (OBNS/build-desktop.ps1): the renderer named as it is (Vulkan's world layer, OBNS/VULKAN.md).
+// desktop build's mirror (OBNS/build-desktop.ps1): the renderer named as it is (Vulkan's world layer, OBNS/VULKAN.md),
+// and whether Potato mode is on (PotatoMode.cs).
 // On an upstream update: copy the file again and reapply the parts marked OBNS.
 using System;
 using TrainManager.BrakeSystems;
@@ -201,6 +202,8 @@ namespace OpenBve.Graphics.Renderers
 				"=renderer",
 				// OBNS: Vulkan's world layer when it draws it.
 				"renderer type: " + OpenBve.Graphics.WorldLayer.RendererName,
+				// OBNS: Potato mode, on or off for this game.
+				"potato mode: " + (Potato.Active ? "on" : "off"),
 				"opaque faces: " + Program.Renderer.VisibleObjects.OpaqueFaces.Count.ToString(Culture),
 				"alpha faces: " + Program.Renderer.VisibleObjects.AlphaFaces.Count.ToString(Culture),
 				"overlay opaque faces: " + Program.Renderer.VisibleObjects.OverlayOpaqueFaces.Count.ToString(Culture),

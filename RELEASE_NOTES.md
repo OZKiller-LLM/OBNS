@@ -30,6 +30,16 @@ for a release of its own. The ARM64 build has them all.
 
 #### All desktop systems
 
+- **Potato mode** (Options, under Renderer; off by default), as on Android less its 16-bit textures: Performance
+  transparency, unused textures unloaded, textures at most 1024 px, colour-keyed faces in one pass, far cars and scripted
+  trains updated less often, and the system asked for full speed (Windows: no power throttling, and the high-performance
+  GPU for Direct3D; macOS: a latency-critical activity). In all of OBNS's 14 languages, on Windows and in the Mac's menu,
+  and the debug overlay says whether it's on. Cut-out textures stay cut-outs when reduced, so seats and handles don't
+  show through each other. TML on an RTX 2060 SUPER: 127 to 157 fps standing in the cab, the worst frame of a drive 46 to
+  32 ms. Transparency set with `OBNS_TRANSPARENCY=quality` or `performance` still wins, and the options keep their own.
+- **Unused textures unloaded with Vulkan, Direct3D or Metal drawing** (the option, or Potato mode): a texture those drew
+  was taken for unused 20 s after OpenGL last saw it, and loaded again. And Vulkan gives a block of texture memory back
+  when it's left empty: on a 16 GB ARM64 laptop TML's textures grew to 17 blocks, 4.1 GB, and the driver ran out of memory.
 - **BVE5 and BVE6 routes:** the speed limits of signal aspects (`Section.SetSpeedLimit`) were read as metres a second, 3.6
   times too high: Uchibo's 45 and 95 km/h aspects were 162 and 342 km/h. Android gets this in its next build.
 - **Vulkan's pipelines are kept between starts** in the settings folder, so the first frames don't wait on the shader
