@@ -420,7 +420,7 @@ namespace OpenBve.Android
 			 * world-object update shows the animated scenery, each texture decoded one at a time.
 			 */
 			Step("sections and views");
-			Log.Info(Tag, "texture transparency: " + TextureClassifier.Classify(ObjectsAboutToShow(startPosition), "old " + host.Options.OldTransparencyMode + ", limit " + TextureSizeLimit.MaxSize));
+			Log.Info(Tag, "texture transparency: " + TextureClassifier.Classify(ObjectsAboutToShow(startPosition), "old " + host.Options.OldTransparencyMode + ", limit " + TextureSizeLimit.MaxSize + (TextureSizeLimit.KeepColourKeys ? " keyed" : string.Empty)));
 			Step("texture classification");
 
 			foreach (TrainBase train in trainManager.Trains)

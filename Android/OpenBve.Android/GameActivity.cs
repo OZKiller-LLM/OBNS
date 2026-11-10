@@ -322,7 +322,11 @@ namespace OpenBve.Android
 				AndroidSettings.TextureDepthOverride ??= 16;
 				AndroidRenderer.CutoutKeyedFaces = true;
 				AndroidTrainManager.CarUpdateLod = true;
-				global::Android.Util.Log.Info("OpenBVE", "potato mode: sharp transparency, textures 1024 px 16-bit, far cars and trains updated less often, performance hints");
+				// A cut-out reduced to the size limit stays a cut-out (every texel clear or solid), as on the desktop: averaged,
+				// its edges turned partly clear and it was classed translucent - in Sharp transparency drawn without depth, so
+				// what was behind showed through (TML's destination displays and station fences, 93 of its textures).
+				OpenBve.TextureSizeLimit.KeepColourKeys = true;
+				global::Android.Util.Log.Info("OpenBVE", "potato mode: sharp transparency, textures 1024 px 16-bit (cut-outs kept), far cars and trains updated less often, performance hints");
 			}
 
 			// For measurements: --ei render_scale 50 draws the scene at half the screen's resolution.
