@@ -1,4 +1,4 @@
-// OBNS 1.31N: deko3d's 2D drawing (the menu, the loading screen, later the HUD), compiled by uam at build time.
+// OBNS 1.32: deko3d's 2D drawing (the menu, the loading screen, later the HUD), compiled by uam at build time.
 // Positions are in the menu's units (1280x720 whatever the screen), from the top left.
 #version 460
 

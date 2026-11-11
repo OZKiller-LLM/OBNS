@@ -1,4 +1,4 @@
-// OBNS 1.31N: a probe of the Switch it runs on, for OBNS/SWITCH.md's "verify" items.
+// OBNS 1.32: a probe of the Switch it runs on, for OBNS/SWITCH.md's "verify" items.
 // Copyright (c) The OpenBVE Android port contributors. Licensed as OBNS.
 //
 // Reports the launch mode and the memory the process gets, the model, firmware and Atmosphère versions, docked or
@@ -119,7 +119,7 @@ int main(int argc, char **argv)
     mkdir("sdmc:/switch/OBNS-probe", 0777);
     logFile = fopen("sdmc:/switch/OBNS-probe/probe.log", "w");
 
-    say("OBNS Switch probe (1.31N)\n\n");
+    say("OBNS Switch probe (1.32)\n\n");
 
     AppletType type = appletGetAppletType();
     say("Launch: %s (applet type %d)\n",

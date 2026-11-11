@@ -28,7 +28,7 @@ using OpenBve.Android;
 namespace OpenBve.Switch
 {
 	/// <summary>
-	/// OBNS 1.31N: the Switch's menu (OBNS/SWITCH.md, step 6) - Android's (MenuActivity.cs) redesigned for the console:
+	/// OBNS 1.32: the Switch's menu (OBNS/SWITCH.md, step 6) - Android's (MenuActivity.cs) redesigned for the console:
 	/// the rail on the left (Start new game, Package Management, Controls, Options, About) and the section's page beside
 	/// it, laid out at 1280x720 with 5% kept clear of the edges, every part reachable with the buttons alone and by touch
 	/// in handheld mode. It draws through <see cref="IMenuCanvas"/> (deko3d's 2D drawing) and reads

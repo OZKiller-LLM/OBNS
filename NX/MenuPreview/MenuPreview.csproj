@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    OBNS 1.31N: the Switch's menu (NX/Game/Menu) drawn on Windows into PNG files, for checking its layout without the
+    OBNS 1.32: the Switch's menu (NX/Game/Menu) drawn on Windows into PNG files, for checking its layout without the
     console. Built against the Android game project as the Switch build is (NX/Switch.targets); run with
     NX/MenuPreview/preview.ps1. A development tool: nothing of it goes into the NRO.
   -->

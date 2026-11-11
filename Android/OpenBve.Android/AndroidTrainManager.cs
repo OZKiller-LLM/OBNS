@@ -215,7 +215,7 @@ namespace OpenBve.Android
 		}
 
 		/*
-		 * Scripted trains far from the player's (OBNS 1.31N, 2026-11-08): the world-coordinate and suspension pass ran for
+		 * Scripted trains far from the player's (OBNS 1.32, 2026-11-08): the world-coordinate and suspension pass ran for
 		 * all 36 of the Tuen Ma Line's, most kilometres away and not drawn - part of the 3.1 ms "trains" phase on the
 		 * Switch. Beyond FarTrainDistance along the line (twice the longest viewing distance and more) they wait; their track
 		 * positions, which signals and timetables go by, are updated every frame as before.

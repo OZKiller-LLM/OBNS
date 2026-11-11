@@ -1,4 +1,4 @@
-// OBNS 1.31N: the sound output without SDL. OpenAL Soft mixes into a loopback device, and a thread of OBNS's own hands
+// OBNS 1.32: the sound output without SDL. OpenAL Soft mixes into a loopback device, and a thread of OBNS's own hands
 // the mix to audout, never waiting on it for long.
 //
 // Why: OpenAL Soft's SDL2 backend left the sound silent for good partway through the Tuen Ma Line drive benchmark

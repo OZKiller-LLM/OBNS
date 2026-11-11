@@ -1,4 +1,4 @@
-// OBNS 1.31N: the world and the cab on deko3d - Android's native Vulkan default.frag (the texture, brightness, opacity,
+// OBNS 1.32: the world and the cab on deko3d - Android's native Vulkan default.frag (the texture, brightness, opacity,
 // alpha test, lighting and fog as upstream's), its uniforms split as world.vert's.
 #version 460
 

@@ -34,7 +34,7 @@ using SoundManager;
 namespace OpenBve.NX
 {
 	/// <summary>
-	/// OBNS 1.31N, step 1: the game started on the Switch as Android's GameView starts it, without drawing yet (deko3d is
+	/// OBNS 1.32, step 1: the game started on the Switch as Android's GameView starts it, without drawing yet (deko3d is
 	/// step 3), to load a route and its train and log the time and memory each part takes - whether TML fits in title
 	/// takeover's 3.1 GB. The layout on the SD card (OBNS/SWITCH.md):
 	///
@@ -656,7 +656,7 @@ namespace OpenBve.NX
 			AppDomain.CurrentDomain.FirstChanceException += OnThrown;
 			// Loading at the CPU's 1,785 MHz with the GPU held low: apm's FastLoad, the console's own loading clock.
 			int mhz = SetCpuBoost(1);
-			Stage($"OBNS for the Switch (1.31N): {RuntimeInformation.FrameworkDescription}, {Environment.ProcessorCount} cores, CPU {mhz} MHz");
+			Stage($"OBNS for the Switch (1.32): {RuntimeInformation.FrameworkDescription}, {Environment.ProcessorCount} cores, CPU {mhz} MHz");
 
 			Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 			WarmCodePages();

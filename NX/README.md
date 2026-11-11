@@ -1,4 +1,4 @@
-# Nintendo Switch (OBNS 1.31N)
+# Nintendo Switch (OBNS 1.32)
 
 This folder is the Switch build, as `Android/` is the Android port's and `ARM64/` the Windows on ARM64 build's: what only
 the Switch needs. The plan, the research and the user's decisions are in `OBNS/SWITCH.md`; this file is how it's built

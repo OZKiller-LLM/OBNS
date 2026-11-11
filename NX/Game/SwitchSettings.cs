@@ -35,7 +35,7 @@ using OpenTK.Graphics;
 namespace OpenBve.Android
 {
 	/// <summary>
-	/// OBNS 1.31N: the Switch's settings, Android's (AndroidSettings) kept in a file on the SD card instead of shared
+	/// OBNS 1.32: the Switch's settings, Android's (AndroidSettings) kept in a file on the SD card instead of shared
 	/// preferences: UserData/options-nx.cfg, one "key = value" a line, the same keys and defaults as Android's. The menu
 	/// writes them (each change saved at once) and the game reads them as it starts (<see cref="ApplyTo"/>).
 	/// </summary>

@@ -3,7 +3,7 @@
     Builds an Android port project (and what it references) for the Switch's runtime, as a compile check on Windows.
 
 .DESCRIPTION
-    OBNS 1.31N. The Android projects are built unchanged for net9.0 with NX/Switch.targets (Compat without Skia, C# 13,
+    OBNS 1.32. The Android projects are built unchanged for net9.0 with NX/Switch.targets (Compat without Skia, C# 13,
     the game project as a library). Output goes to D:\dev\tools\nx-artifacts. Prints each distinct error once.
 
 .PARAMETER Project

@@ -1,5 +1,5 @@
 #!/bin/bash
-# OBNS 1.31N: Mono for libnx, from mono-nx's build_mono.sh in Release, with NX/patches applied and an LLVM-enabled AOT
+# OBNS 1.32: Mono for libnx, from mono-nx's build_mono.sh in Release, with NX/patches applied and an LLVM-enabled AOT
 # cross-compiler. The libnx runtime itself is built without LLVM: LLVM-compiled AOT code needs nothing more from it
 # on ARM64 (ENABLE_LLVM_RUNTIME is WebAssembly's). NX/README.md has the set-up: DEVKITPRO, then mono-nx's env.sh
 # (MONO_NX_ROOT, ICU_NX_INSTALL_DIR), and ICU built first.

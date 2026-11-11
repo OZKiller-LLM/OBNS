@@ -1,4 +1,4 @@
-// OBNS 1.31N: the console's buttons and touch screen for the menu (NX/Game/Menu/MenuInput.cs's MenuButtons), and
+// OBNS 1.32: the console's buttons and touch screen for the menu (NX/Game/Menu/MenuInput.cs's MenuButtons), and
 // whether it is docked. Copyright (c) The OpenBVE Android port contributors. BSD-2-Clause, as OBNS.
 
 #include <stdint.h>

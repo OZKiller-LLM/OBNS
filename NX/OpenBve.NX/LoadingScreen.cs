@@ -30,7 +30,7 @@ using OpenBve.Android;
 namespace OpenBve.NX
 {
 	/// <summary>
-	/// OBNS 1.31N: the loading screen on deko3d - Android's (GameActivity.LoadingScreen) drawn by the 2D layer: the route's
+	/// OBNS 1.32: the loading screen on deko3d - Android's (GameActivity.LoadingScreen) drawn by the 2D layer: the route's
 	/// picture across the screen, centre-cropped at 55%, and at the bottom the route's name, "Loading route... NN%" (or
 	/// the train) and the bar, from LoadProgress (the route the first 80%, as upstream's). Its own thread draws at 30
 	/// frames a second while the loading thread works; an error replaces the bar, in Android's orange-red.

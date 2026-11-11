@@ -1,4 +1,4 @@
-// OBNS 1.31N: block compression (BC1, BC3) of textures for the Switch's GPU, with their mipmap chains, for the
+// OBNS 1.32: block compression (BC1, BC3) of textures for the Switch's GPU, with their mipmap chains, for the
 // compressed texture cache (NX/OpenBve.NX/Deko/CompressedTextures.cs). Written for OBNS; no third-party encoder.
 //
 // BC1: 4x4 texels in 8 bytes - two RGB565 endpoints and a 2-bit index per texel. With colour0 > colour1 four colours
@@ -219,7 +219,7 @@ static void halve(const uint8_t *src, int w, int h, uint8_t *dst, int nw, int nh
 /*
  * The colours of a cut-out's transparent texels (a colour key's, or black) spread in from the texels that can be seen,
  * a texel at a time (up to `passes`), the rest given the image's average: filtering at the edges then blends in the
- * leaves' own colours instead of dark ones (OBNS 1.31N: dark fringes and specks round the trees on the Switch, from BC1's
+ * leaves' own colours instead of dark ones (OBNS 1.32: dark fringes and specks round the trees on the Switch, from BC1's
  * transparent black, until 2026-11-07). Alpha is left as it is.
  */
 static void bleed(uint8_t *rgba, int w, int h, int passes)

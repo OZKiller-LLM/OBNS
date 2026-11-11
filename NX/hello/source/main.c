@@ -1,4 +1,4 @@
-// OBNS 1.31N: starts Mono with the C# hello compiled ahead of time, its output sent back to nxlink.
+// OBNS 1.32: starts Mono with the C# hello compiled ahead of time, its output sent back to nxlink.
 // From mono-nx's native/aot/source/main.c (MIT, Copyright (c) exelix11).
 // Copyright (c) The OpenBVE Android port contributors.
 

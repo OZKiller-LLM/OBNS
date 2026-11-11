@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Draws the Switch's menu into PNG files on Windows (OBNS 1.31N), for checking its layout without the console.
+    Draws the Switch's menu into PNG files on Windows (OBNS 1.32), for checking its layout without the console.
 
 .PARAMETER Content
     A content folder (Railway\Route and Train within) for the Start page's lists. Use sample content, not private packs.

@@ -374,7 +374,7 @@ namespace OpenBve.Android
 		}
 
 		/*
-		 * The rest of the scenery, classified on a thread of its own while the game runs (OBNS 1.31N). Only the textures
+		 * The rest of the scenery, classified on a thread of its own while the game runs (OBNS 1.32). Only the textures
 		 * of what is in view at the start are classified while loading; every other static object's texture was decoded
 		 * by ObjectLibrary.ShowObject on the render thread when it first came into view - on the Switch, stalls of up to
 		 * 5.8 s on the Tuen Ma Line (2026-11-07). Nearest the start first; answers the disk cache has cost no decode, and

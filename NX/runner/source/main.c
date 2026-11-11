@@ -1,4 +1,4 @@
-// OBNS 1.31N: the Switch runner. Starts Mono with OBNS's C#, compiled ahead of time by LLVM and linked in.
+// OBNS 1.32: the Switch runner. Starts Mono with OBNS's C#, compiled ahead of time by LLVM and linked in.
 // From mono-nx's native/aot/source/main.c (MIT, Copyright (c) exelix11).
 // Copyright (c) The OpenBVE Android port contributors. BSD-2-Clause, as OBNS.
 //
@@ -30,7 +30,7 @@ EXPORT int64_t obns_memory_used(void)
     return (int64_t)used;
 }
 
-// The watchdog's way out of a game stuck for good (OBNS 1.31N, the drive benchmark): a fault on purpose, so Atmosphère's
+// The watchdog's way out of a game stuck for good (OBNS 1.32, the drive benchmark): a fault on purpose, so Atmosphère's
 // crash report records every thread's registers and stack - where the game stands natively, which its log cannot say.
 EXPORT void obns_watchdog_crash(void)
 {
@@ -337,7 +337,7 @@ int main(int argc, char *argv[])
         freopen("sdmc:/switch/OBNS/UserData/runner.log", "w", stdout);
         freopen("sdmc:/switch/OBNS/UserData/runner.log", "a", stderr);
     }
-    printf("OBNS runner (1.31N): %s\n", nxlink ? "output to nxlink" : "output to UserData/runner.log");
+    printf("OBNS runner (1.32): %s\n", nxlink ? "output to nxlink" : "output to UserData/runner.log");
     // No auto-sleep while OBNS runs, as games during long loads and video: the console slept through a TML load
     // with nothing on the screen yet, suspending it and dropping nxlink (2026-11-06). For this app only; the
     // console's own sleep setting is untouched, and the system restores it when the app exits.

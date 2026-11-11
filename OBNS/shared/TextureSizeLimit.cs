@@ -50,7 +50,7 @@ namespace OpenBve
 		/// Each texel comes out clear or solid - solid where at least half the texels it covers were (alpha 128 or more) -
 		/// coloured as those. Averaged as the rest, a cut-out's edges take alpha in between, more than the share allows, and
 		/// it is classed as translucent: drawn blended and back to front without depth (its parts showing through each other
-		/// in Sharp transparency), out of the static batches. The desktop's Potato mode sets it (OBNS 1.31N, 2026-11-09);
+		/// in Sharp transparency), out of the static batches. The desktop's Potato mode sets it (OBNS 1.32, 2026-11-09);
 		/// Android leaves it off, as before.
 		/// </summary>
 		public static bool KeepColourKeys;

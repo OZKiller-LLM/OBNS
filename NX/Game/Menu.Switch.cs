@@ -33,7 +33,7 @@ using OpenBveApi.Interface;
 namespace OpenBve.Android
 {
 	/// <summary>
-	/// OBNS 1.31N: the Switch's Menu (Android/OpenBve.Android/Menu.cs without Android's Context): the host, the file
+	/// OBNS 1.32: the Switch's Menu (Android/OpenBve.Android/Menu.cs without Android's Context): the host, the file
 	/// system and OpenBVE's translations, shared by the menu and the game. The Switch entry builds the file system on
 	/// the SD card and passes it in; the rest is Android's as it is.
 	/// </summary>

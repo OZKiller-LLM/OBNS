@@ -1,5 +1,5 @@
 #!/bin/bash
-# OBNS 1.31N: builds OBNS for the Switch on Linux (WSL's Ubuntu): the C# (NX/OpenBve.NX and the Android port's projects
+# OBNS 1.32: builds OBNS for the Switch on Linux (WSL's Ubuntu): the C# (NX/OpenBve.NX and the Android port's projects
 # through NX/Switch.targets), trimmed, compiled ahead of time by Mono with LLVM, and linked with NX/runner into OBNS.nro.
 #
 # Needs DEVKITPRO, MONO_NX_ROOT and ICU_NX_INSTALL_DIR (NX/README.md) and Mono built by NX/build-mono.sh.

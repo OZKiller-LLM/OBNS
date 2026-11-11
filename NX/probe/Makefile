@@ -40,7 +40,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET		:=	OBNS-probe
 APP_TITLE	:=	OBNS probe
 APP_AUTHOR	:=	The OpenBVE Android port contributors
-APP_VERSION	:=	1.31N
+APP_VERSION	:=	1.32
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data

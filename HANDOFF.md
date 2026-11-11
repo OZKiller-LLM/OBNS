@@ -57,7 +57,7 @@ Other notes:
 - Package creation in the OpenGL menu was checked as far as Windows' folder dialog, which automation can't fill.
 
 Release 1.21 is on branch `1.21` (user, 2026-11-01; the tagged release notes and the release page call it 1.2.1). The later roadmap:
-1.22 BVE6 testing, 1.3 renderers without OpenGL, 1.31 Windows ARM64, 1.31N Switch NRO.
+1.22 BVE6 testing, 1.3 renderers without OpenGL, 1.31 Windows ARM64, 1.32 the Switch NRO (homebrew) with Potato mode on Android and the desktop (the branch was 1.31N until 2026-11-11).
 
 Done for 1.21, on Windows unless noted; nothing of it is pushed:
 

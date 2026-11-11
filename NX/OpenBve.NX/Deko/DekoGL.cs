@@ -32,7 +32,7 @@ using OpenTK.Graphics.OpenGL;
 namespace OpenBve.NX.Deko
 {
 	/*
-	 * OBNS 1.31N (OBNS/SWITCH.md, step 3): the renderer's GL calls on deko3d, as Android's native Vulkan renderer does
+	 * OBNS 1.32 (OBNS/SWITCH.md, step 3): the renderer's GL calls on deko3d, as Android's native Vulkan renderer does
 	 * them on Vulkan (Android/OpenBve.Vulkan/VulkanGL, whose structure and GL semantics this follows). Upstream's
 	 * renderer and the port's own drawing talk to OpenBve.GLES's GL class; with GL.Device set to this, their calls come
 	 * here and no GL driver is involved: deko3d draws everything.
@@ -1648,7 +1648,7 @@ namespace OpenBve.NX.Deko
 			/*
 			 * GL packs 16-bit texels with red in the high bits; deko3d's formats (Maxwell's B5G6R5, A4B4G4R4, A1B5G5R5) have
 			 * red in the low bits. 565 and 4444 are the same fields in reverse order, so a swizzle reads them right; 5551's
-			 * one-bit alpha sits at the other end, so its texels are repacked (OBNS 1.31N: red and blue swapped, 4444's
+			 * one-bit alpha sits at the other end, so its texels are repacked (OBNS 1.32: red and blue swapped, 4444's
 			 * colours and alpha crossed, 5551 scrambled, until 2026-11-07).
 			 */
 			else if (type == GL_UNSIGNED_SHORT_5_6_5)

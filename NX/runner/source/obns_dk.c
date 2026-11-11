@@ -1,4 +1,4 @@
-// OBNS 1.31N: deko3d, the Switch's renderer (OBNS/SWITCH.md, step 3) - its first part: the device, the queue, the
+// OBNS 1.32: deko3d, the Switch's renderer (OBNS/SWITCH.md, step 3) - its first part: the device, the queue, the
 // swapchain on the console's window, and frames made of rectangles (scissored clears, no shaders yet), enough for the
 // loading screen's progress bar while the route loads. The world, the cab, the HUD and the menu follow, through the
 // same device. Copyright (c) The OpenBVE Android port contributors. BSD-2-Clause, as OBNS.

@@ -92,7 +92,7 @@ namespace OpenBve.Android
 
 		private double BackgroundDistance => route.CurrentBackground.BackgroundImageDistance;
 
-		/// <summary>Whether the view is the exterior one (OBNS 1.31N: the Switch's drive benchmark keeps it there).</summary>
+		/// <summary>Whether the view is the exterior one (OBNS 1.32: the Switch's drive benchmark keeps it there).</summary>
 		public bool IsExterior => Camera.CurrentMode == CameraViewMode.Exterior;
 
 		/// <summary>A short name for the current view, for the overlay.</summary>

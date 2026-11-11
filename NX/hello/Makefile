@@ -1,4 +1,4 @@
-# OBNS 1.31N: a C# hello compiled ahead of time by Mono for libnx. From mono-nx's native/aot/Makefile (MIT,
+# OBNS 1.32: a C# hello compiled ahead of time by Mono for libnx. From mono-nx's native/aot/Makefile (MIT,
 # Copyright (c) exelix11), in Release; nxshared/ is a copy of mono-nx's native/shared start-up code, made by build.sh.
 #---------------------------------------------------------------------------------
 .SUFFIXES:
@@ -50,7 +50,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET		:=	OBNS-hello
 APP_TITLE	:=	OBNS hello
 APP_AUTHOR	:=	The OpenBVE Android port contributors
-APP_VERSION	:=	1.31N
+APP_VERSION	:=	1.32
 BUILD		:=	build
 SOURCES		:=	source \
 				nxshared \

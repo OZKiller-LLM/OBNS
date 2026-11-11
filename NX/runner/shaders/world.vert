@@ -1,4 +1,4 @@
-// OBNS 1.31N: the world and the cab on deko3d (DekoGL's world records, NX/OpenBve.NX/Deko/DekoGL.World.cs): Android's
+// OBNS 1.32: the world and the cab on deko3d (DekoGL's world records, NX/OpenBve.NX/Deko/DekoGL.World.cs): Android's
 // native Vulkan default.vert (upstream's lighting and matrix-chain animation, line for line), its uniforms split by how
 // often they change - the frame's (projection, lights, fog), the object's (its matrices), the draw's (its material,
 // pushed with the draw) - so a face costs no more than its own few values. Compiled by uam at build time.

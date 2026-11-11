@@ -243,7 +243,7 @@ namespace OpenBveApi.Objects
 		}
 
 		/// <summary>
-		/// ANDROID PORT (OBNS 1.31N): the camera's pose for a cab overlay object, read without <c>dynamic</c>. Upstream
+		/// ANDROID PORT (OBNS 1.32): the camera's pose for a cab overlay object, read without <c>dynamic</c>. Upstream
 		/// takes the camera as <c>dynamic</c> (OpenBveApi can't name LibRender2's CameraProperties), so every update of
 		/// every animated object - its <c>Camera != null</c> too - went through a dynamic call site. With a JIT that is a
 		/// compiled delegate; under the Switch's full AOT it is the expression interpreter and reflection, milliseconds

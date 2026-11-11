@@ -1,4 +1,4 @@
-# Nintendo Switch 1 homebrew (OBNS 1.31N): research ahead of the work
+# Nintendo Switch 1 homebrew (OBNS 1.32): research ahead of the work
 
 Written 2026-11-04, before any code. The goal set by the user: TML's exterior view at a **stable 30 fps** on a Switch 1 (4 GB), as a
 floor: more is fine, below it preferably never, so every frame within 33.3 ms (the worst frames and the garbage collector's pauses
@@ -88,7 +88,7 @@ No .NET runtime is official for homebrew. Two community routes, both on Mono:
 
 So: **Mono full AOT**, with the interpreter as the fallback for code not known at build time, as Xamarin does on iOS. The Android
 port is already the right shape for it: .NET for Android is Mono, ARM64, AOT-compiled (`RunAOTCompilation`), with OpenTK, OpenAL and most
-of System.Drawing replaced (`Android/OpenBve.GLES`, `OpenBve.OpenAL`, `OpenBve.Compat`, the `*.Android` projects). 1.31N starts from
+of System.Drawing replaced (`Android/OpenBve.GLES`, `OpenBve.OpenAL`, `OpenBve.Compat`, the `*.Android` projects). 1.32 starts from
 those projects, not from the desktop build; their GLES and Vulkan renderers stay on Android.
 
 What follows from it:

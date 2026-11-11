@@ -1,5 +1,5 @@
 #!/bin/bash
-# OBNS 1.31N: builds NX/hello on Linux (WSL's Ubuntu), from mono-nx's native/aot/build_aot.sh (MIT) in Release:
+# OBNS 1.32: builds NX/hello on Linux (WSL's Ubuntu), from mono-nx's native/aot/build_aot.sh (MIT) in Release:
 # the C# built, trimmed by ILLink against the libnx framework, each assembly compiled by Mono's AOT cross-compiler
 # into a static object, then linked by devkitA64 into OBNS-hello.nro.
 #

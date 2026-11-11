@@ -1,4 +1,4 @@
-// OBNS 1.31N: the native half of the Switch's System.Drawing (NX/OpenBve.Compat.NX/Drawing/Native.cs).
+// OBNS 1.32: the native half of the Switch's System.Drawing (NX/OpenBve.Compat.NX/Drawing/Native.cs).
 // Copyright (c) The OpenBVE Android port contributors. BSD-2-Clause, as OBNS.
 //
 // Images: PNG through libpng's simplified API, JPEG through libjpeg-turbo, GIF (first frame) by the small LZW decoder

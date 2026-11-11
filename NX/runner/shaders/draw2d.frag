@@ -1,4 +1,4 @@
-// OBNS 1.31N: deko3d's 2D drawing - rounded rectangles and outlines from a distance function (smoothed over a pixel),
+// OBNS 1.32: deko3d's 2D drawing - rounded rectangles and outlines from a distance function (smoothed over a pixel),
 // text from the glyph atlas (its red channel as coverage), images from their own texture.
 #version 460
 

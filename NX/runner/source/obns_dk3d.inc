@@ -1,4 +1,4 @@
-// OBNS 1.31N: deko3d's 3D drawing for the renderer (NX/OpenBve.NX/Deko/DekoGL, the GL calls of upstream's renderer on
+// OBNS 1.32: deko3d's 3D drawing for the renderer (NX/OpenBve.NX/Deko/DekoGL, the GL calls of upstream's renderer on
 // deko3d, as Android's VulkanGL does them on Vulkan). Included by obns_dk.c: it shares the device, the queue and the
 // swapchain. Copyright (c) The OpenBVE Android port contributors. BSD-2-Clause, as OBNS.
 //

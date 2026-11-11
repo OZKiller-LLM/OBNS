@@ -1,4 +1,4 @@
-// OBNS 1.31N: the first C# on the Switch, compiled ahead of time by Mono for libnx.
+// OBNS 1.32: the first C# on the Switch, compiled ahead of time by Mono for libnx.
 // Copyright (c) The OpenBVE Android port contributors.
 //
 // Measures what the plan needs: C#'s speed against the probe's C loop (0.392 s at 1,020 MHz, 0.224 s at 1,785), the
@@ -154,7 +154,7 @@ static class Program
             return 0;
         }
 
-        Console.WriteLine("OBNS hello (1.31N): C# compiled ahead of time by Mono for libnx");
+        Console.WriteLine("OBNS hello (1.32): C# compiled ahead of time by Mono for libnx");
         Console.WriteLine($"Runtime: {RuntimeInformation.FrameworkDescription}, {RuntimeInformation.OSDescription}, " +
             $"{RuntimeInformation.ProcessArchitecture}; {Environment.ProcessorCount} processors; " +
             $"server GC {GCSettings.IsServerGC}, latency {GCSettings.LatencyMode}");

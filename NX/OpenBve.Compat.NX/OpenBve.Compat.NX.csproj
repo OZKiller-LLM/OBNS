@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    OBNS 1.31N: the Switch's OpenBve.Compat. The same public System.Drawing and System.Windows.Forms surface as the
+    OBNS 1.32: the Switch's OpenBve.Compat. The same public System.Drawing and System.Windows.Forms surface as the
     Android port's (Android/OpenBve.Compat), with Skia, which has no Switch build, replaced: pixels in native memory,
     PNG, JPEG and GIF decoded by libpng, libjpeg-turbo and giflib in the runner (NX/runner), BMP decoded here, shapes
     drawn by a small rasteriser here, text by FreeType in the runner. The Android files without Skia are compiled as

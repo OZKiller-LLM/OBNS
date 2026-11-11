@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    OBNS 1.31N: the Switch's entry program. It drives the Android port's game project (built for the Switch through
+    OBNS 1.32: the Switch's entry program. It drives the Android port's game project (built for the Switch through
     NX/Switch.targets) as Android's GameView does. Built with NX/build-switch.ps1 (a compile check on Windows) or
     NX/build-nro.sh (on Linux: trimmed, compiled ahead of time with LLVM, linked with NX/runner into the NRO).
   -->

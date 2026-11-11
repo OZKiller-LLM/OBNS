@@ -1,7 +1,7 @@
 <Project>
 
   <!--
-    OBNS 1.31N: builds the Android port's projects for the Switch without changing them. Imported into every project
+    OBNS 1.32: builds the Android port's projects for the Switch without changing them. Imported into every project
     of a build through CustomAfterMicrosoftCommonTargets, with AndroidTfm set to the Switch runtime's framework:
 
       dotnet build <project> -p:AndroidTfm=net9.0 -p:ObnsX86Tfm=net9.0 -p:CustomAfterMicrosoftCommonTargets=<this file>

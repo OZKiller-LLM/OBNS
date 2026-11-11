@@ -1,4 +1,4 @@
-// OBNS 1.31N: deko3d's 2D drawing, included by obns_dk.c (it shares the device, the queue and the swapchain).
+// OBNS 1.32: deko3d's 2D drawing, included by obns_dk.c (it shares the device, the queue and the swapchain).
 // Copyright (c) The OpenBVE Android port contributors. BSD-2-Clause, as OBNS.
 //
 // The menu, the loading screen and later the HUD (OBNS/SWITCH.md, steps 3 and 6). In the menu's units, 1280x720 from
