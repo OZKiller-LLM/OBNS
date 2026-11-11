@@ -428,6 +428,85 @@ namespace LibRender2.Textures
 		/// </summary>
 		public static bool ObnsAsyncDecoding;
 
+		/// <summary>OBNS: Potato mode's filtering: "bilinear mipmapped" bilinear within the nearest mipmap.</summary>
+		public static bool ObnsBilinearFiltering;
+
+		/// <summary>Whether this OpenGL has S3TC (BC1-BC3) textures: null until asked, on the render thread.</summary>
+		private static bool? obnsS3tc;
+
+		/// <summary>
+		/// OBNS: the bound texture made from Potato mode's compressed image and its mipmaps (ObnsBlockCompression), where
+		/// that is on and OpenGL has S3TC; false where the texture is to be uploaded as upstream does.
+		/// </summary>
+		private static bool ObnsUploadCompressed(Texture texture, TextureTransparencyType transparency)
+		{
+			if (!ObnsBlockCompression.Enabled)
+			{
+				return false;
+			}
+
+			if (obnsS3tc == null)
+			{
+				obnsS3tc = ObnsHasExtension("GL_EXT_texture_compression_s3tc");
+			}
+
+			if (obnsS3tc != true)
+			{
+				return false;
+			}
+
+			ObnsBlockCompression.Image image = ObnsBlockCompression.Get(texture, transparency);
+			if (image == null)
+			{
+				return false;
+			}
+
+			InternalFormat format = image.Bc3 ? InternalFormat.CompressedRgbaS3tcDxt5Ext : InternalFormat.CompressedRgbS3tcDxt1Ext;
+			int w = image.Width, h = image.Height;
+			GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
+			for (int level = 0; level < image.Levels.Length; level++)
+			{
+				System.Runtime.InteropServices.GCHandle pin = System.Runtime.InteropServices.GCHandle.Alloc(image.Levels[level], System.Runtime.InteropServices.GCHandleType.Pinned);
+				try
+				{
+					GL.CompressedTexImage2D(TextureTarget.Texture2D, level, format, w, h, 0, image.Levels[level].Length, pin.AddrOfPinnedObject());
+				}
+				finally
+				{
+					pin.Free();
+				}
+
+				w = Math.Max(1, w / 2);
+				h = Math.Max(1, h / 2);
+			}
+
+			GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, image.Levels.Length - 1);
+			return true;
+		}
+
+		/// <summary>Whether the current OpenGL context has an extension (core profiles list them one at a time).</summary>
+		private static bool ObnsHasExtension(string name)
+		{
+			try
+			{
+				int count = GL.GetInteger(GetPName.NumExtensions);
+				for (int i = 0; i < count; i++)
+				{
+					if (GL.GetString(StringNameIndexed.Extensions, i) == name)
+					{
+						return true;
+					}
+				}
+
+				string all = GL.GetString(StringName.Extensions);
+				return all != null && all.Contains(name);
+			}
+			catch
+			{
+				return false;
+			}
+		}
+
 		/// <summary>A worker's decode, and the frame its texture was last asked for.</summary>
 		private sealed class ObnsDecode
 		{
@@ -493,7 +572,10 @@ namespace LibRender2.Textures
 							thread.Priority = System.Threading.ThreadPriority.BelowNormal;
 							try
 							{
-								return origin.GetTexture(out Texture result) ? result : null;
+								Texture result = origin.GetTexture(out Texture workerDecode) ? workerDecode : null;
+								// OBNS: Potato mode's compressed texture made here too, off the main thread (ObnsBlockCompression).
+								ObnsBlockCompression.Prepare(result);
+								return result;
 							}
 							finally
 							{
@@ -892,7 +974,9 @@ namespace LibRender2.Textures
 							GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (float)TextureMagFilter.Nearest);
 							break;
 						case InterpolationMode.BilinearMipmapped:
-							GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (float)TextureMinFilter.NearestMipmapLinear);
+							// OBNS: Potato mode's filtering is bilinear within the nearest mipmap (four texels a sample); upstream's
+							// "bilinear mipmapped" takes the nearest texel of two mipmaps, which looks blocky up close.
+							GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, ObnsBilinearFiltering ? (float)TextureMinFilter.LinearMipmapNearest : (float)TextureMinFilter.NearestMipmapLinear);
 							GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (float)TextureMagFilter.Linear);
 							break;
 						case InterpolationMode.TrilinearMipmapped:
@@ -928,7 +1012,12 @@ namespace LibRender2.Textures
 						GL.TexParameter(TextureTarget.Texture2D, (TextureParameterName)ExtTextureFilterAnisotropic.TextureMaxAnisotropyExt, AnisotropicFilteringLevel);
 					}
 					
-					if (handle.Transparency == TextureTransparencyType.Opaque)
+					// OBNS: Potato mode's compressed texture and its mipmaps (ObnsBlockCompression), else as upstream.
+					bool obnsCompressed = !texture.MultipleFrames && ObnsUploadCompressed(texture, handle.Transparency);
+					if (obnsCompressed)
+					{
+					}
+					else if (handle.Transparency == TextureTransparencyType.Opaque)
 					{
 						switch (texture.PixelFormat)
 						{
@@ -1109,7 +1198,10 @@ namespace LibRender2.Textures
 						}
 						
 					}
-					GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+					if (!obnsCompressed)
+					{
+						GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+					}
                     handle.OpenGlTextures[(int)wrap].Valid = true;
 					// OBNS: an animated texture's first frame, for the Vulkan world layer.
 					if (texture.MultipleFrames)

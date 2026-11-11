@@ -104,6 +104,11 @@ namespace OpenBve
 
 			// Potato mode's world shader for OpenGL (no shadows; lighting and fog per vertex), chosen as the renderer starts.
 			LibRender2.BaseRenderer.ObnsPotatoShader = potato;
+			// OpenGL's textures compressed (BC1 opaque, BC3 with alpha), each encoded once and kept in the settings folder's
+			// cache; "bilinear mipmapped" bilinear within the nearest mipmap.
+			LibRender2.Textures.ObnsBlockCompression.Enabled = potato;
+			LibRender2.Textures.ObnsBlockCompression.CacheFolder = OpenBveApi.Path.CombineDirectory(Program.FileSystem.SettingsFolder, "PotatoTextures");
+			LibRender2.Textures.TextureManager.ObnsBilinearFiltering = potato;
 
 			// Textures at most 1024 px, as they are decoded (Host.LoadTexture): one place for every renderer.
 			TextureSizeLimit.MaxSize = potato ? TextureLimit : 0;
@@ -117,7 +122,7 @@ namespace OpenBve
 
 			string hints = potato ? PowerHints() : null;
 			Program.FileSystem.AppendToLogFile(potato
-				? "OBNS Potato mode: " + Interface.CurrentOptions.TransparencyMode + " transparency, textures at most " + TextureLimit + " px, unused textures unloaded, colour-keyed faces in one pass, far cars and trains updated less often, no anti-aliasing, " + Interface.CurrentOptions.Interpolation + " filtering, no motion blur, no shadows, OpenGL's simpler world shader, the OpenGL scene at most 1280x800's pixels" + (ObnsOptions.PotatoSceneScale > 0 ? " (obns.cfg: " + ObnsOptions.PotatoSceneScale + "%)" : string.Empty) + "; " + hints
+				? "OBNS Potato mode: " + Interface.CurrentOptions.TransparencyMode + " transparency, textures at most " + TextureLimit + " px, unused textures unloaded, colour-keyed faces in one pass, far cars and trains updated less often, no anti-aliasing, " + Interface.CurrentOptions.Interpolation + " filtering, no motion blur, no shadows, OpenGL's simpler world shader and compressed textures (BC1/BC3, cached), the OpenGL scene at most 1280x800's pixels" + (ObnsOptions.PotatoSceneScale > 0 ? " (obns.cfg: " + ObnsOptions.PotatoSceneScale + "%)" : string.Empty) + "; " + hints
 				: "OBNS Potato mode: off");
 		}
 
@@ -204,6 +209,15 @@ namespace OpenBve
 
 		/// <summary>The motion blur to save in options.cfg: the options' own while Potato mode uses none.</summary>
 		internal static MotionBlurMode MotionBlurToSave(MotionBlurMode current) => optionsMotionBlur ?? current;
+
+		/// <summary>For the log once a game has loaded: how many of OpenGL's textures were compressed, and from where.</summary>
+		internal static void LogLoaded()
+		{
+			if (Active && LibRender2.Textures.ObnsBlockCompression.Enabled)
+			{
+				Program.FileSystem.AppendToLogFile("OBNS Potato mode: compressed textures while loading: " + LibRender2.Textures.ObnsBlockCompression.TakeCounts());
+			}
+		}
 
 		/// <summary>Whether unused textures are unloaded: upstream's option, or Potato mode.</summary>
 		internal static bool UnloadUnusedTextures => Active || Interface.CurrentOptions.UnloadUnusedTextures;

@@ -320,6 +320,15 @@ says whether it is on. `OBNS_POTATO=1` or `0` overrides the option for tests.
   upstream's. `BaseRenderer.ObnsPotatoShader` picks it as the renderer starts. Shadows are off for the game (their pass
   draws the scene again into each cascade), the options keeping their own. The TML's exterior at Tuen Mun looks the same
   with it as with upstream's shaders (the game's snapshots side by side).
+- **Compressed textures for OpenGL** (`LibRender2/Textures/BlockCompression.cs`, 2026-11-11): BC1 (4 bits a texel) for
+  opaque textures and BC3 (8 bits) for those with alpha, against 32, with their mipmaps, where OpenGL has
+  `GL_EXT_texture_compression_s3tc` (every desktop GPU OBNS draws on, Broadwell's included). The encoder is the Switch's
+  (`NX/runner/source/obns_bc.c`) in C#; a cut-out is BC3 with its hidden colours spread in from the edges and its
+  mipmaps' alpha kept to 0 or 255. Textures decoded on worker threads while driving are compressed there too. Each is
+  kept in `PotatoTextures` in the settings folder, named by a hash of its decoded pixels, and read back on later loads.
+  "Bilinear mipmapped" is bilinear within the nearest mipmap here (upstream's takes the nearest texel of two mipmaps).
+  TML: 1,487 textures encoded on the first load (166 s against 164 s without), 1,521 read from the cache on the next;
+  1,719 MB less texture memory; 545 MB of cache; the cab and station look as before (snapshots).
 
 | Tuen Ma Line, SP1900, Vulkan, 1920x1080 window without vsync, RTX 2060 SUPER | Off | Potato |
 |---|---|---|
