@@ -317,7 +317,7 @@ namespace OpenBve
 				Builder.AppendLine("nearclipbase = " + NearClipBase.ToString(Culture));
 				Builder.AppendLine("quadLeafSize = " + QuadTreeLeafSize.ToString(Culture));
 				Builder.AppendLine("motionBlur = " + Potato.MotionBlurToSave(MotionBlur));
-				Builder.AppendLine("shadowresolution = " + ShadowResolution);
+				Builder.AppendLine("shadowresolution = " + Potato.ShadowsToSave(ShadowResolution));
 				Builder.AppendLine("shadowdrawdistance = " + ShadowDrawDistance);
 				Builder.AppendLine("shadowcascades = " + (int)ShadowCascades);
 				Builder.AppendLine("shadowstrength = " + ShadowStrength.ToString(Culture));

@@ -30,6 +30,7 @@ using System;
 using System.Runtime.InteropServices;
 using LibRender2.MotionBlurs;
 using OpenBveApi.Graphics;
+using OpenBveApi.Interface;
 
 namespace OpenBve
 {
@@ -55,6 +56,7 @@ namespace OpenBve
 		private static InterpolationMode? optionsInterpolation;
 		private static int? optionsAnisotropy;
 		private static MotionBlurMode? optionsMotionBlur;
+		private static ShadowMapResolution? optionsShadows;
 
 		/// <summary>
 		/// Puts Potato mode in force, or not, for the game about to start. OBNS_POTATO=1 or 0 overrides the option (for tests,
@@ -100,6 +102,9 @@ namespace OpenBve
 				LowerQualityOptions();
 			}
 
+			// Potato mode's world shader for OpenGL (no shadows; lighting and fog per vertex), chosen as the renderer starts.
+			LibRender2.BaseRenderer.ObnsPotatoShader = potato;
+
 			// Textures at most 1024 px, as they are decoded (Host.LoadTexture): one place for every renderer.
 			TextureSizeLimit.MaxSize = potato ? TextureLimit : 0;
 			// Cut-outs kept cut-outs as they are reduced (OpenBveApi's rule, at most 3% edge pixels): else they are classed
@@ -112,7 +117,7 @@ namespace OpenBve
 
 			string hints = potato ? PowerHints() : null;
 			Program.FileSystem.AppendToLogFile(potato
-				? "OBNS Potato mode: " + Interface.CurrentOptions.TransparencyMode + " transparency, textures at most " + TextureLimit + " px, unused textures unloaded, colour-keyed faces in one pass, far cars and trains updated less often, no anti-aliasing, " + Interface.CurrentOptions.Interpolation + " filtering, no motion blur, the OpenGL scene at most 1280x800's pixels" + (ObnsOptions.PotatoSceneScale > 0 ? " (obns.cfg: " + ObnsOptions.PotatoSceneScale + "%)" : string.Empty) + "; " + hints
+				? "OBNS Potato mode: " + Interface.CurrentOptions.TransparencyMode + " transparency, textures at most " + TextureLimit + " px, unused textures unloaded, colour-keyed faces in one pass, far cars and trains updated less often, no anti-aliasing, " + Interface.CurrentOptions.Interpolation + " filtering, no motion blur, no shadows, OpenGL's simpler world shader, the OpenGL scene at most 1280x800's pixels" + (ObnsOptions.PotatoSceneScale > 0 ? " (obns.cfg: " + ObnsOptions.PotatoSceneScale + "%)" : string.Empty) + "; " + hints
 				: "OBNS Potato mode: off");
 		}
 
@@ -140,6 +145,13 @@ namespace OpenBve
 			{
 				optionsMotionBlur = o.MotionBlur;
 				o.MotionBlur = MotionBlurMode.None;
+			}
+
+			// No shadows: their pass draws the scene again into each cascade, and Potato mode's world shader has none.
+			if (o.ShadowResolution != ShadowMapResolution.Off)
+			{
+				optionsShadows = o.ShadowResolution;
+				o.ShadowResolution = ShadowMapResolution.Off;
 			}
 		}
 
@@ -170,6 +182,12 @@ namespace OpenBve
 				o.MotionBlur = optionsMotionBlur.Value;
 				optionsMotionBlur = null;
 			}
+
+			if (optionsShadows != null)
+			{
+				o.ShadowResolution = optionsShadows.Value;
+				optionsShadows = null;
+			}
 		}
 
 		/// <summary>The anti-aliasing level to save in options.cfg: the options' own while Potato mode uses none.</summary>
@@ -180,6 +198,9 @@ namespace OpenBve
 
 		/// <summary>The anisotropy level to save in options.cfg: the options' own while Potato mode uses none.</summary>
 		internal static int AnisotropyToSave(int current) => optionsAnisotropy ?? current;
+
+		/// <summary>The shadow resolution to save in options.cfg: the options' own while Potato mode has shadows off.</summary>
+		internal static ShadowMapResolution ShadowsToSave(ShadowMapResolution current) => optionsShadows ?? current;
 
 		/// <summary>The motion blur to save in options.cfg: the options' own while Potato mode uses none.</summary>
 		internal static MotionBlurMode MotionBlurToSave(MotionBlurMode current) => optionsMotionBlur ?? current;

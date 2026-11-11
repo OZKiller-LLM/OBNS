@@ -313,6 +313,13 @@ says whether it is on. `OBNS_POTATO=1` or `0` overrides the option for tests.
   small or smaller is drawn as it is. `potatoscenescale = 25` to `100` in `obns.cfg` sets the percentage instead (100
   turns it off). The log says what size the scene is drawn at. The Vulkan, Direct3D and Metal worlds are drawn at the
   window's resolution still.
+- **No shadows, and a simpler world shader for OpenGL** (`assets/Shaders/potato.vert` and `potato.frag`, 2026-11-11):
+  upstream's `default` shaders less the shadow map's coordinates and sampling, with the normal turned by the model-view
+  matrix itself (upstream works out its inverse transpose twice a vertex) and the fog factor worked out a vertex, not a
+  pixel: 11 floats interpolated a pixel rather than 33. Lighting stays per vertex, as upstream's; the alpha tests are
+  upstream's. `BaseRenderer.ObnsPotatoShader` picks it as the renderer starts. Shadows are off for the game (their pass
+  draws the scene again into each cascade), the options keeping their own. The TML's exterior at Tuen Mun looks the same
+  with it as with upstream's shaders (the game's snapshots side by side).
 
 | Tuen Ma Line, SP1900, Vulkan, 1920x1080 window without vsync, RTX 2060 SUPER | Off | Potato |
 |---|---|---|

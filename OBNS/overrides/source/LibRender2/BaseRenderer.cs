@@ -386,6 +386,15 @@ namespace LibRender2
 		}
 
 
+		/// <summary>
+		/// OBNS: whether the world is drawn with Potato mode's shader (potato.vert and potato.frag), set by the program's Potato
+		/// mode before the renderer starts. Its shadows are off, as that shader has none.
+		/// </summary>
+		public static bool ObnsPotatoShader;
+
+		/// <summary>OBNS: whether DefaultShader is Potato mode's.</summary>
+		private bool obnsShaderIsPotato;
+
 		/// <summary>Call this once to initialise the renderer</summary>
 		/// <remarks>A call to DeInitialize should be made when closing the program to release resources</remarks>
 		[HandleProcessCorruptedStateExceptions] //As some graphics cards crash really nastily if we request unsupported features
@@ -393,9 +402,12 @@ namespace LibRender2
 		{
 			try
 			{
-				if (DefaultShader == null)
+				// OBNS: Potato mode's world shader where it is in force (potato.vert and potato.frag: no shadows, lighting and fog
+				// per vertex), made again when a game wants the other one.
+				if (DefaultShader == null || obnsShaderIsPotato != ObnsPotatoShader)
 				{
-					DefaultShader = new Shader(this, "default", "default", true);
+					DefaultShader = ObnsPotatoShader ? new Shader(this, "potato", "potato", true) : new Shader(this, "default", "default", true);
+					obnsShaderIsPotato = ObnsPotatoShader;
 				}
 				DefaultShader.Activate();
 				DefaultShader.SetMaterialAmbient(Color32.White);
