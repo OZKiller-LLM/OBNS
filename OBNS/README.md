@@ -329,6 +329,12 @@ says whether it is on. `OBNS_POTATO=1` or `0` overrides the option for tests.
   "Bilinear mipmapped" is bilinear within the nearest mipmap here (upstream's takes the nearest texel of two mipmaps).
   TML: 1,487 textures encoded on the first load (166 s against 164 s without), 1,521 read from the cache on the next;
   1,719 MB less texture memory; 545 MB of cache; the cab and station look as before (snapshots).
+- **Fewer GL calls a face** (OBNS's copy of `LibRender2/Shaders/Shader.cs`, 2026-11-11; in and out of Potato mode): the
+  values upstream sets for every face it draws - material flags, shininess, emission, opacity, fog on or off, the alpha
+  test, the texture matrix - are kept, and a set to the value already in place is skipped, as upstream already does for
+  the brightness. Exact: a uniform keeps its value until set again, and only that class sets these. Unlike
+  `GLStateFilter` (off: a managed hop on every call cost more than it saved), the check is a comparison in managed code
+  before any call is made. Mostly for two-core laptops, where the driver's time a call is felt.
 
 | Tuen Ma Line, SP1900, Vulkan, 1920x1080 window without vsync, RTX 2060 SUPER | Off | Potato |
 |---|---|---|
