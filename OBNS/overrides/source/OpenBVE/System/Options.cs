@@ -304,10 +304,10 @@ namespace OpenBve
 				Builder.AppendLine("cameraTransitionSpeed = " + CameraTransitionSpeed.ToString(Culture));
 				Builder.AppendLine();
 				Builder.AppendLine("[quality]");
-				Builder.AppendLine("interpolation = " + Interpolation);
-				Builder.AppendLine("anisotropicFilteringLevel = " + AnisotropicFilteringLevel.ToString(Culture));
+				Builder.AppendLine("interpolation = " + Potato.InterpolationToSave(Interpolation));
+				Builder.AppendLine("anisotropicFilteringLevel = " + Potato.AnisotropyToSave(AnisotropicFilteringLevel).ToString(Culture));
 				Builder.AppendLine("anisotropicFilteringMaximum = " + AnisotropicFilteringMaximum.ToString(Culture));
-				Builder.AppendLine("antiAliasingLevel = " + AntiAliasingLevel.ToString(Culture));
+				Builder.AppendLine("antiAliasingLevel = " + Potato.AntiAliasingToSave(AntiAliasingLevel).ToString(Culture));
 				// OBNS: the options' transparency, not the one Potato mode sets for a game.
 				Builder.AppendLine("transparencyMode = " + ((int)Potato.TransparencyToSave(TransparencyMode)).ToString(Culture));
 				Builder.AppendLine("oldtransparencymode = " + (OldTransparencyMode ? "true" : "false"));
@@ -316,7 +316,7 @@ namespace OpenBve
 				Builder.AppendLine("nearclipcab = " + NearClipCab.ToString(Culture));
 				Builder.AppendLine("nearclipbase = " + NearClipBase.ToString(Culture));
 				Builder.AppendLine("quadLeafSize = " + QuadTreeLeafSize.ToString(Culture));
-				Builder.AppendLine("motionBlur = " + MotionBlur);
+				Builder.AppendLine("motionBlur = " + Potato.MotionBlurToSave(MotionBlur));
 				Builder.AppendLine("shadowresolution = " + ShadowResolution);
 				Builder.AppendLine("shadowdrawdistance = " + ShadowDrawDistance);
 				Builder.AppendLine("shadowcascades = " + (int)ShadowCascades);

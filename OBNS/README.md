@@ -302,6 +302,17 @@ says whether it is on. `OBNS_POTATO=1` or `0` overrides the option for tests.
   `ProcessPowerThrottling`), and Direct3D 11 and 12 drawing alone take the adapter with the most memory of its own (a
   laptop's high-performance GPU; Vulkan takes the discrete GPU there already; OpenGL's is the system's choice). On
   macOS, an `NSProcessInfo` activity, user-initiated and latency-critical. On Linux, nothing.
+- **No anti-aliasing, bilinear filtering, no motion blur** (2026-11-11, for slow integrated GPUs such as a Broadwell
+  MacBook's): multisampling off, trilinear and anisotropic filtering made bilinear between mipmaps, motion blur off. Each
+  costs memory bandwidth, which an iGPU shares with the CPU. As with the transparency, the options keep their own and
+  `options.cfg` saves those.
+- **The OpenGL scene below the window's resolution** (`SceneScale.cs`, 2026-11-11): the world, its particles and the
+  cab are drawn into a smaller target, then stretched over the window with linear filtering; the HUD, text and menus are
+  drawn after it at the window's own resolution, so they stay sharp. The target has at most 1280x800's pixels - half a
+  13-inch Retina MacBook's 2560x1600 in each direction (the user's choice), 70% of a 1920x1080 window - and a window that
+  small or smaller is drawn as it is. `potatoscenescale = 25` to `100` in `obns.cfg` sets the percentage instead (100
+  turns it off). The log says what size the scene is drawn at. The Vulkan, Direct3D and Metal worlds are drawn at the
+  window's resolution still.
 
 | Tuen Ma Line, SP1900, Vulkan, 1920x1080 window without vsync, RTX 2060 SUPER | Off | Potato |
 |---|---|---|

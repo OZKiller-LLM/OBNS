@@ -61,6 +61,7 @@ namespace OpenBve
 		private static bool openGLHudFallback;
 		private static bool lastHybrid;
 		private static bool potatoMode;
+		private static int potatoSceneScale;
 
 		/// <summary>
 		/// Potato mode (the user's choice, 2026-11-09; off by default): Android's Potato mode on the desktop, less its 16-bit
@@ -79,6 +80,20 @@ namespace OpenBve
 			{
 				Load();
 				potatoMode = value;
+			}
+		}
+
+		/// <summary>
+		/// Potato mode's scale for the OpenGL scene, a percentage of the window's width and height (25 to 100; obns.cfg's
+		/// potatoscenescale, no menu entry), or 0 for its own: at most 1280x800's pixels, half a Retina MacBook's screen
+		/// (SceneScale.cs). 100 draws the scene at the window's resolution.
+		/// </summary>
+		internal static int PotatoSceneScale
+		{
+			get
+			{
+				Load();
+				return potatoSceneScale;
 			}
 		}
 
@@ -289,6 +304,11 @@ namespace OpenBve
 					{
 						potatoMode = value == "true";
 					}
+					else if (key == "potatoscenescale")
+					{
+						int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out potatoSceneScale);
+						potatoSceneScale = potatoSceneScale <= 0 ? 0 : Math.Max(25, Math.Min(100, potatoSceneScale));
+					}
 				}
 
 				// Files from before "chosen": only Vulkan was the default, but for macOS's menu, which saved OpenGL unasked.
@@ -326,6 +346,11 @@ namespace OpenBve
 				if (potatoMode)
 				{
 					builder.AppendLine("potatomode = true");
+				}
+
+				if (potatoSceneScale > 0)
+				{
+					builder.AppendLine("potatoscenescale = " + potatoSceneScale.ToString(System.Globalization.CultureInfo.InvariantCulture));
 				}
 
 				if (lastDrawn != null)

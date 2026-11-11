@@ -71,6 +71,8 @@ namespace OpenBve.Graphics
 			Screen.Width = width;
 			Screen.Height = height;
 			GL.Viewport(0, 0, Screen.Width, Screen.Height);
+			// OBNS: the scene's smaller target keeps its own viewport (Potato mode, SceneScale.cs).
+			SceneScale.Viewport();
 
 			Screen.AspectRatio = Screen.Width / (double)Screen.Height;
 			Camera.HorizontalViewingAngle = 2.0 * Math.Atan(Math.Tan(0.5 * Camera.VerticalViewingAngle) * Screen.AspectRatio);
@@ -177,6 +179,10 @@ namespace OpenBve.Graphics
 				batcher.Filter(opaqueFaces, unsortedAlphaFaces, alphaFaces);
 				Shadows.RenderPass(opaqueFaces, unsortedAlphaFaces, batcher.VisitFaces);
 			}
+
+			// OBNS: Potato mode's scene, world and cab, drawn into a smaller target and stretched over the window before the HUD
+			// (SceneScale.cs). After the shadow pass, which draws into its own target and then gives the window back.
+			bool sceneScaled = !vulkanWorld && CurrentInterface != InterfaceType.GLMainMenu && SceneScale.Begin(Screen.Width, Screen.Height);
 
             if (Lighting.ShouldInitialize)
 			{
@@ -609,6 +615,12 @@ namespace OpenBve.Graphics
 					face.Draw();
 				}
 			}
+			// OBNS: the scaled scene over the window; the touch buffer and the HUD are the window's size.
+			if (sceneScaled)
+			{
+				SceneScale.End();
+			}
+
 			SceneLaps.Lap(5);
 			// render touch
 			OptionLighting = false;

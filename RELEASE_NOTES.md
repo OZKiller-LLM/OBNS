@@ -37,6 +37,10 @@ for a release of its own. The ARM64 build has them all.
   and the debug overlay says whether it's on. Cut-out textures stay cut-outs when reduced, so seats and handles don't
   show through each other. TML on an RTX 2060 SUPER: 127 to 157 fps standing in the cab, the worst frame of a drive 46 to
   32 ms. Transparency set with `OBNS_TRANSPARENCY=quality` or `performance` still wins, and the options keep their own.
+  For slow integrated GPUs (a Broadwell MacBook's), Potato mode also turns off anti-aliasing and motion blur, filters
+  textures bilinearly, and with OpenGL draws the 3D scene at no more than 1280x800's pixels - half a Retina MacBook's
+  screen - stretched over the window, with the HUD and text kept at full resolution (`potatoscenescale` in `obns.cfg`
+  sets another percentage). Your own anti-aliasing, filtering and motion blur settings stay saved.
 - **Unused textures unloaded with Vulkan, Direct3D or Metal drawing** (the option, or Potato mode): a texture those drew
   was taken for unused 20 s after OpenGL last saw it, and loaded again. And Vulkan gives a block of texture memory back
   when it's left empty: on a 16 GB ARM64 laptop TML's textures grew to 17 blocks, 4.1 GB, and the driver ran out of memory.

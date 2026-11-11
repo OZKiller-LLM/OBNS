@@ -28,6 +28,7 @@
 
 using System;
 using System.Runtime.InteropServices;
+using LibRender2.MotionBlurs;
 using OpenBveApi.Graphics;
 
 namespace OpenBve
@@ -43,6 +44,17 @@ namespace OpenBve
 		/// <summary>The transparency mode the options hold, where this game uses another (saved in its place: Options.Save).</summary>
 		private static TransparencyMode? optionsTransparency;
 		private static TransparencyMode usedTransparency;
+
+		/// <summary>
+		/// The options' anti-aliasing, texture filtering and motion blur, where Potato mode uses its own for this game (saved in
+		/// their place: Options.Save). On a slow GPU each costs memory bandwidth for little to see (the user, 2026-11-11, for a
+		/// Broadwell MacBook): multisampling multiplies the frame's colour and depth traffic, trilinear and anisotropic
+		/// filtering read more texels a pixel, and motion blur copies the whole frame back each frame.
+		/// </summary>
+		private static int? optionsAntiAliasing;
+		private static InterpolationMode? optionsInterpolation;
+		private static int? optionsAnisotropy;
+		private static MotionBlurMode? optionsMotionBlur;
 
 		/// <summary>
 		/// Puts Potato mode in force, or not, for the game about to start. OBNS_POTATO=1 or 0 overrides the option (for tests,
@@ -62,6 +74,10 @@ namespace OpenBve
 				optionsTransparency = null;
 			}
 
+			// The options' anti-aliasing, filtering and motion blur back, likewise.
+			RestoreQualityOptions();
+			Graphics.SceneScale.Reset();
+
 			string potatoSwitch = Environment.GetEnvironmentVariable("OBNS_POTATO");
 			bool potato = potatoSwitch == "1" ? true : potatoSwitch == "0" ? false : ObnsOptions.PotatoMode;
 			Active = potato;
@@ -78,6 +94,12 @@ namespace OpenBve
 				Interface.CurrentOptions.TransparencyMode = transparency.Value;
 			}
 
+			// No multisampling, bilinear mipmapped filtering and no motion blur (the window is made after this, Screen.Initialize).
+			if (potato)
+			{
+				LowerQualityOptions();
+			}
+
 			// Textures at most 1024 px, as they are decoded (Host.LoadTexture): one place for every renderer.
 			TextureSizeLimit.MaxSize = potato ? TextureLimit : 0;
 			// Cut-outs kept cut-outs as they are reduced (OpenBveApi's rule, at most 3% edge pixels): else they are classed
@@ -90,9 +112,77 @@ namespace OpenBve
 
 			string hints = potato ? PowerHints() : null;
 			Program.FileSystem.AppendToLogFile(potato
-				? "OBNS Potato mode: " + Interface.CurrentOptions.TransparencyMode + " transparency, textures at most " + TextureLimit + " px, unused textures unloaded, colour-keyed faces in one pass, far cars and trains updated less often; " + hints
+				? "OBNS Potato mode: " + Interface.CurrentOptions.TransparencyMode + " transparency, textures at most " + TextureLimit + " px, unused textures unloaded, colour-keyed faces in one pass, far cars and trains updated less often, no anti-aliasing, " + Interface.CurrentOptions.Interpolation + " filtering, no motion blur, the OpenGL scene at most 1280x800's pixels" + (ObnsOptions.PotatoSceneScale > 0 ? " (obns.cfg: " + ObnsOptions.PotatoSceneScale + "%)" : string.Empty) + "; " + hints
 				: "OBNS Potato mode: off");
 		}
+
+		/// <summary>Potato mode's anti-aliasing, filtering and motion blur for this game, the options' own kept to be saved.</summary>
+		private static void LowerQualityOptions()
+		{
+			Interface.Options o = Interface.CurrentOptions;
+			if (o.AntiAliasingLevel != 0)
+			{
+				optionsAntiAliasing = o.AntiAliasingLevel;
+				o.AntiAliasingLevel = 0;
+			}
+
+			// Trilinear and anisotropic filtering become bilinear between mipmaps; the plainer modes the options may hold stay.
+			if (o.Interpolation == InterpolationMode.TrilinearMipmapped || o.Interpolation == InterpolationMode.AnisotropicFiltering)
+			{
+				optionsInterpolation = o.Interpolation;
+				// The renderer clears the anisotropy level when the filtering isn't anisotropic (BaseRenderer.Initialize).
+				optionsAnisotropy = o.AnisotropicFilteringLevel;
+				o.Interpolation = InterpolationMode.BilinearMipmapped;
+				o.AnisotropicFilteringLevel = 0;
+			}
+
+			if (o.MotionBlur != MotionBlurMode.None)
+			{
+				optionsMotionBlur = o.MotionBlur;
+				o.MotionBlur = MotionBlurMode.None;
+			}
+		}
+
+		/// <summary>The options' own anti-aliasing, filtering and motion blur back (a game before this one used Potato mode's).</summary>
+		private static void RestoreQualityOptions()
+		{
+			Interface.Options o = Interface.CurrentOptions;
+			if (optionsAntiAliasing != null)
+			{
+				o.AntiAliasingLevel = optionsAntiAliasing.Value;
+				optionsAntiAliasing = null;
+			}
+
+			if (optionsInterpolation != null)
+			{
+				o.Interpolation = optionsInterpolation.Value;
+				optionsInterpolation = null;
+			}
+
+			if (optionsAnisotropy != null)
+			{
+				o.AnisotropicFilteringLevel = optionsAnisotropy.Value;
+				optionsAnisotropy = null;
+			}
+
+			if (optionsMotionBlur != null)
+			{
+				o.MotionBlur = optionsMotionBlur.Value;
+				optionsMotionBlur = null;
+			}
+		}
+
+		/// <summary>The anti-aliasing level to save in options.cfg: the options' own while Potato mode uses none.</summary>
+		internal static int AntiAliasingToSave(int current) => optionsAntiAliasing ?? current;
+
+		/// <summary>The filtering to save in options.cfg: the options' own while Potato mode uses bilinear.</summary>
+		internal static InterpolationMode InterpolationToSave(InterpolationMode current) => optionsInterpolation ?? current;
+
+		/// <summary>The anisotropy level to save in options.cfg: the options' own while Potato mode uses none.</summary>
+		internal static int AnisotropyToSave(int current) => optionsAnisotropy ?? current;
+
+		/// <summary>The motion blur to save in options.cfg: the options' own while Potato mode uses none.</summary>
+		internal static MotionBlurMode MotionBlurToSave(MotionBlurMode current) => optionsMotionBlur ?? current;
 
 		/// <summary>Whether unused textures are unloaded: upstream's option, or Potato mode.</summary>
 		internal static bool UnloadUnusedTextures => Active || Interface.CurrentOptions.UnloadUnusedTextures;
