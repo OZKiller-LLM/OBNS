@@ -172,7 +172,7 @@ namespace OpenBve.NX.Deko
 				{
 					array = lastDrawArray;
 				}
-				else if (vertexArrays.TryGetValue(vertexArrayName, out array))
+				else if ((array = ArrayNamed(vertexArrayName)) != null)
 				{
 					lastDrawArrayName = vertexArrayName;
 					lastDrawArray = array;
@@ -205,7 +205,7 @@ namespace OpenBve.NX.Deko
 					{
 						texture = lastDrawTexture;
 					}
-					else if (textures.TryGetValue(textureName, out texture))
+					else if ((texture = TextureNamed(textureName)) != null)
 					{
 						lastDrawTextureName = textureName;
 						lastDrawTexture = texture;

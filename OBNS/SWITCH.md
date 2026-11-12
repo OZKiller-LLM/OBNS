@@ -267,6 +267,27 @@ and textures written straight into deko3d's memory by Switch versions of LibRend
 and particles as world records, upstream's overlays replaced by the Switch's own interface, GL's calls stubbed, DekoGL removed.
 Until the world draws right on the console, DekoGL's GL side stays as the proven way meshes and textures reach deko3d.
 
+**#11, the GL-free renderer, in stages** (the user, 2026-11-12: started again, after the 2026-11-07 list's other items).
+What still passes through GL in a frame was about 0.2 ms in the last console logs (setup, background, overlays), and the
+faces' look-ups of their mesh and texture by GL name are part of the 11 ms of face recording; so the gain is about a
+millisecond a frame, plus a simpler path for shadows. Each stage leaves the Switch build working:
+
+1. **Meshes:** NX's own `VertexArrayObject`, `VertexBufferObject` and `IndexBufferObject` (Switch.targets swaps upstream's
+   in LibRender2.Android) write vertices and indices straight into deko3d's memory and keep the GPU addresses and the
+   vertex layout on the object; a face takes them from its mesh, with no look-up by name.
+2. **Textures:** the upload in TextureManager (and CompressedTextures' BC images) makes the deko3d image and its slot
+   directly, the slot kept with the texture.
+3. **Uniforms:** the default shader's values (the frame block, the face's material) set on a Switch shader object, not
+   through GL uniform locations.
+4. **The rest:** the background and particles as world records; whatever of upstream's overlays the Switch still draws,
+   by its own 2D layer.
+5. **No GL:** GL.Device a stub that logs any call once; DekoGL's GL side removed.
+
+Done 2026-11-12, built (managed and NRO), not yet run on the console: stage 1 (NX/LibRender2, `Deko/DekoGL.Meshes.cs`; the
+vertex and index copies let go once uploaded, so VertexCopyReleaser's 0.6 ms a frame is off; `UserData/nx-gl-meshes.txt` keeps
+the old way), and stage 2's part that counts per frame: textures found by name through an array, not a dictionary. The
+upload itself still goes through DekoGL's GL calls (once per texture, at load or when streamed).
+
 **Step 4, begun** (the user, 2026-11-06: "the frame rates are still very low"; the first runs gave 2 to 5 fps on TML at
 10,900 draws a frame, the GPU held at 76 MHz by the loading clock - 128 ms a frame waiting for it - and about 160 ms of CPU in
 RenderScene). Done since, not yet on the console:

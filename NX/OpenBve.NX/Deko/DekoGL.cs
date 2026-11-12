@@ -170,7 +170,7 @@ namespace OpenBve.NX.Deko
 		/// <summary>Memory and counts, for the log.</summary>
 		public string Describe() =>
 			LastFrameDraws + " draws, " + LastFrameFaces + " of them faces as world records (" + LastFrameMilliseconds.ToString("0.0") + " ms preparing them, " + LastRecordMilliseconds.ToString("0.0") + " ms of it recording, " + LastRealizeMilliseconds.ToString("0.0") + " ms textures made), " + textures.Count + " textures (" + (imageHeap.UsedBytes >> 20) + " MB, " +
-			(imageHeap.ReservedBytes >> 20) + " MB reserved), " + glBuffers.Count + " buffers (" + (bufferHeap.UsedBytes >> 20) + " MB, " + (bufferHeap.ReservedBytes >> 20) + " MB reserved)";
+			(imageHeap.ReservedBytes >> 20) + " MB reserved), " + glBuffers.Count + " GL buffers and " + NativeArrayCount + " meshes of its own (" + (bufferHeap.UsedBytes >> 20) + " MB, " + (bufferHeap.ReservedBytes >> 20) + " MB reserved)";
 
 		// --- frames ---
 
@@ -1126,6 +1126,13 @@ namespace OpenBve.NX.Deko
 		{
 			for (int i = 0; i < n && i < names.Length; i++)
 			{
+				if ((names[i] & NativeArray) != 0)
+				{
+					// One of the Switch's own (NativeMeshes), from the finalizers' queue: its buffers go with it.
+					DeleteArray(names[i]);
+					continue;
+				}
+
 				if (vertexArrays.TryGetValue(names[i], out GLVertexArray array))
 				{
 					vertexArrays.Remove(names[i]);
@@ -1145,6 +1152,12 @@ namespace OpenBve.NX.Deko
 			if (array == 0)
 			{
 				vertexArray = null;
+				return;
+			}
+
+			if ((array & NativeArray) != 0)
+			{
+				vertexArray = ArrayNamed(array);
 				return;
 			}
 
@@ -1276,12 +1289,40 @@ namespace OpenBve.NX.Deko
 		private ulong waitingBytes, stagingPending;
 		private const ulong StagingBudget = 64UL << 20;
 
+		// #11 stage 2 (OBNS/SWITCH.md): the textures by name in an array as well, for the faces (TextureNamed): GL's names count
+		// up from 1, so the array is as long as the highest name, not a dictionary's hashing per face.
+		private GLTexture[] texturesByName = new GLTexture[4096];
+
+		private void IndexTexture(int name, GLTexture texture)
+		{
+			if (name <= 0)
+			{
+				return;
+			}
+
+			if (name >= texturesByName.Length)
+			{
+				if (texture == null)
+				{
+					return;
+				}
+
+				Array.Resize(ref texturesByName, Math.Max(name + 1, texturesByName.Length * 2));
+			}
+
+			texturesByName[name] = texture;
+		}
+
+		/// <summary>A texture by GL name, or null.</summary>
+		private GLTexture TextureNamed(int name) => (uint)name < (uint)texturesByName.Length ? texturesByName[name] : null;
+
 		public void glGenTextures(int n, int[] names)
 		{
 			for (int i = 0; i < n && i < names.Length; i++)
 			{
 				names[i] = nextName++;
 				textures[names[i]] = new GLTexture();
+				IndexTexture(names[i], textures[names[i]]);
 			}
 		}
 
@@ -1295,6 +1336,7 @@ namespace OpenBve.NX.Deko
 				}
 
 				textures.Remove(names[i]);
+				IndexTexture(names[i], null);
 				lastDrawTextureName = 0;
 				lastDrawTexture = null;
 				for (int unit = 0; unit < Units; unit++)
@@ -1354,6 +1396,7 @@ namespace OpenBve.NX.Deko
 			{
 				bound = new GLTexture();
 				textures[texture] = bound;
+				IndexTexture(texture, bound);
 			}
 
 			units[activeUnit] = bound;

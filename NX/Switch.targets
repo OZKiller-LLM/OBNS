@@ -54,6 +54,15 @@
     <InternalsVisibleTo Include="OpenBve.NX" />
   </ItemGroup>
 
+  <!--
+    #11 stage 1 (OBNS/SWITCH.md): the meshes in deko3d's memory without GL calls. NX/LibRender2's copies of upstream's VAO,
+    VBO and IBO (the same public face) hand their data to NativeMeshes.Device, which OpenBve.NX sets to DekoGL.
+  -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'LibRender2.Android'">
+    <Compile Remove="$(UpstreamSource)LibRender2\openGL\VertexArrayObject.cs;$(UpstreamSource)LibRender2\openGL\VertexBufferObject.cs;$(UpstreamSource)LibRender2\openGL\IndexBufferObject.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)LibRender2\*.cs" LinkBase="NX" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'OpenBve.Android'">
     <Compile Remove="AngleSurface.cs;AndroidFileSystem.cs;AndroidSettings.cs;BetaLog.cs;ControlBindings.cs;ControlOverlay.cs;ControlsPage.cs;DriverHud.cs;FileBrowser.cs;GameActivity.cs;GameView.cs;KeyboardInput.cs;LaunchParameters.cs;Menu.cs;MenuActivity.cs;OptionsPage.cs;PackageInstaller.cs;PerformanceHints.cs;PackagesPage.cs;PauseMenu.cs;RouteViews.cs;SceneInput.cs;Speech.cs;StartPage.cs;SwitchMapPanel.cs;TimetablePanel.cs;Ui.cs;VulkanStartup.cs;VulkanSurface.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Game\**\*.cs" LinkBase="NX" />

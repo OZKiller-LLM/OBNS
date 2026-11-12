@@ -733,6 +733,15 @@ namespace OpenBve.NX
 				deko = new Deko.DekoGL(width, height);
 				Log($"deko3d: drawing at {width}x{height}");
 				OpenTK.Graphics.OpenGL.GL.Device = deko;
+				// #11 stage 1 (OBNS/SWITCH.md): meshes straight into deko3d's memory (NX/LibRender2), no GL names and no
+				// vertex copies kept - so nothing for VertexCopyReleaser's 128 states a frame to look through.
+				// UserData/nx-gl-meshes.txt keeps the meshes on DekoGL's GL side, as before, for comparisons.
+				if (!File.Exists(Root + "/UserData/nx-gl-meshes.txt"))
+				{
+					LibRender2.NativeMeshes.Device = deko;
+					VertexCopyReleaser.Enabled = false;
+					Log("deko3d: meshes in deko3d's memory directly (#11 stage 1)");
+				}
 				// Streamed textures kept block-compressed on the SD card (item E); UserData/nx-no-texture-cache.txt keeps it off.
 				if (!File.Exists(Root + "/UserData/nx-no-texture-cache.txt"))
 				{
@@ -943,6 +952,7 @@ namespace OpenBve.NX
 				Frames(renderer, host, sounds, session, deko, driveBenchmark != null ? 7200.0 : double.PositiveInfinity);
 				deko.Dispose();
 				OpenTK.Graphics.OpenGL.GL.Device = null;
+				LibRender2.NativeMeshes.Device = null;
 				DekoCanvas.Close();
 				return 0;
 			}
