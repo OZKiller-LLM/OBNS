@@ -45,7 +45,10 @@ namespace OpenBve.Switch
 		ZL = 1 << 10,
 		ZR = 1 << 11,
 		Plus = 1 << 12,
-		Minus = 1 << 13
+		Minus = 1 << 13,
+		/// <summary>The sticks' clicks: only the Controls page's button capture uses them.</summary>
+		StickL = 1 << 14,
+		StickR = 1 << 15
 	}
 
 	/// <summary>

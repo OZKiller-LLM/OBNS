@@ -70,6 +70,7 @@ namespace OpenBve.Android
 		private const string TextureDepthKey = "texture_depth";
 		private const string CompressedTexturesKey = "compressed_textures";
 		private const string UnloadTexturesKey = "unload_unused_textures";
+		private const string TrainControllerKey = "train_controller";
 		private const string MotionBlurKey = "motion_blur";
 		private const string ShadowResolutionKey = "shadow_resolution";
 		private const string ShadowDistanceKey = "shadow_distance";
@@ -272,6 +273,11 @@ namespace OpenBve.Android
 		/// shown kept, the Tuen Ma Line ran the native heap out after 19 minutes (2026-11-07). An option since 2026-11-09.</summary>
 		public static bool GetUnloadTextures() => GetBool(UnloadTexturesKey, true);
 		public static void SetUnloadTextures(bool value) => PutBool(UnloadTexturesKey, value);
+
+		/// <summary>Whether a Densha de GO! controller on USB (HORI's One Handle, the ZUIKI Mascon and Mascon Pro) drives the
+		/// handles (MasconPad), on by default: looked for when a drive starts.</summary>
+		public static bool GetTrainController() => GetBool(TrainControllerKey, true);
+		public static void SetTrainController(bool value) => PutBool(TrainControllerKey, value);
 
 		public static LibRender2.MotionBlurs.MotionBlurMode GetMotionBlur() => GetEnum(MotionBlurKey, LibRender2.MotionBlurs.MotionBlurMode.None);
 		public static void SetMotionBlur(LibRender2.MotionBlurs.MotionBlurMode mode) => PutString(MotionBlurKey, mode.ToString());

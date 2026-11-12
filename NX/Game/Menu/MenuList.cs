@@ -83,6 +83,13 @@ namespace OpenBve.Switch
 		public bool Update(MenuInput input, IMenuHost host)
 		{
 			FocusFirst();
+			// A binding waiting for its button (Controls) takes every button, the D-pad's too.
+			if (BindingItem.Capturing && Focused is BindingItem)
+			{
+				Focused.Handle(input, host);
+				return true;
+			}
+
 			if (input.Is(MenuButtons.Down))
 			{
 				int next = Next(Focus, 1);

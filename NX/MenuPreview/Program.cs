@@ -53,6 +53,8 @@ namespace OpenBve.NX.MenuPreview
 			string data = args[0], content = args[1], output = args[2];
 			Directory.CreateDirectory(output);
 			SwitchSettings.File = Path.Combine(output, "options-nx.cfg");
+			PadBindings.File = Path.Combine(output, "pad-nx.cfg");
+			OpenBve.Switch.PackagesPage.Folder = Path.Combine(output, "Packages");
 			AndroidHost host = new AndroidHost();
 			// A file system configuration of its own, not the PC's OpenBVE one (%AppData%\OpenBve).
 			string configuration = Path.Combine(output, "filesystem.cfg");
@@ -178,6 +180,82 @@ namespace OpenBve.NX.MenuPreview
 					canvas.Fill(0, 360, 1280, 360, 0xFF4A4E44);
 					DriverCard.Draw(canvas, status);
 					card.Draw(canvas, new TimetableSnapshot(rows, "10:05:22", null), 1.0);
+					canvas.Save(Path.Combine(output, name + ".png"));
+					Console.WriteLine("wrote " + name + ".png");
+					continue;
+				}
+
+				if (parts[0] == "routetabs")
+				{
+					// The route card's Map and Gradient tabs from a sample line: 12 km curving, rising and falling, five stations.
+					string name = parts.Length > 1 ? parts[1] : "routetabs";
+					int n = 241;
+					double[] position = new double[n], px = new double[n], py = new double[n], pz = new double[n], pitch = new double[n];
+					double heading = 0, height = 10;
+					for (int i = 0; i < n; i++)
+					{
+						position[i] = i * 50.0;
+						pitch[i] = Math.Round(Math.Sin(i / 18.0) * 0.012, 3);
+						if (i > 0)
+						{
+							heading += Math.Sin(i / 30.0) * 0.012;
+							px[i] = px[i - 1] + Math.Sin(heading) * 50;
+							pz[i] = pz[i - 1] + Math.Cos(heading) * 50;
+							height += pitch[i - 1] * 50;
+						}
+
+						py[i] = height;
+					}
+
+					RouteStationMark Station(int index, string station, int at, bool stops) => new RouteStationMark(index, station, position[at], px[at], py[at], pz[at], stops);
+					RouteGeometry sampleGeometry = new RouteGeometry(position, px, py, pz, pitch,
+						new[] { Station(0, "Alpha", 4, true), Station(1, "Beta", 50, true), Station(2, "Beta Junction", 70, false), Station(3, "Gamma", 110, true), Station(4, "Delta", 170, true), Station(5, "Epsilon", 232, true) },
+						Array.Empty<RouteLimit>());
+					RouteLive sampleLive = new RouteLive(position[92], px[92], py[92], pz[92], new[] { (px[140], pz[140], false), (px[92], pz[92], true) }, 3, 62);
+					TimetableCard card = new TimetableCard { Geometry = () => sampleGeometry, Live = () => sampleLive };
+					DriverStatus status = new DriverStatus(62, 80, "P2", HandleState.Power, "F", "10:04:10", "Gamma", "900 m", "10:05:10", "10:05:40", null,
+						Array.Empty<(string, OpenBveApi.Colors.MessageColor)>(), "Cab", false);
+					card.Cycle();
+					foreach (string tab in new[] { "map", "gradient" })
+					{
+						card.Cycle();
+						canvas.Begin();
+						canvas.Fill(0, 0, 1280, 360, 0xFF6E8FB4);
+						canvas.Fill(0, 360, 1280, 360, 0xFF4A4E44);
+						DriverCard.Draw(canvas, status);
+						card.Draw(canvas, new TimetableSnapshot(Array.Empty<TimetableRow>(), "10:04:10", null), 1.0);
+						canvas.Save(Path.Combine(output, name + "-" + tab + ".png"));
+						Console.WriteLine("wrote " + name + "-" + tab + ".png");
+					}
+
+					continue;
+				}
+
+				if (parts[0] == "switchmap")
+				{
+					// The switch map card over the scene, from a sample junction: a main line, a loop off it and a siding.
+					string name = parts.Length > 1 ? parts[1] : "switchmap";
+					float[] main = { -2000, 0, -400, 0, 0, 0, 400, 0, 2000, 0 };
+					float[] loop = { -300, 0, -200, 30, 200, 30, 300, 0 };
+					float[] siding = { 150, 0, 260, -40, 600, -40 };
+					SwitchMark[] marks =
+					{
+						new SwitchMark(Guid.NewGuid(), "21A", -300, 0, 180, "Main line", false, false, true),
+						new SwitchMark(Guid.NewGuid(), "21B", 300, 0, 780, "Main line", false, false, true),
+						new SwitchMark(Guid.NewGuid(), "23", 150, 0, 630, "Siding", true, false, false),
+						new SwitchMark(Guid.NewGuid(), null, -900, 0, -420, "Left", false, true, false)
+					};
+					SwitchMapSnapshot sample = new SwitchMapSnapshot(new[] { main, loop, siding }, new float[] { -480, 0, -300, 0, 300, 0, 2000, 0 }, marks,
+						new[] { ("Beta", 900.0, 0.0), ("Alpha", -1500.0, 0.0) }, -480, 0, 2000);
+					SwitchMapCard map = new SwitchMapCard(() => sample);
+					map.Show();
+					DriverStatus status = new DriverStatus(32, 60, "P2", HandleState.Power, "F", "10:04:10", "Beta", "1.4 km", "10:05:10", "10:05:40", null,
+						Array.Empty<(string, OpenBveApi.Colors.MessageColor)>(), "Cab", false);
+					canvas.Begin();
+					canvas.Fill(0, 0, 1280, 360, 0xFF6E8FB4);
+					canvas.Fill(0, 360, 1280, 360, 0xFF4A4E44);
+					DriverCard.Draw(canvas, status);
+					map.Draw(canvas);
 					canvas.Save(Path.Combine(output, name + ".png"));
 					Console.WriteLine("wrote " + name + ".png");
 					continue;
@@ -328,6 +406,12 @@ namespace OpenBve.NX.MenuPreview
 			using Gdi.SolidBrush brush = new Gdi.SolidBrush(Color(color));
 			using Gdi2D.GraphicsPath path = Rounded(x, y, width, height, radius);
 			graphics.FillPath(brush, path);
+		}
+
+		public void Line(float x1, float y1, float x2, float y2, uint color, float thickness)
+		{
+			using Gdi.Pen pen = new Gdi.Pen(Color(color), thickness) { StartCap = Gdi2D.LineCap.Round, EndCap = Gdi2D.LineCap.Round };
+			graphics.DrawLine(pen, x1, y1, x2, y2);
 		}
 
 		public void Outline(float x, float y, float width, float height, uint color, float thickness, float radius = 0)

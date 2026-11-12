@@ -244,6 +244,49 @@ EXPORT void obns_dk2d_fill(float x, float y, float w, float h, uint32_t color, f
     quad(x, y, w, h, 0, 0, 0, 0, radius < most ? radius : most, 0, 0, color, 0);
 }
 
+// A line from (x1, y1) to (x2, y2), thickness wide with round ends (the switch map, the route charts): a quad turned along
+// the line, its local coordinates (which the shader's rounded box is worked out in) left as a box's, so only the corners'
+// places turn. The 2026-11-12 menu work (OBNS/SWITCH.md, step 6).
+EXPORT void obns_dk2d_line(float x1, float y1, float x2, float y2, uint32_t color, float thickness)
+{
+    if (!ready2d || thickness <= 0)
+        return;
+    float dx = x2 - x1, dy = y2 - y1;
+    float length = sqrtf(dx * dx + dy * dy);
+    if (vertexCount + 6 > MAX_QUADS * 6) { droppedQuads++; return; }
+    Batch *last = batchCount ? &batches[batchCount - 1] : NULL;
+    if (!last || last->image != 0 || memcmp(&last->scissor, &clip, sizeof clip) != 0) {
+        if (batchCount == MAX_BATCHES) { droppedQuads++; return; }
+        last = &batches[batchCount++];
+        last->first = vertexCount;
+        last->count = 0;
+        last->image = 0;
+        last->scissor = clip;
+    }
+    // Along the line (ux, uy) and across it (nx, ny); the box reaches half the thickness past each end for the round caps.
+    float half = thickness * 0.5f;
+    float ux = length > 0.0001f ? dx / length : 1.0f, uy = length > 0.0001f ? dy / length : 0.0f;
+    float nx = -uy, ny = ux;
+    float hw = length * 0.5f + half, hh = half;
+    float cx = (x1 + x2) * 0.5f, cy = (y1 + y2) * 0.5f;
+    float px[4], py[4];
+    const float sx[4] = { -1, 1, -1, 1 }, sy[4] = { -1, -1, 1, 1 };
+    for (int i = 0; i < 4; i++) {
+        px[i] = cx + ux * hw * sx[i] + nx * hh * sy[i];
+        py[i] = cy + uy * hw * sx[i] + ny * hh * sy[i];
+    }
+    Vertex2D corners[4];
+    for (int i = 0; i < 4; i++) {
+        Vertex2D c = { px[i], py[i], 0, 0, hw * sx[i], hh * sy[i], hw, hh, half, 0, 0, color };
+        corners[i] = c;
+    }
+    Vertex2D *v = vertices + vertexCount;
+    v[0] = corners[0]; v[1] = corners[1]; v[2] = corners[2];
+    v[3] = corners[2]; v[4] = corners[1]; v[5] = corners[3];
+    vertexCount += 6;
+    last->count += 6;
+}
+
 EXPORT void obns_dk2d_outline(float x, float y, float w, float h, uint32_t color, float thickness, float radius)
 {
     float most = fminf(w, h) * 0.5f;

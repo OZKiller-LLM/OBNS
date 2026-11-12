@@ -190,6 +190,16 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
 
   The plugins' C# runs as it is, given a back end for what they call on the PC (OpenTK's joystick, HidSharp, LibUsb) over libnx's HID
   and USB host services. Their settings dialogs are Windows Forms, so each needs a page in the console's menu instead.
+
+  **Done first (2026-11-12, built, not yet tried on the console): the Switch's own, `NX/Game/MasconPad.cs`.** ZuikiInput's mapping
+  lives in its Windows Forms settings, so the Switch has its own shell with upstream's logic: the lever's notches from upstream's
+  thresholds on the left stick's Y (the console's controller service takes these controllers as wired pads), mapped as its default
+  profile (B1 to B8, P1 to P5, the emergency position, air brakes in three steps); the Mascon Pro's reverser, horn pedal and ATS
+  button. Which pad it is: the USB host service's list says whether one is plugged in (`obns_mascon_detect`), and the first
+  full-key pad is then taken as it and left out of the game's own pad (`obns_mascon_attach`); its D-pad, A, B, + and − also work the
+  pause menu. Options: "Densha de GO! controller on USB", on by default. To check on the console: the lever's direction and travel
+  (upstream's thresholds were measured on the PC), and that the controller shows as a full-key pad. Not yet: the Mascon Pro's lamp
+  (HID output), remapping its buttons, and the other plugins (PS1/PS2 controllers, Kato, SanYing: raw USB).
 - **The in-game GUI is Android's** (the user, 2026-11-05): the HUD (`DriverHud.cs`), the pause menu, the station list, the
   timetable and the other overlays as the Android build draws them, rewritten for the Switch (drawn by deko3d), without the
   touch controls by default.
@@ -307,9 +317,32 @@ RenderScene). Done since, not yet on the console:
   file, size, date, encoding, optimisation settings and the parsers' assemblies; `UserData/nx-no-object-cache.txt` keeps it off.
   The first load is as before; the gain is from the second on.
 
+**Step 5, sleep and resume** (the user, 2026-11-12): nothing took the system's applet messages before. `runner/source/obns_applet.c`
+takes them (appletMainLoop, with a hook), once a frame in the menu, the loading screen and the game (`OpenBve.NX/Applet.cs`). The
+game pauses (its pause menu) when it loses the focus - the HOME menu, an applet over it - or wakes from sleep, and leaves the time
+away out of the simulation and the frame statistics (the system suspends an application out of focus, so the first frame after
+would have run minutes at once); the watchdog doesn't count it as a stuck frame. Docking is logged; the resolution still follows
+the mode at start. Built, not yet tried on the console.
+
 **Step 6, begun:** the menu in `NX/Game/Menu` (Android's, for buttons: rail, Start, Options, pickers, hints), drawn through
 `IMenuCanvas`; `NX/MenuPreview` draws it into PNG files on Windows. A first pass: once the 2D and 3D rendering are done, its GUI and
 UX are to match Android's, with only the changes noted above (the user, 2026-11-06).
+
+**Step 6, Android's remaining pages and cards** (the user, 2026-11-12; built and drawn by `NX/MenuPreview`, not yet on the console;
+compared with Android's code, as there are no Android screenshots to compare with):
+- the switch map (`Hud/SwitchMapCard.cs`, Android's SwitchMapPanel): from the pause menu's "Select a Switch To Change" (routes
+  with switches) or SWITCH_MENU; up and down choose, A changes, L and R zoom, Y follows the train, B closes; the game goes on;
+- the route card's Map and Gradient tabs (`Hud/TimetableCard.Route.cs`, Android's TimetablePanel and RouteViews): − now goes
+  Timetable, Map, Gradient, hidden; following the train (no panning without touch while driving);
+- Controls (`Menu/ControlsPage.Switch.cs`, `PadBindings.cs`; Android's ControlsPage, its controller tab): every command and its
+  buttons, A then a button to add, X to clear, Reset; kept in `UserData/pad-nx.cfg`; + and − stay pause and timetable; also from
+  the pause menu's "Customize controls";
+- Package Management (`Menu/PackagesPage.Switch.cs` on Android's PackageInstaller, now in the Switch build): archives put in
+  `/switch/OBNS/Packages` (no file picker on the console), their details and upstream's checks, the install with its progress;
+  the installed packages to uninstall;
+- the 2D layer draws lines (`obns_dk2d_line`), for the maps.
+Left: the keyboard tab (a USB keyboard isn't read yet), the route card's panning and zooming, Android's encoding choice for
+plain archives.
 
 ## Sources
 

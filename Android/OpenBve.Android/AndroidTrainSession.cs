@@ -1027,6 +1027,9 @@ namespace OpenBve.Android
 		/// the switches as they are set now, the switches, and the stations. Read on the UI thread, as
 		/// the touch map's data is: the track is fixed after loading, and the rest are single reads.
 		/// </summary>
+		/// <summary>Whether the route has switches at all (the Switch's pause menu offers the switch map then).</summary>
+		public bool HasSwitches => route.Switches.Count > 0;
+
 		public SwitchMapSnapshot GetSwitchMap(double radius)
 		{
 			OpenBveApi.Routes.TrackFollower follower = Train.Cars[0].FrontAxle.Follower;

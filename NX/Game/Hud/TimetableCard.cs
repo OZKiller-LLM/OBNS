@@ -36,7 +36,7 @@ namespace OpenBve.Switch
 	/// keeps the current station in view, and the right stick scrolls it. (Android's Map and Gradient tabs, and the route's
 	/// own timetable picture, are still to come.)
 	/// </summary>
-	public sealed class TimetableCard
+	public sealed partial class TimetableCard
 	{
 		// Android's colours (TimetablePanel.cs).
 		private const uint Card = 0xF010141E, CardBorder = 0x3CFFFFFF, Muted = 0x96FFFFFF, Line = 0x5AFFFFFF;
@@ -70,9 +70,34 @@ namespace OpenBve.Switch
 			following = true;
 		}
 
+		/// <summary>
+		/// − on the console: hidden, then each of Android's tabs in turn - Timetable, Map, Gradient - then hidden again (the
+		/// card is open while driving, so the driving buttons stay the train's).
+		/// </summary>
+		public void Cycle()
+		{
+			if (!Shown)
+			{
+				Shown = true;
+				CurrentTab = Tab.Timetable;
+				following = true;
+				return;
+			}
+
+			if (CurrentTab == Tab.Gradient)
+			{
+				Shown = false;
+				CurrentTab = Tab.Timetable;
+				return;
+			}
+
+			CurrentTab++;
+			RouteShown();
+		}
+
 		public void Draw(IMenuCanvas canvas, TimetableSnapshot snapshot, double seconds)
 		{
-			if (!Shown || snapshot == null)
+			if (!Shown)
 			{
 				return;
 			}
@@ -82,11 +107,18 @@ namespace OpenBve.Switch
 			canvas.Outline(x, y, Width, height, CardBorder, 1.5f, 22);
 			float left = x + Padding, inner = Width - 2 * Padding;
 
-			// The heading: Timetable and the clock.
-			string heading = T("android", "timetable_tab", "Timetable");
-			canvas.Text(heading, left, y + 14, 18, Muted, true);
-			string clock = snapshot.Clock ?? string.Empty;
-			canvas.Text(clock, left + inner - canvas.TextWidth(clock, 18, true), y + 14, 18, Muted, true);
+			// The heading: the tabs (Android's: Timetable, Map, Gradient; − goes on to the next) and the clock.
+			DrawTabs(canvas, left, y + 14, inner, snapshot?.Clock);
+			if (CurrentTab != Tab.Timetable)
+			{
+				DrawRoute(canvas, left, y + 44, inner, height - 44 - Padding, seconds);
+				return;
+			}
+
+			if (snapshot == null)
+			{
+				return;
+			}
 
 			// The next stop.
 			IReadOnlyList<TimetableRow> rows = snapshot.Rows;

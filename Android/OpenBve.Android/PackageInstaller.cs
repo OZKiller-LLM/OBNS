@@ -698,7 +698,10 @@ namespace OpenBve.Android
 			}
 
 			candidates.AddRange(LanguageCodePages(Translations.CurrentLanguageCode));
+#if !OBNS_SWITCH
+			// The phone's own language (the Switch has the menu's, above, only).
 			candidates.AddRange(LanguageCodePages(Java.Util.Locale.Default.ToLanguageTag()));
+#endif
 			candidates.AddRange(MultiByteCodePages);
 			foreach (int codePage in candidates.Distinct())
 			{

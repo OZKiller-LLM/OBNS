@@ -314,15 +314,19 @@ namespace OpenBve.NX
 			System.Threading.Thread thread = new System.Threading.Thread(() =>
 			{
 				long seen = -1;
+				uint away = Applet.AwayCount;
 				Stopwatch since = Stopwatch.StartNew();
 				double reported = 0;
 				while (!done())
 				{
 					System.Threading.Thread.Sleep(1000);
 					long now = System.Threading.Interlocked.Read(ref framesFinished);
-					if (now != seen)
+					// The time the game was away (the HOME menu, sleep: the system suspends it) is no frame stuck.
+					uint awayNow = Applet.AwayCount;
+					if (now != seen || awayNow != away)
 					{
 						seen = now;
+						away = awayNow;
 						since.Restart();
 						reported = 0;
 						continue;
@@ -387,6 +391,13 @@ namespace OpenBve.NX
 			// The controllers drive the train (Android's controller layout, SwitchPad); + pauses.
 			AndroidControls controls = new AndroidControls();
 			OpenBve.Switch.SwitchPad pad = new OpenBve.Switch.SwitchPad();
+			// A Densha de GO! controller on USB (HORI's, ZUIKI's) drives the handles, its pad left out of the one above.
+			OpenBve.Switch.MasconPad mascon = new OpenBve.Switch.MasconPad();
+			if (session != null && SwitchSettings.GetTrainController())
+			{
+				mascon.Attach(Log);
+			}
+
 			bool paused = false, leave = false;
 			// The pause menu (Android's): + opens it, the simulation stands still while it's open.
 			OpenBve.Switch.MenuInput menuInput = new OpenBve.Switch.MenuInput();
@@ -402,8 +413,29 @@ namespace OpenBve.NX
 			};
 			pause.JumpRequested += station => controls.Post(s => s.JumpToStation(station));
 			pause.ExitRequested += () => leave = true;
+			// The switch map (upstream's switch menu, Android's SwitchMapPanel): from the pause menu, or SWITCH_MENU.
+			OpenBve.Switch.SwitchMapCard switchMap = new OpenBve.Switch.SwitchMapCard(() => session?.GetSwitchMap(OpenBve.Switch.SwitchMapCard.Radius));
+			switchMap.ChangeRequested += id => controls.Post(s => s.ToggleSwitch(id));
+			pause.HasSwitches = () => session?.HasSwitches == true;
+			pause.SwitchesRequested += () => switchMap.Show();
+			controls.SwitchMenuRequested += () =>
+			{
+				if (switchMap.Shown)
+				{
+					switchMap.Hide();
+				}
+				else
+				{
+					switchMap.Show();
+				}
+			};
 			// The timetable card (Android's route card, its Timetable tab): − shows and hides it; refreshed once a second.
-			OpenBve.Switch.TimetableCard timetable = new OpenBve.Switch.TimetableCard();
+			OpenBve.Switch.TimetableCard timetable = new OpenBve.Switch.TimetableCard
+			{
+				// Its Map and Gradient tabs (Android's route card): the line worked out once, the trains read twice a second.
+				Geometry = () => session?.GetRouteGeometry(),
+				Live = () => session?.GetRouteLive()
+			};
 			TimetableSnapshot snapshot = null;
 			double snapshotAge = 1.0;
 			pause.QuitRequested += () => leave = true;
@@ -426,6 +458,45 @@ namespace OpenBve.NX
 				loopStep = 0;
 				int touching, docked;
 				float touchX, touchY;
+				// The console's applet messages (Applet): the HOME menu, sleep, docking.
+				AppletEvents applet = Applet.Poll();
+				if (applet != AppletEvents.None)
+				{
+					Log("frames: " + Applet.Describe(applet));
+					if ((applet & (AppletEvents.FocusLost | AppletEvents.Resumed)) != 0 && session != null && !pause.Open)
+					{
+						// Away (or back from sleep): the game waits in its pause menu, as upstream's does on losing the window.
+						paused = true;
+						sounds.SetPaused(true);
+						touch.ReleaseAll();
+						pause.Show();
+					}
+
+					if ((applet & (AppletEvents.FocusBack | AppletEvents.Resumed)) != 0)
+					{
+						// The time away left out: the system suspended the game, and the next frame would have run it all at
+						// once. The frame statistics' window starts again too.
+						double back = clock.Elapsed.TotalSeconds;
+						last = back;
+						frameStart = back;
+						windowStart = back;
+						frames = 0;
+						worst = 0;
+						for (int i = 0; i < phase.Length; i++)
+						{
+							phase[i] = 0;
+						}
+
+						renderer.Profile.Restart();
+					}
+
+					if ((applet & AppletEvents.Exit) != 0)
+					{
+						Log("frames: closed by the system");
+						break;
+					}
+				}
+
 				touch.Update(pause.Open || session == null);
 				if (session != null)
 				{
@@ -441,37 +512,50 @@ namespace OpenBve.NX
 				}
 
 				touchPause = false;
-				if (pause.Open)
+				if (switchMap.Shown && !pause.Open)
+				{
+					// The switch map takes the buttons while it is open; the game goes on (upstream's switch menu does).
+					uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked);
+					mascon.Update(controls, commands: false);
+					buttons |= (uint)mascon.MenuHeld();
+					menuInput.Update((OpenBve.Switch.MenuButtons)buttons, touching != 0, touchX, touchY, clock.Elapsed.TotalSeconds - last);
+					switchMap.Update(menuInput, clock.Elapsed.TotalSeconds - last);
+				}
+				else if (pause.Open)
 				{
 					uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked);
+					mascon.Update(controls, commands: false);
+					buttons |= (uint)mascon.MenuHeld();
 					menuInput.Update((OpenBve.Switch.MenuButtons)buttons, touching != 0, touchX, touchY, clock.Elapsed.TotalSeconds - last);
 					pause.Update(menuInput);
 				}
 				else
 				{
 					pad.Update(controls);
+					mascon.Update(controls);
 					if ((pad.Held & (OpenBve.Switch.SwitchPad.Plus | OpenBve.Switch.SwitchPad.Minus)) == (OpenBve.Switch.SwitchPad.Plus | OpenBve.Switch.SwitchPad.Minus))
 					{
 						Log("frames: left with + and −");
 						break;
 					}
 
-					if (pad.Is(OpenBve.Switch.SwitchPad.Minus))
+					if (pad.Is(OpenBve.Switch.SwitchPad.Minus) || mascon.Is(OpenBve.Switch.SwitchPad.Minus))
 					{
-						timetable.Toggle();
+						// − goes through the route card's tabs (Timetable, Map, Gradient), then hides it.
+						timetable.Cycle();
 						snapshotAge = 1.0;
 					}
 
 					timetable.Update(pad.RightY, clock.Elapsed.TotalSeconds - last);
 					// The sticks move and turn the camera, as Android's controller (the right one scrolls the timetable when shown).
 					pad.Camera(controls, !timetable.Shown);
-					if (pad.Is(OpenBve.Switch.SwitchPad.Plus))
+					if (pad.Is(OpenBve.Switch.SwitchPad.Plus) || mascon.Is(OpenBve.Switch.SwitchPad.Plus))
 					{
 						paused = true;
 						sounds.SetPaused(true);
 						pause.Show();
 						// The menu's input in step with the buttons held now.
-						uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked);
+						uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked) | (uint)mascon.MenuHeld();
 						menuInput.Update((OpenBve.Switch.MenuButtons)buttons, touching != 0, touchX, touchY, 0);
 					}
 				}
@@ -570,6 +654,7 @@ namespace OpenBve.NX
 						timetable.Draw(overlay, snapshot, elapsed);
 					}
 
+					switchMap.Draw(overlay);
 					pause.Draw(overlay, elapsed);
 					overlay.EndOverlay();
 				}
@@ -648,6 +733,7 @@ namespace OpenBve.NX
 				}
 			}
 
+			mascon.Detach();
 			Stage($"frames: {total} drawn");
 		}
 

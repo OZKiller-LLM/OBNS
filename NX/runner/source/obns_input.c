@@ -14,7 +14,7 @@ enum {
     MenuUp = 1 << 0, MenuDown = 1 << 1, MenuLeft = 1 << 2, MenuRight = 1 << 3,
     MenuA = 1 << 4, MenuB = 1 << 5, MenuX = 1 << 6, MenuY = 1 << 7,
     MenuL = 1 << 8, MenuR = 1 << 9, MenuZL = 1 << 10, MenuZR = 1 << 11,
-    MenuPlus = 1 << 12, MenuMinus = 1 << 13
+    MenuPlus = 1 << 12, MenuMinus = 1 << 13, MenuStickL = 1 << 14, MenuStickR = 1 << 15
 };
 
 // Whether the console is docked (the TV): the game then draws at 1920x1080, handheld at 1280x720 (OBNS/SWITCH.md).
@@ -96,6 +96,8 @@ EXPORT uint32_t obns_input_read(int *touching, float *x, float *y, int *docked)
     if (held & HidNpadButton_ZR) buttons |= MenuZR;
     if (held & HidNpadButton_Plus) buttons |= MenuPlus;
     if (held & HidNpadButton_Minus) buttons |= MenuMinus;
+    if (held & HidNpadButton_StickL) buttons |= MenuStickL;
+    if (held & HidNpadButton_StickR) buttons |= MenuStickR;
 
     HidTouchScreenState state = { 0 };
     *touching = 0;
@@ -107,4 +109,89 @@ EXPORT uint32_t obns_input_read(int *touching, float *x, float *y, int *docked)
 
     *docked = appletGetOperationMode() == AppletOperationMode_Console;
     return buttons;
+}
+
+// --- Train controllers (OBNS/SWITCH.md, "Upstream's train controllers"; the user, 2026-11-12) ---
+//
+// The Switch's own Densha de GO! controllers - HORI's One Handle controller (0f0d:00c1), the ZUIKI Mascon (33dd:0001 to
+// 0005) and the ZUIKI Mascon Pro (33dd:0006) - are licensed for the console, whose controller service takes them as
+// wired pads: their HID reports' axes become the sticks and their buttons the pad's, so the lever (the report's Y axis,
+// upstream's ZuikiInput's axis 1) is the left stick's Y. Which pad it is comes from the USB host service: if one of them
+// is plugged in, the first full-key pad among players 1 to 8 is taken as it, and left out of the pad that drives the game
+// otherwise (obns_input_pad), so the lever doesn't move the camera. *(verify on the console: the lever's sign and travel)*
+
+static PadState masconPad;
+static int masconId = -1;
+
+// Which of them is plugged in, from the USB host service's list of interfaces: 0 none, 1 HORI's One Handle controller,
+// 2 a ZUIKI Mascon, 3 the ZUIKI Mascon Pro; -1 if the USB host service can't be used.
+EXPORT int obns_mascon_detect(void)
+{
+    if (R_FAILED(usbHsInitialize()))
+        return -1;
+    static UsbHsInterface interfaces[16];
+    UsbHsInterfaceFilter filter = { 0 };
+    s32 total = 0;
+    int model = 0;
+    if (R_SUCCEEDED(usbHsQueryAllInterfaces(&filter, interfaces, sizeof(interfaces), &total))) {
+        for (int i = 0; i < total && i < 16; i++) {
+            uint16_t vid = interfaces[i].device_desc.idVendor, pid = interfaces[i].device_desc.idProduct;
+            int found = 0;
+            if (vid == 0x0f0d && pid == 0x00c1)
+                found = 1;
+            else if (vid == 0x33dd && pid >= 0x0001 && pid <= 0x0005)
+                found = 2;
+            else if (vid == 0x33dd && pid == 0x0006)
+                found = 3;
+            if (found > model)
+                model = found;
+        }
+    }
+    usbHsExit();
+    return model;
+}
+
+// Takes the first full-key pad among players 1 to 8 as the controller (1), or none (0): with one, the game's own pad
+// (obns_input_pad) reads every other pad and the handheld Joy-Cons. Two players are configured, so a second controller
+// can be used beside it.
+EXPORT int obns_mascon_attach(int attach)
+{
+    ensure_pad();
+    masconId = -1;
+    if (attach) {
+        padConfigureInput(2, HidNpadStyleSet_NpadStandard);
+        for (int id = HidNpadIdType_No1; id <= HidNpadIdType_No8; id++) {
+            if (hidGetNpadStyleSet((HidNpadIdType)id) & HidNpadStyleTag_NpadFullKey) {
+                masconId = id;
+                break;
+            }
+        }
+    }
+
+    if (masconId >= 0) {
+        padInitializeWithMask(&masconPad, 1UL << masconId);
+        padInitializeWithMask(&pad, PAD_ANY_ID_MASK & ~(1UL << masconId));
+    } else {
+        padInitializeDefault(&pad);
+    }
+
+    return masconId >= 0;
+}
+
+// The controller's state: the sticks from -1 to 1 (up and right positive, as libnx's), libnx's button bits. 0 if it
+// isn't connected.
+EXPORT int obns_mascon_read(float *leftX, float *leftY, float *rightX, float *rightY, uint64_t *buttons)
+{
+    if (masconId < 0)
+        return 0;
+    padUpdate(&masconPad);
+    if (!padIsConnected(&masconPad))
+        return 0;
+    HidAnalogStickState left = padGetStickPos(&masconPad, 0), right = padGetStickPos(&masconPad, 1);
+    *leftX = left.x / 32767.0f;
+    *leftY = left.y / 32767.0f;
+    *rightX = right.x / 32767.0f;
+    *rightY = right.y / 32767.0f;
+    *buttons = padGetButtons(&masconPad);
+    return 1;
 }

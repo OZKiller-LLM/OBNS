@@ -39,6 +39,9 @@ namespace OpenBve.Switch
 		/// <summary>A rectangle's outline, <paramref name="thickness"/> wide, inside its bounds.</summary>
 		void Outline(float x, float y, float width, float height, uint color, float thickness, float radius = 0);
 
+		/// <summary>A straight line, <paramref name="thickness"/> wide, its ends rounded (the switch map, the route charts).</summary>
+		void Line(float x1, float y1, float x2, float y2, uint color, float thickness);
+
 		/// <summary>One line of text, its top at <paramref name="y"/>, <paramref name="size"/> pixels high.</summary>
 		void Text(string text, float x, float y, float size, uint color, bool bold = false);
 

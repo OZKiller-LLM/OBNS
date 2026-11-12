@@ -85,27 +85,21 @@ namespace OpenBve.Switch
 
 		private bool rebuild;
 
+		private PackagesPage packages;
+
 		private void BuildPackages()
 		{
-			packagesPage.Clear();
-			packagesPage.Add(new HeadingItem(T("panel", "packages", "Package Management")));
-			packagesPage.Add(new InfoItem(T("switch", "packages_note",
-				"Installing route and train packages on the console comes in a later version. Until then, copy routes and trains to the SD card, into /switch/OBNS/LegacyContent/Railway and /switch/OBNS/LegacyContent/Train, as unpacked folders.")));
-			packagesPage.Add(new InfoItem(() => T("options", "package_route_directory", "Route installation directory:") + "\n" + Menu.FileSystem?.RouteInstallationDirectory));
-			packagesPage.Add(new InfoItem(() => T("options", "package_train_directory", "Train installation directory:") + "\n" + Menu.FileSystem?.TrainInstallationDirectory));
-			packagesPage.Add(new ButtonItem(T("switch", "rescan", "Look for new content"), () =>
-			{
-				startPage.Refresh();
-				Notify(T("switch", "rescanned", "The route and train lists are up to date."));
-			}));
+			// Android's Package Management on the same installer: archives from /switch/OBNS/Packages, the installed ones.
+			packages = new PackagesPage(packagesPage, () => startPage.Refresh());
+			packages.ShowOverview();
 		}
 
 		private void BuildControls()
 		{
 			controlsPage.Clear();
 			controlsPage.Add(new HeadingItem(T("panel", "controls", "Controls")));
-			controlsPage.Add(new InfoItem(T("switch", "controls_note",
-				"The Joy-Con and Pro Controller layout, and changing it, comes with the in-game controls (OBNS/SWITCH.md, step 5).")));
+			// Android's Controls, its controller tab: every command and its buttons, changed here (PadBindings).
+			ControlsPage.Build(controlsPage, () => Notify(T("android", "controls_reset_done", "The controls are back as they were.")));
 		}
 
 		private void BuildAbout()
@@ -164,6 +158,7 @@ namespace OpenBve.Switch
 		public void Update(MenuInput input, double seconds)
 		{
 			messageSeconds = Math.Max(0, messageSeconds - seconds);
+			packages?.Tick(this);
 			if (rebuild)
 			{
 				// After the language changed: the pages anew, the focus on the language option.
@@ -184,6 +179,13 @@ namespace OpenBve.Switch
 					picker.Update(input, this);
 				}
 
+				return;
+			}
+
+			if (BindingItem.Capturing)
+			{
+				// Controls' button capture: every button is the binding's, L and R too.
+				Page(Section.Controls).Update(input, this);
 				return;
 			}
 

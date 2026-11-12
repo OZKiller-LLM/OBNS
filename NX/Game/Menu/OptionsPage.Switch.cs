@@ -201,6 +201,13 @@ namespace OpenBve.Switch
 			List.Add(new InfoItem(T("switch", "touch_note",
 				"The on-screen buttons and the cab's touch areas, for playing on the console's screen. ATS keys only shows just the safety system's keys, larger, for driving with the controllers. Docked there is no touch screen, so they are off whatever is chosen here.")));
 
+			// --- train controllers ---
+			List.Add(new HeadingItem(T("switch", "train_controller", "Train controller")));
+			List.Add(new ChoiceItem(T("switch", "train_controller_use", "Densha de GO! controller on USB:"), onOff,
+				SwitchSettings.GetTrainController() ? 0 : 1, i => SwitchSettings.SetTrainController(i == 0)));
+			List.Add(new InfoItem(T("switch", "train_controller_note",
+				"HORI's One Handle controller and ZUIKI's Mascon and Mascon Pro, plugged in by USB: the lever drives the power and brake notches, and the controller's buttons work as the console's do. Looked for when a drive starts.")));
+
 			// --- content ---
 			List.Add(new HeadingItem(T("panel", "packages", "Package Management")));
 			List.Add(new InfoItem(() => T("options", "package_route_directory", "Route installation directory:") + "\n" + Menu.FileSystem?.RouteInstallationDirectory));

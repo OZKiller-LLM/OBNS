@@ -53,6 +53,12 @@ namespace OpenBve.Switch
 		public event Action ExitRequested;
 		public event Action QuitRequested;
 
+		/// <summary>Whether the route has switches the player could change (the switch map's item is shown then).</summary>
+		public Func<bool> HasSwitches;
+
+		/// <summary>The switch map is to open (the menu closes and the game goes on, as upstream's switch menu).</summary>
+		public event Action SwitchesRequested;
+
 		/// <summary>Whether it is open.</summary>
 		public bool Open { get; private set; }
 
@@ -96,6 +102,15 @@ namespace OpenBve.Switch
 			if (Stations?.Invoke().Count > 0)
 			{
 				Item(T("menu", "jump", "Jump to station"), ShowStations);
+			}
+
+			if (HasSwitches?.Invoke() == true)
+			{
+				Item(T("switchmenu", "title", "Select a Switch To Change").Trim().TrimEnd(':'), () =>
+				{
+					Resume();
+					SwitchesRequested?.Invoke();
+				});
 			}
 
 			// The touch controls (Options' setting): each press goes on to the next mode, Off, On, ATS keys only.
@@ -168,22 +183,12 @@ namespace OpenBve.Switch
 		{
 			Begin(T("menu", "customize_controls", "Customize controls"), false);
 			Item(T("menu", "back", "Back"), ShowTop);
-			string[] lines =
+			// The main menu's Controls (PadBindings): changes hold as soon as the game goes on.
+			ControlsPage.Build(list, () =>
 			{
-				"ZR / ZL: " + T("switch", "pad_power_brake", "power and brake up"),
-				"R / L: " + T("switch", "pad_power_brake_back", "power and brake back"),
-				"R stick (click): " + T("switch", "pad_emergency", "emergency brake"),
-				"A: " + T("switch", "pad_ats", "safety system (S)") + "    B: " + T("switch", "pad_horn", "horn"),
-				"X / Y: " + T("switch", "pad_doors", "doors left and right"),
-				"D-pad up / down: " + T("switch", "pad_reverser", "reverser"),
-				"D-pad left / right: " + T("switch", "pad_views", "views"),
-				"L stick (click): " + T("switch", "pad_cab", "cab view") + "    +: " + T("menu", "title", "Pause") + "    −: " + T("switch", "pad_timetable", "timetable")
-			};
-			foreach (string line in lines)
-			{
-				list.Add(new InfoItem(line));
-			}
-
+				ShowControls();
+				list.FocusFirst();
+			});
 			list.FocusFirst();
 		}
 
@@ -209,6 +214,13 @@ namespace OpenBve.Switch
 			{
 				// The press that opened it isn't one of its own.
 				primed = true;
+				return;
+			}
+
+			if (BindingItem.Capturing)
+			{
+				// Controls' button capture: + cancels it there, not the pause menu.
+				list.Update(input, this);
 				return;
 			}
 

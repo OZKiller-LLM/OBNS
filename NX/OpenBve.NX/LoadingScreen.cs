@@ -111,6 +111,14 @@ namespace OpenBve.NX
 			double worst = 0;
 			while (running)
 			{
+				// The console's applet messages, taken while the route loads too (the HOME menu, sleep); the load itself
+				// just goes on once the system lets the game run again.
+				AppletEvents applet = Applet.Poll();
+				if (applet != AppletEvents.None)
+				{
+					log("loading screen: " + Applet.Describe(applet));
+				}
+
 				double start = clock.Elapsed.TotalSeconds;
 				if (!canvas.Begin(0xFF0C1018))
 				{

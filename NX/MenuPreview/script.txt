@@ -38,3 +38,8 @@ card 12-card
 pause 13-pause
 # The timetable card (TimetableCard) over the driving card.
 timetable 14-timetable
+
+# The switch map (SwitchMapCard) over the driving card.
+switchmap 15-switchmap
+# The route card's Map and Gradient tabs.
+routetabs 16-route

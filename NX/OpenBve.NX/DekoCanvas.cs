@@ -113,6 +113,11 @@ namespace OpenBve.NX
 
 		public void Fill(float x, float y, float width, float height, uint color, float radius = 0) => DkFill(x, y, width, height, color, radius);
 
+		[DllImport("__Internal", EntryPoint = "obns_dk2d_line")]
+		private static extern void DkLine(float x1, float y1, float x2, float y2, uint color, float thickness);
+
+		public void Line(float x1, float y1, float x2, float y2, uint color, float thickness) => DkLine(x1, y1, x2, y2, color, thickness);
+
 		public void Outline(float x, float y, float width, float height, uint color, float thickness, float radius = 0) =>
 			DkOutline(x, y, width, height, color, thickness, radius);
 
@@ -204,6 +209,22 @@ namespace OpenBve.NX
 			long frames = 0;
 			while (true)
 			{
+				// The console's applet messages (the HOME menu, sleep): taken each frame; the time away isn't animated.
+				AppletEvents applet = Applet.Poll();
+				if (applet != AppletEvents.None)
+				{
+					log("menu: " + Applet.Describe(applet));
+					if ((applet & AppletEvents.Exit) != 0)
+					{
+						return null;
+					}
+
+					if ((applet & (AppletEvents.FocusBack | AppletEvents.Resumed)) != 0)
+					{
+						last = clock.Elapsed.TotalSeconds;
+					}
+				}
+
 				double now = clock.Elapsed.TotalSeconds, seconds = now - last;
 				last = now;
 				int touching, docked;

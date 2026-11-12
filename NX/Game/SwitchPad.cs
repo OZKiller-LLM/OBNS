@@ -32,7 +32,7 @@ namespace OpenBve.Switch
 {
 	/// <summary>
 	/// The console's controllers driving the train (OBNS/SWITCH.md: controls as the Android branch's): Android's built-in
-	/// controller layout (ControlBindings.DefaultPad) by the buttons' names - ZR and ZL notch power and brake up, R and L
+	/// controller layout (ControlBindings.DefaultPad, now PadBindings: the player can change it in Controls) by the buttons' names - ZR and ZL notch power and brake up, R and L
 	/// notch them back, the right stick's click is the emergency brake; A the safety system's acknowledge, B the horn, X
 	/// and Y the doors; the D-pad's up and down the reverser, left and right the views; the left stick's click the cab;
 	/// + pauses and − opens the timetable. Presses and releases go to AndroidControls, as Android's controller input does.
@@ -46,28 +46,6 @@ namespace OpenBve.Switch
 		public const ulong A = 1UL << 0, B = 1UL << 1, X = 1UL << 2, Y = 1UL << 3, StickL = 1UL << 4, StickR = 1UL << 5;
 		public const ulong L = 1UL << 6, R = 1UL << 7, ZL = 1UL << 8, ZR = 1UL << 9, Plus = 1UL << 10, Minus = 1UL << 11;
 		public const ulong Left = 1UL << 12, Up = 1UL << 13, Right = 1UL << 14, Down = 1UL << 15;
-
-		/// <summary>Android's DefaultPad, by button: power and brake name both the two-handle and the single-handle
-		/// commands, and the train's handles take the ones that apply.</summary>
-		private static readonly (ulong Button, Translations.Command Command)[] Bindings =
-		{
-			(ZR, Translations.Command.PowerIncrease), (ZR, Translations.Command.SinglePower),
-			(R, Translations.Command.PowerDecrease), (R, Translations.Command.SingleNeutral),
-			(ZL, Translations.Command.BrakeIncrease), (ZL, Translations.Command.SingleBrake),
-			(L, Translations.Command.BrakeDecrease), (L, Translations.Command.SingleNeutral),
-			(StickR, Translations.Command.BrakeEmergency), (StickR, Translations.Command.SingleEmergency),
-			(A, Translations.Command.SecurityS),
-			(B, Translations.Command.HornPrimary),
-			(X, Translations.Command.DoorsLeft),
-			(Y, Translations.Command.DoorsRight),
-			(StickL, Translations.Command.CameraInterior),
-			(Plus, Translations.Command.MiscPause),
-			(Minus, Translations.Command.TimetableToggle),
-			(Up, Translations.Command.ReverserForward),
-			(Down, Translations.Command.ReverserBackward),
-			(Left, Translations.Command.CameraPOIPrevious),
-			(Right, Translations.Command.CameraPOINext)
-		};
 
 		private ulong held;
 
@@ -98,7 +76,8 @@ namespace OpenBve.Switch
 				return;
 			}
 
-			foreach ((ulong button, Translations.Command command) in Bindings)
+			// The player's layout (Controls; Android's until changed).
+			foreach ((ulong button, Translations.Command command) in PadBindings.Current)
 			{
 				if ((changed & button) == 0 || command == Translations.Command.MiscPause || command == Translations.Command.TimetableToggle)
 				{
