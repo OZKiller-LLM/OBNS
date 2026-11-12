@@ -207,6 +207,7 @@
     <!-- OBNS: OBNS's options, and their rows in the options. -->
     <Compile Include="System\ObnsOptions.cs" />
     <Compile Include="System\PotatoMode.cs" />
+    <Compile Include="System\DriveBenchmark.cs" />
     <Compile Include="Graphics\SceneScale.cs" />
     <Compile Include="System\ObnsText.cs" />
     <Compile Include="System\MemoryCensus.cs" />

@@ -362,6 +362,8 @@ namespace OpenBve
 				}
 			}
 
+			// OBNS: the drive benchmark (OBNS_DRIVE_BENCHMARK) presses what a driver would, before the controls are processed.
+			DriveBenchmark.Current?.Update(RealTimeElapsed);
 			MainLoop.ProcessControls(TimeElapsed);
 			if (Program.Joysticks.AttachedJoysticks.TryGetTypedValue(AbstractRailDriver.Guid, out AbstractRailDriver railDriver))
 			{
