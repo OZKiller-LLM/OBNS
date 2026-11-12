@@ -126,7 +126,16 @@ namespace OpenBve
 			Screen.Initialize();
 			currentResult = result;
 			Program.Renderer.GameWindow.Closing += OpenTKQuit;
-			Program.Renderer.GameWindow.Run();
+			// OBNS: message boxes wait for the window to close while it is open (Program.ShowMessageBox).
+			Program.GameWindowOpen = true;
+			try
+			{
+				Program.Renderer.GameWindow.Run();
+			}
+			finally
+			{
+				Program.GameWindowOpen = false;
+			}
 		}
 
 		private static void OpenTKQuit(object sender, CancelEventArgs e)

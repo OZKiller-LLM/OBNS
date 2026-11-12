@@ -74,6 +74,44 @@ namespace OpenBve {
 		/// SDL2 turns them into a quit event that nothing reads, so the game went on running; it leaves them alone when a
 		/// handler is already there, so this is to be called before SDL2 starts. Mono.Posix is Mono's own, so it is looked up.
 		/// </summary>
+		/// <summary>OBNS: whether the game's window is open: message boxes wait until it has closed (ShowMessageBox).</summary>
+		internal static volatile bool GameWindowOpen;
+
+		/// <summary>OBNS: a message for after the game's window has closed (ShowMessageBox).</summary>
+		private static string deferredMessage, deferredCaption;
+
+		private static bool deinitialized;
+
+		[System.Runtime.InteropServices.DllImport("libc", EntryPoint = "_exit")]
+		private static extern void NativeExit(int status);
+
+		/// <summary>
+		/// OBNS: ends the process now. Under Mono on Linux and macOS a game that had finished still didn't end (2026-11-11/12, the
+		/// MacBook's drive benchmark: a foreground thread left, or the runtime's own exit waiting on one), and a signal's exit
+		/// could stall the same way, so libc's _exit follows 5 s later if Environment.Exit hasn't ended it by then.
+		/// </summary>
+		internal static void ExitNow(int code)
+		{
+			if (CurrentHost != null && CurrentHost.MonoRuntime && CurrentHost.Platform != HostPlatform.MicrosoftWindows)
+			{
+				new System.Threading.Thread(() =>
+				{
+					System.Threading.Thread.Sleep(5000);
+					try
+					{
+						Console.Error.WriteLine("OBNS: the runtime didn't end in 5 s; ending the process");
+						NativeExit(code);
+					}
+					catch (Exception)
+					{
+						// No libc to call: Environment.Exit is all there is.
+					}
+				}) { IsBackground = true, Name = "OBNS exit" }.Start();
+			}
+
+			Environment.Exit(code);
+		}
+
 		private static void QuitOnSignals()
 		{
 			if (!CurrentHost.MonoRuntime || CurrentHost.Platform == HostPlatform.MicrosoftWindows)
@@ -94,8 +132,10 @@ namespace OpenBve {
 				{
 					waitAny.Invoke(null, new object[] { signals });
 					MainLoop.Quit = QuitMode.QuitProgram;
-					System.Threading.Thread.Sleep(10000);
-					Environment.Exit(143);
+					// 5 s to close as the menu's quit does, then out whatever is still running (ExitNow: Mono's own exit
+					// could stall too).
+					System.Threading.Thread.Sleep(5000);
+					ExitNow(143);
 				}) { IsBackground = true, Name = "OBNS signals" }.Start();
 			}
 			catch (Exception ex)
@@ -437,6 +477,13 @@ namespace OpenBve {
 				}
 				Deinitialize();
 			}
+
+			// OBNS: what had to wait for the game's window to close (ShowMessageBox), now that nothing is drawn over it.
+			if (deferredMessage != null && !startedFromCommandLine)
+			{
+				ShowMessageBox(deferredMessage, deferredCaption);
+			}
+
 			// OBNS: a game the command line asked for ends when it fails, with an exit code: upstream opened the main menu,
 			// which nothing had asked for. The in-game menu's way back to the main menu still goes there.
 			if (startedFromCommandLine && (gameFailed || RestartArguments == " "))
@@ -468,7 +515,8 @@ namespace OpenBve {
 					if (CurrentHost.MonoRuntime)
 					{
 						// Forcefully terminate the original process once the new one has triggered, otherwise we hang around...
-						Environment.Exit(0);
+						// OBNS: with libc's _exit after 5 s should the runtime's exit stall as well.
+						ExitNow(0);
 					}
 				} catch (Exception ex) {
 					ShowMessageBox(ex.Message + @"\n\nProcess = " + FileSystem.RestartProcess + @"\nArguments = " + arguments, Application.ProductName);
@@ -477,6 +525,11 @@ namespace OpenBve {
 			else
 			{
 				Deinitialize();
+				// OBNS: under Mono on Linux and macOS the process didn't end after a game (see ExitNow).
+				if (CurrentHost.MonoRuntime && CurrentHost.Platform != HostPlatform.MicrosoftWindows)
+				{
+					ExitNow(Environment.ExitCode);
+				}
 			}
 		}
 
@@ -508,6 +561,14 @@ namespace OpenBve {
 		/// <summary>Deinitializes the program.</summary>
 		private static void Deinitialize()
 		{
+			// OBNS: once. Main called it after the game and again on the way out, so OpenAL and the renderer were shut down
+			// twice; under Mono the second could hang.
+			if (deinitialized)
+			{
+				return;
+			}
+
+			deinitialized = true;
 			Program.CurrentHost.UnloadPlugins(out _);
 			Sounds.DeInitialize();
 			Renderer.DeInitialize();
@@ -515,6 +576,25 @@ namespace OpenBve {
 
 		internal static void ShowMessageBox(string messageText, string captionText)
 		{
+			// OBNS: a game started from the command line (a launcher, the drive benchmark) has nobody to answer a dialog: the
+			// message goes to the log and stderr, and the game ends as it would after the dialog.
+			if (startedFromCommandLine && GameWindowOpen)
+			{
+				Console.Error.WriteLine("OpenBVE: " + messageText);
+				FileSystem?.AppendToLogFile("Message (no dialog, started from the command line): " + messageText);
+				return;
+			}
+
+			// OBNS: under Mono on Linux the dialog from the loader thread behind the full-screen game window never came up, and
+			// the loading screen stayed for good (the MacBook, 2026-11-11); it is shown once the window has closed.
+			if (GameWindowOpen && CurrentHost.Platform != HostPlatform.MicrosoftWindows)
+			{
+				deferredMessage = deferredMessage == null ? messageText : deferredMessage + Environment.NewLine + Environment.NewLine + messageText;
+				deferredCaption = captionText;
+				FileSystem?.AppendToLogFile("Message (shown when the game's window closes): " + messageText);
+				return;
+			}
+
 			if (CurrentHost.Platform == HostPlatform.AppleOSX && IntPtr.Size != 4)
 			{
 				// MessageBox.Show does not work on OS-X 64-bit, so let's bodge the System Events dialog

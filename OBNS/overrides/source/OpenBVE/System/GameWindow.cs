@@ -807,7 +807,8 @@ namespace OpenBve
 				{
 					string currentError = Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "errors", "critical_loading" });
 					currentError = currentError.Replace("[error]", logMessage.Text);
-					MessageBox.Show(currentError, Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "program", "title" }), MessageBoxButtons.OK, MessageBoxIcon.Hand);
+					// OBNS: through Program's, which waits for the window to close where a dialog over it would hang (Mono on Linux).
+					Program.ShowMessageBox(currentError, Translations.GetInterfaceString(HostApplication.OpenBve, new[] { "program", "title" }));
 					Close();
 				}
 			}
