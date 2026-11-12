@@ -428,6 +428,13 @@ namespace LibRender2.Textures
 		/// </summary>
 		public static bool ObnsAsyncDecoding;
 
+		/// <summary>
+		/// OBNS: how long a texture goes unused before UnloadUnusedTextures lets it go, in milliseconds. Upstream's 20 s,
+		/// which Potato mode keeps for its memory; the game sets a longer wait outside it (the user, 2026-11-12: a texture
+		/// unloaded and needed again is drawn white until it is made again, so less of that where memory allows).
+		/// </summary>
+		public static int ObnsUnloadAfterMilliseconds = 20000;
+
 		/// <summary>OBNS: Potato mode's filtering: "bilinear mipmapped" bilinear within the nearest mipmap.</summary>
 		public static bool ObnsBilinearFiltering;
 
@@ -1484,7 +1491,7 @@ namespace LibRender2.Textures
 				{
 					for (int i = 0; i < RegisteredTextures.Length; i++)
 					{
-						if (RegisteredTextures[i] != null && RegisteredTextures[i].AvailableToUnload && (CPreciseTimer.GetClockTicks() - RegisteredTextures[i].LastAccess) > 20000)
+						if (RegisteredTextures[i] != null && RegisteredTextures[i].AvailableToUnload && (CPreciseTimer.GetClockTicks() - RegisteredTextures[i].LastAccess) > ObnsUnloadAfterMilliseconds)
 						{
 							UnloadTexture(ref RegisteredTextures[i]);
 						}

@@ -393,6 +393,9 @@ namespace OpenBve
 				obnsUnloadAge += RealTimeElapsed;
 				if (obnsUnloadAge >= 1.0)
 				{
+					// Outside Potato mode a texture waits 90 s unused rather than upstream's 20 s (the user, 2026-11-12: fewer
+					// textures drawn white while they are made again, as the view comes back to them).
+					LibRender2.Textures.TextureManager.ObnsUnloadAfterMilliseconds = Potato.Active ? 20000 : 90000;
 					Program.Renderer.TextureManager.UnloadUnusedTextures(obnsUnloadAge);
 					obnsUnloadAge = 0.0;
 				}
