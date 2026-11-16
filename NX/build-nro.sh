@@ -70,8 +70,18 @@ LLVM_TOOLS=$MONO_NX_ROOT/artifacts/obj/mono/linux.x64.$CONFIG/llvm/x64/bin
 aot_one() {
     name=$(basename "$1")
     o="$OUT/runner/output"
+    # Full AOT has a fixed pool of each kind of trampoline per assembly, made at compile time (4,096 specific, 4,096
+    # RGCTX, 512 IMT by default). CoreLib's specific ones ran out 40 minutes into a game on 2026-11-16 ("Ran out of
+    # trampolines of type 0 in System.Private.CoreLib.dll (limit 4096)"), which ends the process. Larger pools for
+    # CoreLib and the game's own big assemblies only: each trampoline is code and a GOT slot in the NRO and in memory.
+    tramps=
+    case "$name" in
+        System.Private.CoreLib.dll) tramps=ntrampolines=65536,nrgctx-trampolines=32768,nimt-trampolines=4096, ;;
+        OpenBve.Android.dll|LibRender2.dll|TrainManager.dll|OpenBveApi.dll|RouteManager2.dll|OpenBve.NX.dll|System.Linq.dll|System.Collections.dll|System.Collections.Concurrent.dll)
+            tramps=ntrampolines=16384,nrgctx-trampolines=16384,nimt-trampolines=2048, ;;
+    esac
     "$COMPILER" --llvm --path="$OUT/managed/" \
-        --aot=full,static,direct-icalls,direct-pinvoke,tool-prefix=aarch64-none-elf-,outfile=$o/$name.o,llvm,llvmllc=-relocation-model=pic,llvm-path=$LLVM_TOOLS/,llvm-outfile=$o/$name-llvm.o \
+        --aot=full,static,${tramps}direct-icalls,direct-pinvoke,tool-prefix=aarch64-none-elf-,outfile=$o/$name.o,llvm,llvmllc=-relocation-model=pic,llvm-path=$LLVM_TOOLS/,llvm-outfile=$o/$name-llvm.o \
         "$1" > "$o/$name.log" 2>&1 || { echo "AOT failed: $name"; tail -15 "$o/$name.log"; return 1; }
 }
 export -f aot_one
