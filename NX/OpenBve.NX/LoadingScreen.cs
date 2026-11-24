@@ -114,6 +114,12 @@ namespace OpenBve.NX
 				// The console's applet messages, taken while the route loads too (the HOME menu, sleep); the load itself
 				// just goes on once the system lets the game run again.
 				AppletEvents applet = Applet.Poll();
+				string consoleMessages = Applet.TakeMessages();
+				if (consoleMessages != null)
+				{
+					log("loading screen: " + consoleMessages);
+				}
+
 				if (applet != AppletEvents.None)
 				{
 					log("loading screen: " + Applet.Describe(applet));

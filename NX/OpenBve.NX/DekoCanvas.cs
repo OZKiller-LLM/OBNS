@@ -211,6 +211,12 @@ namespace OpenBve.NX
 			{
 				// The console's applet messages (the HOME menu, sleep): taken each frame; the time away isn't animated.
 				AppletEvents applet = Applet.Poll();
+				string consoleMessages = Applet.TakeMessages();
+				if (consoleMessages != null)
+				{
+					log("menu: " + consoleMessages);
+				}
+
 				if (applet != AppletEvents.None)
 				{
 					log("menu: " + Applet.Describe(applet));

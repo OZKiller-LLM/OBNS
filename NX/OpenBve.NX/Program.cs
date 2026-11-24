@@ -145,6 +145,19 @@ namespace OpenBve.NX
 		private static int Main(string[] args)
 		{
 			Directory.CreateDirectory(Root + "/UserData");
+			// The run before's log kept beside this one's (2026-11-24: HOME and sleep tested in two runs, the first's log gone).
+			try
+			{
+				if (File.Exists(Root + "/UserData/obns.log"))
+				{
+					File.Copy(Root + "/UserData/obns.log", Root + "/UserData/obns-previous.log", true);
+				}
+			}
+			catch (Exception)
+			{
+				// Not kept: this run's log is what matters.
+			}
+
 			logFile = new StreamWriter(Root + "/UserData/obns.log", false, new UTF8Encoding(false)) { AutoFlush = true };
 			global::Android.Util.Log.Sink = line => logFile.WriteLine(line);
 			try
@@ -460,6 +473,13 @@ namespace OpenBve.NX
 				float touchX, touchY;
 				// The console's applet messages (Applet): the HOME menu, sleep, docking.
 				AppletEvents applet = Applet.Poll();
+				string consoleMessages = Applet.TakeMessages();
+				if (consoleMessages != null)
+				{
+					Log("frames: " + consoleMessages);
+					global::Android.Util.Log.Flush(500);
+				}
+
 				if (applet != AppletEvents.None)
 				{
 					Log("frames: " + Applet.Describe(applet));

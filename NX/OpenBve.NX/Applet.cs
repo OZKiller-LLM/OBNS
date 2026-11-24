@@ -88,6 +88,44 @@ namespace OpenBve.NX
 			return text.ToString();
 		}
 
+		[DllImport("__Internal", EntryPoint = "obns_applet_messages")]
+		private static extern unsafe int NativeMessages(uint* messages, int max);
+
+		/// <summary>
+		/// The console's raw messages since the last call, by number and name, for the log; null if none came. On 2026-11-24 a
+		/// HOME press and sleep reached nothing the game listened for, so what arrives at all is logged.
+		/// </summary>
+		internal static unsafe string TakeMessages()
+		{
+			uint* messages = stackalloc uint[32];
+			int count = NativeMessages(messages, 32);
+			if (count <= 0)
+			{
+				return null;
+			}
+
+			System.Text.StringBuilder text = new System.Text.StringBuilder("the console's messages: ");
+			for (int i = 0; i < count; i++)
+			{
+				string name = messages[i] switch
+				{
+					4 => "exit request",
+					15 => "focus state changed",
+					16 => "resumed",
+					30 => "operation mode changed",
+					31 => "performance mode changed",
+					51 => "request to display",
+					90 => "capture button",
+					92 => "screenshot taken",
+					93 => "recording saved",
+					_ => "other"
+				};
+				text.Append(i == 0 ? string.Empty : ", ").Append(messages[i]).Append(" (").Append(name).Append(')');
+			}
+
+			return text.ToString();
+		}
+
 		[DllImport("__Internal", EntryPoint = "obns_docked")]
 		private static extern int NativeDocked();
 

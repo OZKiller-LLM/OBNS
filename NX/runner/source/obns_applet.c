@@ -61,25 +61,92 @@ static void on_applet(AppletHookType hook, void *param)
     }
 }
 
-// Takes the applet's messages waiting now (a few a call at most, without waiting) and returns what happened since the
-// last call (the Event bits). Any thread; one at a time.
+// The console's messages as they came, raw (AppletMessage numbers), for the log: on 2026-11-24 neither a HOME press nor
+// sleep reached the hooks, so what arrives at all is recorded (obns_applet_messages).
+#define MESSAGES 32
+static uint32_t messages[MESSAGES];
+static volatile uint32_t messagesIn, messagesOut;
+
+static Thread listener;
+static volatile int listening;
+
+// A thread of its own waiting on the console's message event: each message is taken and handled (libnx's hooks: on_applet)
+// the moment it is signalled, whatever the game's thread is doing - a frame, a load - and not only when a frame polls.
+static void listen(void *arg)
+{
+    (void)arg;
+    Event *event = appletGetMessageEvent();
+    while (listening) {
+        // The handle waited on directly, not eventWait: that would reset an autoclearing event, and appletGetMessage,
+        // which checks the same event before it reads, would then find nothing.
+        if (R_FAILED(waitSingleHandle(event->revent, 500000000ULL)))
+            continue;
+        int taken = 0;
+        for (int i = 0; i < 16; i++) {
+            u32 msg = 0;
+            mutexLock(&lock);
+            if (R_FAILED(appletGetMessage(&msg))) {
+                mutexUnlock(&lock);
+                break;
+            }
+            taken++;
+            messages[messagesIn % MESSAGES] = msg;
+            messagesIn++;
+            if (!appletProcessMessage(msg))
+                pending |= EventExit;
+            mutexUnlock(&lock);
+        }
+        // Signalled but nothing to read: not straight back to the wait, which would return at once.
+        if (taken == 0)
+            svcSleepThread(50000000ULL);
+    }
+}
+
+// The raw messages since the last call, oldest first, at most max of them; returns how many.
+EXPORT int obns_applet_messages(uint32_t *out, int max)
+{
+    mutexLock(&lock);
+    int count = 0;
+    if (messagesIn - messagesOut > MESSAGES)
+        messagesOut = messagesIn - MESSAGES;
+    while (messagesOut != messagesIn && count < max) {
+        out[count++] = messages[messagesOut % MESSAGES];
+        messagesOut++;
+    }
+    mutexUnlock(&lock);
+    return count;
+}
+
+// Every message waiting when called, taken here (the listener's own read can miss one whose event its wait cleared).
+static void drain(void)
+{
+    for (int i = 0; i < 4; i++) {
+        u32 msg = 0;
+        if (R_FAILED(appletGetMessage(&msg)))
+            break;
+        messages[messagesIn % MESSAGES] = msg;
+        messagesIn++;
+        if (!appletProcessMessage(msg))
+            pending |= EventExit;
+    }
+}
+
+// Returns what happened since the last call (the Event bits). Any thread.
 EXPORT uint32_t obns_applet_poll(void)
 {
     mutexLock(&lock);
     if (!hooked) {
         appletHook(&cookie, on_applet, NULL);
         hooked = 1;
+        listening = 1;
+        if (R_FAILED(threadCreate(&listener, listen, NULL, NULL, 0x4000, 0x2B, -2)) || R_FAILED(threadStart(&listener)))
+            listening = 0;
     }
 
-    for (int i = 0; i < 4; i++) {
-        if (!appletMainLoop()) {
-            pending |= EventExit;
-            break;
-        }
-    }
+    drain();
 
-    // The focus state as it is now, compared with the last poll's, besides the hook: a HOME press on 2026-11-16 left
-    // nothing in the log, so the state itself is checked too (a change the messages didn't report still counts).
+    // The focus state as libnx last read it, compared with the last poll's (it changes only as a FocusStateChanged
+    // message is handled, so this is a second look at the same messages).
     int focus = (int)appletGetFocusState();
     if (lastFocus >= 0 && focus != lastFocus) {
         if (focus == AppletFocusState_InFocus) {
