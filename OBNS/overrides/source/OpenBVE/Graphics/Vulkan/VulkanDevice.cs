@@ -771,6 +771,17 @@ namespace OpenBve.Graphics.Vulkan
 			Vk.PhysicalDeviceMemoryProperties memory;
 			Vk.vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &memory);
 			memoryProperties = memory;
+			// The largest heap of the GPU's own memory: what textures loaded in advance are measured against (WorldTextures.LoadAll).
+			ulong deviceLocal = 0;
+			for (int heap = 0; heap < memory.MemoryHeapCount && heap < 16; heap++)
+			{
+				if ((memory.MemoryHeaps[heap * 2 + 1] & 1) != 0 && memory.MemoryHeaps[heap * 2] > deviceLocal)
+				{
+					deviceLocal = memory.MemoryHeaps[heap * 2];
+				}
+			}
+
+			WorldTextures.VideoMemory = deviceLocal;
 			CreatePipelineCache();
 			return null;
 		}

@@ -155,11 +155,13 @@ namespace OpenBve.Graphics.Direct3D11
 						Dx.Release(chosen);
 						chosen = adapter;
 						most = (ulong)desc.DedicatedVideoMemory;
+						WorldTextures.VideoMemory = (ulong)desc.DedicatedVideoMemory;
 						name = Dx.Name(desc).TrimEnd('\0');
 					}
 					else if (!fastest && chosen == IntPtr.Zero && same && !software)
 					{
 						chosen = adapter;
+						WorldTextures.VideoMemory = (ulong)desc.DedicatedVideoMemory;
 						name = Dx.Name(desc).TrimEnd('\0');
 					}
 					else

@@ -426,31 +426,59 @@ namespace OpenBve.Graphics
 		/// </summary>
 		internal void LoadAll()
 		{
-			Texture[] registered = TextureManager.RegisteredTextures;
-			int count = Math.Min(Program.Renderer.TextureManager.RegisteredTexturesCount, registered?.Length ?? 0);
+			System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+			List<KeyValuePair<Texture, OpenGlTextureWrapMode>> textures = WorldInUse();
+			int before = entries.Count;
+			long startBytes = pixelBytes;
+			// Not past a share of the GPU's memory: the Tuen Ma Line's 7,706 textures came to 6.4 GB, and the next
+			// allocation failed on an 8 GB card (2026-11-25). The objects come in the route's order, so what fits is the
+			// start of the route; the rest is made as it is first drawn, as without the option.
+			long budget = PreloadBudget;
+			bool stopped = false;
 			loadingAll = true;
 			try
 			{
-				for (int i = 0; i < count; i++)
+				// As the cab's in PreloadTrain: a batch decoded together on worker threads, then made in order here.
+				for (int first = 0; first < textures.Count; first += PreloadBatch)
 				{
-					Texture texture = registered[i];
-					for (int wrap = 0; texture != null && wrap < 4; wrap++)
+					if (pixelBytes - startBytes >= budget)
 					{
-						if (texture.OpenGlTextures[wrap].Used)
-						{
-							Prepare(texture, (OpenGlTextureWrapMode)wrap, out bool _);
-							break;
-						}
+						stopped = true;
+						break;
 					}
+
+					int last = Math.Min(first + PreloadBatch, textures.Count);
+					DecodeAhead(textures, first, last);
+					for (int i = first; i < last; i++)
+					{
+						Prepare(textures[i].Key, textures[i].Value, out bool _);
+					}
+
+					Flush();
 				}
 			}
 			finally
 			{
 				loadingAll = false;
+				decodedAhead.Clear();
 			}
 
 			Flush();
+			Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture, "OBNS " + api + ": textures loaded in advance: {0} of the route's {1} in {2:0.0} s, {3} MB of images{4}", entries.Count - before, textures.Count, clock.Elapsed.TotalSeconds, (pixelBytes - startBytes) >> 20, stopped ? string.Format(System.Globalization.CultureInfo.InvariantCulture, " - stopped at {0} MB, {1:0}% of the GPU's {2} MB; the rest are made when first drawn", budget >> 20, PreloadShare * 100, VideoMemory >> 20) : string.Empty));
 		}
+
+		/// <summary>The GPU's own memory in bytes, as the API's device found it (0 if not known).</summary>
+		internal static ulong VideoMemory;
+
+		/// <summary>The share of the GPU's memory textures loaded in advance may take: the rest is for the meshes, shadows,
+		/// targets and the textures made while driving.</summary>
+		private const double PreloadShare = 0.4;
+
+		/// <summary>The most textures loaded in advance may take when the GPU's memory is not known.</summary>
+		private const long PreloadBudgetUnknown = 1536L << 20;
+
+		/// <summary>The bytes textures loaded in advance may take (OpenGL's preload, GameWindow, keeps to it too).</summary>
+		internal static long PreloadBudget => VideoMemory > 0 ? (long)(VideoMemory * PreloadShare) : PreloadBudgetUnknown;
 
 		/// <summary>
 		/// Upstream's train texture preload (TrainBase.PreloadTextures) when the layer draws the world and the cab: the wrap
@@ -546,12 +574,76 @@ namespace OpenBve.Graphics
 		{
 			foreach (OpenBveApi.Objects.ObjectState state in element.States)
 			{
-				if (state.Prototype?.Mesh == null)
+				if (state.Prototype?.Mesh != null)
 				{
-					continue;
+					AddMesh(state.Prototype.Mesh, made);
 				}
+			}
+		}
 
-				OpenBveApi.Objects.Mesh mesh = state.Prototype.Mesh;
+		/// <summary>
+		/// Every texture the route's objects draw (static and animated, every state), with the wrap mode each is drawn with,
+		/// once each: what "load textures in advance" loads. Upstream's LoadAllTextures loads only the wrap modes marked
+		/// used, and nothing marks them (in upstream either), so the option loaded nothing at all (the user, 2026-11-25:
+		/// "allow preloading textures to function properly").
+		/// </summary>
+		internal static List<KeyValuePair<Texture, OpenGlTextureWrapMode>> WorldInUse()
+		{
+			List<KeyValuePair<Texture, OpenGlTextureWrapMode>> all = new List<KeyValuePair<Texture, OpenGlTextureWrapMode>>();
+			HashSet<OpenBveApi.Objects.Mesh> meshes = new HashSet<OpenBveApi.Objects.Mesh>();
+			void Add(OpenBveApi.Objects.Mesh mesh)
+			{
+				// Many objects share a prototype: each mesh once.
+				if (mesh != null && meshes.Add(mesh))
+				{
+					AddMesh(mesh, all);
+				}
+			}
+
+			List<OpenBveApi.Objects.ObjectState> statics = Program.Renderer.StaticObjectStates;
+			if (statics != null)
+			{
+				foreach (OpenBveApi.Objects.ObjectState state in statics)
+				{
+					Add(state?.Prototype?.Mesh);
+				}
+			}
+
+			OpenBveApi.Objects.WorldObject[] animated = ObjectManager.AnimatedWorldObjects;
+			for (int i = 0; animated != null && i < ObjectManager.AnimatedWorldObjectsUsed && i < animated.Length; i++)
+			{
+				OpenBveApi.Objects.ObjectState[] states = animated[i]?.Object?.States;
+				for (int j = 0; states != null && j < states.Length; j++)
+				{
+					Add(states[j]?.Prototype?.Mesh);
+				}
+			}
+
+			// Each texture and wrap mode once.
+			HashSet<KeyValuePair<Texture, OpenGlTextureWrapMode>> seen = new HashSet<KeyValuePair<Texture, OpenGlTextureWrapMode>>(new PairComparer());
+			List<KeyValuePair<Texture, OpenGlTextureWrapMode>> distinct = new List<KeyValuePair<Texture, OpenGlTextureWrapMode>>();
+			foreach (KeyValuePair<Texture, OpenGlTextureWrapMode> pair in all)
+			{
+				if (seen.Add(pair))
+				{
+					distinct.Add(pair);
+				}
+			}
+
+			return distinct;
+		}
+
+		/// <summary>Compares (texture, wrap mode) pairs by the texture's reference.</summary>
+		private sealed class PairComparer : IEqualityComparer<KeyValuePair<Texture, OpenGlTextureWrapMode>>
+		{
+			public bool Equals(KeyValuePair<Texture, OpenGlTextureWrapMode> a, KeyValuePair<Texture, OpenGlTextureWrapMode> b) => ReferenceEquals(a.Key, b.Key) && a.Value == b.Value;
+			public int GetHashCode(KeyValuePair<Texture, OpenGlTextureWrapMode> pair) => RuntimeHelpers.GetHashCode(pair.Key) * 4 + (int)pair.Value;
+		}
+
+		/// <summary>A mesh's textures with their wrap modes (worked out as upstream does, and kept in the material), kept loaded.</summary>
+		private static void AddMesh(OpenBveApi.Objects.Mesh mesh, List<KeyValuePair<Texture, OpenGlTextureWrapMode>> made)
+		{
+			{
 				foreach (OpenBveApi.Objects.MeshFace face in mesh.Faces)
 				{
 					ref OpenBveApi.Objects.MeshMaterial material = ref mesh.Materials[face.Material];
