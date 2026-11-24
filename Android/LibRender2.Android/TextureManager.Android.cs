@@ -982,6 +982,26 @@ namespace LibRender2.Textures
 		private static bool Unpinned(Texture texture) =>
 			UnloadUnpinned && texture.Origin is PathOrigin && !OpenBveApi.Objects.AnimatedObject.PinnedTextures.TryGetValue(texture, out _);
 
+		/// <summary>
+		/// ANDROID PORT: every texture's last use set to now. The time the game was away (the Switch's HOME menu, sleep) is
+		/// no time unused: on 2026-11-24 an 8.7 s HOME visit took the loaded textures from 476 to 248 on the next unload,
+		/// and the game then stalled seconds at a time loading them back.
+		/// </summary>
+		public void NoteAllUsed()
+		{
+			var now = CPreciseTimer.GetClockTicks();
+			lock (TextureLookupLock)
+			{
+				foreach (Texture texture in RegisteredTextures)
+				{
+					if (texture != null)
+					{
+						texture.LastAccess = now;
+					}
+				}
+			}
+		}
+
 		/// <summary>Unloads any textures which have not been accessed</summary>
 		/// <param name="TimeElapsed">The time elapsed since the last call to this function</param>
 		public void UnloadUnusedTextures(double TimeElapsed)

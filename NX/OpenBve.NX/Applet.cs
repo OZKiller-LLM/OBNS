@@ -32,7 +32,7 @@ namespace OpenBve.NX
 	internal enum AppletEvents : uint
 	{
 		None = 0,
-		/// <summary>Out of focus: the HOME menu, or an applet over the game. The system suspends the game soon after.</summary>
+		/// <summary>Out of focus: the HOME menu, or an applet over the game. The game then waits (Applet.WaitForFocus).</summary>
 		FocusLost = 1 << 0,
 		/// <summary>In focus again, after the HOME menu or an applet.</summary>
 		FocusBack = 1 << 1,
@@ -50,8 +50,8 @@ namespace OpenBve.NX
 	 * The console's ways (OBNS/SWITCH.md, step 5; the user, 2026-11-12: "work on sleep and resume"). Until now nothing took
 	 * the applet messages - the HOME menu, sleep, wake-up, docking - from the system. The menu, the loading screen and the
 	 * game's frames poll here once a frame (one thread at a time; the native side has a lock). The game pauses when it
-	 * loses the focus or wakes from sleep, and leaves the time it was away out of the simulation: the system suspends an
-	 * application out of focus, so the first frame after would otherwise run minutes of simulation at once.
+	 * loses the focus or wakes from sleep, waits while out of focus (WaitForFocus), and leaves the time away out of the
+	 * simulation: the first frame after would otherwise run minutes of it at once.
 	 */
 	internal static class Applet
 	{
@@ -124,6 +124,46 @@ namespace OpenBve.NX
 			}
 
 			return text.ToString();
+		}
+
+		[DllImport("__Internal", EntryPoint = "obns_applet_in_focus")]
+		private static extern int NativeInFocus();
+
+		/// <summary>Whether the game has the focus (as the console's last focus message said).</summary>
+		internal static bool InFocus => NativeInFocus() != 0;
+
+		/// <summary>
+		/// Out of focus (the HOME menu, an applet over the game, sleep): the system no longer suspends the game
+		/// (runner/source/obns_applet.c: NoSuspend), so it waits here, drawing nothing, until it has the focus again or the
+		/// system asks it to close. Returns what came meanwhile, with <see cref="AppletEvents.FocusBack"/> once back.
+		/// </summary>
+		internal static AppletEvents WaitForFocus(Action<string> log, string who)
+		{
+			AppletEvents seen = AppletEvents.None;
+			System.Diagnostics.Stopwatch away = System.Diagnostics.Stopwatch.StartNew();
+			log(who + "out of focus: waiting, nothing drawn");
+			global::Android.Util.Log.Flush(500);
+			while (!InFocus)
+			{
+				System.Threading.Thread.Sleep(50);
+				AppletEvents events = Poll();
+				seen |= events;
+				string messages = TakeMessages();
+				if (messages != null)
+				{
+					log(who + messages);
+				}
+
+				if ((events & AppletEvents.Exit) != 0)
+				{
+					log(who + "the system asks to close");
+					return seen;
+				}
+			}
+
+			log($"{who}back in focus after {away.Elapsed.TotalSeconds:F1} s");
+			global::Android.Util.Log.Flush(500);
+			return seen | AppletEvents.FocusBack;
 		}
 
 		[DllImport("__Internal", EntryPoint = "obns_docked")]

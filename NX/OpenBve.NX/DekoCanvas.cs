@@ -231,6 +231,17 @@ namespace OpenBve.NX
 					}
 				}
 
+				if (!Applet.InFocus)
+				{
+					// Not suspended by the system: the menu waits, drawing nothing, until the game is back in focus.
+					if ((Applet.WaitForFocus(log, "menu: ") & AppletEvents.Exit) != 0)
+					{
+						return null;
+					}
+
+					last = clock.Elapsed.TotalSeconds;
+				}
+
 				double now = clock.Elapsed.TotalSeconds, seconds = now - last;
 				last = now;
 				int touching, docked;

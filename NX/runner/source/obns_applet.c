@@ -4,10 +4,11 @@
 //
 // The system tells an application through applet messages that it lost the focus (the HOME menu, a system applet over
 // it), got it back, woke from sleep or was docked; appletMainLoop takes one message each call and runs libnx's handling
-// and the hooks registered for it. An application is suspended while out of focus (libnx's default focus handling
-// for applications): its threads stop, and whatever measured time sees the whole stretch away at once when they go on.
-// So the game asks here once a frame (and the loading screen while it draws) what happened since, and pauses, and leaves
-// the time away out of the simulation.
+// and the hooks registered for it. With libnx's default focus handling for applications (SuspendHomeSleep) the system
+// suspends the game out of focus and tells it nothing, and SuspendHomeSleepNotify did no better on the console (the
+// tests of 2026-11-24: not one message while driving). So the game is not suspended (NoSuspend): it hears the focus go and come back and waits itself, no frames drawn and the sound paused, until it is
+// back (NX/OpenBve.NX/Applet.cs, WaitForFocus). The game asks here once a frame (the menu and the loading screen too)
+// what happened since.
 
 #include <stdint.h>
 #include <stdio.h>
@@ -137,11 +138,10 @@ EXPORT uint32_t obns_applet_poll(void)
 {
     mutexLock(&lock);
     if (!hooked) {
-        // libnx's default for applications (SuspendHomeSleep) suspends the game for the HOME menu and sleep without
-        // telling it: no focus message came at all (the tests of 2026-11-24). The Notify mode suspends it the same way
-        // and sends the messages.
-        Result mode = appletSetFocusHandlingMode(AppletFocusHandlingMode_SuspendHomeSleepNotify);
-        printf("OBNS applet: focus handling SuspendHomeSleepNotify: %s (0x%X)\n", R_SUCCEEDED(mode) ? "set" : "failed", (unsigned)mode);
+        // Not suspended out of focus: the suspending modes sent no focus message at all on the console (2026-11-24,
+        // SuspendHomeSleep and SuspendHomeSleepNotify alike), so the game waits itself (the header's comment).
+        Result mode = appletSetFocusHandlingMode(AppletFocusHandlingMode_NoSuspend);
+        printf("OBNS applet: focus handling NoSuspend: %s (0x%X)\n", R_SUCCEEDED(mode) ? "set" : "failed", (unsigned)mode);
         appletHook(&cookie, on_applet, NULL);
         hooked = 1;
         listening = 1;

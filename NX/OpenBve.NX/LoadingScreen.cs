@@ -125,6 +125,17 @@ namespace OpenBve.NX
 					log("loading screen: " + Applet.Describe(applet));
 				}
 
+				if (!Applet.InFocus)
+				{
+					// Not suspended by the system: nothing drawn while away; the route goes on loading meanwhile.
+					if ((Applet.WaitForFocus(log, "loading screen: ") & AppletEvents.Exit) != 0)
+					{
+						break;
+					}
+
+					continue;
+				}
+
 				double start = clock.Elapsed.TotalSeconds;
 				if (!canvas.Begin(0xFF0C1018))
 				{

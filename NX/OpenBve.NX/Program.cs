@@ -334,9 +334,9 @@ namespace OpenBve.NX
 				{
 					System.Threading.Thread.Sleep(1000);
 					long now = System.Threading.Interlocked.Read(ref framesFinished);
-					// The time the game was away (the HOME menu, sleep: the system suspends it) is no frame stuck.
+					// The time the game was away (the HOME menu, sleep: it waits out of focus) is no frame stuck.
 					uint awayNow = Applet.AwayCount;
-					if (now != seen || awayNow != away)
+					if (now != seen || awayNow != away || !Applet.InFocus)
 					{
 						seen = now;
 						away = awayNow;
@@ -480,6 +480,11 @@ namespace OpenBve.NX
 					global::Android.Util.Log.Flush(500);
 				}
 
+				if (!Applet.InFocus)
+				{
+					applet |= AppletEvents.FocusLost;
+				}
+
 				if (applet != AppletEvents.None)
 				{
 					Log("frames: " + Applet.Describe(applet));
@@ -495,9 +500,15 @@ namespace OpenBve.NX
 						pause.Show();
 					}
 
+					if (!Applet.InFocus)
+					{
+						// Not suspended by the system (runner/source/obns_applet.c): the game waits, paused, until it is back.
+						applet |= Applet.WaitForFocus(Log, "frames: ");
+					}
+
 					if ((applet & (AppletEvents.FocusBack | AppletEvents.Resumed)) != 0)
 					{
-						// The time away left out: the system suspended the game, and the next frame would have run it all at
+						// The time away left out: the game waited out of focus, and the next frame would have run it all at
 						// once. The frame statistics' window starts again too.
 						double back = clock.Elapsed.TotalSeconds;
 						last = back;
@@ -511,6 +522,8 @@ namespace OpenBve.NX
 						}
 
 						renderer.Profile.Restart();
+						// The time away is no time the textures went unused: none unloaded for it.
+						renderer.TextureManager.NoteAllUsed();
 					}
 
 					if ((applet & AppletEvents.Exit) != 0)
@@ -597,6 +610,8 @@ namespace OpenBve.NX
 					// by neither the system's messages nor the focus state - so it is taken as one: the game waits in its pause
 					// menu, and the time away is left out.
 					Log($"frames: {elapsed:F1} s since the last frame, with no event from the console" + (elapsed > 10.0 && session != null && driveBenchmark == null ? "; taken as time away: paused" : string.Empty));
+					// Seconds with no frame are no seconds of textures unused (TextureManager.NoteAllUsed).
+					renderer.TextureManager.NoteAllUsed();
 					if (elapsed > 10.0 && session != null && driveBenchmark == null)
 					{
 						if (!pause.Open)
