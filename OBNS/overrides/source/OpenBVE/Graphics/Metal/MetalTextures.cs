@@ -83,7 +83,8 @@ namespace OpenBve.Graphics.Metal
 			IntPtr pool = Mtl.objc_autoreleasePoolPush();
 			try
 			{
-				IntPtr desc = Mtl.Id(Mtl.Class("MTLTextureDescriptor"), selTexture2D, Mtl.PixelRGBA8Unorm, entry.Width, entry.Height, (byte)0);
+				ulong format = entry.Format == TextureFormat.Bc1 ? PixelBc1 : entry.Format == TextureFormat.Bc3 ? PixelBc3 : Mtl.PixelRGBA8Unorm;
+				IntPtr desc = Mtl.Id(Mtl.Class("MTLTextureDescriptor"), selTexture2D, format, entry.Width, entry.Height, (byte)0);
 				Mtl.Void(desc, selSetMipmapLevelCount, (ulong)entry.Levels);
 				Mtl.Void(desc, selSetUsage, Mtl.UsageShaderRead);
 				Mtl.Void(desc, selSetStorageMode, device.TextureStorage);
@@ -99,7 +100,7 @@ namespace OpenBve.Graphics.Metal
 				throw new InvalidOperationException("Metal could not make a texture of " + entry.Width + "x" + entry.Height);
 			}
 
-			imageBytes += ChainBytes(entry.Width, entry.Height, entry.Levels);
+			imageBytes += Bytes(entry);
 			if (logTextures)
 			{
 				Program.FileSystem.AppendToLogFile("OBNS Metal texture " + entry.Index + ": " + entry.Width + "x" + entry.Height + ", " + entry.Levels + " levels");
@@ -144,6 +145,47 @@ namespace OpenBve.Graphics.Metal
 
 			pending.Add(new Pending { Entry = entry, Pixels = pixels, Offset = stagingUsed });
 			stagingUsed += (bytes + 15) / 16 * 16;
+		}
+
+		/// <summary>MTLPixelFormatBC1_RGBA and MTLPixelFormatBC3_RGBA (every Mac GPU Metal runs on reads them).</summary>
+		private const ulong PixelBc1 = 130, PixelBc3 = 134;
+
+		protected override bool MakesCompressed => true;
+
+		/// <summary>The first level a whole number of 4x4 blocks, as Direct3D's.</summary>
+		protected override bool CompressedSizeAllowed(int width, int height) => width % 4 == 0 && height % 4 == 0;
+
+		/// <summary>An image's bytes in all its levels, for the log.</summary>
+		private static long Bytes(Entry entry)
+		{
+			if (entry.Format == TextureFormat.Rgba)
+			{
+				return ChainBytes(entry.Width, entry.Height, entry.Levels);
+			}
+
+			long bytes = 0;
+			for (int level = 0; level < entry.Levels; level++)
+			{
+				bytes += LibRender2.Textures.ObnsBlockCompression.LevelSize((int)LevelSize(entry.Width, level), (int)LevelSize(entry.Height, level), entry.Format == TextureFormat.Bc3);
+			}
+
+			return bytes;
+		}
+
+		/// <summary>Every level of a compressed image as it is: a row of 4x4 blocks a row of bytes.</summary>
+		protected override void WriteCompressed(Entry record, LibRender2.Textures.ObnsBlockCompression.Image image)
+		{
+			MetalEntry entry = (MetalEntry)record;
+			ulong blockBytes = image.Bc3 ? 16UL : 8UL;
+			for (int level = 0; level < image.Levels.Length; level++)
+			{
+				uint width = LevelSize(entry.Width, level), height = LevelSize(entry.Height, level);
+				Mtl.Region region = new Mtl.Region { Width = width, Height = height, Depth = 1 };
+				fixed (byte* bytes = image.Levels[level])
+				{
+					Mtl.Void(entry.Texture, selReplaceRegion, region, (ulong)level, bytes, (width + 3) / 4 * blockBytes);
+				}
+			}
 		}
 
 		/// <summary>Every level of a packed chain into the texture.</summary>
@@ -230,7 +272,7 @@ namespace OpenBve.Graphics.Metal
 			if (entry.Texture != IntPtr.Zero)
 			{
 				Mtl.Release(entry.Texture);
-				imageBytes -= ChainBytes(entry.Width, entry.Height, entry.Levels);
+				imageBytes -= Bytes(entry);
 			}
 
 			entry.Texture = IntPtr.Zero;

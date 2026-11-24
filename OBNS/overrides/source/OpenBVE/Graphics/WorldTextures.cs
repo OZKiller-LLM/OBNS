@@ -58,7 +58,136 @@ namespace OpenBve.Graphics
 			internal bool Failed;
 			/// <summary>Animated: OpenGL loads and animates it, and each frame is copied here.</summary>
 			internal bool Animated;
+			/// <summary>Its image's format: RGBA, or compressed (BC1 opaque, BC3 with alpha; the option, or Potato mode).</summary>
+			internal TextureFormat Format;
 		}
+
+		/// <summary>A texture image's format.</summary>
+		internal enum TextureFormat
+		{
+			Rgba,
+			Bc1,
+			Bc3
+		}
+
+		/// <summary>
+		/// Whether textures are made compressed (BC1/BC3: the "compress textures" option, or Potato mode): a quarter to an
+		/// eighth of the memory, so every texture a route has fits when they are loaded in advance (the user, 2026-11-25).
+		/// </summary>
+		internal static bool Compressing => ObnsBlockCompression.Enabled;
+
+		/// <summary>Whether this API makes compressed images (one that doesn't makes them all RGBA).</summary>
+		protected virtual bool MakesCompressed => false;
+
+		/// <summary>Whether a compressed image of this size can be made (Direct3D: the first level a whole number of 4x4 blocks).</summary>
+		protected virtual bool CompressedSizeAllowed(int width, int height) => true;
+
+		/// <summary>Writes a compressed image's levels (made by <see cref="MakeImage"/> in the entry's format).</summary>
+		protected virtual void WriteCompressed(Entry entry, ObnsBlockCompression.Image image)
+		{
+		}
+
+		/// <summary>A decoded texture compressed (encoded on a worker thread ahead of this, or now), or null to make it RGBA.</summary>
+		private ObnsBlockCompression.Image CompressedOf(Texture decoded, TextureTransparencyType transparency)
+		{
+			if (!Compressing || !MakesCompressed || noMipmaps || decoded == null || decoded.MultipleFrames)
+			{
+				return null;
+			}
+
+			ObnsBlockCompression.Image image;
+			if (CompressedSizeAllowed(decoded.Width, decoded.Height))
+			{
+				image = ObnsBlockCompression.Get(decoded, transparency);
+			}
+			else
+			{
+				lock (resampledAhead)
+				{
+					if (resampledAhead.TryGetValue(decoded, out image))
+					{
+						resampledAhead.Remove(decoded);
+					}
+				}
+
+				image = image ?? Resampled(decoded, transparency);
+			}
+
+			return image != null && image.Levels != null && image.Levels.Length > 0 ? image : null;
+		}
+
+		/// <summary>Compressed images of textures resampled to whole blocks, made on the workers (by the decode).</summary>
+		private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Texture, ObnsBlockCompression.Image> resampledAhead = new System.Runtime.CompilerServices.ConditionalWeakTable<Texture, ObnsBlockCompression.Image>();
+
+		/// <summary>
+		/// A texture that is not whole 4x4 blocks where the API needs them, resampled to the next size that is and compressed
+		/// (and cached as such): Direct3D's and Metal's; null if it can't be.
+		/// </summary>
+		private static ObnsBlockCompression.Image Resampled(Texture decoded, TextureTransparencyType transparency)
+		{
+			Texture whole = ObnsBlockCompression.ToWholeBlocks(decoded, transparency);
+			return whole == null ? null : ObnsBlockCompression.Get(whole, transparency);
+		}
+
+		/// <summary>On a worker: a decode compressed ahead of its upload, where textures are made compressed.</summary>
+		private void CompressAhead(Texture decoded)
+		{
+			if (!Compressing || !MakesCompressed || noMipmaps || decoded == null || decoded.MultipleFrames)
+			{
+				return;
+			}
+
+			if (CompressedSizeAllowed(decoded.Width, decoded.Height))
+			{
+				ObnsBlockCompression.Prepare(decoded);
+				return;
+			}
+
+			// Resampled to whole blocks and compressed here too, for CompressedOf.
+			try
+			{
+				ObnsBlockCompression.Image image = Resampled(decoded, decoded.GetTransparencyType());
+				if (image != null)
+				{
+					lock (resampledAhead)
+					{
+						resampledAhead.Remove(decoded);
+						resampledAhead.Add(decoded, image);
+					}
+				}
+			}
+			catch
+			{
+				// Resampled when it is made.
+			}
+		}
+
+		/// <summary>Makes the image in a compressed format and writes its levels.</summary>
+		private void UploadCompressed(Entry entry, ObnsBlockCompression.Image image)
+		{
+			entry.Width = (uint)image.Width;
+			entry.Height = (uint)image.Height;
+			entry.Levels = (uint)image.Levels.Length;
+			entry.Format = image.Bc3 ? TextureFormat.Bc3 : TextureFormat.Bc1;
+			MakeImage(entry);
+			entry.Made = true;
+			long bytes = 0;
+			foreach (byte[] level in image.Levels)
+			{
+				bytes += level.Length;
+			}
+
+			pixelBytes += bytes;
+			compressedBytes += bytes;
+			compressedCount++;
+			budgetBytes += bytes;
+			WriteCompressed(entry, image);
+			Published(entry);
+			Uploaded();
+		}
+
+		private long compressedBytes;
+		private int compressedCount;
 
 		/// <summary>Compares textures by reference (the handles the materials hold).</summary>
 		private sealed class ReferenceComparer : IEqualityComparer<Texture>
@@ -354,7 +483,22 @@ namespace OpenBve.Graphics
 				{
 					if (DecodesRunning() < maximumDecodes)
 					{
-						decoding[texture] = System.Threading.Tasks.Task.Run(() => manager.ObnsDecoded(texture, out Texture result) ? result : null);
+						decoding[texture] = System.Threading.Tasks.Task.Run(() =>
+						{
+							if (!manager.ObnsDecoded(texture, out Texture result))
+							{
+								return null;
+							}
+
+							// Compressed here too, where textures are made compressed (the encoder is slower than the decoder).
+							if (Compressing)
+							{
+								result.GetTransparencyType();
+								CompressAhead(result);
+							}
+
+							return result;
+						});
 						decodeAsked[texture] = frame;
 					}
 
@@ -377,6 +521,24 @@ namespace OpenBve.Graphics
 				{
 					TextureTransparencyType transparency = decoded.GetTransparencyType();
 					texture.Transparency = transparency;
+					ObnsBlockCompression.Image compressed = CompressedOf(decoded, transparency);
+					if (compressed != null)
+					{
+						entry = NewEntry(texture);
+						if (entry != null)
+						{
+							UploadCompressed(entry, compressed);
+						}
+
+						manager.ObnsReleaseDecoded(texture, decoded);
+						// (No place left for it: drawn white, as below.)
+						return entry != null ? entry.Index : -1;
+					}
+				}
+
+				if (haveDecode)
+				{
+					TextureTransparencyType transparency = decoded.GetTransparencyType();
 					// The alpha of RGBA (as upstream's decoders give PNG, JPEG and BMP) is left as it is: opaque means every
 					// alpha is 255 already, as the scan just made says of these very pixels.
 					Pixels pixels = Pixels.Of(decoded, decoded.Bytes, transparency == TextureTransparencyType.Opaque && decoded.PixelFormat != PixelFormat.RGBAlpha);
@@ -428,25 +590,18 @@ namespace OpenBve.Graphics
 		{
 			System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
 			List<KeyValuePair<Texture, OpenGlTextureWrapMode>> textures = WorldInUse();
-			int before = entries.Count;
+			int before = entries.Count, compressedBefore = compressedCount;
 			long startBytes = pixelBytes;
-			// Not past a share of the GPU's memory: the Tuen Ma Line's 7,706 textures came to 6.4 GB, and the next
-			// allocation failed on an 8 GB card (2026-11-25). The objects come in the route's order, so what fits is the
-			// start of the route; the rest is made as it is first drawn, as without the option.
-			long budget = PreloadBudget;
-			bool stopped = false;
+			// All of them (the user, 2026-11-25: "ALL textures"). The Tuen Ma Line's 7,706 come to 6.4 GB uncompressed, more
+			// than an 8 GB card has room for beside the rest: what doesn't fit goes in system memory (Direct3D and OpenGL's
+			// drivers page it; Vulkan's textures take system memory once the GPU's is full, GpuPool), and the "compress
+			// textures" option makes them a quarter to an eighth of that.
 			loadingAll = true;
 			try
 			{
 				// As the cab's in PreloadTrain: a batch decoded together on worker threads, then made in order here.
 				for (int first = 0; first < textures.Count; first += PreloadBatch)
 				{
-					if (pixelBytes - startBytes >= budget)
-					{
-						stopped = true;
-						break;
-					}
-
 					int last = Math.Min(first + PreloadBatch, textures.Count);
 					DecodeAhead(textures, first, last);
 					for (int i = first; i < last; i++)
@@ -464,21 +619,15 @@ namespace OpenBve.Graphics
 			}
 
 			Flush();
-			Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture, "OBNS " + api + ": textures loaded in advance: {0} of the route's {1} in {2:0.0} s, {3} MB of images{4}", entries.Count - before, textures.Count, clock.Elapsed.TotalSeconds, (pixelBytes - startBytes) >> 20, stopped ? string.Format(System.Globalization.CultureInfo.InvariantCulture, " - stopped at {0} MB, {1:0}% of the GPU's {2} MB; the rest are made when first drawn", budget >> 20, PreloadShare * 100, VideoMemory >> 20) : string.Empty));
+			preloaded = true;
+			long made = pixelBytes - startBytes;
+			Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture, "OBNS " + api + ": textures loaded in advance: {0} of the route's {1} in {2:0.0} s, {3} MB of images ({4} of them compressed){5}",
+				entries.Count - before, textures.Count, clock.Elapsed.TotalSeconds, made >> 20, compressedCount - compressedBefore,
+				VideoMemory > 0 ? ", the GPU has " + (VideoMemory >> 20) + " MB" + ((ulong)made > VideoMemory * 7 / 10 ? ": some may be in system memory" : string.Empty) : string.Empty));
 		}
 
-		/// <summary>The GPU's own memory in bytes, as the API's device found it (0 if not known).</summary>
+		/// <summary>The GPU's own memory in bytes, as the API's device found it (0 if not known), for the log.</summary>
 		internal static ulong VideoMemory;
-
-		/// <summary>The share of the GPU's memory textures loaded in advance may take: the rest is for the meshes, shadows,
-		/// targets and the textures made while driving.</summary>
-		private const double PreloadShare = 0.4;
-
-		/// <summary>The most textures loaded in advance may take when the GPU's memory is not known.</summary>
-		private const long PreloadBudgetUnknown = 1536L << 20;
-
-		/// <summary>The bytes textures loaded in advance may take (OpenGL's preload, GameWindow, keeps to it too).</summary>
-		internal static long PreloadBudget => VideoMemory > 0 ? (long)(VideoMemory * PreloadShare) : PreloadBudgetUnknown;
 
 		/// <summary>
 		/// Upstream's train texture preload (TrainBase.PreloadTextures) when the layer draws the world and the cab: the wrap
@@ -556,6 +705,8 @@ namespace OpenBve.Graphics
 				if (manager.ObnsDecoded(batch[i], out Texture decoded))
 				{
 					decoded.GetTransparencyType();
+					// Compressed here too, where textures are made compressed: the encoding on every core, not the main thread.
+					CompressAhead(decoded);
 					results[i] = decoded;
 				}
 			});
@@ -619,6 +770,105 @@ namespace OpenBve.Graphics
 				}
 			}
 
+			/*
+			 * Every train's too - the player's exterior, the preceding and scripted trains, their bogies and couplers - and the
+			 * backgrounds the route changes to: what was left to be made when first drawn was drawn white until then (a tester,
+			 * 2026-11-25: white textures before the actual texture loads in).
+			 */
+			List<global::TrainManager.Trains.TrainBase> trains = new List<global::TrainManager.Trains.TrainBase>();
+			if (Program.TrainManager?.Trains != null)
+			{
+				trains.AddRange(Program.TrainManager.Trains);
+			}
+
+			if (Program.TrainManager?.TFOs != null)
+			{
+				foreach (OpenBveApi.Trains.AbstractTrain train in Program.TrainManager.TFOs)
+				{
+					if (train is global::TrainManager.Trains.TrainBase scripted)
+					{
+						trains.Add(scripted);
+					}
+				}
+			}
+
+			foreach (global::TrainManager.Trains.TrainBase train in trains)
+			{
+				foreach (global::TrainManager.Car.CarBase car in train?.Cars ?? new global::TrainManager.Car.CarBase[0])
+				{
+					if (car == null)
+					{
+						continue;
+					}
+
+					if (car.CarSections != null)
+					{
+						foreach (LibRender2.Trains.CarSection section in car.CarSections.Values)
+						{
+							AddSection(section, Add);
+						}
+					}
+
+					AddSections(car.FrontBogie?.CarSections, Add);
+					AddSections(car.RearBogie?.CarSections, Add);
+					// (The coupler's sections are TrainManager's own.)
+					AddSections(car.Coupler == null ? null : CouplerSections.GetValue(car.Coupler) as LibRender2.Trains.CarSection[], Add);
+				}
+			}
+
+			HashSet<OpenBveApi.Routes.BackgroundHandle> backgrounds = new HashSet<OpenBveApi.Routes.BackgroundHandle>();
+			if (Program.CurrentRoute?.CurrentBackground != null)
+			{
+				backgrounds.Add(Program.CurrentRoute.CurrentBackground);
+			}
+
+			if (Program.CurrentRoute?.Tracks != null)
+			{
+				foreach (OpenBveApi.Routes.Track track in Program.CurrentRoute.Tracks.Values)
+				{
+					foreach (OpenBveApi.Routes.TrackElement element in track?.Elements ?? new OpenBveApi.Routes.TrackElement[0])
+					{
+						if (element.Events == null)
+						{
+							continue;
+						}
+
+						foreach (OpenBveApi.Routes.GeneralEvent trackEvent in element.Events)
+						{
+							if (trackEvent is RouteManager2.Events.BackgroundChangeEvent change)
+							{
+								foreach (System.Reflection.FieldInfo field in BackgroundFields)
+								{
+									if (field.GetValue(change) is OpenBveApi.Routes.BackgroundHandle background)
+									{
+										backgrounds.Add(background);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			foreach (OpenBveApi.Routes.BackgroundHandle background in backgrounds)
+			{
+				AddBackground(background, all, Add);
+			}
+
+			// The game's own images (the HUD's, from the program's Data folder), registered by now: in the 2026-11-25 test the only
+			// ones still made when first drawn. (Not every registered texture: the Tuen Ma Line registers some 31,000, most
+			// on objects it never places.)
+			Texture[] registered = TextureManager.RegisteredTextures;
+			string data = Program.FileSystem?.DataFolder;
+			int registeredCount = Math.Min(Program.Renderer.TextureManager.RegisteredTexturesCount, registered?.Length ?? 0);
+			for (int i = 0; !string.IsNullOrEmpty(data) && i < registeredCount; i++)
+			{
+				if (registered[i]?.Origin is PathOrigin origin && origin.Path != null && origin.Path.StartsWith(data, StringComparison.OrdinalIgnoreCase))
+				{
+					all.Add(new KeyValuePair<Texture, OpenGlTextureWrapMode>(registered[i], OpenGlTextureWrapMode.ClampClamp));
+				}
+			}
+
 			// Each texture and wrap mode once.
 			HashSet<KeyValuePair<Texture, OpenGlTextureWrapMode>> seen = new HashSet<KeyValuePair<Texture, OpenGlTextureWrapMode>>(new PairComparer());
 			List<KeyValuePair<Texture, OpenGlTextureWrapMode>> distinct = new List<KeyValuePair<Texture, OpenGlTextureWrapMode>>();
@@ -631,6 +881,60 @@ namespace OpenBve.Graphics
 			}
 
 			return distinct;
+		}
+
+		/// <summary>The coupler's car sections (TrainManager's own field).</summary>
+		private static readonly System.Reflection.FieldInfo CouplerSections = typeof(global::TrainManager.Car.Coupler).GetField("CarSections", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+
+		/// <summary>A background change's backgrounds (RouteManager2's own fields).</summary>
+		private static readonly System.Reflection.FieldInfo[] BackgroundFields = System.Array.FindAll(typeof(RouteManager2.Events.BackgroundChangeEvent).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public), field => typeof(OpenBveApi.Routes.BackgroundHandle).IsAssignableFrom(field.FieldType));
+
+		private static void AddSections(LibRender2.Trains.CarSection[] sections, Action<OpenBveApi.Objects.Mesh> add)
+		{
+			foreach (LibRender2.Trains.CarSection section in sections ?? new LibRender2.Trains.CarSection[0])
+			{
+				AddSection(section, add);
+			}
+		}
+
+		/// <summary>A car section's meshes: every element's every state.</summary>
+		private static void AddSection(LibRender2.Trains.CarSection section, Action<OpenBveApi.Objects.Mesh> add)
+		{
+			foreach (LibRender2.Trains.ElementsGroup group in section?.Groups ?? new LibRender2.Trains.ElementsGroup[0])
+			{
+				foreach (OpenBveApi.Objects.AnimatedObject element in group?.Elements ?? new OpenBveApi.Objects.AnimatedObject[0])
+				{
+					foreach (OpenBveApi.Objects.ObjectState state in element?.States ?? new OpenBveApi.Objects.ObjectState[0])
+					{
+						add(state?.Prototype?.Mesh);
+					}
+				}
+			}
+		}
+
+		/// <summary>A background's textures: its image (repeated across, as the background is drawn), or its object's meshes.</summary>
+		private static void AddBackground(OpenBveApi.Routes.BackgroundHandle background, List<KeyValuePair<Texture, OpenGlTextureWrapMode>> all, Action<OpenBveApi.Objects.Mesh> add)
+		{
+			switch (background)
+			{
+				case OpenBveApi.Routes.StaticBackground image:
+					if (image.Texture != null)
+					{
+						all.Add(new KeyValuePair<Texture, OpenGlTextureWrapMode>(image.Texture, OpenGlTextureWrapMode.RepeatClamp));
+					}
+
+					break;
+				case OpenBveApi.Routes.DynamicBackground dynamic:
+					foreach (OpenBveApi.Routes.StaticBackground image in dynamic.StaticBackgrounds ?? new OpenBveApi.Routes.StaticBackground[0])
+					{
+						AddBackground(image, all, add);
+					}
+
+					break;
+				case OpenBveApi.Routes.BackgroundObject backgroundObject:
+					add(backgroundObject.ObjectState?.Prototype?.Mesh);
+					break;
+			}
 		}
 
 		/// <summary>Compares (texture, wrap mode) pairs by the texture's reference.</summary>
@@ -748,8 +1052,25 @@ namespace OpenBve.Graphics
 			entry.Index = index;
 			entries[texture] = entry;
 			Generation++;
+			if (preloaded && !loadingAll)
+			{
+				// Loaded in advance, yet one made now - drawn white until then: counted, and the first named (the user,
+				// 2026-11-25: "make sure preloaded textures are loaded").
+				MadeAfterPreload++;
+				if (MadeAfterPreload <= 20)
+				{
+					Program.FileSystem.AppendToLogFile("OBNS " + api + ": a texture not loaded in advance, made when first drawn: " + (texture.Origin?.ToString() ?? "(no file)"));
+				}
+			}
+
 			return entry;
 		}
+
+		/// <summary>Whether the textures were loaded in advance (LoadAll).</summary>
+		private bool preloaded;
+
+		/// <summary>Textures made after they were loaded in advance (when first drawn): none if the preload took them all.</summary>
+		internal int MadeAfterPreload { get; private set; }
 
 		/// <summary>Upstream is unloading a texture: its copy goes once the frames in flight are done with it.</summary>
 		internal void Unloading(Texture texture)
@@ -1055,7 +1376,7 @@ namespace OpenBve.Graphics
 			Uploaded();
 		}
 
-		internal string Describe() => entries.Count + " textures (" + (pixelBytes >> 20) + " MB of pixels made), " + DescribeStorage();
+		internal string Describe() => entries.Count + " textures (" + (pixelBytes >> 20) + " MB of pixels made" + (compressedCount > 0 ? ", " + compressedCount + " compressed in " + (compressedBytes >> 20) + " MB" : string.Empty) + (preloaded ? ", " + MadeAfterPreload + " made after the preload" : string.Empty) + "), " + DescribeStorage();
 
 		public virtual void Dispose()
 		{

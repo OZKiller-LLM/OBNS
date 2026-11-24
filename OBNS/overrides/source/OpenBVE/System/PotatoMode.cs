@@ -106,8 +106,10 @@ namespace OpenBve
 			LibRender2.BaseRenderer.ObnsPotatoShader = potato;
 			// OpenGL's textures compressed (BC1 opaque, BC3 with alpha), each encoded once and kept in the settings folder's
 			// cache; "bilinear mipmapped" bilinear within the nearest mipmap.
-			LibRender2.Textures.ObnsBlockCompression.Enabled = potato;
-			LibRender2.Textures.ObnsBlockCompression.CacheFolder = OpenBveApi.Path.CombineDirectory(Program.FileSystem.SettingsFolder, "PotatoTextures");
+			// The "compress textures" option does the same outside Potato mode, for every renderer (WorldTextures), with a cache of
+			// its own (the user, 2026-11-25).
+			LibRender2.Textures.ObnsBlockCompression.Enabled = potato || ObnsOptions.CompressTextures;
+			LibRender2.Textures.ObnsBlockCompression.CacheFolder = OpenBveApi.Path.CombineDirectory(Program.FileSystem.SettingsFolder, potato ? "PotatoTextures" : "CompressedTextures");
 			LibRender2.Textures.TextureManager.ObnsBilinearFiltering = potato;
 
 			// Textures at most 1024 px, as they are decoded (Host.LoadTexture): one place for every renderer.
@@ -213,9 +215,9 @@ namespace OpenBve
 		/// <summary>For the log once a game has loaded: how many of OpenGL's textures were compressed, and from where.</summary>
 		internal static void LogLoaded()
 		{
-			if (Active && LibRender2.Textures.ObnsBlockCompression.Enabled)
+			if (LibRender2.Textures.ObnsBlockCompression.Enabled)
 			{
-				Program.FileSystem.AppendToLogFile("OBNS Potato mode: compressed textures while loading: " + LibRender2.Textures.ObnsBlockCompression.TakeCounts());
+				Program.FileSystem.AppendToLogFile((Active ? "OBNS Potato mode" : "OBNS") + ": compressed textures while loading: " + LibRender2.Textures.ObnsBlockCompression.TakeCounts());
 			}
 		}
 

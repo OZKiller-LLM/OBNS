@@ -23,7 +23,7 @@
 //SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // OBNS: not an upstream file. OBNS's rows in the options (OBNS/VULKAN.md, OBNS/RENDERERS.md): the renderer, the OpenGL
-// HUD fallback and Potato mode (PotatoMode.cs), added below the display group's own rows when the form loads (the groups
+// HUD fallback, Potato mode (PotatoMode.cs) and compressed textures, added below the display group's own rows when the form loads (the groups
 // below are moved down to make room), saved with the options. The same rows are in the OpenGL and native (macOS) menus,
 // which are this form (OBNS/GLFORMS.md).
 
@@ -40,6 +40,7 @@ namespace OpenBve
 		private CheckBox checkboxObnsHudFallback;
 		private CheckBox checkboxObnsPotato;
 		private Label labelObnsPotatoNote;
+		private CheckBox checkboxObnsCompress;
 		private ToolTip obnsTips;
 		private ObnsOptions.RendererKind obnsRendererShown;
 
@@ -163,8 +164,17 @@ namespace OpenBve
 				Size = new Size(comboboxVSync.Right - labelVSync.Left, noteHeight),
 				TextAlign = ContentAlignment.TopLeft
 			};
+			// Compressed textures (the user's choice, 2026-11-25: selectable, off by default), below Potato mode's note.
+			checkboxObnsCompress = new CheckBox
+			{
+				Anchor = comboboxVSync.Anchor,
+				AutoEllipsis = true,
+				Checked = ObnsOptions.CompressTextures,
+				Location = new Point(comboboxVSync.Left, top + 2 * rowHeight + fallbackHeight + noteHeight),
+				Size = new Size(comboboxVSync.Width, rowHeight - 2)
+			};
 			ObnsApplyLanguage();
-			int potatoHeight = rowHeight + noteHeight;
+			int potatoHeight = rowHeight + noteHeight + rowHeight;
 
 			// What drew the last game, and why if it isn't what was asked for, on a row below.
 			string drawn = ObnsOptions.LastDrawnText;
@@ -199,6 +209,7 @@ namespace OpenBve
 
 			groupboxDisplayMode.Controls.Add(checkboxObnsPotato);
 			groupboxDisplayMode.Controls.Add(labelObnsPotatoNote);
+			groupboxDisplayMode.Controls.Add(checkboxObnsCompress);
 			groupboxDisplayMode.Controls.Add(labelObnsRendererDrawn);
 		}
 
@@ -214,6 +225,11 @@ namespace OpenBve
 			labelObnsPotatoNote.Text = ObnsText.Get("potato_mode_note");
 			obnsTips?.SetToolTip(checkboxObnsPotato, ObnsText.Get("potato_mode_detail"));
 			obnsTips?.SetToolTip(labelObnsPotatoNote, ObnsText.Get("potato_mode_detail"));
+			if (checkboxObnsCompress != null)
+			{
+				checkboxObnsCompress.Text = ObnsText.Get("compress_textures");
+				obnsTips?.SetToolTip(checkboxObnsCompress, ObnsText.Get("compress_textures_detail"));
+			}
 		}
 
 		private void ObnsAddRenderer(string name, ObnsOptions.RendererKind kind)
@@ -241,6 +257,11 @@ namespace OpenBve
 				if (checkboxObnsPotato != null)
 				{
 					ObnsOptions.PotatoMode = checkboxObnsPotato.Checked;
+				}
+
+				if (checkboxObnsCompress != null)
+				{
+					ObnsOptions.CompressTextures = checkboxObnsCompress.Checked;
 				}
 
 				ObnsOptions.Save();

@@ -76,8 +76,8 @@ namespace OpenBve.Graphics.Direct3D9
 		protected override void MakeImage(Entry record)
 		{
 			D3D9Entry entry = (D3D9Entry)record;
-			entry.Texture = D9.CreateTexture(device.Device, entry.Width, entry.Height, entry.Levels, 0, D9.FormatA8R8G8B8, D9.PoolDefault);
-			imageBytes += ChainBytes(entry.Width, entry.Height, entry.Levels);
+			entry.Texture = D9.CreateTexture(device.Device, entry.Width, entry.Height, entry.Levels, 0, FormatOf(entry.Format), D9.PoolDefault);
+			imageBytes += Bytes(entry);
 			if (logTextures)
 			{
 				Program.FileSystem.AppendToLogFile("OBNS Direct3D 9 texture " + entry.Index + ": " + entry.Width + "x" + entry.Height + ", " + entry.Levels + " levels");
@@ -122,6 +122,66 @@ namespace OpenBve.Graphics.Direct3D9
 
 			pending.Add(new Pending { Entry = entry, Pixels = pixels, Offset = stagingUsed });
 			stagingUsed += (bytes + 15) / 16 * 16;
+		}
+
+		/// <summary>D3DFMT_DXT1 and D3DFMT_DXT5 (BC1 and BC3), as four-character codes.</summary>
+		private const uint FormatDxt1 = 0x31545844, FormatDxt5 = 0x35545844;
+
+		private static uint FormatOf(TextureFormat format) => format == TextureFormat.Bc1 ? FormatDxt1 : format == TextureFormat.Bc3 ? FormatDxt5 : D9.FormatA8R8G8B8;
+
+		protected override bool MakesCompressed => true;
+
+		/// <summary>Direct3D's compressed textures: the first level a whole number of 4x4 blocks.</summary>
+		protected override bool CompressedSizeAllowed(int width, int height) => width % 4 == 0 && height % 4 == 0;
+
+		/// <summary>An image's bytes in all its levels, for the log.</summary>
+		private static long Bytes(Entry entry)
+		{
+			if (entry.Format == TextureFormat.Rgba)
+			{
+				return ChainBytes(entry.Width, entry.Height, entry.Levels);
+			}
+
+			long bytes = 0;
+			for (int level = 0; level < entry.Levels; level++)
+			{
+				bytes += LibRender2.Textures.ObnsBlockCompression.LevelSize((int)LevelSize(entry.Width, level), (int)LevelSize(entry.Height, level), entry.Format == TextureFormat.Bc3);
+			}
+
+			return bytes;
+		}
+
+		/// <summary>Every level of a compressed image as it is, rows of 4x4 blocks: through a system-memory texture, copied by the GPU.</summary>
+		protected override void WriteCompressed(Entry record, LibRender2.Textures.ObnsBlockCompression.Image image)
+		{
+			D3D9Entry entry = (D3D9Entry)record;
+			IntPtr source = D9.CreateTexture(device.Device, entry.Width, entry.Height, entry.Levels, 0, FormatOf(entry.Format), D9.PoolSystemMemory);
+			try
+			{
+				uint blockBytes = image.Bc3 ? 16u : 8u;
+				for (int level = 0; level < image.Levels.Length; level++)
+				{
+					uint blocksWide = (LevelSize(entry.Width, level) + 3) / 4, blocksHigh = (LevelSize(entry.Height, level) + 3) / 4;
+					uint rowBytes = blocksWide * blockBytes;
+					D9.LockedRect locked = D9.LockRect(source, (uint)level, 0);
+					fixed (byte* from = image.Levels[level])
+					{
+						// (A compressed level's pitch is a row of blocks.)
+						for (uint row = 0; row < blocksHigh; row++)
+						{
+							Buffer.MemoryCopy(from + (long)row * rowBytes, locked.Bits + (long)row * locked.Pitch, locked.Pitch, rowBytes);
+						}
+					}
+
+					D9.UnlockRect(source, (uint)level);
+				}
+
+				D9.UpdateTexture(device.Device, source, entry.Texture);
+			}
+			finally
+			{
+				D9.Release(source);
+			}
 		}
 
 		/// <summary>Every level of a packed chain into the texture: through a system-memory texture, copied by the GPU.</summary>
@@ -224,7 +284,7 @@ namespace OpenBve.Graphics.Direct3D9
 			if (entry.Texture != IntPtr.Zero)
 			{
 				D9.Release(entry.Texture);
-				imageBytes -= ChainBytes(entry.Width, entry.Height, entry.Levels);
+				imageBytes -= Bytes(entry);
 			}
 
 			entry.Texture = IntPtr.Zero;

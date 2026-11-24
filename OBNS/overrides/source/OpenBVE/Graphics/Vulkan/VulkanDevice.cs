@@ -679,6 +679,10 @@ namespace OpenBve.Graphics.Vulkan
 			FillModeNonSolid = features.Features[13] != 0;
 			enable.Features[13] = FillModeNonSolid ? 1u : 0u;
 			enable.Features[imageArrayDynamicIndexing] = Bindless ? 0u : 1u;
+			// textureCompressionBC (22): the "compress textures" option's BC1/BC3 images (WorldTextures), where the device has it.
+			const int textureCompressionBC = 22;
+			TextureCompressionBC = features.Features[textureCompressionBC] != 0;
+			enable.Features[textureCompressionBC] = TextureCompressionBC ? 1u : 0u;
 
 			// A graphics queue.
 			uint familyCount = 0;
@@ -937,6 +941,28 @@ namespace OpenBve.Graphics.Vulkan
 		}
 
 		/// <summary>A memory type allowed by a resource's type bits with all the properties asked for.</summary>
+		/// <summary>Whether BC1/BC3 images can be made (textureCompressionBC, enabled where the device has it).</summary>
+		internal bool TextureCompressionBC;
+
+		/// <summary>
+		/// A memory type among typeBits in a heap that is not the GPU's own (system memory the GPU reads over the bus), for
+		/// textures once the GPU's memory is full; uint.MaxValue if there is none.
+		/// </summary>
+		internal uint SystemMemoryType(uint typeBits)
+		{
+			Vk.PhysicalDeviceMemoryProperties memory = memoryProperties;
+			for (uint i = 0; i < memory.MemoryTypeCount; i++)
+			{
+				uint heap = memory.MemoryTypes[2 * i + 1];
+				if ((typeBits & (1u << (int)i)) != 0 && heap < memory.MemoryHeapCount && (memory.MemoryHeaps[heap * 2 + 1] & 1) == 0)
+				{
+					return i;
+				}
+			}
+
+			return uint.MaxValue;
+		}
+
 		internal uint MemoryType(uint typeBits, uint properties)
 		{
 			Vk.PhysicalDeviceMemoryProperties memory = memoryProperties;

@@ -74,7 +74,7 @@ namespace OpenBve.Graphics.Vulkan
 				blocks++;
 			}
 
-			return name + " " + (used >> 20) + " of " + (total >> 20) + " MB in " + blocks + " blocks" + (BlocksReleased > 0 ? " (" + BlocksReleased + " released when empty)" : "");
+			return name + " " + (used >> 20) + " of " + (total >> 20) + " MB in " + blocks + " blocks" + (SystemBlocks > 0 ? ", " + SystemBlocks + " of them in system memory" : "") + (BlocksReleased > 0 ? " (" + BlocksReleased + " released when empty)" : "");
 		}
 
 		/// <summary>A range of the pool, with the memory type bits a resource allows (images), making a block when none has room.</summary>
@@ -122,6 +122,11 @@ namespace OpenBve.Graphics.Vulkan
 				 */
 				if (bufferUsage == 0 && allocator.Used == 0 && range.Block > 0)
 				{
+					if (!systemMemory[range.Block])
+					{
+						deviceLocalBytes -= Math.Min(deviceLocalBytes, allocator.Size);
+					}
+
 					Vk.vkFreeMemory(device.Device, memories[range.Block], null);
 					memories[range.Block] = 0;
 					allocators[range.Block] = null;
@@ -132,6 +137,20 @@ namespace OpenBve.Graphics.Vulkan
 
 		/// <summary>Blocks of images given back to the system because they were left empty, for the log.</summary>
 		internal int BlocksReleased;
+
+		/// <summary>Blocks of images put in system memory because the GPU's was full, for the log.</summary>
+		internal int SystemBlocks;
+
+		/// <summary>VK_ERROR_OUT_OF_DEVICE_MEMORY.</summary>
+		private const int OutOfDeviceMemory = -2;
+
+		/// <summary>The most of the GPU's own memory a pool of images takes before its blocks go in system memory (0: no limit).</summary>
+		internal ulong DeviceLocalLimit;
+
+		private ulong deviceLocalBytes;
+
+		/// <summary>Whether each block is in system memory.</summary>
+		private readonly List<bool> systemMemory = new List<bool>();
 
 		private int AddBlock(ulong size, uint typeBits)
 		{
@@ -155,7 +174,43 @@ namespace OpenBve.Graphics.Vulkan
 				AllocationSize = requirements.Size,
 				MemoryTypeIndex = memoryType
 			};
-			Vk.Check(Vk.vkAllocateMemory(device.Device, &allocateInfo, null, out ulong memory), "vkAllocateMemory (" + name + ", " + (size >> 20) + " MB)");
+			// Past its share of the GPU's memory, a pool of images takes system memory at once: the rest of the GPU's is for what
+			// must be there (the frame's targets: with every texture of the Tuen Ma Line in it, one failed 33 s into the drive).
+			bool overShare = bufferUsage == 0 && DeviceLocalLimit > 0 && deviceLocalBytes + requirements.Size > DeviceLocalLimit;
+			ulong memory = 0;
+			int result = overShare ? OutOfDeviceMemory : Vk.vkAllocateMemory(device.Device, &allocateInfo, null, out memory);
+			bool inSystemMemory = false;
+
+			if (result == OutOfDeviceMemory && bufferUsage == 0)
+			{
+				/*
+				 * The GPU's memory full: images in system memory, which the GPU reads over the bus (slower to draw from, but
+				 * drawn), as Direct3D's and OpenGL's drivers do of themselves. Every texture of the Tuen Ma Line loaded in
+				 * advance came to 6.4 GB, and on an 8 GB card the next block failed (the user, 2026-11-25: load ALL of them).
+				 */
+				uint system = device.SystemMemoryType(requirements.MemoryTypeBits & typeBits);
+				if (system != uint.MaxValue)
+				{
+					allocateInfo.MemoryTypeIndex = system;
+					result = Vk.vkAllocateMemory(device.Device, &allocateInfo, null, out memory);
+					if (result >= 0)
+					{
+						memoryType = system;
+						inSystemMemory = true;
+						SystemBlocks++;
+						if (SystemBlocks == 1)
+						{
+							Program.FileSystem.AppendToLogFile("OBNS Vulkan: " + (overShare ? "the " + name + "' share of the GPU's memory (" + (DeviceLocalLimit >> 20) + " MB) is taken" : "the GPU's memory is full") + "; more " + name + " go in system memory (" + (size >> 20) + " MB blocks)");
+						}
+					}
+				}
+			}
+
+			Vk.Check(result, "vkAllocateMemory (" + name + ", " + (size >> 20) + " MB)");
+			if (bufferUsage == 0 && !inSystemMemory)
+			{
+				deviceLocalBytes += requirements.Size;
+			}
 			if (buffer != 0)
 			{
 				Vk.Check(Vk.vkBindBufferMemory(device.Device, buffer, memory, 0), "vkBindBufferMemory");
@@ -165,6 +220,7 @@ namespace OpenBve.Graphics.Vulkan
 			int slot = bufferUsage == 0 ? allocators.IndexOf(null) : -1;
 			if (slot >= 0)
 			{
+				systemMemory[slot] = inSystemMemory;
 				memories[slot] = memory;
 				memoryTypes[slot] = memoryType;
 				Buffers[slot] = buffer;
@@ -173,6 +229,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			memories.Add(memory);
+			systemMemory.Add(inSystemMemory);
 			memoryTypes.Add(memoryType);
 			Buffers.Add(buffer);
 			allocators.Add(new RangeAllocator(size));
@@ -196,6 +253,7 @@ namespace OpenBve.Graphics.Vulkan
 			}
 
 			memories.Clear();
+			systemMemory.Clear();
 			memoryTypes.Clear();
 			Buffers.Clear();
 			allocators.Clear();

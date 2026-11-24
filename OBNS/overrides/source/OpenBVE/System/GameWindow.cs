@@ -831,17 +831,12 @@ namespace OpenBve
 					// Every texture the route's objects draw, with the wrap mode each is drawn with (WorldTextures.WorldInUse).
 					System.Diagnostics.Stopwatch preloadClock = System.Diagnostics.Stopwatch.StartNew();
 					List<KeyValuePair<OpenBveApi.Textures.Texture, OpenBveApi.Textures.OpenGlTextureWrapMode>> textures = OpenBve.Graphics.WorldTextures.WorldInUse();
-					// Kept to a budget, as the world layer's (WorldTextures.PreloadBudget): the start of the route, the rest made
-					// when first drawn.
+					// All of them (the user, 2026-11-25): what the GPU has no room for, OpenGL's driver keeps in system memory;
+					// compressed (BC1/BC3) with the "compress textures" option, as Potato mode's (ObnsBlockCompression).
 					int loaded = 0;
-					long bytes = 0, budget = OpenBve.Graphics.WorldTextures.PreloadBudget;
+					long bytes = 0;
 					foreach (KeyValuePair<OpenBveApi.Textures.Texture, OpenBveApi.Textures.OpenGlTextureWrapMode> pair in textures)
 					{
-						if (bytes >= budget)
-						{
-							break;
-						}
-
 						OpenBveApi.Textures.Texture texture = pair.Key;
 						if (Program.CurrentHost.LoadTexture(ref texture, pair.Value))
 						{
@@ -850,7 +845,7 @@ namespace OpenBve
 						}
 					}
 
-					Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture, "OBNS OpenGL: textures loaded in advance: {0} of the route's {1} in {2:0.0} s, about {3} MB{4}", loaded, textures.Count, preloadClock.Elapsed.TotalSeconds, bytes >> 20, bytes >= budget ? " - stopped at the budget of " + (budget >> 20) + " MB; the rest are made when first drawn" : string.Empty));
+					Program.FileSystem.AppendToLogFile(string.Format(System.Globalization.CultureInfo.InvariantCulture, "OBNS OpenGL: textures loaded in advance: {0} of the route's {1} in {2:0.0} s, about {3} MB uncompressed{4}", loaded, textures.Count, preloadClock.Elapsed.TotalSeconds, bytes >> 20, LibRender2.Textures.ObnsBlockCompression.Enabled ? " (compressed BC1/BC3)" : string.Empty));
 				}
 			}
 			else

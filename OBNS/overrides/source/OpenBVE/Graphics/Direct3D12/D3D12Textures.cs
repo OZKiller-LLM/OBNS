@@ -110,12 +110,12 @@ namespace OpenBve.Graphics.Direct3D12
 				Height = entry.Height,
 				DepthOrArraySize = 1,
 				MipLevels = (ushort)entry.Levels,
-				Format = Dx.FormatR8G8B8A8Unorm,
+				Format = FormatOf(entry.Format),
 				SampleCount = 1
 			};
 			entry.Texture = D12.CreateCommittedResource(device.Device, D12.HeapDefault, D12.HeapFlagNone, desc, D12.StateCopyDest);
 			entry.Readable = false;
-			imageBytes += ChainBytes(entry.Width, entry.Height, entry.Levels);
+			imageBytes += Bytes(entry);
 			if (logTextures)
 			{
 				Program.FileSystem.AppendToLogFile("OBNS Direct3D 12 texture " + entry.Index + ": " + entry.Width + "x" + entry.Height + ", " + entry.Levels + " levels");
@@ -162,6 +162,64 @@ namespace OpenBve.Graphics.Direct3D12
 			stagingUsed += (bytes + 15) / 16 * 16;
 		}
 
+		/// <summary>DXGI_FORMAT_BC1_UNORM and DXGI_FORMAT_BC3_UNORM.</summary>
+		private const uint FormatBc1 = 71, FormatBc3 = 77;
+
+		private static uint FormatOf(TextureFormat format) => format == TextureFormat.Bc1 ? FormatBc1 : format == TextureFormat.Bc3 ? FormatBc3 : Dx.FormatR8G8B8A8Unorm;
+
+		protected override bool MakesCompressed => true;
+
+		/// <summary>Direct3D's compressed textures: the first level a whole number of 4x4 blocks.</summary>
+		protected override bool CompressedSizeAllowed(int width, int height) => width % 4 == 0 && height % 4 == 0;
+
+		/// <summary>An image's bytes in all its levels, for the log.</summary>
+		private static long Bytes(Entry entry)
+		{
+			if (entry.Format == TextureFormat.Rgba)
+			{
+				return ChainBytes(entry.Width, entry.Height, entry.Levels);
+			}
+
+			long bytes = 0;
+			for (int level = 0; level < entry.Levels; level++)
+			{
+				bytes += LibRender2.Textures.ObnsBlockCompression.LevelSize((int)LevelSize(entry.Width, level), (int)LevelSize(entry.Height, level), entry.Format == TextureFormat.Bc3);
+			}
+
+			return bytes;
+		}
+
+		/// <summary>Every level of a compressed image copied in as it is: rows of 4x4 blocks, each row's start aligned as Direct3D needs.</summary>
+		protected override void WriteCompressed(Entry record, LibRender2.Textures.ObnsBlockCompression.Image image)
+		{
+			D3D12Entry entry = (D3D12Entry)record;
+			uint blockBytes = image.Bc3 ? 16u : 8u, format = FormatOf(entry.Format);
+			for (int level = 0; level < image.Levels.Length; level++)
+			{
+				uint blocksWide = (LevelSize(entry.Width, level) + 3) / 4, blocksHigh = (LevelSize(entry.Height, level) + 3) / 4;
+				uint rowBytes = blocksWide * blockBytes;
+				uint pitch = (rowBytes + D12.PitchAlignment - 1) / D12.PitchAlignment * D12.PitchAlignment;
+				byte* to = uploads.Reserve((ulong)pitch * blocksHigh, D12.PlacementAlignment, out IntPtr source, out ulong offset);
+				fixed (byte* from = image.Levels[level])
+				{
+					for (uint row = 0; row < blocksHigh; row++)
+					{
+						Buffer.MemoryCopy(from + (long)row * rowBytes, to + (long)row * pitch, pitch, rowBytes);
+					}
+				}
+
+				// (A compressed footprint is whole blocks: a level smaller than a block is copied as one.)
+				D12.TextureCopyLocation destination = new D12.TextureCopyLocation { Resource = entry.Texture, Type = D12.CopySubresource, SubresourceIndex = (uint)level };
+				D12.TextureCopyLocation footprint = new D12.TextureCopyLocation { Resource = source, Type = D12.CopyFootprint, Offset = offset, Format = format, Width = blocksWide * 4, Height = blocksHigh * 4, Depth = 1, RowPitch = pitch };
+				D12.CopyTextureRegion(uploads.List, destination, footprint);
+			}
+
+			D12.ResourceBarrier* barrier = stackalloc D12.ResourceBarrier[1];
+			barrier[0] = D12.Transition(entry.Texture, D12.StateCopyDest, D12.StatePixelShaderResource);
+			D12.ResourceBarriers(uploads.List, barrier, 1);
+			entry.Readable = true;
+		}
+
 		/// <summary>Copies every level of a packed chain into the texture (through upload memory, rows aligned as Direct3D needs).</summary>
 		private void Send(D3D12Entry entry, byte* chain)
 		{
@@ -201,7 +259,7 @@ namespace OpenBve.Graphics.Direct3D12
 				Array.Resize(ref published, Math.Max(entry.Index + 1, published.Length * 2));
 			}
 
-			D12.ShaderResourceViewDesc view = new D12.ShaderResourceViewDesc { Format = Dx.FormatR8G8B8A8Unorm, ViewDimension = D12.SrvTexture2D, Shader4ComponentMapping = D12.DefaultComponentMapping, MipLevels = entry.Levels };
+			D12.ShaderResourceViewDesc view = new D12.ShaderResourceViewDesc { Format = FormatOf(entry.Format), ViewDimension = D12.SrvTexture2D, Shader4ComponentMapping = D12.DefaultComponentMapping, MipLevels = entry.Levels };
 			D12.CreateShaderResourceView(device.Device, entry.Texture, &view, CpuView(entry.Index));
 			published[entry.Index] = true;
 		}
@@ -269,7 +327,7 @@ namespace OpenBve.Graphics.Direct3D12
 				}
 
 				D12.Release(entry.Texture);
-				imageBytes -= ChainBytes(entry.Width, entry.Height, entry.Levels);
+				imageBytes -= Bytes(entry);
 			}
 
 			entry.Texture = IntPtr.Zero;

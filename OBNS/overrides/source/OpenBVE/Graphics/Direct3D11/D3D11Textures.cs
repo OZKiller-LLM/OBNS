@@ -76,23 +76,24 @@ namespace OpenBve.Graphics.Direct3D11
 		protected override void MakeImage(Entry record)
 		{
 			D3D11Entry entry = (D3D11Entry)record;
-			bool mipmapped = entry.Levels > 1;
+			bool compressed = entry.Format != TextureFormat.Rgba;
+			// (A compressed image's levels come with it; an RGBA one's are made by Direct3D, drawing them: a render target.)
+			bool generated = entry.Levels > 1 && !compressed;
 			Dx.Texture2DDesc desc = new Dx.Texture2DDesc
 			{
 				Width = entry.Width,
 				Height = entry.Height,
 				MipLevels = entry.Levels,
 				ArraySize = 1,
-				Format = Dx.FormatR8G8B8A8Unorm,
+				Format = entry.Format == TextureFormat.Bc1 ? FormatBc1 : entry.Format == TextureFormat.Bc3 ? FormatBc3 : Dx.FormatR8G8B8A8Unorm,
 				SampleCount = 1,
 				Usage = Dx.UsageDefault,
-				// Direct3D makes the levels by drawing them: a render target.
-				BindFlags = Dx.BindShaderResource | (mipmapped ? Dx.BindRenderTarget : 0),
-				MiscFlags = mipmapped ? Dx.MiscGenerateMips : 0
+				BindFlags = Dx.BindShaderResource | (generated ? Dx.BindRenderTarget : 0),
+				MiscFlags = generated ? Dx.MiscGenerateMips : 0
 			};
 			entry.Texture = Dx.CreateTexture2D(device.Device, desc);
 			entry.View = Dx.CreateShaderResourceView(device.Device, entry.Texture);
-			imageBytes += (long)entry.Width * entry.Height * 4 * (mipmapped ? 4 : 3) / 3;
+			imageBytes += Bytes(entry);
 			if (logTextures)
 			{
 				Program.FileSystem.AppendToLogFile("OBNS Direct3D 11 texture " + entry.Index + ": " + entry.Width + "x" + entry.Height + ", " + entry.Levels + " levels");
@@ -137,6 +138,46 @@ namespace OpenBve.Graphics.Direct3D11
 
 			pending.Add(new Pending { Entry = entry, Pixels = pixels, Offset = stagingUsed });
 			stagingUsed += (bytes + 15) / 16 * 16;
+		}
+
+		/// <summary>DXGI_FORMAT_BC1_UNORM and DXGI_FORMAT_BC3_UNORM.</summary>
+		private const uint FormatBc1 = 71, FormatBc3 = 77;
+
+		protected override bool MakesCompressed => true;
+
+		/// <summary>Direct3D's compressed textures: the first level a whole number of 4x4 blocks.</summary>
+		protected override bool CompressedSizeAllowed(int width, int height) => width % 4 == 0 && height % 4 == 0;
+
+		/// <summary>An image's bytes in all its levels, for the log.</summary>
+		private static long Bytes(Entry entry)
+		{
+			if (entry.Format == TextureFormat.Rgba)
+			{
+				return (long)entry.Width * entry.Height * 4 * (entry.Levels > 1 ? 4 : 3) / 3;
+			}
+
+			long bytes = 0;
+			for (int level = 0; level < entry.Levels; level++)
+			{
+				bytes += LibRender2.Textures.ObnsBlockCompression.LevelSize((int)LevelSize(entry.Width, level), (int)LevelSize(entry.Height, level), entry.Format == TextureFormat.Bc3);
+			}
+
+			return bytes;
+		}
+
+		/// <summary>Every level of a compressed image as it is, a row of 4x4 blocks at a time.</summary>
+		protected override void WriteCompressed(Entry record, LibRender2.Textures.ObnsBlockCompression.Image image)
+		{
+			D3D11Entry entry = (D3D11Entry)record;
+			int blockBytes = image.Bc3 ? 16 : 8;
+			for (int level = 0; level < image.Levels.Length; level++)
+			{
+				uint width = LevelSize(entry.Width, level);
+				fixed (byte* bytes = image.Levels[level])
+				{
+					Dx.UpdateSubresource(device.Context, entry.Texture, (uint)level, bytes, (width + 3) / 4 * (uint)blockBytes);
+				}
+			}
 		}
 
 		/// <summary>The first level from RGBA pixels, and the others made from it.</summary>
@@ -233,7 +274,7 @@ namespace OpenBve.Graphics.Direct3D11
 			Dx.Release(entry.Texture);
 			if (entry.Texture != IntPtr.Zero)
 			{
-				imageBytes -= (long)entry.Width * entry.Height * 4 * (entry.Levels > 1 ? 4 : 3) / 3;
+				imageBytes -= Bytes(entry);
 			}
 
 			entry.View = entry.Texture = IntPtr.Zero;

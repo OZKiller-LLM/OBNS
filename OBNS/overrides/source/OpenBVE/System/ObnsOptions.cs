@@ -62,6 +62,27 @@ namespace OpenBve
 		private static bool lastHybrid;
 		private static bool potatoMode;
 		private static int potatoSceneScale;
+		private static bool compressTextures;
+
+		/// <summary>
+		/// Textures compressed (BC1 opaque, BC3 with alpha; the user's choice, 2026-11-25: off by default, selectable): a quarter
+		/// to an eighth of the memory, so every texture of a route loaded in advance fits on the GPU, at a little quality.
+		/// Each is encoded once and kept in the settings folder's CompressedTextures. Potato mode compresses them anyway.
+		/// Takes effect when a game starts.
+		/// </summary>
+		internal static bool CompressTextures
+		{
+			get
+			{
+				Load();
+				return compressTextures;
+			}
+			set
+			{
+				Load();
+				compressTextures = value;
+			}
+		}
 
 		/// <summary>
 		/// Potato mode (the user's choice, 2026-11-09; off by default): Android's Potato mode on the desktop, less its 16-bit
@@ -304,6 +325,10 @@ namespace OpenBve
 					{
 						potatoMode = value == "true";
 					}
+					else if (key == "compresstextures")
+					{
+						compressTextures = value == "true";
+					}
 					else if (key == "potatoscenescale")
 					{
 						int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out potatoSceneScale);
@@ -346,6 +371,11 @@ namespace OpenBve
 				if (potatoMode)
 				{
 					builder.AppendLine("potatomode = true");
+				}
+
+				if (compressTextures)
+				{
+					builder.AppendLine("compresstextures = true");
 				}
 
 				if (potatoSceneScale > 0)

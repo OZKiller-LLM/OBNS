@@ -285,6 +285,52 @@ namespace LibRender2.Textures
 			return hash;
 		}
 
+		/// <summary>
+		/// The texture resampled (bilinear) to the next whole number of 4x4 blocks across and down, as RGBA: Direct3D's and
+		/// Metal's compressed images must be whole blocks, and about two in five of the Tuen Ma Line's textures are not
+		/// (2026-11-25). A cut-out's alpha is kept to 0 or 255. Faces sample a texture by fractions of its size, so it is
+		/// drawn as before. Null if its pixels can't be read.
+		/// </summary>
+		public static Texture ToWholeBlocks(Texture texture, TextureTransparencyType transparency)
+		{
+			int w = texture.Width, h = texture.Height;
+			byte[] rgba = ToRgba(texture);
+			if (rgba == null || w <= 0 || h <= 0)
+			{
+				return null;
+			}
+
+			int nw = (w + 3) / 4 * 4, nh = (h + 3) / 4 * 4;
+			bool cutout = transparency == TextureTransparencyType.Partial;
+			byte[] result = new byte[nw * nh * 4];
+			for (int y = 0; y < nh; y++)
+			{
+				// The target pixel's centre in the source's pixels.
+				double sy = Math.Max(0.0, (y + 0.5) * h / nh - 0.5);
+				int y0 = Math.Min(h - 1, (int)sy), y1 = Math.Min(h - 1, y0 + 1);
+				double fy = sy - y0;
+				for (int x = 0; x < nw; x++)
+				{
+					double sx = Math.Max(0.0, (x + 0.5) * w / nw - 0.5);
+					int x0 = Math.Min(w - 1, (int)sx), x1 = Math.Min(w - 1, x0 + 1);
+					double fx = sx - x0;
+					int a = (y0 * w + x0) * 4, b = (y0 * w + x1) * 4, c = (y1 * w + x0) * 4, d = (y1 * w + x1) * 4, o = (y * nw + x) * 4;
+					for (int k = 0; k < 4; k++)
+					{
+						double top = rgba[a + k] + (rgba[b + k] - rgba[a + k]) * fx, bottom = rgba[c + k] + (rgba[d + k] - rgba[c + k]) * fx;
+						result[o + k] = (byte)Math.Round(top + (bottom - top) * fy);
+					}
+
+					if (cutout)
+					{
+						result[o + 3] = result[o + 3] >= 128 ? (byte)255 : (byte)0;
+					}
+				}
+			}
+
+			return new Texture(nw, nh, PixelFormat.RGBAlpha, result, (OpenBveApi.Colors.Color24[])null);
+		}
+
 		// --- the pixels as RGBA ---
 
 		/// <summary>The texture's pixels, tightly packed RGBA, whatever its format; null for one it doesn't know.</summary>

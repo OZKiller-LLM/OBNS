@@ -59,6 +59,8 @@ namespace OpenBve.Graphics.Vulkan
 			this.textureBinding = textureBinding;
 			this.pages = pages;
 			memory = new GpuPool(device, 256UL << 20, 0, "textures");
+			// Textures take at most half the GPU's own memory; past it they go in system memory (GpuPool.AddBlock).
+			memory.DeviceLocalLimit = WorldTextures.VideoMemory / 2;
 			CreateSamplers(interpolation, anisotropy);
 			MakeWhite();
 			if (pages != null)
@@ -118,16 +120,18 @@ namespace OpenBve.Graphics.Vulkan
 		{
 			VulkanEntry entry = (VulkanEntry)record;
 			uint width = entry.Width, height = entry.Height;
+			uint format = FormatOf(entry.Format);
 			Vk.ImageCreateInfo imageInfo = new Vk.ImageCreateInfo
 			{
 				SType = Vk.StructureTypeImageCreateInfo,
 				ImageType = 1,
-				Format = Vk.FormatR8G8B8A8Unorm,
+				Format = format,
 				Extent = new Vk.Extent3D { Width = width, Height = height, Depth = 1 },
 				MipLevels = entry.Levels,
 				ArrayLayers = 1,
 				Samples = 1,
-				Usage = Vk.ImageUsageSampled | Vk.ImageUsageTransferDst | Vk.ImageUsageTransferSrc,
+				// A compressed image's levels all come from the CPU (no blits from it).
+				Usage = Vk.ImageUsageSampled | Vk.ImageUsageTransferDst | (entry.Format == TextureFormat.Rgba ? Vk.ImageUsageTransferSrc : 0),
 				InitialLayout = Vk.ImageLayoutUndefined
 			};
 			Vk.Check(Vk.vkCreateImage(device.Device, &imageInfo, null, out entry.Image), "vkCreateImage (texture)");
@@ -139,7 +143,7 @@ namespace OpenBve.Graphics.Vulkan
 				SType = Vk.StructureTypeImageViewCreateInfo,
 				Image = entry.Image,
 				ViewType = 1,
-				Format = Vk.FormatR8G8B8A8Unorm,
+				Format = format,
 				SubresourceRange = new Vk.ImageSubresourceRange { AspectMask = Vk.ImageAspectColor, LevelCount = entry.Levels, LayerCount = 1 }
 			};
 			Vk.Check(Vk.vkCreateImageView(device.Device, &viewInfo, null, out entry.View), "vkCreateImageView (texture)");
@@ -218,6 +222,46 @@ namespace OpenBve.Graphics.Vulkan
 
 			toRead[barriers++] = ImageBarrier(entry.Image, entry.Levels - 1, 1, Vk.AccessTransferWrite, Vk.AccessShaderRead, Vk.ImageLayoutTransferDstOptimal, Vk.ImageLayoutShaderReadOnlyOptimal);
 			Vk.vkCmdPipelineBarrier(commands, Vk.PipelineStageTransfer, Vk.PipelineStageFragmentShader, 0, 0, null, 0, null, (uint)barriers, toRead);
+		}
+
+		/// <summary>VK_FORMAT_BC1_RGBA_UNORM_BLOCK and VK_FORMAT_BC3_UNORM_BLOCK.</summary>
+		private const uint FormatBc1 = 133, FormatBc3 = 137;
+
+		private static uint FormatOf(TextureFormat format) => format == TextureFormat.Bc1 ? FormatBc1 : format == TextureFormat.Bc3 ? FormatBc3 : Vk.FormatR8G8B8A8Unorm;
+
+		protected override bool MakesCompressed => device.TextureCompressionBC;
+
+		/// <summary>Every level of a compressed image staged and copied as it is (the mipmaps were made with it).</summary>
+		protected override void WriteCompressed(Entry record, LibRender2.Textures.ObnsBlockCompression.Image image)
+		{
+			VulkanEntry entry = (VulkanEntry)record;
+			IntPtr commands = uploader.Commands;
+			Vk.ImageMemoryBarrier toTransfer = ImageBarrier(entry.Image, 0, entry.Levels, 0, Vk.AccessTransferWrite, Vk.ImageLayoutUndefined, Vk.ImageLayoutTransferDstOptimal);
+			Vk.vkCmdPipelineBarrier(commands, Vk.PipelineStageTransfer, Vk.PipelineStageTransfer, 0, 0, null, 0, null, 1, &toTransfer);
+			uint width = entry.Width, height = entry.Height;
+			for (int level = 0; level < image.Levels.Length; level++)
+			{
+				byte[] bytes = image.Levels[level];
+				// (A block's offset in the buffer: a multiple of its 8 or 16 bytes; the uploader's reservations are aligned further.)
+				ulong staging = uploader.Reserve((ulong)bytes.Length, out ulong stagingOffset, out byte* target);
+				fixed (byte* from = bytes)
+				{
+					Buffer.MemoryCopy(from, target, bytes.Length, bytes.Length);
+				}
+
+				Vk.BufferImageCopy copy = new Vk.BufferImageCopy
+				{
+					BufferOffset = stagingOffset,
+					ImageSubresource = new Vk.ImageSubresourceLayers { AspectMask = Vk.ImageAspectColor, MipLevel = (uint)level, LayerCount = 1 },
+					ImageExtent = new Vk.Extent3D { Width = width, Height = height, Depth = 1 }
+				};
+				Vk.vkCmdCopyBufferToImage(commands, staging, entry.Image, Vk.ImageLayoutTransferDstOptimal, 1, &copy);
+				width = Math.Max(1, width / 2);
+				height = Math.Max(1, height / 2);
+			}
+
+			Vk.ImageMemoryBarrier toRead = ImageBarrier(entry.Image, 0, entry.Levels, Vk.AccessTransferWrite, Vk.AccessShaderRead, Vk.ImageLayoutTransferDstOptimal, Vk.ImageLayoutShaderReadOnlyOptimal);
+			Vk.vkCmdPipelineBarrier(commands, Vk.PipelineStageTransfer, Vk.PipelineStageFragmentShader, 0, 0, null, 0, null, 1, &toRead);
 		}
 
 		protected override void Uploaded()
