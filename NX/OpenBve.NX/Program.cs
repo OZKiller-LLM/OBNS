@@ -463,6 +463,9 @@ namespace OpenBve.NX
 				if (applet != AppletEvents.None)
 				{
 					Log("frames: " + Applet.Describe(applet));
+					// Written out at once: on 2026-11-16 a HOME press and closing the game from the HOME menu ended it before
+					// the log's thread wrote the line, so the test showed nothing.
+					global::Android.Util.Log.Flush(500);
 					if ((applet & (AppletEvents.FocusLost | AppletEvents.Resumed)) != 0 && session != null && !pause.Open)
 					{
 						// Away (or back from sleep): the game waits in its pause menu, as upstream's does on losing the window.
@@ -567,6 +570,40 @@ namespace OpenBve.NX
 				}
 
 				double now = clock.Elapsed.TotalSeconds, elapsed = now - last;
+				if (elapsed > 2.0 && total > 10)
+				{
+					// A long gap with no frame (2026-11-16: 5.6 s with the CPU back at the system's clock, and no applet
+					// event): said in the log. Over 10 s, mid-game, only a suspension makes one - the HOME menu or sleep seen
+					// by neither the system's messages nor the focus state - so it is taken as one: the game waits in its pause
+					// menu, and the time away is left out.
+					Log($"frames: {elapsed:F1} s since the last frame, with no event from the console" + (elapsed > 10.0 && session != null && driveBenchmark == null ? "; taken as time away: paused" : string.Empty));
+					if (elapsed > 10.0 && session != null && driveBenchmark == null)
+					{
+						if (!pause.Open)
+						{
+							paused = true;
+							sounds.SetPaused(true);
+							touch.ReleaseAll();
+							pause.Show();
+						}
+
+						last = now - 1.0 / 60.0;
+						elapsed = now - last;
+						frameStart = last;
+						windowStart = now;
+						frames = 0;
+						worst = 0;
+						for (int i = 0; i < phase.Length; i++)
+						{
+							phase[i] = 0;
+						}
+
+						renderer.Profile.Restart();
+					}
+
+					global::Android.Util.Log.Flush(500);
+				}
+
 				// Turbo's and Overclock's clocks and the full fan, set again each second: docking and undocking set the system's
 				// clocks (and Turbo's GPU clock follows), its thermal control its own fan level. Nothing in Normal.
 				if (now - clocksHeld >= 1.0)

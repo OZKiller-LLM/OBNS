@@ -50,7 +50,7 @@ typedef struct {
 #define DATA_SIZE (DATA_VERTICES + MAX_QUADS * 6 * sizeof(Vertex2D))
 
 typedef struct { int first, count, image; DkScissor scissor; } Batch;
-typedef struct { char path[512]; DkMemBlock memory; DkImage image; int width, height, failed; uint64_t used; } Image2D;
+typedef struct { char path[512]; DkMemBlock memory; DkImage image; int width, height, failed, loading; uint64_t used; } Image2D;
 typedef struct { float pixels; int bold; void *font; float ascent; uint64_t used; } Font2D;
 typedef struct { void *font; uint32_t codepoint; int16_t x, y, w, h, left, top; float advance; int used; } Glyph2D;
 
@@ -67,6 +67,12 @@ static Batch batches[MAX_BATCHES];
 static DkScissor clip;
 static Image2D images[IMAGES];
 static int imagePending = -1;
+// An image read and decoded off the drawing thread (2026-11-24: the Tuen Ma Line's preview picture held a menu frame for
+// 3.6 s, read and decoded on it): one at a time, its slot loading until finish_decode makes it an image.
+static Thread decodeThread;
+static volatile int decodeDone;
+static int decodeSlot = -1, decodeW, decodeH, decodeOk;
+static void *decodePixels;
 static Font2D fonts[FONTS];
 // Frames drawn, for the fonts' least recently used (font_for).
 static uint64_t frame2d;
@@ -413,35 +419,70 @@ EXPORT float obns_dk2d_text_width(const uint16_t *text, int length, float size, 
 
 // --- images ---
 
-static int load_image(int slot, const char *path)
+// The decoding thread: the file read and decoded into decodePixels.
+static void decode_worker(void *arg)
+{
+    const char *path = images[decodeSlot].path;
+    (void)arg;
+    decodeOk = 0;
+    decodePixels = NULL;
+    FILE *file = fopen(path, "rb");
+    if (file) {
+        fseek(file, 0, SEEK_END);
+        long length = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        uint8_t *data = length > 0 && length < 64 * 1024 * 1024 ? malloc((size_t)length) : NULL;
+        int read = data && fread(data, 1, (size_t)length, file) == (size_t)length;
+        fclose(file);
+        if (read && obns_image_decode(data, length, &decodeW, &decodeH, &decodePixels) == 0)
+            decodeOk = 1;
+        free(data);
+    }
+    decodeDone = 1;
+}
+
+// Starts reading the image into a slot; it is loading until finish_decode.
+static void begin_decode(int slot, const char *path)
 {
     Image2D *image = &images[slot];
     memset(image, 0, sizeof *image);
     snprintf(image->path, sizeof image->path, "%s", path);
+    image->loading = 1;
+    decodeSlot = slot;
+    decodeDone = 0;
+    if (R_FAILED(threadCreate(&decodeThread, decode_worker, NULL, NULL, 0x20000, 0x2C, -2)) || R_FAILED(threadStart(&decodeThread))) {
+        // No thread: decoded here, as before.
+        decode_worker(NULL);
+    }
+}
+
+// A decoded image made a GPU image (its upload recorded at the next frame's start: imagePending), once the staging area
+// is free; the slot fails if the file couldn't be read.
+static void finish_decode(void)
+{
+    if (decodeSlot < 0 || !decodeDone || imagePending >= 0)
+        return;
+    threadWaitForExit(&decodeThread);
+    threadClose(&decodeThread);
+    int slot = decodeSlot;
+    decodeSlot = -1;
+    Image2D *image = &images[slot];
+    image->loading = 0;
     image->failed = 1;
-    FILE *file = fopen(path, "rb");
-    if (!file) return 0;
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    uint8_t *data = length > 0 && length < 64 * 1024 * 1024 ? malloc((size_t)length) : NULL;
-    int read = data && fread(data, 1, (size_t)length, file) == (size_t)length;
-    fclose(file);
-    int w = 0, h = 0;
-    void *pixels = NULL;
-    if (!read || obns_image_decode(data, length, &w, &h, &pixels) != 0) { free(data); return 0; }
-    free(data);
+    if (!decodeOk) return;
+    int w = decodeW, h = decodeH;
     // Halved until it fits the staging area (the menu's pictures are small; this bounds a large one).
-    uint8_t *source = pixels;
+    uint8_t *source = decodePixels;
     int step = 1;
     while ((size_t)(w / step) * (h / step) * 4 > IMAGE_STAGING) step *= 2;
     int sw = w / step, sh = h / step;
-    if (sw < 1 || sh < 1) { obns_image_free(pixels); return 0; }
+    if (sw < 1 || sh < 1) { obns_image_free(decodePixels); return; }
     uint8_t *staging = (uint8_t *)dkMemBlockGetCpuAddr(stagingMemory) + (STAGING - IMAGE_STAGING);
     for (int row = 0; row < sh; row++)
         for (int column = 0; column < sw; column++)
             memcpy(staging + ((size_t)row * sw + column) * 4, source + ((size_t)row * step * w + (size_t)column * step) * 4, 4);
-    obns_image_free(pixels);
+    obns_image_free(decodePixels);
+    decodePixels = NULL;
 
     DkImageLayoutMaker layoutMaker;
     dkImageLayoutMakerDefaults(&layoutMaker, device);
@@ -456,14 +497,13 @@ static int load_image(int slot, const char *path)
     QUEUE_LOCK();
     image->memory = dkMemBlockCreate(&maker);
     QUEUE_UNLOCK();
-    if (!image->memory) return 0;
+    if (!image->memory) return;
     dkImageInitialize(&image->image, &layout, image->memory, 0);
     image->width = sw;
     image->height = sh;
     image->failed = 0;
     write_descriptor(1 + slot, &image->image);
     imagePending = slot;
-    return 1;
 }
 
 // An image file in the rectangle, its proportions kept: fitted inside it, or (cover) filling it with the overflow
@@ -472,13 +512,14 @@ static int load_image(int slot, const char *path)
 EXPORT int obns_dk2d_image_ex(const char *path, float x, float y, float w, float h, int cover, uint32_t tint)
 {
     if (!ready2d || !path || !*path) return 0;
+    finish_decode();
     int slot = -1, oldest = 0;
     for (int i = 0; i < IMAGES; i++) {
         if (images[i].path[0] && strcmp(images[i].path, path) == 0) { slot = i; break; }
         if (images[i].used < images[oldest].used) oldest = i;
     }
     if (slot < 0) {
-        if (imagePending >= 0) return 0;
+        if (imagePending >= 0 || decodeSlot >= 0) return 0;
         // The least recently used goes (the GPU is idle between frames, so its memory can be let go of now).
         if (images[oldest].memory) {
             QUEUE_LOCK();
@@ -486,12 +527,13 @@ EXPORT int obns_dk2d_image_ex(const char *path, float x, float y, float w, float
             QUEUE_UNLOCK();
         }
         write_descriptor(1 + oldest, &atlas);
-        load_image(oldest, path);
-        slot = oldest;
+        begin_decode(oldest, path);
+        images[oldest].used = frames + 1;
+        return 0;
     }
     Image2D *image = &images[slot];
     image->used = frames + 1;
-    if (image->failed) return 0;
+    if (image->loading || image->failed) return 0;
     if (cover) {
         // The part of the image with the rectangle's proportions, from its middle.
         float scale = fmaxf(w / image->width, h / image->height);

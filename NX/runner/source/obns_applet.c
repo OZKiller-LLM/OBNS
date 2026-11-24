@@ -29,6 +29,7 @@ static AppletHookCookie cookie;
 static int hooked;
 static volatile uint32_t pending;
 static volatile uint32_t awayCount;
+static int lastFocus = -1;
 
 static void on_applet(AppletHookType hook, void *param)
 {
@@ -76,6 +77,20 @@ EXPORT uint32_t obns_applet_poll(void)
             break;
         }
     }
+
+    // The focus state as it is now, compared with the last poll's, besides the hook: a HOME press on 2026-11-16 left
+    // nothing in the log, so the state itself is checked too (a change the messages didn't report still counts).
+    int focus = (int)appletGetFocusState();
+    if (lastFocus >= 0 && focus != lastFocus) {
+        if (focus == AppletFocusState_InFocus) {
+            pending |= EventFocusBack;
+        } else {
+            if (!(pending & EventFocusLost))
+                awayCount++;
+            pending |= EventFocusLost;
+        }
+    }
+    lastFocus = focus;
 
     uint32_t events = pending;
     pending = 0;
