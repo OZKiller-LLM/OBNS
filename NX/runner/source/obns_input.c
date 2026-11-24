@@ -67,6 +67,58 @@ EXPORT int obns_input_touches(int max, uint32_t *ids, float *xs, float *ys, int 
     return count;
 }
 
+// --- USB keyboard and mouse (OBNS/SWITCH.md, "Keyboard and mouse stay supported"; the user, 2026-11-25) ---
+//
+// Through the console's HID service, as its own software reads them: in the dock's USB ports, or handheld through a USB-C
+// adapter. The keys are USB HID usage codes (libnx's HidKeyboardKey), a bit each in four 64-bit words; the mouse's place
+// is in the screen's 1280x720 units.
+
+static int keyboardReady, mouseReady;
+
+// The keys held now (keys[4], a bit per USB usage code) and the modifiers (libnx's HidKeyboardModifier bits; may be
+// NULL). Returns 1 if a state was read (a keyboard need not be plugged in: no keys then).
+EXPORT int obns_input_keyboard(uint64_t *keys, uint64_t *modifiers)
+{
+    if (!keyboardReady) {
+        hidInitializeKeyboard();
+        keyboardReady = 1;
+    }
+
+    HidKeyboardState state = { 0 };
+    int read = hidGetKeyboardStates(&state, 1) > 0;
+    for (int i = 0; i < 4; i++)
+        keys[i] = read ? state.keys[i] : 0;
+    if (modifiers)
+        *modifiers = read ? state.modifiers : 0;
+    return read;
+}
+
+// The mouse: its place (1280x720 units, kept on the screen), its movement and the wheel's (up positive) since the last
+// sample, and its buttons (libnx's HidMouseButton bits). Returns 1 if one is plugged in.
+EXPORT int obns_input_mouse(int32_t *x, int32_t *y, int32_t *dx, int32_t *dy, int32_t *wheel, uint32_t *buttons)
+{
+    if (!mouseReady) {
+        hidInitializeMouse();
+        mouseReady = 1;
+    }
+
+    HidMouseState state = { 0 };
+    if (hidGetMouseStates(&state, 1) == 0 || !(state.attributes & HidMouseAttribute_IsConnected)) {
+        *x = *y = *dx = *dy = *wheel = 0;
+        *buttons = 0;
+        return 0;
+    }
+
+    *x = state.x < 0 ? 0 : state.x > 1279 ? 1279 : state.x;
+    *y = state.y < 0 ? 0 : state.y > 719 ? 719 : state.y;
+    *dx = state.delta_x;
+    *dy = state.delta_y;
+    // (The wheel's turns come as wheel_delta_x on the console; a tilt wheel's as wheel_delta_y.) *(verify on the console)*
+    *wheel = state.wheel_delta_x != 0 ? state.wheel_delta_x : state.wheel_delta_y;
+    *buttons = state.buttons;
+    return 1;
+}
+
 // The buttons held now, the touch screen's first finger (in 1280x720 screen units), and whether the console is docked
 // (1) or handheld (0).
 EXPORT uint32_t obns_input_read(int *touching, float *x, float *y, int *docked)
@@ -105,6 +157,29 @@ EXPORT uint32_t obns_input_read(int *touching, float *x, float *y, int *docked)
         *touching = 1;
         *x = (float)state.touches[0].x;
         *y = (float)state.touches[0].y;
+    }
+
+    // A USB keyboard works the menus as the controller (the user, 2026-11-25): the arrows move, Enter or Space confirms,
+    // Escape or Backspace goes back, Page Up and Page Down change the page; a USB mouse's left button is a touch where
+    // the pointer is (the menus' own taps).
+    uint64_t keys[4];
+    obns_input_keyboard(keys, NULL);
+#define KEY(k) ((keys[(k) / 64] >> ((k) % 64)) & 1)
+    if (KEY(HidKeyboardKey_UpArrow)) buttons |= MenuUp;
+    if (KEY(HidKeyboardKey_DownArrow)) buttons |= MenuDown;
+    if (KEY(HidKeyboardKey_LeftArrow)) buttons |= MenuLeft;
+    if (KEY(HidKeyboardKey_RightArrow)) buttons |= MenuRight;
+    if (KEY(HidKeyboardKey_Return) || KEY(HidKeyboardKey_NumPadEnter) || KEY(HidKeyboardKey_Space)) buttons |= MenuA;
+    if (KEY(HidKeyboardKey_Escape) || KEY(HidKeyboardKey_Backspace)) buttons |= MenuB;
+    if (KEY(HidKeyboardKey_PageUp)) buttons |= MenuL;
+    if (KEY(HidKeyboardKey_PageDown)) buttons |= MenuR;
+#undef KEY
+    int32_t mx, my, dx, dy, wheel;
+    uint32_t mouseButtons;
+    if (!*touching && obns_input_mouse(&mx, &my, &dx, &dy, &wheel, &mouseButtons) && (mouseButtons & HidMouseButton_Left)) {
+        *touching = 1;
+        *x = (float)mx;
+        *y = (float)my;
     }
 
     *docked = appletGetOperationMode() == AppletOperationMode_Console;

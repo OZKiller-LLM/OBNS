@@ -53,9 +53,18 @@ namespace OpenBve.Switch
 
 		private static string T(string group, string key, string fallback) => Menu.T(group, key, fallback);
 
-		/// <summary>The right stick's vertical position scrolls it (up: earlier stations); left alone, it follows the train.</summary>
-		public void Update(float stickY, double seconds)
+		/// <summary>
+		/// The right stick: on the timetable its vertical position scrolls it (up: earlier stations; left alone, it follows
+		/// the train); on the map it pans, on the gradient it pans and zooms (RouteStick).
+		/// </summary>
+		public void Update(float stickX, float stickY, double seconds)
 		{
+			if (Shown && CurrentTab != Tab.Timetable)
+			{
+				RouteStick(stickX, stickY, seconds);
+				return;
+			}
+
 			if (Math.Abs(stickY) > 0.2f)
 			{
 				following = false;

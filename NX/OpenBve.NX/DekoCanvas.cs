@@ -269,6 +269,9 @@ namespace OpenBve.NX
 				}
 
 				menu.Draw(canvas, seconds);
+				// A USB mouse's pointer, while it is in use (its click is a touch: runner/source/obns_input.c).
+				SwitchMouse.Read(now, out _);
+				SwitchMouse.DrawPointer(canvas, now);
 				if (!canvas.End())
 				{
 					log("deko3d: the GPU's queue failed in the menu");

@@ -75,8 +75,9 @@ namespace OpenBve.Switch
 		{
 			(SwitchPad.A, Translations.Command.SecurityS),
 			(SwitchPad.B, Translations.Command.HornPrimary),
-			(SwitchPad.X, Translations.Command.DoorsLeft),
-			(SwitchPad.Y, Translations.Command.DoorsRight),
+			// As the console's pad (PadBindings, the user, 2026-11-25): Y, on the left, the left doors; X the right.
+			(SwitchPad.Y, Translations.Command.DoorsLeft),
+			(SwitchPad.X, Translations.Command.DoorsRight),
 			(SwitchPad.Up, Translations.Command.ReverserForward),
 			(SwitchPad.Down, Translations.Command.ReverserBackward),
 			(SwitchPad.Left, Translations.Command.CameraPOIPrevious),

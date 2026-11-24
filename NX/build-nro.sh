@@ -80,9 +80,11 @@ aot_one() {
         OpenBve.Android.dll|LibRender2.dll|TrainManager.dll|OpenBveApi.dll|RouteManager2.dll|OpenBve.NX.dll|System.Linq.dll|System.Collections.dll|System.Collections.Concurrent.dll)
             tramps=ntrampolines=16384,nrgctx-trampolines=16384,nimt-trampolines=2048, ;;
     esac
-    "$COMPILER" --llvm --path="$OUT/managed/" \
+    # Run from the output folder: the compiler's scratch folders (mono_aot_*, LLVM bitcode) go in the folder it runs in,
+    # and an interrupted build left them behind in whatever folder that was (six in the repository, 2026-11-25).
+    (cd "$o" && "$COMPILER" --llvm --path="$OUT/managed/" \
         --aot=full,static,${tramps}direct-icalls,direct-pinvoke,tool-prefix=aarch64-none-elf-,outfile=$o/$name.o,llvm,llvmllc=-relocation-model=pic,llvm-path=$LLVM_TOOLS/,llvm-outfile=$o/$name-llvm.o \
-        "$1" > "$o/$name.log" 2>&1 || { echo "AOT failed: $name"; tail -15 "$o/$name.log"; return 1; }
+        "$1") > "$o/$name.log" 2>&1 || { echo "AOT failed: $name"; tail -15 "$o/$name.log"; return 1; }
 }
 export -f aot_one
 export COMPILER OUT LLVM_TOOLS

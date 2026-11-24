@@ -176,9 +176,13 @@ program should say so and stop if it finds itself in applet mode's 386 MiB.
   bottom), whatever the driving scheme's positions; the D-pad and left stick move, L and R change pages or tabs. This goes for the
   main menu, the in-game pause menu, the station list and every dialog.
 - **Keyboard and mouse stay supported** (the user, 2026-11-04): a USB keyboard and mouse in the dock's ports, or through a USB-C
-  adapter handheld, read through libnx's HID (keyboard and mouse states) *(verify)*. Upstream's own key bindings (`controls.cfg`, as on
-  the desktop and Android, `KeyboardInput.cs` mapping the console's key codes to upstream's names); the mouse as on the desktop (camera,
-  menu pointer, clicking the cab's controls; the mouse isn't touch, so it stays on docked).
+  adapter handheld, read through libnx's HID (`obns_input_keyboard`, `obns_input_mouse`). **Built 2026-11-25, not yet on the
+  console:** the keyboard drives with upstream's own bindings (`Game/KeyBindings.cs`: `UserData/1.5.0/controls.cfg` if there, a
+  desktop's file works, else upstream's `Default.controls` built into the game; `Game/SwitchKeyboard.cs` maps the USB usage codes
+  to upstream's key names); Escape (or Pause) pauses, Ctrl+T the route card; the menus take the arrows, Enter or Space, Escape or
+  Backspace, Page Up and Page Down. The mouse (`Game/SwitchMouse.cs`, as Android's on the scene): a click on one of the cab's touch
+  areas works it (`CabTouch`), a left drag elsewhere looks around, a right drag moves the camera, the wheel zooms; in the menus its
+  left button is a touch; a pointer is drawn while it is in use. *(verify: the wheel's axis, the pointer's range)*
 - **Upstream's train controllers stay supported** (the user, 2026-11-04), with the Switch's own as a priority:
 
   | Upstream plugin | Controllers | On the Switch |
@@ -341,8 +345,11 @@ compared with Android's code, as there are no Android screenshots to compare wit
   `/switch/OBNS/Packages` (no file picker on the console), their details and upstream's checks, the install with its progress;
   the installed packages to uninstall;
 - the 2D layer draws lines (`obns_dk2d_line`), for the maps.
-Left: the keyboard tab (a USB keyboard isn't read yet), the route card's panning and zooming, Android's encoding choice for
-plain archives.
+Done since (2026-11-25, built, not yet on the console): Controls' keyboard list (a row switches between the controller's buttons
+and a USB keyboard's keys; A then the key with Shift, Ctrl or Alt, X clears, Reset; `KeyBindings.cs`, kept in
+`UserData/1.5.0/controls.cfg` as upstream's), the route card's panning and zooming (the right stick on the Map and Gradient tabs,
+a USB mouse dragged and wheeled over them; following the train again when the tab changes), and Android's encoding choice for plain
+archives on Package Management.
 
 ## Sources
 

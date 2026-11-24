@@ -30,7 +30,8 @@ namespace OpenBve.Switch
 {
 	/*
 	 * The route card's Map and Gradient tabs (Android's TimetablePanel and RouteViews: RouteMapView, GradientChartView),
-	 * drawn by the console's 2D layer and following the train (the Switch has no touch panning while driving): the map
+	 * drawn by the console's 2D layer and following the train until moved (the user, 2026-11-25: panning and zooming - the
+	 * right stick, which the card has while it is open, and a USB mouse dragged and wheeled over it): the map
 	 * the line's plan around the train, travelled in blue and ahead in white, the stations and the other trains; the
 	 * gradient the line's height 4 km at a time from just behind the train, with the gradients in per mille.
 	 */
@@ -59,10 +60,82 @@ namespace OpenBve.Switch
 		private RouteLive live;
 		private double liveAge = double.MaxValue;
 
-		/// <summary>A route tab shown: the live positions read again at once.</summary>
+		/// <summary>A route tab shown: the live positions read again at once, and the view on the train again.</summary>
 		private void RouteShown()
 		{
 			liveAge = double.MaxValue;
+			routeFollowing = true;
+			mapOffsetX = mapOffsetZ = gradientOffset = 0;
+		}
+
+		// The view moved away from the train: the map's centre and the gradient's start, from the train's, in metres; the
+		// zooms are kept between tabs.
+		private bool routeFollowing = true;
+		private double mapOffsetX, mapOffsetZ, gradientOffset;
+		private double mapSpan = 5000, gradientSpan = 4000;
+		private float routeX, routeY, routeWidth, routeHeight;
+
+		/// <summary>Whether a point (1280x720 units) is over the map or the gradient on show.</summary>
+		public bool RouteContains(float px, float py) =>
+			Shown && CurrentTab != Tab.Timetable && routeWidth > 0 && px >= routeX && px <= routeX + routeWidth && py >= routeY && py <= routeY + routeHeight;
+
+		/// <summary>The right stick on a route tab: the map pans; the gradient pans along the line (left, right) and zooms (up, down).</summary>
+		private void RouteStick(float stickX, float stickY, double seconds)
+		{
+			const float deadZone = 0.2f;
+			float sx = Math.Abs(stickX) > deadZone ? stickX : 0, sy = Math.Abs(stickY) > deadZone ? stickY : 0;
+			if (sx == 0 && sy == 0)
+			{
+				return;
+			}
+
+			routeFollowing = false;
+			if (CurrentTab == Tab.Map)
+			{
+				// Half the view across a second at full tilt.
+				mapOffsetX += sx * mapSpan * 0.5 * seconds;
+				mapOffsetZ += sy * mapSpan * 0.5 * seconds;
+			}
+			else
+			{
+				gradientOffset += sx * gradientSpan * 0.5 * seconds;
+				gradientSpan = Math.Max(500, Math.Min(40000, gradientSpan * Math.Exp(-sy * 1.5 * seconds)));
+			}
+		}
+
+		/// <summary>A drag over the route tab (1280x720 units): the view follows the pointer.</summary>
+		public void RouteDrag(float dx, float dy)
+		{
+			if (routeWidth <= 0 || dx == 0 && dy == 0)
+			{
+				return;
+			}
+
+			routeFollowing = false;
+			if (CurrentTab == Tab.Map)
+			{
+				double metresPerUnit = mapSpan / routeWidth;
+				mapOffsetX -= dx * metresPerUnit;
+				mapOffsetZ += dy * metresPerUnit;
+			}
+			else
+			{
+				gradientOffset -= dx / routeWidth * gradientSpan;
+			}
+		}
+
+		/// <summary>The wheel over the route tab: up zooms in.</summary>
+		public void RouteZoom(int wheel)
+		{
+			double factor = wheel > 0 ? 0.8 : 1.25;
+			if (CurrentTab == Tab.Map)
+			{
+				mapSpan = Math.Max(500, Math.Min(40000, mapSpan * factor));
+			}
+			else
+			{
+				gradientSpan = Math.Max(500, Math.Min(40000, gradientSpan * factor));
+			}
 		}
 
 		private void DrawTabs(IMenuCanvas canvas, float left, float y, float inner, string clock)
@@ -107,6 +180,10 @@ namespace OpenBve.Switch
 				return;
 			}
 
+			routeX = x - 6;
+			routeY = y;
+			routeWidth = width + 12;
+			routeHeight = height;
 			canvas.Clip(x - 6, y, width + 12, height);
 			if (CurrentTab == Tab.Map)
 			{
@@ -122,11 +199,12 @@ namespace OpenBve.Switch
 
 		private void DrawMap(IMenuCanvas canvas, float x, float y, float width, float height)
 		{
-			// About 5 km across, centred on the train (Android's following zoom).
-			double scale = width / 5000.0;
+			// About 5 km across, centred on the train (Android's following zoom), unless moved or zoomed.
+			double scale = width / mapSpan;
+			double centreX = live.X + (routeFollowing ? 0 : mapOffsetX), centreZ = live.Z + (routeFollowing ? 0 : mapOffsetZ);
 			float cx = x + width / 2, cy = y + height / 2;
-			float Sx(double wx) => cx + (float)((wx - live.X) * scale);
-			float Sy(double wz) => cy - (float)((wz - live.Z) * scale);
+			float Sx(double wx) => cx + (float)((wx - centreX) * scale);
+			float Sy(double wz) => cy - (float)((wz - centreZ) * scale);
 
 			double[] px = geometry.X, pz = geometry.Z, pos = geometry.Position;
 			// The line: a dark edge under it, then ahead in white and travelled in blue.
@@ -180,8 +258,9 @@ namespace OpenBve.Switch
 				}
 			}
 
-			Dot(canvas, cx, cy, 14, 0x4650C878);
-			Dot(canvas, cx, cy, 7, Here);
+			float hereX = Sx(live.X), hereY = Sy(live.Z);
+			Dot(canvas, hereX, hereY, 14, 0x4650C878);
+			Dot(canvas, hereX, hereY, 7, Here);
 
 			// The scale, bottom left.
 			double metres = NiceStep(90 / scale);
@@ -194,8 +273,8 @@ namespace OpenBve.Switch
 
 		private void DrawGradient(IMenuCanvas canvas, float x, float y, float width, float height)
 		{
-			const double span = 4000;
-			double start = live.Position - span * 0.25, end = start + span;
+			double span = gradientSpan;
+			double start = live.Position - span * 0.25 + (routeFollowing ? 0 : gradientOffset), end = start + span;
 			double[] pos = geometry.Position, heights = geometry.Y;
 			float top = y + 30, bottom = y + height - 26;
 			float Sx(double p) => x + (float)((p - start) / span * width);

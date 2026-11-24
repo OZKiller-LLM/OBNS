@@ -66,6 +66,8 @@
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'OpenBve.Android'">
     <Compile Remove="AngleSurface.cs;AndroidFileSystem.cs;AndroidSettings.cs;BetaLog.cs;ControlBindings.cs;ControlOverlay.cs;ControlsPage.cs;DriverHud.cs;FileBrowser.cs;GameActivity.cs;GameView.cs;KeyboardInput.cs;LaunchParameters.cs;Menu.cs;MenuActivity.cs;OptionsPage.cs;PerformanceHints.cs;PackagesPage.cs;PauseMenu.cs;RouteViews.cs;SceneInput.cs;Speech.cs;StartPage.cs;SwitchMapPanel.cs;TimetablePanel.cs;Ui.cs;VulkanStartup.cs;VulkanSurface.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Game\**\*.cs" LinkBase="NX" />
+    <!-- A USB keyboard's default bindings (Game/SwitchKeyboard.cs): upstream's own, read from the game itself. -->
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)..\OpenBVE\assets\Controls\Default.controls" LogicalName="Default.controls" />
     <!-- The Switch entry (NX/OpenBve.NX) drives the game as GameView does, through its internal Program and Interface. -->
     <InternalsVisibleTo Include="OpenBve.NX" />
     <PackageReference Remove="MonoGame.Library.OpenAL" />

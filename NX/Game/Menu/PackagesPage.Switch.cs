@@ -26,6 +26,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using OpenBve.Android;
 using OpenBveApi.Packages;
@@ -166,7 +167,10 @@ namespace OpenBve.Switch
 			list.FocusFirst();
 		}
 
-		private void Read(string file)
+		private void Read(string file) => Read(file, null);
+
+		/// <summary>Reads the archive, its file names in the encoding given (null: detected), in the background.</summary>
+		private void Read(string file, Encoding nameEncoding)
 		{
 			if (busy)
 			{
@@ -180,7 +184,7 @@ namespace OpenBve.Switch
 			{
 				try
 				{
-					candidate = PackageInstaller.Read(file);
+					candidate = PackageInstaller.Read(file, nameEncoding);
 					status = candidate == null ? T("packages", "install_invalid", "This file isn't a package or an archive that can be installed.") : null;
 				}
 				catch (Exception e)
@@ -219,6 +223,20 @@ namespace OpenBve.Switch
 			foreach (string line in lines)
 			{
 				list.Add(new InfoItem(line));
+			}
+
+			// A plain archive's file-name encoding (Android's choice, the Windows Start page's): names written by an old
+			// Japanese or Chinese Windows come out garbled when the detection guesses wrong. Changing it reads it again.
+			if (!candidate.IsPackage)
+			{
+				string[] names = new[] { "Auto" + (candidate.EncodingDetected && candidate.NameEncoding != null ? " (" + candidate.NameEncoding.WebName + ")" : string.Empty) }
+					.Concat(PackageInstaller.SelectableCodePages.Select(cp => Encoding.GetEncoding(cp).WebName + " - " + cp)).ToArray();
+				int selected = candidate.EncodingDetected || candidate.NameEncoding == null ? 0 : Array.IndexOf(PackageInstaller.SelectableCodePages, candidate.NameEncoding.CodePage) + 1;
+				string file = candidate.File;
+				list.Add(new ChoiceItem(T("start", "route_settings_encoding", "Encoding:"), names, Math.Max(0, selected), index =>
+				{
+					Read(file, index == 0 ? null : Encoding.GetEncoding(PackageInstaller.SelectableCodePages[index - 1]));
+				}, () => !busy));
 			}
 
 			if (!string.IsNullOrEmpty(package.Description))

@@ -376,6 +376,50 @@ namespace OpenBve.NX
 			return thread;
 		}
 
+		// Full collections at rest (GcAtRest).
+		private static long heapAtLastFull = -1;
+		private static int lastFullCount = -1, restCollections;
+		private static double stoppedSince = -1;
+
+		/// <summary>
+		/// A full collection when the game is at rest - the train stopped for 2 s (a station, a signal), or a menu open - once the
+		/// managed heap has grown by 192 MB since the last: the collector's own full collections otherwise come mid-run, and
+		/// with a heap of 800 MB and more on the Switch's cores one can hold a frame for a second or more (the user,
+		/// 2026-11-25: "garbage-collection stalls").
+		/// </summary>
+		private static void GcAtRest(AndroidTrainSession session, bool menuOpen, double now)
+		{
+			if (session?.Train == null)
+			{
+				return;
+			}
+
+			int full = GC.CollectionCount(2);
+			long heap = GC.GetTotalMemory(false);
+			if (heapAtLastFull < 0 || full != lastFullCount)
+			{
+				// After any full collection, the heap it left is where growth counts from.
+				heapAtLastFull = heap;
+				lastFullCount = full;
+			}
+
+			bool stopped = Math.Abs(session.Train.CurrentSpeed) < 0.01;
+			stoppedSince = !stopped ? -1 : stoppedSince < 0 ? now : stoppedSince;
+			bool atRest = menuOpen || stoppedSince >= 0 && now - stoppedSince > 2.0;
+			if (!atRest || heap - heapAtLastFull < (192L << 20))
+			{
+				return;
+			}
+
+			long start = Stopwatch.GetTimestamp();
+			GC.Collect(2, GCCollectionMode.Forced, true, true);
+			long after = GC.GetTotalMemory(false);
+			restCollections++;
+			Log($"frames: a full collection at rest ({(menuOpen ? "a menu open" : "stopped")}): {heap >> 20} MB to {after >> 20} MB in {(Stopwatch.GetTimestamp() - start) * 1000 / Stopwatch.Frequency} ms");
+			heapAtLastFull = after;
+			lastFullCount = GC.CollectionCount(2);
+		}
+
 		private static unsafe void Frames(AndroidRenderer renderer, AndroidHost host, AndroidSounds sounds, AndroidTrainSession session, Deko.DekoGL deko, double seconds)
 		{
 			Stage("frames: drawing " + (double.IsPositiveInfinity(seconds) ? "until the game is left" : "for " + seconds.ToString("0") + " s") + (session == null ? " (no train: the camera travels the route)" : string.Empty));
@@ -399,11 +443,21 @@ namespace OpenBve.NX
 			DekoCanvas overlay = new DekoCanvas();
 			// The frame's phases (input, simulation, RenderScene, overlay, sound, end of frame), summed over the 5 s window.
 			double[] phase = new double[6];
+			// The phases at the frame's start (a long frame's own time by phase, for the log), and the collector's counts.
+			double[] phaseBefore = new double[6];
+			string[] phaseNames = { "input", "simulation", "RenderScene", "overlay", "sound", "end of frame" };
+			int fullBefore = GC.CollectionCount(2), gen0Before = GC.CollectionCount(0);
+			int windowGen0 = GC.CollectionCount(0), windowGen1 = GC.CollectionCount(1), windowGen2 = GC.CollectionCount(2);
 			double gpuWait = 0, frameStart = 0, clocksHeld = 0;
 			int lastGpuMhz = 0;
 			// The controllers drive the train (Android's controller layout, SwitchPad); + pauses.
 			AndroidControls controls = new AndroidControls();
 			OpenBve.Switch.SwitchPad pad = new OpenBve.Switch.SwitchPad();
+			// A USB keyboard (upstream's key bindings) and mouse (the cab's controls, the camera), docked or handheld.
+			OpenBve.Switch.KeyBindings.SettingsFolder = Root + "/UserData";
+			OpenBve.Switch.SwitchKeyboard keyboard = new OpenBve.Switch.SwitchKeyboard();
+			OpenBve.Switch.SwitchMouse mouse = new OpenBve.Switch.SwitchMouse();
+			Log("frames: keyboard: " + keyboard.Description);
 			// A Densha de GO! controller on USB (HORI's, ZUIKI's) drives the handles, its pad left out of the one above.
 			OpenBve.Switch.MasconPad mascon = new OpenBve.Switch.MasconPad();
 			if (session != null && SwitchSettings.GetTrainController())
@@ -468,6 +522,7 @@ namespace OpenBve.NX
 			int frames = 0, total = 0;
 			while (clock.Elapsed.TotalSeconds < seconds)
 			{
+				Array.Copy(phase, phaseBefore, phase.Length);
 				loopStep = 0;
 				int touching, docked;
 				float touchX, touchY;
@@ -553,6 +608,8 @@ namespace OpenBve.NX
 					// The switch map takes the buttons while it is open; the game goes on (upstream's switch menu does).
 					uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked);
 					mascon.Update(controls, commands: false);
+					keyboard.Update(controls, commands: false);
+					OpenBve.Switch.SwitchMouse.Read(clock.Elapsed.TotalSeconds, out _);
 					buttons |= (uint)mascon.MenuHeld();
 					menuInput.Update((OpenBve.Switch.MenuButtons)buttons, touching != 0, touchX, touchY, clock.Elapsed.TotalSeconds - last);
 					switchMap.Update(menuInput, clock.Elapsed.TotalSeconds - last);
@@ -561,6 +618,8 @@ namespace OpenBve.NX
 				{
 					uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked);
 					mascon.Update(controls, commands: false);
+					keyboard.Update(controls, commands: false);
+					OpenBve.Switch.SwitchMouse.Read(clock.Elapsed.TotalSeconds, out _);
 					buttons |= (uint)mascon.MenuHeld();
 					menuInput.Update((OpenBve.Switch.MenuButtons)buttons, touching != 0, touchX, touchY, clock.Elapsed.TotalSeconds - last);
 					pause.Update(menuInput);
@@ -569,26 +628,31 @@ namespace OpenBve.NX
 				{
 					pad.Update(controls);
 					mascon.Update(controls);
+					OpenBve.Switch.SwitchKeyboard.Special key = keyboard.Update(controls);
+					mouse.Update(session, controls, clock.Elapsed.TotalSeconds, OpenBve.NX.DekoCanvas.Width, timetable);
 					if ((pad.Held & (OpenBve.Switch.SwitchPad.Plus | OpenBve.Switch.SwitchPad.Minus)) == (OpenBve.Switch.SwitchPad.Plus | OpenBve.Switch.SwitchPad.Minus))
 					{
 						Log("frames: left with + and −");
 						break;
 					}
 
-					if (pad.Is(OpenBve.Switch.SwitchPad.Minus) || mascon.Is(OpenBve.Switch.SwitchPad.Minus))
+					if (pad.Is(OpenBve.Switch.SwitchPad.Minus) || mascon.Is(OpenBve.Switch.SwitchPad.Minus) || key == OpenBve.Switch.SwitchKeyboard.Special.Timetable)
 					{
 						// − goes through the route card's tabs (Timetable, Map, Gradient), then hides it.
 						timetable.Cycle();
 						snapshotAge = 1.0;
 					}
 
-					timetable.Update(pad.RightY, clock.Elapsed.TotalSeconds - last);
+					timetable.Update(pad.RightX, pad.RightY, clock.Elapsed.TotalSeconds - last);
 					// The sticks move and turn the camera, as Android's controller (the right one scrolls the timetable when shown).
 					pad.Camera(controls, !timetable.Shown);
-					if (pad.Is(OpenBve.Switch.SwitchPad.Plus) || mascon.Is(OpenBve.Switch.SwitchPad.Plus))
+					if (pad.Is(OpenBve.Switch.SwitchPad.Plus) || mascon.Is(OpenBve.Switch.SwitchPad.Plus) || key == OpenBve.Switch.SwitchKeyboard.Special.Pause)
 					{
 						paused = true;
 						sounds.SetPaused(true);
+						// Keys and the mouse let go of what they hold: the menu has them now.
+						keyboard.ReleaseAll(controls);
+						mouse.ReleaseAll(session, controls);
 						pause.Show();
 						// The menu's input in step with the buttons held now.
 						uint buttons = MenuLoop.ReadInput(&touching, &touchX, &touchY, &docked) | (uint)mascon.MenuHeld();
@@ -691,6 +755,11 @@ namespace OpenBve.NX
 				loopStep = 4;
 				host.BeginFrame();
 				renderer.RenderScene(elapsed);
+				// The cab's touch areas where they are drawn now, for the mouse (Android's GameView does it for touches).
+				if (session != null && OpenBve.Switch.SwitchMouse.Connected)
+				{
+					controls.Cab.Update(session, renderer, OpenBve.NX.DekoCanvas.Width, OpenBve.NX.DekoCanvas.Height);
+				}
 				/*
 				 * Textures not drawn for 20 s unloaded, as upstream's GameWindow and Android's GameView do after drawing - here
 				 * once a second (the Tuen Ma Line registers some 31,000, too many to look through every frame). Missing until
@@ -728,6 +797,7 @@ namespace OpenBve.NX
 
 					switchMap.Draw(overlay);
 					pause.Draw(overlay, elapsed);
+					OpenBve.Switch.SwitchMouse.DrawPointer(overlay, clock.Elapsed.TotalSeconds);
 					overlay.EndOverlay();
 				}
 
@@ -760,6 +830,30 @@ namespace OpenBve.NX
 					worst = Math.Max(worst, took);
 				}
 
+				// A long frame said, with whether a full collection ran in it (the 2026-11-24 drive had frames of 1.4 to 4.3 s,
+				// with the managed heap at about 840 MB: whether those were the collector is what this tells).
+				int fullNow = GC.CollectionCount(2), gen0Now = GC.CollectionCount(0);
+				if (took > 0.25 && total > 3)
+				{
+					int longest = 0;
+					for (int i = 1; i < phase.Length; i++)
+					{
+						if (phase[i] - phaseBefore[i] > phase[longest] - phaseBefore[longest])
+						{
+							longest = i;
+						}
+					}
+
+					Log($"frames: a frame of {took * 1000:F0} ms, {(phase[longest] - phaseBefore[longest]) * 1000:F0} ms of it in {phaseNames[longest]}" +
+					    (fullNow != fullBefore ? $", with {fullNow - fullBefore} full collection(s) in it" : gen0Now != gen0Before ? ", with a nursery collection in it" : ", no collection in it") +
+					    $"; managed heap {GC.GetTotalMemory(false) >> 20} MB");
+				}
+
+				fullBefore = fullNow;
+				gen0Before = gen0Now;
+				// (Not in the drive benchmark: its frames are the measure.)
+				GcAtRest(driveBenchmark == null ? session : null, pause.Open, clock.Elapsed.TotalSeconds);
+
 				if (total == 1)
 				{
 					Stage($"frames: the first in {took * 1000:F0} ms; {deko.Describe()}");
@@ -772,6 +866,12 @@ namespace OpenBve.NX
 					benchmarkCpu = cpuNow;
 					benchmarkGpu = gpuNow;
 					Stage($"frames: {frames / (now - windowStart):F1} fps, the slowest {worst * 1000:F1} ms, clocks CPU {cpuNow} GPU {gpuNow} memory {memoryNow} MHz, {renderer.VisibleFaceCount} visible faces; {deko.Describe()}");
+					// The collector in the window: collections by generation, and the full ones made at rest (GcAtRest).
+					int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2);
+					Log($"frames: collections in the window: {g0 - windowGen0} nursery, {g1 - windowGen1} gen 1, {g2 - windowGen2} full ({restCollections} of them at rest so far); managed heap {GC.GetTotalMemory(false) >> 20} MB");
+					windowGen0 = g0;
+					windowGen1 = g1;
+					windowGen2 = g2;
 					// Where a frame's time goes, on average: the loop's phases, then the renderer's own (as Android's GameView logs it).
 					string[] names = { "input", "simulation", "RenderScene", "overlay", "sound", "end of frame" };
 					System.Text.StringBuilder split = new System.Text.StringBuilder("frames: per frame ");

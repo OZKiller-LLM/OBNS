@@ -84,7 +84,7 @@ namespace OpenBve.Switch
 		{
 			FocusFirst();
 			// A binding waiting for its button (Controls) takes every button, the D-pad's too.
-			if (BindingItem.Capturing && Focused is BindingItem)
+			if (BindingItem.Capturing && (Focused is BindingItem || Focused is KeyBindingItem))
 			{
 				Focused.Handle(input, host);
 				return true;

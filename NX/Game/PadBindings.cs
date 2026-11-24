@@ -53,8 +53,9 @@ namespace OpenBve.Switch
 			(SwitchPad.StickR, Translations.Command.BrakeEmergency), (SwitchPad.StickR, Translations.Command.SingleEmergency),
 			(SwitchPad.A, Translations.Command.SecurityS),
 			(SwitchPad.B, Translations.Command.HornPrimary),
-			(SwitchPad.X, Translations.Command.DoorsLeft),
-			(SwitchPad.Y, Translations.Command.DoorsRight),
+			// The doors by where the buttons sit (the user, 2026-11-25): Y, on the diamond's left, the left doors; X the right.
+			(SwitchPad.Y, Translations.Command.DoorsLeft),
+			(SwitchPad.X, Translations.Command.DoorsRight),
 			(SwitchPad.StickL, Translations.Command.CameraInterior),
 			(SwitchPad.Up, Translations.Command.ReverserForward),
 			(SwitchPad.Down, Translations.Command.ReverserBackward),
