@@ -10,6 +10,7 @@
 // the time away out of the simulation.
 
 #include <stdint.h>
+#include <stdio.h>
 #include <switch.h>
 
 #define EXPORT __attribute__((visibility("default")))
@@ -136,6 +137,11 @@ EXPORT uint32_t obns_applet_poll(void)
 {
     mutexLock(&lock);
     if (!hooked) {
+        // libnx's default for applications (SuspendHomeSleep) suspends the game for the HOME menu and sleep without
+        // telling it: no focus message came at all (the tests of 2026-11-24). The Notify mode suspends it the same way
+        // and sends the messages.
+        Result mode = appletSetFocusHandlingMode(AppletFocusHandlingMode_SuspendHomeSleepNotify);
+        printf("OBNS applet: focus handling SuspendHomeSleepNotify: %s (0x%X)\n", R_SUCCEEDED(mode) ? "set" : "failed", (unsigned)mode);
         appletHook(&cookie, on_applet, NULL);
         hooked = 1;
         listening = 1;
