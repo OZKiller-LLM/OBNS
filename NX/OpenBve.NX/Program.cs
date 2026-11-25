@@ -379,7 +379,7 @@ namespace OpenBve.NX
 		// Full collections at rest (GcAtRest).
 		private static long heapAtLastFull = -1;
 		private static int lastFullCount = -1, restCollections;
-		private static double stoppedSince = -1;
+		private static double stoppedSince = -1, heapCheckedAt = double.NegativeInfinity;
 
 		/// <summary>
 		/// A full collection when the game is at rest - the train stopped for 2 s (a station, a signal), or a menu open - once the
@@ -394,19 +394,31 @@ namespace OpenBve.NX
 				return;
 			}
 
+			bool stopped = Math.Abs(session.Train.CurrentSpeed) < 0.01;
+			stoppedSince = !stopped ? -1 : stoppedSince < 0 ? now : stoppedSince;
+			bool atRest = menuOpen || stoppedSince >= 0 && now - stoppedSince > 2.0;
+			/*
+			 * The heap's size only at rest, and at most every 2 s: Mono's count of it walks every block of the heap under the
+			 * collector's lock, and asked every frame it took 55 ms a frame of 800 MB (2026-11-25: 12 fps in the cab, input
+			 * 54-58 ms a frame).
+			 */
+			if (!atRest || now - heapCheckedAt < 2.0)
+			{
+				return;
+			}
+
+			heapCheckedAt = now;
 			int full = GC.CollectionCount(2);
 			long heap = GC.GetTotalMemory(false);
 			if (heapAtLastFull < 0 || full != lastFullCount)
 			{
-				// After any full collection, the heap it left is where growth counts from.
+				// After any full collection (the first look at rest since), the heap then is where growth counts from.
 				heapAtLastFull = heap;
 				lastFullCount = full;
+				return;
 			}
 
-			bool stopped = Math.Abs(session.Train.CurrentSpeed) < 0.01;
-			stoppedSince = !stopped ? -1 : stoppedSince < 0 ? now : stoppedSince;
-			bool atRest = menuOpen || stoppedSince >= 0 && now - stoppedSince > 2.0;
-			if (!atRest || heap - heapAtLastFull < (192L << 20))
+			if (heap - heapAtLastFull < (192L << 20))
 			{
 				return;
 			}
@@ -845,8 +857,7 @@ namespace OpenBve.NX
 					}
 
 					Log($"frames: a frame of {took * 1000:F0} ms, {(phase[longest] - phaseBefore[longest]) * 1000:F0} ms of it in {phaseNames[longest]}" +
-					    (fullNow != fullBefore ? $", with {fullNow - fullBefore} full collection(s) in it" : gen0Now != gen0Before ? ", with a nursery collection in it" : ", no collection in it") +
-					    $"; managed heap {GC.GetTotalMemory(false) >> 20} MB");
+					    (fullNow != fullBefore ? $", with {fullNow - fullBefore} full collection(s) in it" : gen0Now != gen0Before ? ", with a nursery collection in it" : ", no collection in it"));
 				}
 
 				fullBefore = fullNow;
@@ -868,7 +879,7 @@ namespace OpenBve.NX
 					Stage($"frames: {frames / (now - windowStart):F1} fps, the slowest {worst * 1000:F1} ms, clocks CPU {cpuNow} GPU {gpuNow} memory {memoryNow} MHz, {renderer.VisibleFaceCount} visible faces; {deko.Describe()}");
 					// The collector in the window: collections by generation, and the full ones made at rest (GcAtRest).
 					int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2);
-					Log($"frames: collections in the window: {g0 - windowGen0} nursery, {g1 - windowGen1} gen 1, {g2 - windowGen2} full ({restCollections} of them at rest so far); managed heap {GC.GetTotalMemory(false) >> 20} MB");
+					Log($"frames: collections in the window: {g0 - windowGen0} nursery, {g1 - windowGen1} gen 1, {g2 - windowGen2} full ({restCollections} of them at rest so far)");
 					windowGen0 = g0;
 					windowGen1 = g1;
 					windowGen2 = g2;
